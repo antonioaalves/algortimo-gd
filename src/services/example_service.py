@@ -364,9 +364,17 @@ class AlgoritmoGDService(BaseService):
             return True
 
         except Exception as e:
-            self.logger.error(f"Error in processing stage: {str(e)}", exc_info=True)
+            error_msg = f"Error in processing stage: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
             # TODO: add progress tracking
+            if self.stage_handler:
+                self.stage_handler.track_progress(
+                    stage_name=stage_name,
+                    progress=0.0,
+                    message=error_msg
+                )
             return False
+
 
     def _execute_result_analysis_stage(self) -> bool:
         """
