@@ -15,8 +15,6 @@ from src.helpers import get_oracle_url_cx
 # Get application root directory
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
-# Add R configuration to CONFIG dictionary
-
 CONFIG = {
     # Database configuration
     'use_db': True,
@@ -27,6 +25,9 @@ CONFIG = {
     'data_dir': os.path.join(ROOT_DIR, 'data'),
     'output_dir': os.path.join(ROOT_DIR, 'data', 'output'),
     'log_dir': os.path.join(ROOT_DIR, 'logs'),
+
+    # Project name
+    'project_name': PROJECT_NAME,
     
     # File paths for CSV data sources
     'dummy_data_filepaths': {

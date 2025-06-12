@@ -43,6 +43,8 @@ class AlgoritmoGDService(BaseService):
         Args:
             data_manager: Data manager for data operations
             process_manager: Optional process manager for tracking
+            external_call_dict: Dictionary containing external call parameters
+            config: Configuration dictionary, if not provided will use the default CONFIG from src.config
         """
 
         # Import CONFIG if not provided
@@ -61,7 +63,7 @@ class AlgoritmoGDService(BaseService):
         super().__init__(
             data_manager=data_manager, 
             process_manager=process_manager, 
-            project_name='R_allocation_project',
+            project_name=PROJECT_NAME,
             data_model_class=DescansosDataModel
         )
 

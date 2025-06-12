@@ -8,7 +8,7 @@ from base_data_project.log_config import get_logger
 from base_data_project.storage.models import BaseDataModel
 
 # Local stuff
-from src.algorithms.soverOne import SolverOne
+from src.algorithms.solverOne import SolverOne
 from src.algorithms.example_algorithm import ExampleAlgorithm
 from src.config import PROJECT_NAME
 
@@ -36,10 +36,10 @@ class AlgorithmFactory:
             logger.error(msg)
             raise ValueError(msg)
 
-        if decision.lower() == 'LpAlgo':
+        if decision.lower() == 'solverOne':
             logger.info()
             return SolverOne(algo_name=decision.lower(), parameters=parameters) # TODO: define the algorithms here
-        elif decision.lower() == 'FillBagsAlgorithm':
+        elif decision.lower() == 'example_algorithm':
             logger.info()
             return ExampleAlgorithm(algo_name=decision.lower(), parameters=parameters)
         else:

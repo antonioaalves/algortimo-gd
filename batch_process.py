@@ -14,7 +14,7 @@ from base_data_project.utils import create_components
 
 # Import project-specific components
 from src.config import CONFIG, PROJECT_NAME
-from src.services.example_service import ExampleService
+from src.services.algoritmoGDService import ExampleService
 from src.models import DataContainer
 
 # Set up logger

@@ -17,7 +17,7 @@ from base_data_project.process_management.manager import ProcessManager
 
 # Import project-specific components
 from src.config import CONFIG, PROJECT_NAME
-from src.services.example_service import AlgoritmoGDService
+from src.services.algoritmoGDService import AlgoritmoGDService
 
 # Set up logger
 logger = setup_logger(PROJECT_NAME, log_level=logging.INFO)
