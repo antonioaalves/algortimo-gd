@@ -509,7 +509,7 @@ class DescansosDataModel(BaseDataModel):
                         colabs_id=colabs_id
                     )
                     if df_days_off.empty:
-                        df_days_off = pd.DataFrame(columns=['employee_id', 'schedule_dt', 'sched_type'])
+                        df_days_off = pd.DataFrame(columns=pd.Index(['employee_id', 'schedule_dt', 'sched_type']))
             except Exception as e:
                 self.logger.error(f"Error loading df_tipo_contrato: {e}")
                 df_days_off = pd.DataFrame()
@@ -1071,7 +1071,7 @@ class DescansosDataModel(BaseDataModel):
                 "fk_colaborador", "unidade", "secao", "posto", "convenio", "nome", "matricula",
                 "min_dia_trab", "max_dia_trab", "tipo_turno", "seq_turno", "t_total", "l_total",
                 "dyf_max_t", "lqs", "q", "c2d", "c3d", "cxx", "semana_1", "out", "ciclo", 
-                "data_admissao", "data_demissao"
+                "data_admissao", "data_demissao", "dofhc"
             ]
             
             # Map current columns to expected columns if they differ
@@ -1101,7 +1101,8 @@ class DescansosDataModel(BaseDataModel):
                     'out': 'out',
                     'ciclo': 'ciclo',
                     'data_admissao': 'data_admissao',
-                    'data_demissao': 'data_demissao'
+                    'data_demissao': 'data_demissao',
+                    'dofhc': 'dofhc'
                 }
                 
                 # Rename columns that exist in the mapping
@@ -1283,6 +1284,8 @@ class DescansosDataModel(BaseDataModel):
                     cc['ld'] = 0
                     cc['l_dom'] = coh[0]
                     cc['l_total'] = coh[1] - coh[0]
+                    # Preserve dofhc value
+                    cc['dofhc'] = cc['dofhc']
                 
                 processed_rows.append(cc)
 
@@ -2122,13 +2125,54 @@ class DescansosDataModel(BaseDataModel):
             # Handle CXX
             matrizA_og['l_total'] = matrizA_og['l_total'] - matrizA_og['CXX_at']
             matrizA_og['cxx'] = np.maximum(matrizA_og['cxx'] - matrizA_og['CXX_at'], 0)
+
+            # Handle VZ
+            if 'vz' not in matrizA_og.columns:
+                matrizA_og['vz'] = 0
+            #self.logger.info(f"DEBUG: vz: {matrizA_og['vz']}")
             
             # Create matrizA with selected columns
             matrizA = matrizA_og[[
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
-                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og'
+                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz'
             ]].copy()
+            
+            # Rename columns to match R output
+            matrizA = pd.DataFrame(matrizA).rename(columns={
+                'ld': 'l_d',
+                'lq': 'l_q', 
+                'q': 'l_qs'
+            })
+            
+            # Create backup matrices after renaming
+            matrizA_bk_og = matrizA.copy()
+            matrizA_bk_og['l_res'] = (matrizA_bk_og['l_total'] - matrizA_bk_og['l_dom'] - 
+                                    matrizA_bk_og['l_d'] - matrizA_bk_og['l_q'] - 
+                                    matrizA_bk_og['l_qs'] - matrizA_bk_og['c2d'] - 
+                                    matrizA_bk_og['c3d'] - matrizA_bk_og['cxx'] - 
+                                    matrizA_bk_og['vz'] - matrizA_bk_og['LRES_at'])
+            matrizA_bk_og['l_total'] = matrizA_bk_og['l_total'] - matrizA_bk_og['LRES_at']
+            matrizA_bk_og = matrizA_bk_og.drop('LRES_at', axis=1)
+            matrizA_bk_og.loc[matrizA_bk_og['l_res'] < 0, 'vz'] = matrizA_bk_og['vz'] + matrizA_bk_og['l_res']
+            
+            # Preserve dofhc column in matrizA_bk_og
+            if 'dofhc' in matrizA.columns:
+                matrizA_bk_og['dofhc'] = matrizA['dofhc']
+            
+            matrizA_bk = matrizA.copy()           
+            matrizA_bk['l_res'] = (matrizA_bk['l_total'] - matrizA_bk['l_dom'] - 
+                                matrizA_bk['l_d'] - matrizA_bk['l_q'] - 
+                                matrizA_bk['l_qs'] - matrizA_bk['c2d'] - 
+                                matrizA_bk['c3d'] - matrizA_bk['cxx'] - 
+                                matrizA_bk['vz'] - matrizA_bk['LRES_at'])
+            matrizA_bk['l_total'] = matrizA_bk['l_total'] - matrizA_bk['LRES_at']
+            matrizA_bk = matrizA_bk.drop('LRES_at', axis=1)
+            matrizA_bk.loc[matrizA_bk['l_res'] < 0, 'vz'] = matrizA_bk['vz'] + matrizA_bk['l_res']
+            
+            # Preserve dofhc column in matrizA_bk
+            if 'dofhc' in matrizA.columns:
+                matrizA_bk['dofhc'] = matrizA['dofhc']
             
             # CONTRATOS 2/3DIAS Processing -----------------------------------------------
             
@@ -2210,22 +2254,15 @@ class DescansosDataModel(BaseDataModel):
             matrizA['l_res'] = 0
             
             # Calculate auxiliary columns
-            matrizA['aux'] = matrizA['l_dom'] + matrizA['ld'] + matrizA['lq'] + matrizA['c2d'] + matrizA['c3d'] + matrizA['cxx']
+            matrizA['aux'] = matrizA['l_dom'] + matrizA['l_d'] + matrizA['l_q'] + matrizA['c2d'] + matrizA['c3d'] + matrizA['cxx']
             matrizA['aux2'] = matrizA['l_total'] - matrizA['aux']
             
-            # Adjust LD if aux2 is negative
-            matrizA.loc[matrizA['aux2'] < 0, 'ld'] = matrizA['ld'] + matrizA['aux2']
+            # Adjust L_D if aux2 is negative
+            matrizA.loc[matrizA['aux2'] < 0, 'l_d'] = matrizA['l_d'] + matrizA['aux2']
             matrizA = matrizA.drop(['aux', 'aux2'], axis=1)
             
             # Set L_RES for contract type 3
             matrizA.loc[matrizA['tipo_contrato'] == 3, 'l_res'] = matrizA.loc[matrizA['tipo_contrato'] == 3, 'l_total']
-            
-            # Rename columns to match R output
-            matrizA = pd.DataFrame(matrizA).rename(columns={
-                'ld': 'l_d',
-                'lq': 'l_q', 
-                'q': 'l_qs'
-            })
             
             # Add VZ (empty days) for 4-day contracts
             matrizA['vz'] = np.where(matrizA['tipo_contrato'] == 4, semanas_restantes - 4, 0)
