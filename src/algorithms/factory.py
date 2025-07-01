@@ -8,7 +8,7 @@ from base_data_project.log_config import get_logger
 from base_data_project.storage.models import BaseDataModel
 
 # Local stuff
-from src.algorithms.soverOne import SolverOne
+from src.algorithms.alcampoAlgorithm import AlcampoAlgorithm
 from src.algorithms.example_algorithm import ExampleAlgorithm
 from src.config import PROJECT_NAME, CONFIG
 
@@ -20,24 +20,28 @@ class AlgorithmFactory:
     """
 
     @staticmethod
-    def create_algorithm(decision: str, parameters: Optional[Dict[str, Any]] = None) -> BaseAlgorithm:
+    def create_algorithm(decision: str, parameters: Optional[Dict[str, Any]] = {}) -> BaseAlgorithm:
         """Choose an algorithm based on user decisions"""
 
         if parameters is None:
             parameters = {
-                'available_algorithms': CONFIG.get('available_algorithms')  # Fix: use same key name
+                'available_algorithms': CONFIG.get('available_algorithms', [])  # Default to empty list
             }
-        available_algorithms_dict = CONFIG.get('available_algorithms')
+        available_algorithms = CONFIG.get('available_algorithms', [])
+        if not isinstance(available_algorithms, list):
+            available_algorithms = []
+            logger.error(f"available_algorithms is not a list. Please configure the file config.py. available_algorithms: {available_algorithms}, type: {type(available_algorithms)}")
 
-        if decision.lower() not in available_algorithms_dict:
+        if decision.lower() not in [algo.lower() for algo in available_algorithms]:
             # If decision not available, raise an exception
+            logger.error(f"available_algorithms: {available_algorithms}, decision: {decision}")
             msg = f"Decision made for algorithm selection not available in config file config.py. Please configure the file."
             logger.error(msg)
             raise ValueError(msg)
 
-        if decision.lower() == 'solver_one':
+        if decision.lower() == 'alcampo_algorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
-            return SolverOne(algo_name=decision.lower(), parameters=parameters) # TODO: define the algorithms here
+            return AlcampoAlgorithm(algo_name=decision.lower(), parameters=parameters) # TODO: define the algorithms here
         elif decision.lower() == 'FillBagsAlgorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
             return ExampleAlgorithm(algo_name=decision.lower(), parameters=parameters)

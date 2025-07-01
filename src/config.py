@@ -97,7 +97,7 @@ CONFIG = {
 
     # Available algorithms for the project
     'available_algorithms': [
-        'solver_one',
+        'alcampo_algorithm',
         'example_algorithm'
         # Add your custom algorithms here
     ],
@@ -139,7 +139,7 @@ CONFIG = {
                     'fill_method': 'mean'       # Method for filling missing values
                 },
                 'algorithm': {
-                    'name': 'solver_one',  # Default algorithm to use
+                    'name': 'alcampo_algorithm',  # Default algorithm to use
                     'parameters': {}
                 },
                 'insertions': {
@@ -171,7 +171,7 @@ CONFIG = {
                     'required': True,
                     'decisions': {
                         # Very important define the algorithms here
-                        'algorithms': ['solver_one']
+                        'algorithms': ['alcampo_algorithm']
                     }                     
                 },
                 'format_results': {
