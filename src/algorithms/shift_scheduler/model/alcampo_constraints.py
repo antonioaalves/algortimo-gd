@@ -1,3 +1,5 @@
+"""This file contains the constraints for the Alcampo shift scheduler."""
+
 def shift_day_constraint(model, shift, days_of_year, workers, shifts):
     # Constraint for workers having an assigned shift
     for w in workers:
@@ -764,7 +766,8 @@ def day3_quality_weekend(new_model, new_shift, workers, working_days, start_week
         if contract_type[w] in [4, 5, 6]:
             quality_3weekend_vars = []  # Store the 3-day weekend variables for this worker
             
-            for d in working_days[w] or d in closed_holidays:
+            all_days = set(working_days[w]) | set(closed_holidays)
+            for d in all_days:
                 # Check for Saturday (day 6 of the week, index 5)
                 if (d + start_weekday - 3 ) % 7 == 5:  # Saturday
                     # Check if Sunday is also a working day

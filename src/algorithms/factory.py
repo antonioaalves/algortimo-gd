@@ -41,10 +41,10 @@ class AlgorithmFactory:
 
         if decision.lower() == 'alcampo_algorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
-            return AlcampoAlgorithm(algo_name=decision.lower(), parameters=parameters) # TODO: define the algorithms here
+            return AlcampoAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME) # TODO: define the algorithms here
         elif decision.lower() == 'FillBagsAlgorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
-            return ExampleAlgorithm(algo_name=decision.lower(), parameters=parameters)
+            return ExampleAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME)
         else:
             error_msg = f"Unsupported algorithm type: {decision}"
             logger.error(error_msg)

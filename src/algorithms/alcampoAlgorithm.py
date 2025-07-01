@@ -46,7 +46,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
     worker contracts, labor laws, and operational requirements.
     """
 
-    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm'):
+    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm', project_name: str = PROJECT_NAME):
         """
         Initialize the Alcampo Algorithm.
         
@@ -76,7 +76,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             default_parameters.update(parameters)
         
         # Initialize the parent class with algorithm name and parameters
-        super().__init__(algo_name=algo_name, parameters=default_parameters)
+        super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=PROJECT_NAME)
         
         # Initialize algorithm-specific attributes
         self.data_processed = None

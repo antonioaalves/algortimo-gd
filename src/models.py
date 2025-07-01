@@ -1643,7 +1643,6 @@ class DescansosDataModel(BaseDataModel):
                 return False
 
             # Select columns 
-            
             df_tipo_contrato = (matriz_ma[['matricula', 'tipo_contrato']]
                             .dropna(subset=['tipo_contrato']))
             df_tipo_contrato.columns = ['emp', 'tipo_contrato']
@@ -1652,17 +1651,17 @@ class DescansosDataModel(BaseDataModel):
             
             # This is probably where it's failing - check if 'emp' column exists
             if 'emp' not in matriz_ma.columns:
-                self.logger.error(f"DEBUG: 'emp' column not found. Available columns: {matriz_ma.columns.tolist()}")
+                self.logger.error(f"'emp' column not found. Available columns: {matriz_ma.columns.tolist()}")
                 # Try 'matricula' instead
                 if 'matricula' in matriz_ma.columns:
                     matriz_ma['emp'] = matriz_ma['matricula']
-                    self.logger.info("DEBUG: Used 'matricula' as 'emp'")
+                    #self.logger.info("DEBUG: Used 'matricula' as 'emp'")
                 else:
-                    self.logger.error("DEBUG: Neither 'emp' nor 'matricula' found")
+                    #self.logger.error("DEBUG: Neither 'emp' nor 'matricula' found")
                     return False
             
             all_colab_pad = matriz_ma['emp'].tolist()
-            #self.logger.info(f"DEBUG: all_colab_pad length={len(all_colab_pad)}")
+            self.logger.info(f"all_colab_pad length={len(all_colab_pad)}")
             
             # Create the basic matrix structure
             start_dt = pd.to_datetime(start_date)
@@ -1680,7 +1679,7 @@ class DescansosDataModel(BaseDataModel):
             for _ in date_range:
                 turno_row.extend(['M', 'T'])
             
-            self.logger.info(f"DEBUG: dia_row length=\n{len(dia_row)}, turno_row length={len(turno_row)}")
+            self.logger.info(f"dia_row length=\n{len(dia_row)}, turno_row length={len(turno_row)}")
             
             # Create DataFrame
             reshaped_final_3 = pd.DataFrame([dia_row, turno_row])
@@ -1828,8 +1827,7 @@ class DescansosDataModel(BaseDataModel):
             #self.logger.info(f"DEBUG: ause_colab {ause_colab}")
             reshaped_final_3 = insert_holidays_absences(all_colab_pad, ausencias_total, reshaped_final_3)
 
-            reshaped_final_3.to_csv(os.path.join('data', 'output', 'reshaped_final_3_holydays.csv'), index=False, encoding='utf-8')            
-
+            #reshaped_final_3.to_csv(os.path.join('data', 'output', 'reshaped_final_3_holydays.csv'), index=False, encoding='utf-8')            
 
             #self.logger.info(f"DEBUG: reshaped_final_3 after holy: {reshaped_final_3}")
 
@@ -1853,7 +1851,7 @@ class DescansosDataModel(BaseDataModel):
                 reshaped_final_3.columns = range(len(reshaped_final_3.columns))
 
             #self.logger.info(f"DEBUG: reshaped_final_3 after insert_feriados: {reshaped_final_3}")
-            reshaped_final_3.to_csv(os.path.join('data', 'output', 'reshaped_final_3_feriados.csv'), index=False, encoding='utf-8')
+            #reshaped_final_3.to_csv(os.path.join('data', 'output', 'reshaped_final_3_feriados.csv'), index=False, encoding='utf-8')
 
             if len(df_closed_days) > 0:
                 reshaped_final_3 = insert_closed_days(df_closed_days, reshaped_final_3)
@@ -1872,25 +1870,25 @@ class DescansosDataModel(BaseDataModel):
 
             if len(reshaped_final_3) > 0:
                 
-                self.logger.info(f"DEBUG: df_days_off {df_days_off}")
+                self.logger.info(f"df_days_off {df_days_off}")
                 df_days_off_filtered = pd.DataFrame(df_days_off[(df_days_off['schedule_dt'] >= start_date) & 
                                     (df_days_off['schedule_dt'] <= end_date)])
                 if len(df_days_off_filtered) > 0:
                     reshaped_final_3 = assign_days_off(reshaped_final_3, df_days_off_filtered)
             
-            self.logger.info(f"DEBUG: Final matrix={reshaped_final_3}")
+            self.logger.info(f"Final matrix={reshaped_final_3}")
             
             # Simple validation
             if reshaped_final_3.iloc[0, 0] != 'Dia':
-                self.logger.error(f"DEBUG: Header validation failed. [0,0]={reshaped_final_3.iloc[0, 0]}")
+                self.logger.error(f"Header validation failed. [0,0]={reshaped_final_3.iloc[0, 0]}")
                 return False
             
             if reshaped_final_3.iloc[1, 0] != 'TIPO_DIA':
-                self.logger.error(f"DEBUG: Header validation failed. [1,0]={reshaped_final_3.iloc[1, 0]}")
+                self.logger.error(f"Header validation failed. [1,0]={reshaped_final_3.iloc[1, 0]}")
                 return False
 
             if reshaped_final_3.iloc[2, 0] != 'TURNO':
-                self.logger.error(f"DEBUG: Header validation failed. [1,0]={reshaped_final_3.iloc[1, 0]}")
+                self.logger.error(f"Header validation failed. [1,0]={reshaped_final_3.iloc[1, 0]}")
                 return False
 
             try:
@@ -2106,17 +2104,34 @@ class DescansosDataModel(BaseDataModel):
             matriz2['WD'] = matriz2['DATA'].dt.day_name().str[:3]
             
             # Calculate DIA_TIPO
+            # TODO: pass this function to helpers
             def calculate_dia_tipo(group):
                 has_feriado = (group['TIPO_TURNO'] == 'F').any()
                 is_sunday = group['WD'].iloc[0] == 'Sun'
                 not_feriado_horario = group['HORARIO'] != 'F'
                 
                 if (has_feriado or is_sunday) and not_feriado_horario.any():
+                    # PROBLEM here
                     return 'domYf'
                 else:
                     return group['WD'].iloc[0]
+
+            def assign_dia_tipo(group):
+                has_F = (group['TIPO_TURNO'] == 'F').any()  # grupo tem pelo menos 1 F
+                # aplica a lógica linha a linha
+                group['DIA_TIPO'] = group.apply(
+                    lambda row: 'domYf' if ((has_F or row['WD'] == 'Sun') and row['HORARIO'] != 'F') else row['WD'],
+                    axis=1
+                )
+                return group
             
-            matriz2['DIA_TIPO'] = matriz2.groupby('DATA').apply(calculate_dia_tipo).reset_index(drop=True)
+            # self.logger.info(f"DEBUG: matriz2 pre calculate_dia_tipo:\n {matriz2.head(30)}")
+            # matriz2_temp = matriz2
+            # matriz2['DIA_TIPO'] = matriz2.groupby('DATA').apply(calculate_dia_tipo).reset_index(drop=True)
+            # self.logger.info(f"DEBUG: matriz2 post calculate_dia_tipo:\n {matriz2.head(30)}")
+
+            matriz2 = matriz2.groupby('DATA', group_keys=False).apply(assign_dia_tipo)
+            self.logger.info(f"DEBUG: matriz2 post assign_dia_tipo:\n {matriz2.head(30)}")
             
             # Merge with employee admission/dismissal dates
             emp_dates = matrizA_og[['emp', 'data_admissao', 'data_demissao']].copy()
@@ -2132,6 +2147,7 @@ class DescansosDataModel(BaseDataModel):
                 matriz2['DATA'] <= matriz2['data_demissao'].fillna(pd.Timestamp('2100-01-01'))
             ]
             
+            # TODO: pass this function to helpers
             def adjust_horario(row):
                 admission_date = row['data_admissao'] if pd.notna(row['data_admissao']) else pd.Timestamp('1900-01-01')
                 if row['DATA'] >= admission_date:
