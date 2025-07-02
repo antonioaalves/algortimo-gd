@@ -1433,7 +1433,7 @@ class DescansosDataModel(BaseDataModel):
                 return False
             
             # Calculate numFerDom and ferFechados
-            num_sundays = len(df1[df1['wd'] == 7])  # Sunday is 7
+            num_sundays = len(df1[df1['wd'] == 7])  # Sunday is 7 (current Python indexing)
             num_fer_dom = nr_festivos + num_sundays
             
             # Calculate closed holidays (tipo == 3 and not Sunday)
@@ -1811,6 +1811,9 @@ class DescansosDataModel(BaseDataModel):
             # TODO: add comments explaining this part
             start_date = pd.to_datetime(f"{current_year}-01-01")
             end_date = pd.to_datetime(f"{current_year}-12-31")
+
+            # TODO: Remove this or test the logic
+            # TODO: add empty df_ausencias_ferias
 
             ausencias_total = pd.DataFrame(df_ausencias_ferias[(df_ausencias_ferias['data_ini'] >= start_date) & 
                                     (df_ausencias_ferias['data_ini'] <= end_date)])
@@ -2193,7 +2196,7 @@ class DescansosDataModel(BaseDataModel):
                         # Count occurrences for 4/5 day contracts
                         count_occurrences = len(matriz_temp[
                             matriz_temp['HORARIO'].isin(['A', 'L', 'V', 'L_', 'L_DOM', 'DFS']) & 
-                            (matriz_temp['WDAY'] == 1)
+                            (matriz_temp['WDAY'] == 6)
                         ])
                         
                         # Subtract closed days that fell on holidays
@@ -2201,7 +2204,7 @@ class DescansosDataModel(BaseDataModel):
                         count_occurrences_extra2 = len(matriz_temp[
                             matriz_temp['HORARIO'].isin(['A', 'L', 'V', 'L_', 'L_DOM', 'DFS']) & 
                             matriz_temp['DATA'].isin(fer_tipo3) & 
-                            (matriz_temp['WDAY'] == 1)
+                            (matriz_temp['WDAY'] == 6)
                         ])
                         count_occurrences -= count_occurrences_extra2
                         
@@ -2213,7 +2216,7 @@ class DescansosDataModel(BaseDataModel):
                         count_occurrences_fes -= len(matriz_temp[
                             matriz_temp['HORARIO'].isin(['A', 'L', 'V', 'L_', 'L_DOM', 'DFS']) & 
                             matriz_temp['DATA'].isin(fer_tipo3) & 
-                            (matriz_temp['WDAY'] != 1)
+                            (matriz_temp['WDAY'] != 6)
                         ])
                         
                         count_holidays = len(matriz_temp[matriz_temp['HORARIO'] == 'V'])
@@ -2222,7 +2225,7 @@ class DescansosDataModel(BaseDataModel):
                         # For other contract types
                         count_occurrences = len(matriz_temp[
                             matriz_temp['HORARIO'].isin(['A', 'L', 'V', 'L_', 'L_DOM', 'DFS']) & 
-                            ((matriz_temp['WDAY'] == 1) | matriz_temp['DATA'].isin(pd.Series(dom_e_fes)))
+                            ((matriz_temp['WDAY'] == 6) | matriz_temp['DATA'].isin(pd.Series(dom_e_fes)))
                         ])
                         
                         fer_tipo3 = fer[fer['tipo'] == 3]['data'].tolist() if 'tipo' in fer.columns else []
@@ -2240,7 +2243,7 @@ class DescansosDataModel(BaseDataModel):
                     count_occurrences = len(matriz_temp[
                         (matriz_temp['HORARIO'] != 'NL') & 
                         matriz_temp['HORARIO'].str.contains('^L|DFS', case=False, na=False) & 
-                        ((matriz_temp['WDAY'] == 1) | matriz_temp['DATA'].isin(pd.Series(dom_e_fes)))
+                        ((matriz_temp['WDAY'] == 6) | matriz_temp['DATA'].isin(pd.Series(dom_e_fes)))
                     ])
                     count_occurrences_fes = 0
                     count_holidays = 0
@@ -2316,7 +2319,7 @@ class DescansosDataModel(BaseDataModel):
                     (colab_data['DIA_TIPO'] != 'domYf') &
                     (colab_data['HORARIO'] != 'LD') &
                     (pd.Series(colab_data['HORARIO']).str.contains('^L', case=False, na=False)) &
-                    (pd.Series(colab_data['WD']).isin([2, 3, 4, 5, 6, 7])) &
+                    (pd.Series(colab_data['WD']).isin([1, 2, 3, 4, 5, 6])) &
                     (~pd.Series(colab_data['TIPO_TURNO_NEXT']).str.contains('^L', case=False, na=False)) &
                     (colab_data['TIPO_TURNO_PREV'] != 'L')
                 )
@@ -2326,7 +2329,7 @@ class DescansosDataModel(BaseDataModel):
                 lres_condition = (
                     (colab_data['DIA_TIPO'] != 'domYf') &
                     (pd.Series(colab_data['HORARIO']).str.contains('^L', case=False, na=False)) &
-                    (pd.Series(colab_data['WD']).isin([2, 3, 4, 5, 6])) &
+                    (pd.Series(colab_data['WD']).isin([1, 2, 3, 4, 5])) &
                     (~pd.Series(colab_data['TIPO_TURNO_PREV']).str.contains('^L', case=False, na=False)) &
                     (~pd.Series(colab_data['TIPO_TURNO_NEXT']).str.contains('^L', case=False, na=False))
                 )
@@ -2336,7 +2339,7 @@ class DescansosDataModel(BaseDataModel):
                 cxx_condition = (
                     (colab_data['DIA_TIPO'] != 'domYf') &
                     (pd.Series(colab_data['HORARIO']).str.contains('^L', case=False, na=False)) &
-                    (pd.Series(colab_data['WD']).isin([2, 3, 4, 5, 6])) &
+                    (pd.Series(colab_data['WD']).isin([1, 2, 3, 4, 5])) &
                     (pd.Series(colab_data['TIPO_TURNO_PREV']).str.contains('^L', case=False, na=False))
                 )
                 cxx_at = cxx_condition.sum()
@@ -2361,7 +2364,7 @@ class DescansosDataModel(BaseDataModel):
                     (colab_data['DIA_TIPO'] != 'domYf') &
                     (colab_data['HORARIO'] != 'LQ') &
                     (pd.Series(colab_data['HORARIO']).str.contains('^L', case=False, na=False)) &
-                    (pd.Series(colab_data['WD']).isin([2, 3, 4, 5, 6, 7])) &
+                    (pd.Series(colab_data['WD']).isin([1, 2, 3, 4, 5, 6])) &
                     (~pd.Series(colab_data['TIPO_TURNO_NEXT']).str.contains('^L', case=False, na=False)) &
                     (colab_data['TIPO_TURNO_PREV'] != 'L')
                 )
@@ -2372,7 +2375,7 @@ class DescansosDataModel(BaseDataModel):
                     (colab_data['DIA_TIPO'] != 'domYf') &
                     (colab_data['HORARIO'] != 'LD') &
                     (pd.Series(colab_data['HORARIO']).str.contains('^L', case=False, na=False)) &
-                    (pd.Series(colab_data['WD']).isin([2, 3, 4, 5, 6, 7])) &
+                    (pd.Series(colab_data['WD']).isin([1, 2, 3, 4, 5, 6])) &
                     (~pd.Series(colab_data['TIPO_TURNO_NEXT']).str.contains('^L', case=False, na=False)) &
                     (colab_data['TIPO_TURNO_PREV'] != 'L')
                 )
@@ -2382,7 +2385,7 @@ class DescansosDataModel(BaseDataModel):
                 cxx_condition = (
                     (colab_data['DIA_TIPO'] != 'domYf') &
                     (pd.Series(colab_data['HORARIO']).str.contains('^L', case=False, na=False)) &
-                    (pd.Series(colab_data['WD']).isin([2, 3, 4, 5, 6])) &
+                    (pd.Series(colab_data['WD']).isin([1, 2, 3, 4, 5])) &
                     (pd.Series(colab_data['TIPO_TURNO_PREV']).str.contains('^L', case=False, na=False))
                 )
                 cxx_at = cxx_condition.sum()
@@ -2402,40 +2405,40 @@ class DescansosDataModel(BaseDataModel):
             
             # Add pattern identification columns
             df_cd['FRI_SAT_SUN'] = (
-                (df_cd['WDAY_PREV'] == 6) & 
+                (df_cd['WDAY_PREV'] == 5) & 
                 (df_cd['TIPO_TURNO_PREV'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY'] == 7) & 
+                (df_cd['WDAY'] == 6) & 
                 (df_cd['HORARIO'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_NEXT'] == 1) & 
+                (df_cd['WDAY_NEXT'] == 7) & 
                 (df_cd['TIPO_TURNO_NEXT'].str.contains('^L', case=False, na=False))
             )
             
             df_cd['SAT_SUN_MON'] = (
-                (df_cd['WDAY'] == 7) & 
+                (df_cd['WDAY'] == 6) & 
                 (df_cd['HORARIO'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_NEXT'] == 1) & 
+                (df_cd['WDAY_NEXT'] == 7) & 
                 (df_cd['TIPO_TURNO_NEXT'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_NEXT2'] == 2) & 
+                (df_cd['WDAY_NEXT2'] == 1) & 
                 (df_cd['TIPO_TURNO_NEXT2'].str.contains('^L', case=False, na=False))
             )
             
             df_cd['SAT_SUN_ONLY'] = (
-                (df_cd['WDAY'] == 7) & 
+                (df_cd['WDAY'] == 6) & 
                 (df_cd['HORARIO'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_NEXT'] == 1) & 
+                (df_cd['WDAY_NEXT'] == 7) & 
                 (df_cd['TIPO_TURNO_NEXT'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_NEXT2'] == 2) & 
+                (df_cd['WDAY_NEXT2'] == 1) & 
                 (~df_cd['TIPO_TURNO_NEXT2'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_PREV'] == 6) & 
+                (df_cd['WDAY_PREV'] == 5) & 
                 (~df_cd['TIPO_TURNO_PREV'].str.contains('^L', case=False, na=False))
             )
             
             df_cd['SUN_MON_ONLY'] = (
-                (df_cd['WDAY'] == 7) & 
+                (df_cd['WDAY'] == 6) & 
                 (~df_cd['HORARIO'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_NEXT'] == 1) & 
+                (df_cd['WDAY_NEXT'] == 7) & 
                 (df_cd['TIPO_TURNO_NEXT'].str.contains('^L', case=False, na=False)) &
-                (df_cd['WDAY_NEXT2'] == 2) & 
+                (df_cd['WDAY_NEXT2'] == 1) & 
                 (df_cd['TIPO_TURNO_NEXT2'].str.contains('^L', case=False, na=False))
             )
             
@@ -3084,9 +3087,9 @@ class DescansosDataModel(BaseDataModel):
                 
                 # Save CSV files for debugging
                 try:
-                    matrizA_bk.to_csv(os.path.join('data', 'output', 'df_colaborador.csv'), index=False, encoding='utf-8')
-                    matriz2_bk.to_csv(os.path.join('data', 'output', 'df_calendario.csv'), index=False, encoding='utf-8')
-                    matrizB_bk.to_csv(os.path.join('data', 'output', 'df_estimativas.csv'), index=False, encoding='utf-8')
+                    matrizA_bk.to_csv(os.path.join('data', 'output', f'df_colaborador-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
+                    matriz2_bk.to_csv(os.path.join('data', 'output', f'df_calendario-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
+                    matrizB_bk.to_csv(os.path.join('data', 'output', f'df_estimativas-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
                     self.logger.info("CSV debug files saved successfully")
                 except Exception as csv_error:
                     self.logger.warning(f"Failed to save CSV debug files: {csv_error}")
@@ -3150,7 +3153,8 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"Creating algorithm instance for: {algorithm_name}")
                 algorithm = AlgorithmFactory.create_algorithm(
                     decision=algorithm_name,
-                    parameters=algorithm_params
+                    parameters=algorithm_params,
+                    process_id=self.external_call_data.get("current_process_id", 0)
                 )
 
                 if not algorithm:
@@ -3205,7 +3209,8 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.warning("rare_data storage verification failed")
                     return False
                     
-                results_df = self.rare_data.get('df_results')
+                results_df = pd.DataFrame(self.rare_data.get('df_results', {}))
+                results_df.to_csv(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
                 self.logger.info(f"Results stored - df_results shape: {results_df.shape if results_df is not None else 'None'}")
                 self.logger.info(f"Allocation cycle completed successfully with algorithm {algorithm_name}.")
                 return True

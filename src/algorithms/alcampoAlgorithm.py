@@ -5,13 +5,14 @@ from typing import Dict, Any, Optional, List, Union
 import pandas as pd
 from datetime import datetime
 from ortools.sat.python import cp_model
+import os
 
 # Import base algorithm class
 from base_data_project.algorithms.base import BaseAlgorithm
 from base_data_project.log_config import get_logger
 
 # Import project-specific components
-from src.config import PROJECT_NAME
+from src.config import PROJECT_NAME, ROOT_DIR
 
 # Import shift scheduler components
 from src.algorithms.shift_scheduler.model.variables import decision_variables
@@ -46,7 +47,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
     worker contracts, labor laws, and operational requirements.
     """
 
-    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm', project_name: str = PROJECT_NAME):
+    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0):
         """
         Initialize the Alcampo Algorithm.
         
@@ -84,6 +85,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
         self.model_stage2 = None
         self.schedule_stage1 = None
         self.final_schedule = None
+        self.process_id = process_id
         
         # Add any algorithm-specific initialization
         self.logger.info(f"Initialized {self.algo_name} with parameters: {self.parameters}")
@@ -326,7 +328,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
-            schedule_df = solve(model, days_of_year, workers, special_days, shift, shifts)
+            schedule_df = solve(model, days_of_year, workers, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
             self.schedule_stage1 = schedule_df
             
             # =================================================================
@@ -355,7 +357,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 2
             self.logger.info("Solving Stage 2 model")
-            final_schedule_df = solve(new_model, days_of_year, workers, special_days, new_shift, shifts)
+            final_schedule_df = solve(new_model, days_of_year, workers, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
             #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
             self.final_schedule = final_schedule_df
             

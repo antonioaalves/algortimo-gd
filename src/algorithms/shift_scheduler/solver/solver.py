@@ -23,12 +23,13 @@ def solve(
     special_days: List[int], 
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
+    process_id: int,
     max_time_seconds: int = 240,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = True,
     log_callback: Optional[Callable] = None,
-    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx')
+    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule.xlsx')
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
