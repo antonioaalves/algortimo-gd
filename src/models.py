@@ -11,6 +11,7 @@ import os
 from typing import Dict, List, Any, Optional, Union, Tuple
 from datetime import datetime, timedelta
 from isoweek import Week
+import json
 
 # Import project-specific components
 from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
@@ -121,9 +122,13 @@ class DescansosDataModel(BaseDataModel):
         }
         self.rare_data: Dict[str, Any] = {
             'df_results': None,
+            'stage1_schedule': None,
+            'stage2_schedule': None,
         }
         self.formatted_data: Dict[str, Any] = {
             'df_final': None,  # Final output DataFrame
+            'stage1_schedule': None,
+            'stage2_schedule': None,
         }
         self.external_call_data = external_data
         
@@ -3154,7 +3159,9 @@ class DescansosDataModel(BaseDataModel):
                 algorithm = AlgorithmFactory.create_algorithm(
                     decision=algorithm_name,
                     parameters=algorithm_params,
-                    process_id=self.external_call_data.get("current_process_id", 0)
+                    process_id=self.external_call_data.get("current_process_id", 0),
+                    start_date=self.external_call_data.get("start_date", ''),
+                    end_date=self.external_call_data.get("end_date", '')
                 )
 
                 if not algorithm:
@@ -3202,15 +3209,17 @@ class DescansosDataModel(BaseDataModel):
             
             try:
                 self.logger.info("Storing algorithm results in rare_data")
-                self.rare_data['df_results'] = pd.DataFrame(results.get('result_df', {})) # TODO: define in the algorithm how the results come
+                self.rare_data['stage1_schedule'] = pd.DataFrame(results.get('stage1_schedule', pd.DataFrame())) # TODO: define in the algorithm how the results come
+                self.rare_data['stage2_schedule'] = pd.DataFrame(results.get('stage2_schedule', pd.DataFrame())) # TODO: define in the algorithm how the results come
                 # TODO: add more data to rare_data if needed
                 
                 if not self.rare_data:
                     self.logger.warning("rare_data storage verification failed")
                     return False
                     
-                results_df = pd.DataFrame(self.rare_data.get('df_results', {}))
-                results_df.to_csv(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
+                results_df = self.rare_data.get('df_results', {})
+                with open(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}.json'), 'w', encoding='utf-8') as f:
+                    json.dump(results_df, f, indent=2, ensure_ascii=False)
                 self.logger.info(f"Results stored - df_results shape: {results_df.shape if results_df is not None else 'None'}")
                 self.logger.info(f"Allocation cycle completed successfully with algorithm {algorithm_name}.")
                 return True
@@ -3246,8 +3255,12 @@ class DescansosDataModel(BaseDataModel):
         Method responsible for formatting results before inserting.
         """
         try:
-            self.formated_data = self.rare_data
             self.logger.info("Entered format_results method. Needs to be implemented.")
+            self.formatted_data = self.rare_data
+            self.logger.info(f"formatted_data: {self.formatted_data}")
+            self.logger.info("DEBUG: save final dfs")
+            self.formatted_data['stage1_schedule'].to_csv(os.path.join('data', 'output', f'stage1_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
+            self.formatted_data['stage2_schedule'].to_csv(os.path.join('data', 'output', f'stage2_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
             return True            
         except Exception as e:
             self.logger.error(f"Error performing format_results from data manager: {str(e)}")
@@ -3258,7 +3271,7 @@ class DescansosDataModel(BaseDataModel):
         Method responsible for validating formatted results before inserting.
         """
         try:
-            self.logger.info("Entered func_inicializa validation. Needs to be implemented.")
+            self.logger.info("Entered validate_format_results method. Needs to be implemented.")
             return True            
         except Exception as e:
             self.logger.error(f"Error validating format_results from data manager: {str(e)}")
@@ -3269,7 +3282,7 @@ class DescansosDataModel(BaseDataModel):
         Method for inserting results in the data source.
         """
         try:
-            self.logger.info("Entered func_inicializa validation. Needs to be implemented.")
+            self.logger.info("Entered insert_results method. Needs to be implemented.")
             return True, []  # Assuming no errors and no warnings          
         except Exception as e:
             self.logger.error(f"Error performing insert_results from data manager: {str(e)}")
@@ -3281,7 +3294,7 @@ class DescansosDataModel(BaseDataModel):
         """
         try:
             # TODO: Implement validation logic through data source
-            self.logger.info("Entered func_inicializa validation. Needs to be implemented.")
+            self.logger.info("Entered validate_insert_results method. Needs to be implemented.")
             return True
         except Exception as e:
             self.logger.error(f"Error validating insert_results from data manager: {str(e)}")

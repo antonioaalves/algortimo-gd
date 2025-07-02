@@ -3,9 +3,10 @@
 import logging
 from typing import Dict, Any, Optional, List, Union
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from ortools.sat.python import cp_model
 import os
+
 
 # Import base algorithm class
 from base_data_project.algorithms.base import BaseAlgorithm
@@ -47,7 +48,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
     worker contracts, labor laws, and operational requirements.
     """
 
-    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0):
+    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0, start_date: str = '', end_date: str = ''):
         """
         Initialize the Alcampo Algorithm.
         
@@ -86,6 +87,8 @@ class AlcampoAlgorithm(BaseAlgorithm):
         self.schedule_stage1 = None
         self.final_schedule = None
         self.process_id = process_id
+        self.start_date = start_date
+        self.end_date = end_date
         
         # Add any algorithm-specific initialization
         self.logger.info(f"Initialized {self.algo_name} with parameters: {self.parameters}")
@@ -329,7 +332,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
             schedule_df = solve(model, days_of_year, workers, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
-            self.schedule_stage1 = schedule_df
+            self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
             # STAGE 2: Refinement with 3-day weekend constraints
@@ -359,7 +362,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             self.logger.info("Solving Stage 2 model")
             final_schedule_df = solve(new_model, days_of_year, workers, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
             #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
-            self.final_schedule = final_schedule_df
+            self.final_schedule = pd.DataFrame(final_schedule_df).copy()
             
             self.logger.info("Alcampo algorithm execution completed successfully")
             return final_schedule_df
@@ -494,6 +497,10 @@ class AlcampoAlgorithm(BaseAlgorithm):
             #    self.logger.warning("No algorithm results available to format")
             #    algorithm_results = self.final_schedule if self.final_schedule is not None else pd.DataFrame()
 
+            # Get result dfs
+            stage1_schedule = pd.DataFrame(self.schedule_stage1).copy()
+            stage2_schedule = pd.DataFrame(self.final_schedule).copy()
+
             # Calculate some basic statistics
             total_workers = len(algorithm_results['Worker'].unique()) if 'Worker' in algorithm_results.columns else 0
             total_days = len(algorithm_results['Day'].unique()) if 'Day' in algorithm_results.columns else 0
@@ -504,6 +511,28 @@ class AlcampoAlgorithm(BaseAlgorithm):
             if 'Shift' in algorithm_results.columns:
                 shift_distribution = algorithm_results['Shift'].value_counts().to_dict()
             
+            # DEBUG: R logic convertion 
+            # Equivalent to the R naming operation
+            date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+            new_columns = ['Worker'] + [str(date) for date in date_range]
+            stage1_schedule.columns = new_columns
+
+            # Equivalent to reshape2::melt
+            stage1_schedule = pd.melt(stage1_schedule, 
+                                    id_vars=['Worker'], 
+                                    var_name='Date', 
+                                    value_name='Status')
+
+            date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+            new_columns = ['Worker'] + [str(date) for date in date_range]
+            stage2_schedule.columns = new_columns
+
+            # Equivalent to reshape2::melt
+            stage2_schedule = pd.melt(stage2_schedule, 
+                                    id_vars=['Worker'], 
+                                    var_name='Date', 
+                                    value_name='Status')            
+
             formatted_results = {
                 'schedule': algorithm_results,
                 'metadata': {
@@ -516,11 +545,14 @@ class AlcampoAlgorithm(BaseAlgorithm):
                     'parameters_used': self.parameters
                 },
                 'stage1_schedule': self.schedule_stage1,
+                'stage2_schedule': self.final_schedule,
                 'summary': {
                     'status': 'completed',
                     'message': f'Successfully scheduled {total_workers} workers over {total_days} days'
                 }
             }
+
+
             
             self.logger.info(f"Results formatted successfully: {total_assignments} assignments created")
             return formatted_results

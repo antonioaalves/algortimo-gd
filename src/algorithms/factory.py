@@ -20,7 +20,7 @@ class AlgorithmFactory:
     """
 
     @staticmethod
-    def create_algorithm(decision: str, parameters: Optional[Dict[str, Any]] = {}, process_id: int = 0) -> BaseAlgorithm:
+    def create_algorithm(decision: str, parameters: Optional[Dict[str, Any]] = {}, process_id: int = 0, start_date: str = '', end_date: str = '') -> BaseAlgorithm:
         """Choose an algorithm based on user decisions"""
 
         if parameters is None:
@@ -41,7 +41,7 @@ class AlgorithmFactory:
 
         if decision.lower() == 'alcampo_algorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
-            return AlcampoAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id) # TODO: define the algorithms here
+            return AlcampoAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date) # TODO: define the algorithms here
         elif decision.lower() == 'FillBagsAlgorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
             return ExampleAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME)
