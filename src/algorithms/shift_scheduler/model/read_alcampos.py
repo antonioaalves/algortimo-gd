@@ -77,7 +77,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         
         logger.info("[OK] All required columns present in DataFrames")
         
-        matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd["matricula"] != "TIPO_DIA"]
+        matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd["colaborador"] != "TIPO_DIA"]
         matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd["matricula"] != "TIPO_DIA"]
 
         # =================================================================
@@ -347,15 +347,15 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
                 logger.info(f"Processing worker {w} with data: {worker_row.to_dict()}")
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
-                total_l[w] = worker_row.get('l_total', 0)
-                total_l_dom[w] = worker_row.get('l_dom', 0)
-                c2d[w] = worker_row.get('c2d', 0)
-                c3d[w] = worker_row.get('c3d', 0)
-                l_d[w] = worker_row.get('l_d', 0)
-                l_q[w] = worker_row.get('l_q', 0)
-                cxx[w] = worker_row.get('cxx', 0)
-                t_lq[w] = worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0)
-                tc[w] = worker_row.get('cxx', 0)
+                total_l[w] = int(worker_row.get('l_total', 0))
+                total_l_dom[w] = int(worker_row.get('l_dom', 0))
+                c2d[w] = int(worker_row.get('c2d', 0))
+                c3d[w] = int(worker_row.get('c3d', 0))
+                l_d[w] = int(worker_row.get('l_d', 0))
+                l_q[w] = int(worker_row.get('l_q', 0))
+                cxx[w] = int(worker_row.get('cxx', 0))
+                t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
+                tc[w] = int(worker_row.get('dofhc', 0))
         
         for w in workers:
             if contract_type[w] == 'Contract Error':
@@ -373,17 +373,19 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         logger.info("Adjusting worker parameters based on last registered days")
 
         for w in workers:
-            if (last_registered_day[w] > 0 and last_registered_day[w] < 365):
-                proportion = last_registered_day[w]  / 365
-                total_l[w] = round(proportion * total_l[w])
-                total_l_dom[w] = round(proportion * total_l_dom[w])
-                c2d[w] = math.floor(proportion * c2d[w])
-                c3d[w] = math.floor(proportion * c3d[w])
-                l_d[w] = round(proportion * l_d[w])
-                l_q[w] = round(proportion * l_q[w])
-                cxx[w] = round(proportion * cxx[w])
-                t_lq[w] = round(proportion * t_lq[w])
-                tc[w] = round(proportion * tc[w])
+            if (last_registered_day[w] > 0 and last_registered_day[w] < 364):
+                proportion = last_registered_day[w]  / 364
+                logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion {proportion:.2f}")
+                total_l[w] = int(round(proportion * total_l[w]))
+                total_l_dom[w] = int(round(proportion * total_l_dom[w]))
+                c2d[w] = int(math.floor(proportion * c2d[w]))
+                c3d[w] = int(math.floor(proportion * c3d[w]))
+                l_d[w] = int(round(proportion * l_d[w]))
+                l_q[w] = int(round(proportion * l_q[w]))
+                cxx[w] = int(round(proportion * cxx[w]))
+                t_lq[w] = int(round(proportion * t_lq[w]))
+                tc[w] = int(round(proportion * tc[w]))
+                
 
         for w in workers:
             worker_special_days = [d for d in special_days if d in working_days[w]]
@@ -453,7 +455,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
 
         # Iterate over each worker
         for w in workers:
-            for week in range(1, 53):  # Iterate over the 52 weeks
+            # Only iterate over weeks that actually exist in week_to_days
+            for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
                 worker_week_shift[(w, week, 'M')] = 0
                 worker_week_shift[(w, week, 'T')] = 0
                 

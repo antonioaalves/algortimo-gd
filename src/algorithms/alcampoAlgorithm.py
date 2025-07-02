@@ -346,14 +346,13 @@ class AlcampoAlgorithm(BaseAlgorithm):
             new_shift = decision_variables(new_model, days_of_year, workers, shifts)
             
             # Apply Stage 2 constraints
-            self._apply_stage2_constraints(
-                new_model, new_shift, days_of_year, workers, shifts, total_l, working_days,
-                l_q, c2d, c3d, schedule_df, start_weekday, contract_type, closed_holidays
-            )
+            self._apply_stage2_constraints(self, new_model, new_shift, days_of_year, workers, shifts,
+                                 total_l, working_days, l_q, c2d, c3d, schedule_df, start_weekday,
+                                 contract_type, closed_holidays)
             
             # Apply optimization (reusing from Stage 1)
             optimization_prediction(
-                model, days_of_year, workers, working_shift, shift, pessObj,
+                new_model, days_of_year, workers, working_shift, new_shift, pessObj,
                 min_workers, closed_holidays, week_to_days, working_days, contract_type
             )
             
@@ -434,15 +433,15 @@ class AlcampoAlgorithm(BaseAlgorithm):
         day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays)
         
         # Space LQs constraint
-        #space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
+        space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
         
         # Priority 2-3 workers constraint
         prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, 
                         week_to_days, contract_type, working_shift)
         
         # Compensation days constraint
-        # compensation_days(model, shift, workers, working_days, special_days, start_weekday, 
-        #              week_to_days, contract_type, working_shift)
+        compensation_days(model, shift, workers, working_days, special_days, start_weekday, 
+                     week_to_days, contract_type, working_shift)
         
         # Limits LDs per week
         limits_LDs_week(model, shift, week_to_days, workers, special_days)
@@ -465,12 +464,11 @@ class AlcampoAlgorithm(BaseAlgorithm):
         maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d)
         
         # Assign solution days based on the previous schedule
-        assigns_solution_days(new_model, new_shift, workers, days_of_year, schedule_df, 
-                             working_days, start_weekday, shifts)
+        assigns_solution_days(new_model, new_shift, workers, days_of_year, schedule_df, working_days, start_weekday, shifts)
         
         # Constraint for 3-day quality weekends
-        # day3_quality_weekend(new_model, new_shift, workers, working_days, start_weekday, 
-        #                     schedule_df, c3d, contract_type, closed_holidays)
+        day3_quality_weekend(new_model, new_shift, workers, working_days, start_weekday, 
+                            schedule_df, c3d, contract_type, closed_holidays)
 
     def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
         """

@@ -12,7 +12,7 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
     working_shift = ["M", "T"]
     # Add constraint to limit working days in a week to contract type
     for w in workers:
-        for week in range(1, 53):
+        for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
             days_in_week = week_to_days[week]
             # Sum shifts across days and shift types
             total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift)
@@ -131,7 +131,7 @@ def holiday_missing_day_attribution(model, shift, workers, worker_holiday, missi
 def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift):
     # Contraint for workers shifts taking into account the worker_week_shift (each week a worker can either be )
         for w in workers:
-            for week in range(1, 53):  # Iterate over the 52 weeks
+            for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
                 # Iterate through days of the week for the current week
                 for day in week_to_days[week]:
                     if day in working_days[w]:
@@ -165,10 +165,10 @@ def free_day_next_2c(model, shift, workers, working_days,start_weekday, closed_h
     for w in workers:
         for day in working_days[w]:
             # Get day of week (0 = Monday, 6 = Sunday)
-            day_of_week = (start_weekday + day - 3) % 7
+            day_of_week = (start_weekday + day - 2) % 7
             
             # Case 1: Friday (day_of_week == 4) followed by LQ on Saturday
-            if (day_of_week == 4) and (day + 1 in working_days[w] or day + 1 in closed_holidays):
+            if (day_of_week == 4) and ((day + 1 in working_days[w]) or (day + 1 in closed_holidays)):
                     has_saturday_lq = model.NewBoolVar(f"has_saturday_lq_{w}_{day+1}")
                     has_saturday_f = model.NewBoolVar(f"has_saturday_f_{w}_{day+1}")
                     
@@ -189,7 +189,7 @@ def free_day_next_2c(model, shift, workers, working_days,start_weekday, closed_h
 
         
             # Case 2: Monday (day_of_week == 0) preceded by L on Sunday
-            if (day_of_week == 0) and (day - 1 in working_days[w] or day - 1 in closed_holidays):
+            if (day_of_week == 0) and ((day - 1 in working_days[w]) or (day - 1 in closed_holidays)):
                 # Create boolean variables for Sunday shifts
                     has_sunday_l = model.NewBoolVar(f"has_sunday_l_{w}_{day-1}")
                     has_sunday_f = model.NewBoolVar(f"has_sunday_f_{w}_{day-1}")
@@ -221,7 +221,7 @@ def no_free__days_close(model, shift, workers, working_days, start_weekday, week
             all_work_days = [
                 d for week, days in week_to_days.items()
                 for d in days
-                if d in working_days[w] and (start_weekday + d - 3) % 7 not in [5, 6]
+                if d in working_days[w] and (start_weekday + d - 2) % 7 not in [5, 6]
             ]
 
             # Sort days to ensure they're in chronological order
@@ -257,7 +257,7 @@ def no_free__days_close(model, shift, workers, working_days, start_weekday, week
                 # Collect all workdays for this worker (excluding weekends)
                 all_work_days = [
                     d for d in working_days[w]
-                    if (start_weekday + d - 3) % 7 not in [5, 6]
+                    if (start_weekday + d - 2) % 7 not in [5, 6]
                 ]
 
                 # Sort days to ensure they're in chronological order
@@ -312,7 +312,7 @@ def no_free__days_close(model, shift, workers, working_days, start_weekday, week
                     # Collect all workdays for this worker (excluding weekends)
                     all_work_days = [
                         d for d in working_days[w]
-                        if (start_weekday + d - 3) % 7 not in [5, 6]
+                        if (start_weekday + d - 2) % 7 not in [5, 6]
                     ]
 
                     # Sort days to ensure they're in chronological order
@@ -368,8 +368,22 @@ def day_to_date(cal, d):
     # Assuming `cal['DATA']` has a sequence of dates, you can do something like:
     return cal.iloc[d - 1]['DATA']
 
-def space_LQs (model, shift, workers, working_days, t_lq, cal):
+def space_LQs (model, shift, workers, working_days, t_lq, cal=None):
     # Constraint for LQs per month (0 <= LQ <= 2) for workers with LQ = 12
+    # Approximate month mapping: day 1-31 = month 1, day 32-59 = month 2, etc.
+    # This assumes days are numbered sequentially from start of year
+    
+    def day_to_month(day):
+        """Convert day number to month (approximate)"""
+        # Approximate days per month: 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+        month_starts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335]
+        for i, start in enumerate(month_starts):
+            if i == len(month_starts) - 1:  # December
+                return 12
+            elif day < month_starts[i + 1]:
+                return i + 1
+        return 12  # Default to December if beyond expected range
+    
     for w in workers:
         if t_lq[w] == 12:
             for month in range(1, 13):  # Loop over all 12 months
@@ -379,7 +393,7 @@ def space_LQs (model, shift, workers, working_days, t_lq, cal):
                 # Sum the LQ shifts for the worker in the current month
                 lq_shifts_in_month = []
                 for d in working_days[w]:
-                    if day_to_date(cal, d).month == month:
+                    if day_to_month(d) == month:
                         lq_shifts_in_month.append(shift.get((w, d, "LQ"), 0))
 
                 # Enforce the sum of LQ shifts in the month to be between 0 and 2
@@ -462,7 +476,7 @@ def prio_2_3_workers(model, shift, workers, working_days, special_days, start_we
                     model.Add(sum_work_shifts == 0).OnlyEnforceIf(works_special_day.Not())
                     
                     # Get the week number for this special day
-                    week_number = (special_day + start_weekday - 3) // 7 + 1
+                    week_number = (special_day + start_weekday - 2) // 7 + 1
                     week_days = [d for d in week_to_days.get(week_number, []) 
                                 if d in working_days[w] and d not in special_days]
                     
@@ -508,7 +522,7 @@ def compensation_days(model, shift, workers, working_days, special_days, start_w
                             if (day in working_days[w] and 
                                 day != d and 
                             day not in special_days
-                            and (day + start_weekday - 3) % 7 != 5)
+                            and (day + start_weekday - 2) % 7 != 5)
                         ])
                     
                     # Store possible compensation days for this special day
@@ -666,10 +680,12 @@ def one_free_day_weekly(model, shift, week_to_days, workers, working_days, contr
 #----------------------------------------CONSTRAINTS 3-DAY-QUALITY-WEEKEND-------------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------------------------
-def maxi_free_days_c3d(new_model, new_shift, workers, days_of_year, total_l):
+def maxi_free_days_c3d(new_model, new_shift, workers, days_of_year, total_l, contract_type, c3d):
     for w in workers:
-        new_model.Add(sum(new_shift[(w, d, "L")] + new_shift[(w, d, "LQ")] + new_shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0))
-
+        # if contract_type[w] == 6:
+        #     new_model.Add(sum(new_shift[(w, d, "L")] + new_shift[(w, d, "LQ")] + new_shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0) - 1)
+        # else:
+            new_model.Add(sum(new_shift[(w, d, "L")] + new_shift[(w, d, "LQ")] + new_shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0))
 #--------------------------------------------------------------------------------------------------------------------------------------
 def maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d):
 #constraint for maximum of LQ days in a year
@@ -680,22 +696,46 @@ def maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d)
 
 #--------------------------------------------------------------------------------------------------------------------------------------
 def assigns_solution_days(new_model, new_shift, workers, days_of_year, schedule_df, working_days, start_weekday, shifts):
+    # Import logger
+    from base_data_project.log_config import get_logger
+    from src.config import PROJECT_NAME
+    logger = get_logger(PROJECT_NAME)
+    
     day_changed = []
     shift_mapping = {s: idx for idx, s in enumerate(shifts)}
-
-
+    
+    logger.info(f"DEBUG: start_weekday = {start_weekday}")
+    logger.info(f"DEBUG: Total workers: {len(workers)}, Total days: {len(days_of_year)}")
+    logger.info(f"DEBUG: Schedule DataFrame shape: {schedule_df.shape}")
+    logger.info(f"DEBUG: Schedule DataFrame columns: {list(schedule_df.columns)[:10]}...")  # Show first 10 columns
+    logger.info(f"DEBUG: Workers in function: {workers[:5]}...")  # Show first 5 workers
+    logger.info(f"DEBUG: Workers in DataFrame: {schedule_df['Worker'].tolist()[:5]}...")  # Show first 5 workers from DF
+    logger.info(f"DEBUG: Sample data from first worker:")
+    if not schedule_df.empty:
+        first_worker = schedule_df.iloc[0]['Worker']
+        sample_days = [f"Day {d}" for d in sorted(days_of_year)[:5]]
+        for col in sample_days:
+            if col in schedule_df.columns:
+                value = schedule_df.loc[schedule_df['Worker'] == first_worker, col].values[0]
+                logger.info(f"  {col}: {value}")
+    logger.info(f"DEBUG: Days of year: {sorted(days_of_year)[:10]}...")  # Show first 10 days
 
     # First pass: identify exception days
+    mt_shift_count = 0
+    friday_mt_count = 0
+    monday_mt_count = 0
+    
     for w in workers:
         for d in days_of_year:
             # Skip days not in the schedule or not working days
             day_column = f"Day {d}"
-            if day_column not in schedule_df.columns or d not in working_days[w]:
+            if (day_column not in schedule_df.columns) or (d not in working_days[w]):
                 continue
             
             # Get worker's shift
             worker_row = schedule_df.loc[schedule_df['Worker'] == w]
             if worker_row.empty:
+                logger.warning(f"DEBUG: Worker {w} not found in DataFrame!")
                 continue
             
             assigned_shift = worker_row[day_column].values[0]
@@ -704,24 +744,39 @@ def assigns_solution_days(new_model, new_shift, workers, days_of_year, schedule_
             if assigned_shift not in ['M', 'T']:
                 continue
                 
+            mt_shift_count += 1
+            
             # Calculate weekday (0 = Monday, 4 = Friday)
-            weekday = (d + start_weekday - 3 ) % 7
+            weekday = (d + start_weekday - 2 ) % 7
+            
+            logger.info(f"DEBUG: Worker {w}, Day {d}, start_weekday{start_weekday},Shift {assigned_shift}, Weekday {weekday}")
             
             # Check Friday exception (followed by LQ and L)
             if weekday == 4:
+                friday_mt_count += 1
                 next_columns = [f"Day {d + 1}", f"Day {d + 2}"]
                 if all(col in schedule_df.columns for col in next_columns):
                     next_shifts = [schedule_df.loc[schedule_df['Worker'] == w, col].values[0] for col in next_columns]
+                    logger.info(f"DEBUG: Friday {d} - Next shifts: {next_shifts}")
                     if next_shifts == ['LQ', 'L'] or next_shifts == ['LQ', 'F'] or next_shifts == ['F', 'L'] or next_shifts == ['F', 'F']:
+                        logger.info(f"DEBUG: FRIDAY EXCEPTION FOUND - Worker {w}, Day {d}")
                         day_changed.append((w, d))
             
             # Check Monday exception (preceded by L and LQ)
             elif weekday == 0:
+                monday_mt_count += 1
                 prev_columns = [f"Day {d - 1}", f"Day {d - 2}"]
                 if all(col in schedule_df.columns for col in prev_columns):
                     prev_shifts = [schedule_df.loc[schedule_df['Worker'] == w, col].values[0] for col in prev_columns]
+                    logger.info(f"DEBUG: Monday {d} - Prev shifts: {prev_shifts}")
                     if prev_shifts == ['L', 'LQ'] or prev_shifts == ['L', 'F'] or prev_shifts == ['F', 'LQ'] or prev_shifts == ['F', 'F']:
+                        logger.info(f"DEBUG: MONDAY EXCEPTION FOUND - Worker {w}, Day {d}")
                         day_changed.append((w, d))
+    
+    logger.info(f"DEBUG: Total M/T shifts found: {mt_shift_count}")
+    logger.info(f"DEBUG: Friday M/T shifts: {friday_mt_count}")
+    logger.info(f"DEBUG: Monday M/T shifts: {monday_mt_count}")
+    logger.info(f"DEBUG: Total exceptions found: {len(day_changed)}")
 
     # Second pass: assign shifts
     for w in workers:
@@ -736,7 +791,7 @@ def assigns_solution_days(new_model, new_shift, workers, days_of_year, schedule_
             assigned_shift = worker_row[day_column].values[0]
                 # Handle exception days (M/T on Monday or Friday)
             if (w, d) in day_changed:
-              #  print(f"Worker {w} on day {d} has an exception shift: {assigned_shift}")
+        
                 # Allow only M, T, or LQ shifts on these days
                 new_model.Add(new_shift[(w, d, "M")] + new_shift[(w, d, "T")] + new_shift[(w, d, "LQ")] == 1)
             else:
@@ -754,7 +809,8 @@ def assigns_solution_days(new_model, new_shift, workers, days_of_year, schedule_
                         if s != assigned_shift:
                             new_model.Add(new_shift[(w, d, s)] == 0)
                 else:
-                    print(f"Warning: Assigned shift '{assigned_shift}' for worker {w} on day {d} is not in the shift mapping.")
+                    logger.warning(f"Warning: Assigned shift '{assigned_shift}' for worker {w} on day {d} is not in the shift mapping.")
+    return day_changed  # Return the list of days that were changed for further processing if needed
 
 
 #--------------------------------------------------------------------------------------------------------------------------------------
@@ -769,7 +825,7 @@ def day3_quality_weekend(new_model, new_shift, workers, working_days, start_week
             all_days = set(working_days[w]) | set(closed_holidays)
             for d in all_days:
                 # Check for Saturday (day 6 of the week, index 5)
-                if (d + start_weekday - 3 ) % 7 == 5:  # Saturday
+                if (d + start_weekday - 2 ) % 7 == 5:  # Saturday
                     # Check if Sunday is also a working day
                     if d + 1 in working_days[w] or d + 1 in closed_holidays:
                         # Check if Saturday and Sunday already form a 2-day quality weekend

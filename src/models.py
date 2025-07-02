@@ -3092,9 +3092,9 @@ class DescansosDataModel(BaseDataModel):
                 
                 # Save CSV files for debugging
                 try:
-                    matrizA_bk.to_csv(os.path.join('data', 'output', f'df_colaborador-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
-                    matriz2_bk.to_csv(os.path.join('data', 'output', f'df_calendario-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
-                    matrizB_bk.to_csv(os.path.join('data', 'output', f'df_estimativas-{self.external_call_data.get("current_process_id", '')}.csv'), index=False, encoding='utf-8')
+                    matrizA_bk.to_csv(os.path.join('data', 'output', f'df_colaborador-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
+                    matriz2_bk.to_csv(os.path.join('data', 'output', f'df_calendario-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
+                    matrizB_bk.to_csv(os.path.join('data', 'output', f'df_estimativas-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
                     self.logger.info("CSV debug files saved successfully")
                 except Exception as csv_error:
                     self.logger.warning(f"Failed to save CSV debug files: {csv_error}")
