@@ -622,6 +622,7 @@ class DescansosDataModel(BaseDataModel):
                 return False
 
             try:
+                # Set up calendario passado dates
                 self.logger.info("Setting up calendario passado dates")
                 # Calendario passado - FIXED: Added proper type conversion
                 main_year = str(self.auxiliary_data.get('main_year', ''))
@@ -641,6 +642,7 @@ class DescansosDataModel(BaseDataModel):
                 return False
 
             try:
+                # Filter employees by admission date
                 self.logger.info("Filtering employees by admission date")
                 df_colaborador = self.raw_data['df_colaborador']
                 start_date_dt = pd.to_datetime(start_date)
@@ -653,6 +655,25 @@ class DescansosDataModel(BaseDataModel):
             except Exception as e:
                 self.logger.error(f"Error filtering employees by admission date: {e}", exc_info=True)
                 colabs_passado = []
+
+            # Treat colabs_passado str
+            try:
+                self.logger.info("Treating colabs_passado str")
+                self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
+                if len(colabs_passado) == 0:
+                    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
+                    return False
+                elif len(colabs_passado) == 1:
+                    self.logger.info(f"colabs_passado has only one value: {colabs_passado[0]}")
+                    colabs_str = str(colabs_passado[0])
+                elif len(colabs_passado) > 1:
+                    # Fix: Create a proper comma-separated list of numbers without any quotes
+                    self.logger.info(f"colabs_passado has more than one value: {colabs_passado}")
+                    colabs_str = ','.join(str(x) for x in colabs_passado)
+                self.logger.info(f"colabs_str: {colabs_str}")
+            except Exception as e:
+                self.logger.error(f"Error treating colabs_passado str: {e}", exc_info=True)
+                colabs_str = ''
 
             try:
                 # Only query if we have employees and the date range makes sense
@@ -668,7 +689,7 @@ class DescansosDataModel(BaseDataModel):
                             query_file=query_path, 
                             start_date=first_date_passado, 
                             end_date=last_date_passado, 
-                            colabs=colabs_passado
+                            colabs=colabs_str
                         )
                         self.logger.info(f"df_calendario_passado shape (rows {df_calendario_passado.shape[0]}, columns {df_calendario_passado.shape[1]}): {df_calendario_passado.columns.tolist()}")
                 else:
@@ -2849,9 +2870,10 @@ class DescansosDataModel(BaseDataModel):
                     continue
                     
                 mmA = mmA.iloc[0:1].copy()  # Take first row if multiple
-                tipo_contrato = mmA['tipo_contrato'].iloc[0]
-                ciclo = mmA['ciclo'].iloc[0] if 'ciclo' in mmA.columns else ''
-                dyf_max_t = mmA['dyf_max_t'].iloc[0] if 'dyf_max_t' in mmA.columns else 0
+                tipo_contrato = int(mmA['tipo_contrato'].iloc[0])
+                ciclo = str(mmA['ciclo'].iloc[0]).upper() if 'ciclo' in mmA.columns else ''
+                dyf_max_t = int(mmA['dyf_max_t'].iloc[0]) if 'dyf_max_t' in mmA.columns else 0
+                self.logger.info(f"DEBUG: colab {colab} mmA: {mmA}")
                 
                 if tipo_contrato == 2:
                     # Process 2-day contracts using calcular_folgas2
@@ -2916,6 +2938,8 @@ class DescansosDataModel(BaseDataModel):
                     matrizA_bk = pd.concat([matrizA_bk, mmA], ignore_index=True)
                     
                 elif dyf_max_t == 0 and ciclo not in ['COMPLETO']:
+                    self.logger.info(f"DEBUG: primeiro if")
+                    self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
                     # Employee doesn't work any Sunday - force all Sundays with L
                     mmA.loc[:, 'l_total'] = mmA['l_total'].iloc[0] - mmA['l_dom'].iloc[0]
                     mmA.loc[:, 'l_dom'] = 0
@@ -2932,6 +2956,8 @@ class DescansosDataModel(BaseDataModel):
                     matriz2_bk = pd.concat([pd.DataFrame(matriz2_bk), pd.DataFrame(new_c)], ignore_index=True)
                     
                 elif ciclo in ['SIN DYF']:
+                    self.logger.info(f"DEBUG: segundo if")
+                    #self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
                     # Special cycle: only assign Sundays and LD
                     mmA.loc[:, 'c2d'] = mmA['c2d'].iloc[0] - mmA['c3d'].iloc[0]
                     mmA.loc[:, 'l_total'] = (mmA['l_dom'].iloc[0] + mmA['l_d'].iloc[0] + 
@@ -2948,9 +2974,13 @@ class DescansosDataModel(BaseDataModel):
                 
                 # Handle COMPLETO cycle - reset all L values
                 if ciclo == 'COMPLETO':
+                    self.logger.info(f"DEBUG: terceiro if")
+                    self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
                     # Reset all columns from position 9 onwards to 0
-                    cols_to_reset = mmA.columns[8:]  # Assuming position 9 is index 8
+                    #cols_to_reset = mmA.columns[8:]  # Assuming position 9 is index 8
+                    cols_to_reset = ['l_total', 'l_dom', 'l_d', 'l_q', 'l_qs', 'c2d', 'c3d', 'cxx','descansos_atrb', 'dyf_max_t', 'lq_og', 'vz', 'l_res']
                     mmA.loc[:, cols_to_reset] = 0
+                    self.logger.info(f"DEBUG: cols_to_reset: {cols_to_reset}")
                     
                     # Update matrizA_bk
                     matrizA_bk = matrizA_bk[matrizA_bk['matricula'] != colab]
@@ -2959,6 +2989,7 @@ class DescansosDataModel(BaseDataModel):
                 # Handle CXX for 4/5 day contracts
                 if (tipo_contrato in [4, 5] and mmA['cxx'].iloc[0] > 0 and 
                     ciclo not in ['SIN DYF', 'COMPLETO']):
+                    self.logger.info(f"DEBUG: quarto if")
                     
                     mmA.loc[:, 'l_res2'] = mmA['l_res'].iloc[0] - mmA['cxx'].iloc[0]
                     mmA.loc[:, 'l_res'] = mmA['cxx'].iloc[0]
@@ -2967,12 +2998,49 @@ class DescansosDataModel(BaseDataModel):
                     matrizA_bk = matrizA_bk[matrizA_bk['matricula'] != colab]
                     matrizA_bk = pd.concat([pd.DataFrame(matrizA_bk), pd.DataFrame(mmA)], ignore_index=True)
                 else:
+                    self.logger.info(f"DEBUG: ultimo else")
                     mmA.loc[:, 'l_res2'] = 0
                     
                     # Update matrizA_bk
                     matrizA_bk = matrizA_bk[matrizA_bk['matricula'] != colab]
                     matrizA_bk = pd.concat([pd.DataFrame(matrizA_bk), pd.DataFrame(mmA)], ignore_index=True)
             
+            self.logger.info(f"DEBUG: algoritmo: {self.auxiliary_data['GD_algorithmName']}")
+            self.logger.info(f"DEBUG: matrizA_bk shape: {matrizA_bk.shape}")
+            self.logger.info(f"DEBUG: matrizA_bk columns: {matrizA_bk.columns.tolist()}")
+            
+            # Check if target columns exist
+            target_cols = ['l_res', 'l_d']
+            existing_cols = [col for col in target_cols if col in matrizA_bk.columns]
+            missing_cols = [col for col in target_cols if col not in matrizA_bk.columns]
+            self.logger.info(f"DEBUG: existing target columns: {existing_cols}")
+            self.logger.info(f"DEBUG: missing target columns: {missing_cols}")
+            
+            # Log before values
+            for col in existing_cols:
+                self.logger.info(f"DEBUG: {col} before reset: {matrizA_bk[col].tolist()}")
+            
+            if self.auxiliary_data['GD_algorithmName'] == 'salsa_algorithm':
+                self.logger.info("DEBUG: Condition met - applying salsa_algorithm zeros")
+                if 'l_res' in matrizA_bk.columns:
+                    matrizA_bk.loc[:, 'l_res'] = 0
+                    self.logger.info(f"DEBUG: Set l_res to 0, now values: {matrizA_bk['l_res'].tolist()}")
+                else:
+                    self.logger.warning("DEBUG: Column 'l_res' not found in matrizA_bk")
+                    
+                if 'l_d' in matrizA_bk.columns:
+                    matrizA_bk.loc[:, 'l_d'] = 0
+                    self.logger.info(f"DEBUG: Set l_d to 0, now values: {matrizA_bk['l_d'].tolist()}")
+                else:
+                    self.logger.warning("DEBUG: Column 'l_d' not found in matrizA_bk")
+            else:
+                self.logger.info(f"DEBUG: Condition NOT met - algorithm is {self.auxiliary_data['GD_algorithmName']}, not salsa_algorithm")
+                
+            # Log after values
+            for col in existing_cols:
+                if col in matrizA_bk.columns:
+                    self.logger.info(f"DEBUG: {col} after reset: {matrizA_bk[col].tolist()}")
+
             # Final cleanup of matrizA_bk
             matrizA_bk = matrizA_bk.drop('dyf_max_t', axis=1, errors='ignore')
             matrizA_bk = matrizA_bk.reset_index(drop=True)
