@@ -94,6 +94,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
         self.logger.info(f"Initialized {self.algo_name} with parameters: {self.parameters}")
 
 
+
     def adapt_data(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         """
         Adapt input data for the shift scheduling algorithm.
@@ -323,40 +324,13 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Apply all constraints
             self._apply_stage1_constraints(
-                model=model, 
-                shift=shift, 
-                days_of_year=days_of_year, 
-                workers=workers, 
-                shifts=shifts, 
-                check_shift=check_shift, 
-                check_shift_special=check_shift_special, 
-                working_shift=working_shift, 
-                max_continuous_days=max_continuous_days, 
-                week_to_days=week_to_days,
-                working_shift_2=working_shift_2, 
-                contract_type=contract_type, 
-                special_days=special_days, 
-                total_l=total_l, 
-                c2d=c2d, 
-                c3d=c3d, 
-                working_days=working_days,
-                total_l_dom=total_l_dom,
-                tc=tc,
-                l_d=l_d,
-                l_q=l_q,
-                cxx=cxx,
-                t_lq=t_lq, 
-                matriz_calendario_gd=matriz_calendario_gd, 
-                workers_complete=workers_complete, 
-                workers_complete_cycle=workers_complete_cycle,
-                free_day_complete_cycle=free_day_complete_cycle,
-                closed_holidays=closed_holidays,
-                worker_holiday=worker_holiday,
-                missing_days=missing_days,
-                empty_days=empty_days,
-                worker_week_shift=worker_week_shift,
-                start_weekday=start_weekday,
-                sundays=sundays
+                                 model, shift, days_of_year, workers, shifts, check_shift, 
+                                 check_shift_special, working_shift, max_continuous_days, week_to_days,
+                                 working_shift_2, contract_type, special_days, total_l, c2d, c3d, working_days,
+                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, worker_holiday,
+                                 missing_days, empty_days, worker_week_shift, start_weekday, sundays,
+                                 t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
+                                 free_day_complete_cycle
 )
 
             self.logger.info("Constraints applied for Stage 1")
@@ -369,15 +343,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
-            schedule_df = solve(
-                model = model, 
-                days_of_year = days_of_year, 
-                workers = workers, 
-                special_days = special_days, 
-                shift = shift, 
-                shifts = shifts,
-                output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
-            # TODO: rever onde se guarda os resultados e lógica try/exceptions
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
             self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
@@ -392,23 +358,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
             new_shift = decision_variables(new_model, days_of_year, workers_complete, shifts)
             
             # Apply Stage 2 constraints
-            self._apply_stage2_constraints(
-                new_model=new_model, 
-                new_shift=new_shift, 
-                days_of_year=days_of_year, 
-                workers=workers, 
-                shifts=shifts,
-                total_l=total_l, 
-                working_days=working_days, 
-                workers_complete=workers_complete,
-                workers_complete_cycle=workers_complete_cycle,
-                l_q=l_q, 
-                c2d=c2d, 
-                c3d=c3d, 
-                schedule_df=schedule_df, 
-                start_weekday=start_weekday,
-                contract_type=contract_type, 
-                closed_holidays=closed_holidays)
+            self._apply_stage2_constraints(new_model, new_shift, days_of_year, workers, shifts,
+                                 total_l, working_days, l_q, c2d, c3d, schedule_df, start_weekday,
+                                 contract_type, closed_holidays, workers_complete, workers_complete_cycle)
             
             # Apply optimization (reusing from Stage 1)
             optimization_prediction(
@@ -419,8 +371,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 2
             self.logger.info("Solving Stage 2 model")
-            final_schedule_df = solve(new_model, days_of_year, workers, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
-            self.logger.info(f"DEBUG: final_schedule_df: {final_schedule_df}")
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
             #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
             self.final_schedule = pd.DataFrame(final_schedule_df).copy()
             
@@ -429,9 +380,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
         except Exception as e:
             self.logger.error(f"Error in algorithm execution: {e}", exc_info=True)
-            final_schedule_df = pd.DataFrame()
-            self.final_schedule = final_schedule_df
-            return final_schedule_df
+            raise
 
     def _apply_stage1_constraints(self, model, shift, days_of_year, workers, shifts, check_shift, 
                                  check_shift_special, working_shift, max_continuous_days, week_to_days,
@@ -458,10 +407,10 @@ class AlcampoAlgorithm(BaseAlgorithm):
         maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
         
         # Constraint for free days on special days
-        free_days_special_days(model, shift, special_days, workers, working_days, total_l_dom)
+        # free_days_special_days(model, shift, special_days, workers, working_days, total_l_dom)
         
         # TC attribution constraint
-        tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days)
+        # tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days)
         
         # Working days special days constraint
         working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type)
@@ -476,10 +425,10 @@ class AlcampoAlgorithm(BaseAlgorithm):
         closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
         
         # Holiday, missing days and empty days attribution
-        # holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
+        holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
         
         # Worker week shift assignments #####
-        # assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
+        assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
         
         # Working day shifts constraint
         working_day_shifts(model, shift, workers, working_days, check_shift)
@@ -512,7 +461,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
         
         # Limits LDs per week
         limits_LDs_week(model, shift, week_to_days, workers, special_days)
-        
+    
         # One free day weekly
         one_free_day_weekly(model, shift, week_to_days, workers, working_days, contract_type, closed_holidays)
 
@@ -565,90 +514,61 @@ class AlcampoAlgorithm(BaseAlgorithm):
             # Get result dfs
             stage1_schedule = pd.DataFrame(self.schedule_stage1).copy()
             stage2_schedule = pd.DataFrame(self.final_schedule).copy()
+
             # Calculate some basic statistics
             total_workers = len(algorithm_results['Worker'].unique()) if 'Worker' in algorithm_results.columns else 0
             total_days = len(algorithm_results['Day'].unique()) if 'Day' in algorithm_results.columns else 0
             total_assignments = len(algorithm_results)
+            
+            # Count shift distributions
+            shift_distribution = {}
+            if 'Shift' in algorithm_results.columns:
+                shift_distribution = algorithm_results['Shift'].value_counts().to_dict()
+            
+            # DEBUG: R logic convertion 
+            # Equivalent to the R naming operation
+            date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+            new_columns = ['Worker'] + [str(date) for date in date_range]
+            stage1_schedule.columns = new_columns
 
-            if not stage1_schedule.empty and not stage2_schedule.empty:
+            # Equivalent to reshape2::melt
+            stage1_schedule = pd.melt(stage1_schedule, 
+                                    id_vars=['Worker'], 
+                                    var_name='Date', 
+                                    value_name='Status')
 
-                self.logger.info(f"Stage 1 schedule: {stage1_schedule}")
-                self.logger.info(f"Stage 2 schedule: {stage2_schedule}")
+            date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+            new_columns = ['Worker'] + [str(date) for date in date_range]
+            stage2_schedule.columns = new_columns
 
-                
-                # Count shift distributions
-                shift_distribution = {}
-                if 'Shift' in algorithm_results.columns:
-                    shift_distribution = algorithm_results['Shift'].value_counts().to_dict()
-                
-                # DEBUG: R logic convertion 
-                # Equivalent to the R naming operation
-                date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
-                new_columns = ['Worker'] + [str(date) for date in date_range]
-                self.logger.info(f"Stage 1 schedule columns: {stage1_schedule.columns}")
-                self.logger.info(f"new columns: {new_columns}")
-                stage1_schedule.columns = new_columns
+            # Equivalent to reshape2::melt
+            stage2_schedule = pd.melt(stage2_schedule, 
+                                    id_vars=['Worker'], 
+                                    var_name='Date', 
+                                    value_name='Status')            
 
-                # Equivalent to reshape2::melt
-                stage1_schedule = pd.melt(stage1_schedule, 
-                                        id_vars=['Worker'], 
-                                        var_name='Date', 
-                                        value_name='Status')
-
-                date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
-                new_columns = ['Worker'] + [str(date) for date in date_range]
-                stage2_schedule.columns = new_columns
-
-                # Equivalent to reshape2::melt
-                stage2_schedule = pd.melt(stage2_schedule, 
-                                        id_vars=['Worker'], 
-                                        var_name='Date', 
-                                        value_name='Status')            
-
-                formatted_results = {
-                    'schedule': algorithm_results,
-                    'metadata': {
-                        'algorithm_name': self.algo_name,
-                        'total_workers': total_workers,
-                        'total_days': total_days,
-                        'total_assignments': total_assignments,
-                        'shift_distribution': shift_distribution,
-                        'execution_timestamp': datetime.now().isoformat(),
-                        'parameters_used': self.parameters
-                    },
-                    'stage1_schedule': stage1_schedule,
-                    'stage2_schedule': stage2_schedule,
-                    'summary': {
-                        'status': 'completed',
-                        'message': f'Successfully scheduled {total_workers} workers over {total_days} days'
-                    }
+            formatted_results = {
+                'schedule': algorithm_results,
+                'metadata': {
+                    'algorithm_name': self.algo_name,
+                    'total_workers': total_workers,
+                    'total_days': total_days,
+                    'total_assignments': total_assignments,
+                    'shift_distribution': shift_distribution,
+                    'execution_timestamp': datetime.now().isoformat(),
+                    'parameters_used': self.parameters
+                },
+                'stage1_schedule': self.schedule_stage1,
+                'stage2_schedule': self.final_schedule,
+                'summary': {
+                    'status': 'completed',
+                    'message': f'Successfully scheduled {total_workers} workers over {total_days} days'
                 }
+            }
 
 
-                
-                self.logger.info(f"Results formatted successfully: {total_assignments} assignments created")
-            else:
-                self.logger.warning("No results available to format")
-
-                formatted_results = {
-                    'schedule': pd.DataFrame(),
-                    'metadata': {
-                        'algorithm_name': self.algo_name,
-                        'total_workers': 0,
-                        'total_days': 0,
-                        'total_assignments': 0,
-                        'shift_distribution': {},
-                        'execution_timestamp': datetime.now().isoformat(),
-                        'parameters_used': self.parameters
-                    },
-                    'stage1_schedule': pd.DataFrame(),
-                    'stage2_schedule': pd.DataFrame(),
-                    'summary': {
-                        'status': 'completed',
-                        'message': f'Unsuccessfully scheduled {total_workers} workers over {total_days} days'
-                    }
-                }
-
+            
+            self.logger.info(f"Results formatted successfully: {total_assignments} assignments created")
             return formatted_results
             
         except Exception as e:
