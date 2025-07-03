@@ -63,7 +63,7 @@ CONFIG = {
     ],
 
     'parameters_defaults': {
-        'algorithm_name': 'alcampo_algorithm',
+        'algorithm_name': 'salsa_algorithm',
         'GD_gloablMaxThreads': 4,
         'GD_maxThreads': 2,
         'gloablMaxThreads': 4,
@@ -71,7 +71,7 @@ CONFIG = {
         'maxRetries': 3,
         'sleepTime': 1000,
         'test_param_scheduling_threshold': 0.75,
-        'GD_algorithmName': 'Espanhol',
+        'GD_algorithmName': 'salsa_algorithm',
         'GD_consideraFestivos': 1,
         'GD_convenioBD': 'ALCAMPO',
     },
