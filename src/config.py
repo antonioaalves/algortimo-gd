@@ -94,16 +94,6 @@ CONFIG = {
         'df_calendario_passado': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_calendario_passado.csv'),
         'df_granularidade': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_granularidade.csv'),
     },
-
-    'external_call_data': {
-        'current_process_id': 249655,# 249468,
-        'api_proc_id': 999,
-        'wfm_proc_id': 249468,
-        'wfm_user': 'WFM',
-        'start_date': '2025-01-01', #2025-01-01
-        'end_date': '2025-12-31', #2025-12-31
-        'wfm_proc_colab': None, 
-    }, # TODO: create the default values to run locally
     
     'available_entities_processing': {
         'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'get_process_valid_employess.sql'),
