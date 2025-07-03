@@ -680,7 +680,7 @@ def one_free_day_weekly(model, shift, week_to_days, workers, working_days, contr
 #----------------------------------------CONSTRAINTS 3-DAY-QUALITY-WEEKEND-------------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------------------------
-def maxi_free_days_c3d(new_model, new_shift, workers, days_of_year, total_l, contract_type, c3d):
+def maxi_free_days_c3d(new_model, new_shift, workers, days_of_year, total_l):
     for w in workers:
         # if contract_type[w] == 6:
         #     new_model.Add(sum(new_shift[(w, d, "L")] + new_shift[(w, d, "LQ")] + new_shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0) - 1)

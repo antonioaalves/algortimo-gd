@@ -64,7 +64,7 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
         click.echo()
         
         # Run each stage (same stages as main.py)
-        stages = ['data_loading', 'processing', 'result_analysis']
+        stages = ['data_loading', 'processing']
         for stage in stages:
             click.echo(click.style(f"Stage: {stage}", fg="blue", bold=True))
             

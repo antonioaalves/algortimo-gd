@@ -271,6 +271,10 @@ class AlgoritmoGDService(BaseService):
                 stage_config = CONFIG.get('stages', {}).get('processing', {})
                 decisions = stage_config.get('decisions', {})
 
+                self.logger.info(f"Decisions: {decisions}")
+                self.logger.info(f"Decisions type: {type(decisions)}")
+
+                # TODO: Remove this sine the algorithm_name comes from parasm
                 algorithm_name = decisions.get('algorithm', {}).get('name', algorithm_name)
                 algorithm_params = decisions.get('algorithm', {}).get('parameters', algorithm_params)
                 insert_results = decisions.get('insertions', {}).get('insert_results', False)
@@ -292,9 +296,10 @@ class AlgoritmoGDService(BaseService):
             posto_id_list = self.data.auxiliary_data.get('posto_id_list', [])
             for posto_id in posto_id_list:
                 #if posto_id != 153: continue # TODO: remove this, just for testing purposes
+                self.data.auxiliary_data['current_posto_id'] = posto_id
                 progress = 0.0
                 if self.stage_handler:
-                    self.stage_handler.start_substage('processing', 'connection')
+                    self.stage_handler.start_substage('processing', 'treat_params')
                 
                 if self.stage_handler:
                     self.stage_handler.track_progress(
@@ -303,20 +308,20 @@ class AlgoritmoGDService(BaseService):
                         message="Starting the processing stage and consequent substages"
                     )
                 # SUBSTAGE 1: connection
-                valid_connection = self._execute_connection_substage(stage_name)
+                valid_connection = self._execute_treatment_params_substage(stage_name)
                 if not valid_connection:
                     if self.stage_handler:
                         self.stage_handler.track_progress(
                             stage_name=stage_name,
                             progress=0.0,
-                            message="Error connecting to data source, returning False"
+                            message="Error treating parameters, returning False"
                         )
                     return False
                 if self.stage_handler:
                     self.stage_handler.track_progress(
                         stage_name=stage_name,
                         progress=(progress+0.2)/len(posto_id_list),
-                        message="Valid connection established, advancing to next substage"
+                        message="Valid treat_params substage, advancing to next substage"
                     )
 
                 # SUBSTAGE 2: load_matrices
@@ -445,41 +450,64 @@ class AlgoritmoGDService(BaseService):
         # Implement the logic if needed
         return True
 
-    def _execute_connection_substage(self, stage_name: str = 'processing') -> bool:
+    def _execute_treatment_params_substage(self, stage_name: str = 'processing') -> bool:
         """
         Execute the processing substage of connection. This could be implemented as a method or directly on the _execute_processing_stage() method
         """
         try:
-            substage_name = 'connection'
-            self.logger.info("Connecting to data source")
+            substage_name = 'treat_params'
+            self.logger.info("Starting to treating parameters substage")
             
             # Establish connection to data source
-            self.data_manager.connect()
+            valid_params = self.data.treat_params()
             
+            if not valid_params:
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name,
+                        success=False, 
+                        result_data={"error": "Error treating parameters"}
+                    )
+                return False
+
             # Track progress for the connection substage
             if self.stage_handler:
                 self.stage_handler.track_substage_progress(
                     stage_name=stage_name, 
                     substage_name=substage_name,
-                    progress=1.0,  # 100% complete
-                    message="Connection established successfully"
+                    progress=0.5,  # 50% complete
+                    message="Parameters treated successfully"
                 )
+
+            valid_params_info = self.data.validate_params()
+            if not valid_params_info:
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name,
+                        success=False, 
+                        result_data={"error": "Error validating parameters"}
+                    )
+                return False
+
+            if self.stage_handler:
                 self.stage_handler.complete_substage(
                     stage_name=stage_name, 
                     substage_name=substage_name,
                     success=True, 
-                    result_data={"connection_info": "Connected to data source"}
+                    result_data={"params_info": "Parameters treated successfully"}
                 )
             return True
     
         except Exception as e:
-            self.logger.error(f"Error connecting to data source: {str(e)}")
+            self.logger.error(f"Error treating parameters: {str(e)}")
             if self.stage_handler:
                 self.stage_handler.complete_substage(
-                    "data_loading", 
-                    "connection", 
-                    False, 
-                    {"error": str(e)}
+                    stage_name=stage_name, 
+                    substage_name=substage_name, 
+                    success=False, 
+                    result_data={"error": str(e)}
                 )
             return False
         
@@ -937,7 +965,7 @@ class AlgoritmoGDService(BaseService):
                     result_data={
                         'format_results_success': success,
                         'validation_result': validation_result,
-                        'data': self.data.formated_data
+                        'data': self.data.formatted_data
                     }
                 )
             return validation_result

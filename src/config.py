@@ -38,6 +38,44 @@ CONFIG = {
     }, # TODO: ensure data/intermediate is created if it doesnt exist
     
     # File paths for CSV data sources
+    'external_call_data': {
+        'current_process_id': 1961,#253762,# 249468,
+        'api_proc_id': 999,
+        'wfm_proc_id': 1961,
+        'wfm_user': 'WFM',
+        'start_date': '2025-01-01',
+        'end_date': '2025-12-31',
+        'wfm_proc_colab': None, 
+    }, # TODO: create the default values to run locally
+
+    'parameters_names': [
+        'algorithm_name', # TODO: Define the real params names
+        'GD_gloablMaxThreads',
+        'GD_maxThreads',
+        'gloablMaxThreads',
+        'maxThreads',
+        'maxRetries',
+        'sleepTime',
+        'test_param_scheduling_threshold',
+        'GD_algorithmName',
+        'GD_consideraFestivos',
+        'GD_convenioBD',
+    ],
+
+    'parameters_defaults': {
+        'algorithm_name': 'alcampo_algorithm',
+        'GD_gloablMaxThreads': 4,
+        'GD_maxThreads': 2,
+        'gloablMaxThreads': 4,
+        'maxThreads': 2,
+        'maxRetries': 3,
+        'sleepTime': 1000,
+        'test_param_scheduling_threshold': 0.75,
+        'GD_algorithmName': 'Espanhol',
+        'GD_consideraFestivos': 1,
+        'GD_convenioBD': 'ALCAMPO',
+    },
+
     'dummy_data_filepaths': {
         # Example data files mapping - replace with your actual data files
         'valid_emp': os.path.join(ROOT_DIR, 'data', 'csvs', 'valid_emp.csv'),
@@ -57,15 +95,6 @@ CONFIG = {
         'df_granularidade': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_granularidade.csv'),
     },
 
-    'external_call_data': {
-        'current_process_id': 249655,# 249468,
-        'api_proc_id': 999,
-        'wfm_proc_id': 249468,
-        'wfm_user': 'WFM',
-        'start_date': '2025-01-01',
-        'end_date': '2025-12-31',
-        'wfm_proc_colab': None, 
-    }, # TODO: create the default values to run locally
     
     'available_entities_processing': {
         'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'get_process_valid_employess.sql'),
@@ -74,6 +103,7 @@ CONFIG = {
         'params_lq': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_params_LQ.sql'),
         'df_festivos':  os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_festivos.sql'),
         'df_closed_days': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_closed_days.sql'),
+        'params_df': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAlgoParameters.sql'),
     },
 
     'available_entities_aux': {
@@ -98,7 +128,8 @@ CONFIG = {
     # Available algorithms for the project
     'available_algorithms': [
         'alcampo_algorithm',
-        'example_algorithm'
+        'example_algorithm',
+        'salsa_algorithm',
         # Add your custom algorithms here
     ],
      
@@ -139,7 +170,7 @@ CONFIG = {
                     'fill_method': 'mean'       # Method for filling missing values
                 },
                 'algorithm': {
-                    'name': 'alcampo_algorithm',  # Default algorithm to use
+                    'name': 'salsa_algorithm',  # Default algorithm to use
                     'parameters': {}
                 },
                 'insertions': {
@@ -147,7 +178,7 @@ CONFIG = {
                 }
             },
             'substages': {
-                'connection': {
+                'treat_params': {
                     'sequence': 1,
                     'description': 'Establishing connection to data source',
                     'required': True,
@@ -171,7 +202,7 @@ CONFIG = {
                     'required': True,
                     'decisions': {
                         # Very important define the algorithms here
-                        'algorithms': ['alcampo_algorithm']
+                        'algorithms': ['salsa_algorithm']
                     }                     
                 },
                 'format_results': {

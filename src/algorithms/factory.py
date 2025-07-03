@@ -9,6 +9,7 @@ from base_data_project.storage.models import BaseDataModel
 
 # Local stuff
 from src.algorithms.alcampoAlgorithm import AlcampoAlgorithm
+from src.algorithms.salsaAlgorithm import SalsaAlgorithm
 from src.algorithms.example_algorithm import ExampleAlgorithm
 from src.config import PROJECT_NAME, CONFIG
 
@@ -42,6 +43,9 @@ class AlgorithmFactory:
         if decision.lower() == 'alcampo_algorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
             return AlcampoAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date) # TODO: define the algorithms here
+        elif decision.lower() == 'salsa_algorithm':
+            logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
+            return SalsaAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date) # TODO: define the algorithms here
         elif decision.lower() == 'FillBagsAlgorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
             return ExampleAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME)

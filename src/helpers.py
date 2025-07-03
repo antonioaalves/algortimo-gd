@@ -1173,3 +1173,102 @@ def calcular_folgas3(semana_df):
     l_dom = max(len(feriados) - 2, 0) if len(feriados) > 0 else 0
     
     return pd.DataFrame({'L_RES': [l_res], 'L_DOM': [l_dom]})
+
+def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None):
+    """
+    Get configuration for a specific posto_id following hierarchy:
+    1. Posto-specific (fk_tipo_posto = posto_id)
+    2. Section-specific (fk_tipo_posto is null, fk_secao has value)  
+    3. Default (all FKs are null)
+    Args:
+        df: pd.DataFrame, dataframe with parameters
+        posto_id: int, posto ID
+    Returns:
+        dict, configuration for the posto_id
+    """
+    """
+    Get configuration following the same logic as your original function.
+    Filters by unit_id, secao_id, posto_id with null fallbacks, then applies hierarchy.
+    """
+    if params_names_list is None or len(params_names_list) == 0 or not isinstance(params_names_list, list):
+        logger.error(f"params_names_list is None or empty")
+        return None
+
+    # Filter by parameter names
+    df_filtered = df[df['sys_p_name'].isin(params_names_list)].copy()
+    
+    # Filter by unit_id (exact match or null)
+    if unit_id is not None:
+        df_filtered = df_filtered[
+            (df_filtered['fk_unidade'] == unit_id) | 
+            (df_filtered['fk_unidade'].isna())
+        ]
+    
+    # Filter by secao (exact match or null)  
+    if secao_id is not None:
+        df_filtered = df_filtered[
+            (df_filtered['fk_secao'] == secao_id) | 
+            (df_filtered['fk_secao'].isna())
+        ]
+    
+    # Filter by posto (exact match or null)
+    if posto_id is not None:
+        df_filtered = df_filtered[
+            (df_filtered['fk_tipo_posto'] == posto_id) | 
+            (df_filtered['fk_tipo_posto'].isna())
+        ]
+    
+    # Remove duplicates (equivalent to your uniqueness logic)
+    df_filtered = df_filtered.drop_duplicates()
+
+    logger.info(f"DEBUG: df_filtered:\n {df_filtered}")
+    
+    # Now apply hierarchy for each parameter
+    params_dict = {}
+    
+    for param_name in params_names_list:
+        param_rows = df_filtered[df_filtered['sys_p_name'] == param_name]
+        
+        # Priority 1: Exact posto_id match (most specific)
+        posto_specific = param_rows[param_rows['fk_tipo_posto'] == posto_id]
+        if not posto_specific.empty:
+            value = get_value_from_row(posto_specific.iloc[0])
+            if value is not None:
+                params_dict[param_name] = value
+                continue
+        
+        # Priority 2: Section-specific (fk_tipo_posto is null, fk_secao matches)
+        section_specific = param_rows[
+            (param_rows['fk_tipo_posto'].isna()) & 
+            (param_rows['fk_secao'] == secao_id)
+        ]
+        if not section_specific.empty:
+            value = get_value_from_row(section_specific.iloc[0])
+            if value is not None:
+                params_dict[param_name] = value
+                continue
+        
+        # Priority 3: Default (all FKs are null)
+        default_rows = param_rows[
+            (param_rows['fk_tipo_posto'].isna()) & 
+            (param_rows['fk_secao'].isna()) & 
+            (param_rows['fk_grupo'].isna())
+        ]
+        if not default_rows.empty:
+            value = get_value_from_row(default_rows.iloc[0])
+            if value is not None:
+                params_dict[param_name] = value
+                logger.info(f"DEBUG: params values: {param_name}:{value}")
+    
+    return params_dict
+
+def get_value_from_row(row):
+    """Get the actual value from CHARVALUE, NUMBERVALUE, or DATEVALUE"""
+    # TODO: Check this logic
+    if pd.notna(row['charvalue']):
+        return row['charvalue']
+    elif pd.notna(row['numbervalue']):
+        return row['numbervalue']
+    elif pd.notna(row['datevalue']):
+        return row['datevalue']
+    return None
