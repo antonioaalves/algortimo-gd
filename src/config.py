@@ -62,8 +62,8 @@ CONFIG = {
         'api_proc_id': 999,
         'wfm_proc_id': 249468,
         'wfm_user': 'WFM',
-        'start_date': '2025-01-01',
-        'end_date': '2025-12-31',
+        'start_date': '2025-01-01', #2025-01-01
+        'end_date': '2025-12-31', #2025-12-31
         'wfm_proc_colab': None, 
     }, # TODO: create the default values to run locally
     

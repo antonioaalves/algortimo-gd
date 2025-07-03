@@ -1,4 +1,4 @@
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days):
+def optimization_prediction(model,days_of_year, workers, workers_complete_cycle, working_shift, shift, pessObj, min_workers, closed_holidays, week_to_days,  working_days, contract_type):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -8,9 +8,14 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # Create the objective function with heavy penalties
     objective_terms = []
-    HEAVY_PENALTY = 300  # Penalty for days with no workers
-    MIN_WORKER_PENALTY = 60  # Penalty for breaking minimum worker requirements
+
+    # Penalty weights
+    HEAVY_PENALTY = 10  # Penalty for days with no workers
+    MIN_WORKER_PENALTY = 5  # Penalty for breaking minimum worker requirements
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
+    ADJACENT_FREE_SHIFTS_PENALTY = 5  # Adjust this value as needed
+
+
 
 
 
@@ -36,53 +41,10 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             model.Add(neg_diff >= 0)  # Ensure neg_diff is non-negative
             
             # Add both positive and negative deviations to the objective function
-            objective_terms.append(30 * pos_diff)
-            objective_terms.append(30 * neg_diff)
+            objective_terms.append(pos_diff)
+            objective_terms.append(neg_diff)
 
-    # 2. NEW: Reward consecutive free days
-    consecutive_free_day_bonus = []
-    for w in workers:
-        all_work_days = sorted(working_days[w])
-        
-        # Create boolean variables for each day indicating if it's a free day
-        free_day_vars = {}
-        for d in all_work_days:
-            free_day = model.NewBoolVar(f"free_day_{w}_{d}")
-            
-            # Sum the L, F, LQ, A, V shifts for this day
-            free_shift_sum = sum(
-                shift.get((w, d, shift_type), 0) 
-                for shift_type in ["L", "F", "LQ", "A", "V"]
-            )
-            
-            # Link the boolean variable to whether any free shift is assigned
-            model.Add(free_shift_sum >= 1).OnlyEnforceIf(free_day)
-            model.Add(free_shift_sum == 0).OnlyEnforceIf(free_day.Not())
-            
-            free_day_vars[d] = free_day
-        
-        # For each pair of consecutive days in the worker's schedule
-        for i in range(len(all_work_days) - 1):
-            day1 = all_work_days[i]
-            day2 = all_work_days[i+1]
-            
-            # Only consider consecutive calendar days
-            if day2 == day1 + 1:
-                # Create a boolean variable for consecutive free days
-                consecutive_free = model.NewBoolVar(f"consecutive_free_{w}_{day1}_{day2}")
-                
-                # Both days must be free for the bonus to apply
-                model.AddBoolAnd([free_day_vars[day1], free_day_vars[day2]]).OnlyEnforceIf(consecutive_free)
-                model.AddBoolOr([free_day_vars[day1].Not(), free_day_vars[day2].Not()]).OnlyEnforceIf(consecutive_free.Not())
-                
-                # Add a negative term (bonus) to the objective function for each consecutive free day pair
-                consecutive_free_day_bonus.append(consecutive_free)
-
-    # Add the bonus term to the objective with appropriate weight (negative to minimize)
-    # Using a weight of -1 to prioritize consecutive free days
-    objective_terms.extend([-1 * term for term in consecutive_free_day_bonus])
-    
-    #3. No workers in a day penalty
+    # 2. Heavily penalize days with no workers when pessObj != 0
     for d in days_of_year:
         if d not in closed_holidays:  # Skip closed holidays
             for s in working_shift:
@@ -101,7 +63,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     # Add a heavy penalty to the objective function
                     objective_terms.append(HEAVY_PENALTY * no_workers)
 
-    # 4. Penalize breaking minimum worker requirements
+    # 3. Penalize breaking minimum worker requirements
     for d in days_of_year:
         for s in working_shift:
             min_req = min_workers.get((d, s), 0)
@@ -120,55 +82,12 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 # Add penalty to the objective function
                 objective_terms.append(MIN_WORKER_PENALTY * shortfall)
 
-    # Balance free days (L shifts) and quality weekends (LQ shifts) across all workers
-    worker_balance_penalties = []
-
-    # 5. Calculate the total L and LQ shifts for each worker
-    L_counts = {}
-    LQ_counts = {}
+    # 4. Penalize inconsistent shift types within a week for each worker
     for w in workers:
-        # Sum all L shifts for this worker
-        L_counts[w] = sum(shift.get((w, d, "L"), 0) for d in working_days[w])
-        
-        # Sum all LQ shifts for this worker
-        LQ_counts[w] = sum(shift.get((w, d, "LQ"), 0) for d in working_days[w])
-
-    # Create penalties for imbalances between workers
-    # For each pair of workers
-    for w1 in workers:
-        for w2 in workers:
-            if w1 < w2:  # Avoid counting each pair twice
-                # Calculate and penalize differences in L shifts (free days)
-                L_diff = model.NewIntVar(-len(days_of_year), len(days_of_year), f"L_diff_{w1}_{w2}")
-                L_abs_diff = model.NewIntVar(0, len(days_of_year), f"L_abs_diff_{w1}_{w2}")
-                
-                # Set L shift difference constraint
-                model.Add(L_diff == L_counts[w1] - L_counts[w2])
-                model.AddAbsEquality(L_abs_diff, L_diff)
-                
-                # Calculate and penalize differences in LQ shifts (part of quality weekends)
-                LQ_diff = model.NewIntVar(-len(days_of_year), len(days_of_year), f"LQ_diff_{w1}_{w2}")
-                LQ_abs_diff = model.NewIntVar(0, len(days_of_year), f"LQ_abs_diff_{w1}_{w2}")
-                
-                # Set LQ shift difference constraint
-                model.Add(LQ_diff == LQ_counts[w1] - LQ_counts[w2])
-                model.AddAbsEquality(LQ_abs_diff, LQ_diff)
-                
-                # Add higher weight to LQ differences to prioritize balancing quality weekends
-                worker_balance_penalties.append(15 * L_abs_diff)  # Free days balance weight
-                worker_balance_penalties.append(25 * LQ_abs_diff)  # Quality weekends balance weight (higher priority)
-
-    
-
-    # Add all balance penalties to the objective function
-    objective_terms.extend(worker_balance_penalties)
-
-    # 6. Penalize inconsistent shift types within a week for each worker
-    for w in workers:
-        for week in range(1, 53):  # Iterate over all weeks
+        for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
             days_in_week = week_to_days[week]
-            working_days_in_week = [d for d in days_in_week if d in working_days.get(w, [])]
-            
+            working_days_in_week = [d for d in days_in_week if d in working_days[w]]
+     
             if len(working_days_in_week) >= 2:  # Only if worker has at least 2 working days this week
                 # Create variables to track if the worker has M or T shifts this week
                 has_m_shift = model.NewBoolVar(f"has_m_shift_{w}_{week}")
@@ -198,5 +117,65 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 
                 # Add penalty to the objective function
                 objective_terms.append(INCONSISTENT_SHIFT_PENALTY * inconsistent_shifts)
+
+    # 5. Reward L shifts (bonus points for each L shift assigned)
+    # Penalty weight for having free day shifts next to each other for contract type 4 workers
+    
+    not_complete_cycle = list(set(workers) - set(workers_complete_cycle))
+    for w in not_complete_cycle:
+        # Only apply to workers with contract type 4
+        if contract_type[w] == 4:
+            for d in working_days[w]:
+                # Check if this day and the next day are both working days
+                if d + 1 in working_days[w]:
+                    # Create binary variables to detect free day shifts
+                    has_free_shift_today = model.NewBoolVar(f"has_free_shift_today_{w}_{d}")
+                    has_free_shift_tomorrow = model.NewBoolVar(f"has_free_shift_tomorrow_{w}_{d+1}")
+                    
+                    # Detect if the worker has any free day shift (L, LD, or LQ) today
+                    free_shift_today_constraints = []
+                    for shift_type in ["L", "LD", "LQ"]:
+                        if (w, d, shift_type) in shift:
+                            shift_var = shift[(w, d, shift_type)]
+                            shift_bool = model.NewBoolVar(f"has_{shift_type}_{w}_{d}")
+                            model.Add(shift_var >= 1).OnlyEnforceIf(shift_bool)
+                            model.Add(shift_var == 0).OnlyEnforceIf(shift_bool.Not())
+                            free_shift_today_constraints.append(shift_bool)
+                    
+                    # Worker has a free shift today if any of L, LD, or LQ is assigned
+                    if free_shift_today_constraints:
+                        model.AddBoolOr(free_shift_today_constraints).OnlyEnforceIf(has_free_shift_today)
+                        model.AddBoolAnd([constraint.Not() for constraint in free_shift_today_constraints]).OnlyEnforceIf(has_free_shift_today.Not())
+                    else:
+                        model.Add(has_free_shift_today == 0)
+                    
+                    # Detect if the worker has any free day shift (L, LD, or LQ) tomorrow
+                    free_shift_tomorrow_constraints = []
+                    for shift_type in ["L", "LD", "LQ"]:
+                        if (w, d+1, shift_type) in shift:
+                            shift_var = shift[(w, d+1, shift_type)]
+                            shift_bool = model.NewBoolVar(f"has_{shift_type}_{w}_{d+1}")
+                            model.Add(shift_var >= 1).OnlyEnforceIf(shift_bool)
+                            model.Add(shift_var == 0).OnlyEnforceIf(shift_bool.Not())
+                            free_shift_tomorrow_constraints.append(shift_bool)
+                    
+                    # Worker has a free shift tomorrow if any of L, LD, or LQ is assigned
+                    if free_shift_tomorrow_constraints:
+                        model.AddBoolOr(free_shift_tomorrow_constraints).OnlyEnforceIf(has_free_shift_tomorrow)
+                        model.AddBoolAnd([constraint.Not() for constraint in free_shift_tomorrow_constraints]).OnlyEnforceIf(has_free_shift_tomorrow.Not())
+                    else:
+                        model.Add(has_free_shift_tomorrow == 0)
+                    
+                    # Create a binary variable to detect if free shifts occur on adjacent days
+                    adjacent_free_shifts = model.NewBoolVar(f"adjacent_free_shifts_{w}_{d}")
+                    model.AddBoolAnd([has_free_shift_today, has_free_shift_tomorrow]).OnlyEnforceIf(adjacent_free_shifts)
+                    model.AddBoolOr([has_free_shift_today.Not(), has_free_shift_tomorrow.Not()]).OnlyEnforceIf(adjacent_free_shifts.Not())
+                    
+                    # Add a penalty term to the objective for adjacent free shifts
+                    # Since we're minimizing, this will discourage adjacent free shifts
+                    objective_terms.append(ADJACENT_FREE_SHIFTS_PENALTY * adjacent_free_shifts)
+
+
+
 
     model.Minimize(sum(objective_terms))
