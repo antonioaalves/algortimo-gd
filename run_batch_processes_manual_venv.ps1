@@ -16,7 +16,7 @@ Write-Host ""
 $ProcessIds = @(227, 230, 256, 278, 301, 364, 573, 586, 599, 651, 654, 680, 683, 687, 709, 716, 719, 726, 749, 760, 763, 766, 769, 778, 857, 960, 966, 995, 1007, 1052, 1056, 1080, 1182, 1209, 1319, 1421, 1427)
 # Common configuration (modify as needed)
 $UseDb = $true                    # Set to $false for CSV mode
-$Algorithm = "alcampoAlgorithm"   # Algorithm to use
+$Algorithm = "salsa_algorithm"   # Algorithm to use
 $WfmUser = "BATCH_USER"          # WFM user
 $StartDate = "2025-07-01"        # Start date
 $EndDate = "2025-12-31"          # End date

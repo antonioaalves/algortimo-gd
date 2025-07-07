@@ -13,9 +13,38 @@ from typing import List, Dict, Any, Optional, Tuple
 from src.oracle_config import ORACLE_CONFIG
 from src.config import PROJECT_NAME
 from base_data_project.log_config import get_logger
+from base_data_project.data_manager.managers.managers import BaseDataManager
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
+
+def log_process_event(message_key:str, messages_df: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
+    """
+    Log a process event with a message key and a message dataframe.
+    """
+    message = pd.DataFrame(messages_df[messages_df['VAR'] == message_key])
+    if message.empty:
+        logger.error(f"Message key {message_key} not found in messages_df")
+        return
+    message_str = message['ES'].values[0]
+    message_str = replace_placeholders(message_str, values_replace_dict)
+    data_manager.set_process_errors(message_key=message_key, rendered_message=message_str, values_replace_dict=external_call_data, error_type=level)
+
+def replace_placeholders(template, values_dict):
+    """
+    Replaces placeholders in the template string with corresponding values from the values dictionary.
+    
+    Parameters:
+        template (str): The template string with placeholders.
+        values (dict): A dictionary with keys corresponding to placeholder names and values as replacements.
+    
+    Returns:
+        str: The template string with placeholders replaced by values.
+    """
+    for name, value in values_dict.items():
+        placeholder = f"{{{name}}}"
+        template = template.replace(placeholder, str(value))
+    return template
 
 def get_oracle_url_cx():
     """Create Oracle connection URL for cx_Oracle driver"""

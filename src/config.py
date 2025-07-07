@@ -36,10 +36,16 @@ CONFIG = {
         'persist_format': '',  # Options: 'csv', 'db'
         'storage_dir': 'data/intermediate'  # For CSV storage 
     }, # TODO: ensure data/intermediate is created if it doesnt exist
+
+    'logging': {
+        'environment': 'server',  # or 'local' for development
+        'db_logging_enabled': True,
+        'df_messages_path': 'data/csvs/messages.csv',
+    },
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 1961,#253762,# 249468,
+        'current_process_id': 253762,#253762,# 249468,
         'api_proc_id': 999,
         'wfm_proc_id': 1961,
         'wfm_user': 'WFM',
@@ -169,7 +175,7 @@ CONFIG = {
                     'fill_method': 'mean'       # Method for filling missing values
                 },
                 'algorithm': {
-                    'name': 'salsa_algorithm',  # Default algorithm to use
+                    'name': 'salsa_algorithm',  # Default algorithm to use - should come from the parameters_defaults in the future
                     'parameters': {}
                 },
                 'insertions': {
@@ -246,4 +252,61 @@ CONFIG = {
     'log_dir': 'logs'
 }
 
-# Add any project-specific configuration below
+# For algorithm_GD development
+ALGORITHM_GD_DEV_CONFIG = {
+    'logging': {
+        'environment': 'local',
+        'db_logging_enabled': False,
+        'df_messages_path': 'data/csvs/messages.csv',
+        'server_file_logging': True,
+        'log_level': 'DEBUG',
+        'log_dir': 'logs'
+    },
+    'external_call_data': {
+        'current_process_id': 1961,
+        'api_proc_id': 999,
+        'wfm_proc_id': 1961,
+        'wfm_user': 'WFM_DEV',
+        'start_date': '2025-01-01',
+        'end_date': '2025-12-31',
+        'wfm_proc_colab': None,
+    }
+}
+
+# For algorithm_GD production
+ALGORITHM_GD_PROD_CONFIG = {
+    'logging': {
+        'environment': 'server',
+        'db_logging_enabled': True,
+        'df_messages_path': 'data/csvs/messages.csv',
+        'db_logging_query': 'queries/log_process_errors.sql',
+        'server_file_logging': True,
+        'retention_days_server': 60,
+        'log_level': 'INFO',
+        'log_dir': 'logs'
+    },
+    'external_call_data': {
+        'current_process_id': None,  # Set at runtime
+        'api_proc_id': 999,
+        'wfm_proc_id': None,  # Set at runtime
+        'wfm_user': 'WFM',
+        'start_date': None,  # Set at runtime
+        'end_date': None,    # Set at runtime
+        'wfm_proc_colab': None,
+    }
+}
+
+# Helper function to merge environment-specific config
+def get_environment_config(base_config: dict, env_config: dict) -> dict:
+    """
+    Merge environment-specific configuration with base configuration.
+    
+    Args:
+        base_config: Base configuration dictionary
+        env_config: Environment-specific overrides
+        
+    Returns:
+        Merged configuration dictionary
+    """
+    from base_data_project.utils import merge_configs
+    return merge_configs(base_config, env_config)
