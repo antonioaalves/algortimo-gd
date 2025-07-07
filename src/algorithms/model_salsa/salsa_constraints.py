@@ -1,6 +1,6 @@
-def shift_day_constraint(model, shift, days_of_year, workers, shifts):
+def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
-    for w in workers:
+    for w in workers_complete:
         for d in days_of_year:
            model.add_exactly_one(shift[(w, d, s)] for s in shifts)
 
@@ -9,7 +9,7 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
     working_shift = ["M", "T"]
     # Add constraint to limit working days in a week to contract type
     for w in workers:
-        for week in range(1, 53):
+        for week in week_to_days.keys():
             days_in_week = week_to_days[week]
             # Sum shifts across days and shift types
             total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift)
@@ -40,14 +40,44 @@ def LD_attribution(model, shift, workers, working_days, l_d):
     for w in workers:
         model.Add(sum(shift[(w, d, "LD")] for d in working_days[w] if (w, d, "LD") in shift) == l_d.get(w, 0))
 
-def closed_holiday_attribution(model, shift, workers, closed_holidays):
+def closed_holiday_attribution(model, shift, workers_complete, closed_holidays):
     #assigns free day in holidays
-    for w in workers:
+    for w in workers_complete:
         for d in closed_holidays:
             if (w, d, "F") in shift:
                 model.Add(shift[(w, d, "F")] == 1)
             else:
                 print(f"Missing shift for worker {w}, day {d}, shift F")
+
+def holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle):
+    # Assigns worker holidays, missing days and empty days in holidays
+    for w in workers_complete:
+        for d in worker_holiday[w]:
+
+            if (w, d, "A") in shift:
+                model.Add(shift[(w, d, "A")] == 1)
+            else:
+                print(f"Missing shift for worker {w}, day {d}, shift A")
+
+        for d in missing_days[w]:
+
+            if (w, d, "V") in shift:
+                model.Add(shift[(w, d, "V")] == 1)
+            else:
+                print(f"Missing shift for worker {w}, day {d}, shift A")
+
+        for d in empty_days[w]:
+
+            if (w, d, "V") in shift:
+                model.Add(shift[(w, d, "V")] == 1)
+            else:
+                print(f"Missing shift for worker {w}, day {d}, shift V")
+        
+        for d in free_day_complete_cycle[w]:
+            if (w, d, "L") in shift:
+                model.Add(shift[(w, d, "L")] == 1)
+            else:
+                print(f"Missing shift for worker {w}, day {d}, shift L")
 
 def free_days_special_days_salsa(model, shift, special_days, workers, working_days, total_l_dom, free_sundays_plus_c2d, c2d):
     for w in workers:
@@ -61,7 +91,7 @@ def free_days_special_days_salsa(model, shift, special_days, workers, working_da
 def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift):
     # Contraint for workers shifts taking into account the worker_week_shift (each week a worker can either be )
         for w in workers:
-            for week in range(1, 53):  # Iterate over the 52 weeks
+            for week in week_to_days.keys():  # Iterate over the 52 weeks
                 # Iterate through days of the week for the current week
                 for day in week_to_days[week]:
                     if day in working_days[w]:
@@ -268,7 +298,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
     for w in workers:
         for day in working_days[w]:
             # Get day of week (5 = Saturday)
-            day_of_week = (day + start_weekday - 3 ) % 7
+            day_of_week = (day + start_weekday - 2 ) % 7
         
             # Case 1: Friday (day_of_week == 5) followed by LQ on Saturday
             if day_of_week == 5 and day_of_week in working_days[w]:
@@ -327,7 +357,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
 def salsa_week_cut_contraint(model, shift, workers, week_to_days_salsa, week_cut , start_weekday):
     if week_cut:
         # Calculate the ratio for the first week
-        first_week_ratio = (7 - start_weekday + 1) / 7
+        first_week_ratio = (len(week_to_days_salsa[min(week_to_days_salsa.keys())]) / 7) 
         # Calculate the ratio for the last week
         last_week_ratio = (len(week_to_days_salsa[max(week_to_days_salsa.keys())]) / 7) 
 

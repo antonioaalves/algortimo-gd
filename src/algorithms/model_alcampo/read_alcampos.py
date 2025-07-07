@@ -159,6 +159,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         workers_complete = sorted(list(valid_workers_complete))
         workers_complete_cycle = sorted(set(workers_complete)-set(workers))
 
+
         logger.info(f"[OK] Final valid workers: {len(workers)} workers for free day atribution")
         logger.info(f"   Worker IDs: {workers[:10]}{'...' if len(workers) > 10 else ''}")
         
@@ -378,7 +379,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
                 tc[w] = 0
             else:
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
-                logger.info(f"Processing worker {w} with data: {worker_row.to_dict()}")
+        
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))

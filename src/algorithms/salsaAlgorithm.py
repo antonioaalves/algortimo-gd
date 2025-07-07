@@ -18,7 +18,7 @@ from src.config import PROJECT_NAME, ROOT_DIR
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    maximum_free_days, LD_attribution, closed_holiday_attribution, 
+    maximum_free_days, LD_attribution, closed_holiday_attribution, holiday_missing_day_attribution,
     free_days_special_days_salsa, assign_week_shift, working_day_shifts,
     salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
     salsa_saturday_L_constraint, salsa_week_cut_contraint
@@ -195,7 +195,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'workers_complete_cycle': processed_data[31],  # Adjusted for SALSA
                     'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
-                    'week_cut': processed_data[34]
+                    # 'week_cut': processed_data[34]
                 }
 
             except IndexError as e:
@@ -281,8 +281,11 @@ class SalsaAlgorithm(BaseAlgorithm):
             pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
             max_workers = adapted_data['max_workers']
+            workers_complete = adapted_data['workers_complete']
+            workers_complete_cycle = adapted_data['workers_complete_cycle']
+            free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
-            week_cut = adapted_data['week_cut']
+            # week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -304,8 +307,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             model = cp_model.CpModel()
             self.model = model
             
+            logger.info(f"workers_complete: {workers_complete}")
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers, shifts)
+            shift = decision_variables(model, days_of_year, workers_complete, shifts)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -315,7 +319,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Applying SALSA constraints")
             
             # Basic constraint: each worker has exactly one shift per day
-            shift_day_constraint(model, shift, days_of_year, workers, shifts)
+            shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
             
             # Week working days constraint based on contract type
             week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type)
@@ -331,6 +335,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             # Closed holiday attribution constraint
             closed_holiday_attribution(model, shift, workers, closed_holidays)
+
+            holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
             
             # Free days special days constraint (SALSA specific)
             free_days_special_days_salsa(model, shift, special_days, workers, working_days, 
@@ -359,7 +365,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
             
-            salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, 
+            salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
                              working_days, closed_holidays, min_workers, week_to_days)
             
             # =================================================================
@@ -367,7 +373,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             
-            schedule_df = solve(model, days_of_year, workers, special_days, shift, shifts, 
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, 
                               output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
                                                          f'salsa_schedule_{self.process_id}.xlsx'))
             

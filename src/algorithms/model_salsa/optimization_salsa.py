@@ -165,7 +165,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # 6. Penalize inconsistent shift types within a week for each worker
     for w in workers:
-        for week in range(1, 53):  # Iterate over all weeks
+        for week in week_to_days.keys():  # Iterate over all weeks
             days_in_week = week_to_days[week]
             working_days_in_week = [d for d in days_in_week if d in working_days.get(w, [])]
             

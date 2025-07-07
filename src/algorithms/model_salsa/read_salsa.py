@@ -141,11 +141,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         # Get unique workers from each DataFrame
         workers_colaborador_complete = set(matriz_colaborador_gd['matricula'].dropna().astype(int))
         workers_calendario_complete = set(matriz_calendario_gd['colaborador'].dropna().astype(int))
-        
+        logger.info(f"Unique workers found:")
+        logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador_complete)} workers")
+        logger.info(f"  - In matriz_calendario_complete: {len(workers_calendario_complete)} workers")
+
         workers_colaborador = set(matriz_colaborador_gd[matriz_colaborador_gd['ciclo'] != 'Completo']['matricula'].dropna().astype(int))
 
         logger.info(f"Workers found:")
-        logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador)} workers")
+        logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador_complete)} workers")
         logger.info(f"  - In matriz_calendario: {len(workers_calendario_complete)} workers")
         logger.info(f"  - In matriz_colaborador (ciclo != 'Completo'): {len(workers_colaborador)} workers")
 
@@ -245,8 +248,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
 
             empty_days[w] = worker_empty
-            worker_holiday[w] = w_holiday
             missing_days[w] = worker_missing
+            worker_holiday[w] = w_holiday
             free_day_complete_cycle[w] = f_day_complete_cycle
             
         # Track first and last registered days
@@ -336,10 +339,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             for week in week_to_days_salsa:
                 week_to_days_salsa[week].sort()
 
-            if len(week_to_days_salsa[1]) <= 7:
-                week_cut = True
-            else:
-                week_cut = False
+            # if len(week_to_days_salsa[1]) <= 7:
+            #     week_cut = True
+            # else:
+            #     week_cut = False
 
              # Determine week_cut based on whether we have complete first/last weeks
             # week_cut = False
@@ -631,7 +634,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             workers_complete_cycle,  # 32
             free_day_complete_cycle,  # 33
             week_to_days_salsa,  # 34x
-            week_cut
+            # week_cut
         )
         
     except Exception as e:
