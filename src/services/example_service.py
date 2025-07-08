@@ -275,22 +275,23 @@ class AlgoritmoGDService(BaseService):
                 self.logger.info(f"Decisions type: {type(decisions)}")
 
                 # TODO: Remove this sine the algorithm_name comes from parasm
-                algorithm_name = decisions.get('algorithm', {}).get('name', algorithm_name)
+                #algorithm_name = decisions.get('algorithm', {}).get('name', algorithm_name)
+                algorithm_name = ''
                 algorithm_params = decisions.get('algorithm', {}).get('parameters', algorithm_params)
                 insert_results = decisions.get('insertions', {}).get('insert_results', False)
                 #self.logger.info(f"Found defaults: {defaults}")
-                self.logger.info(f"Retrieving these values from config algorithm_name: {algorithm_name}, algorithm_params: {algorithm_params}, insert_results: {insert_results}")
+                #self.logger.info(f"Retrieving these values from config algorithm_name: {algorithm_name}, algorithm_params: {algorithm_params}, insert_results: {insert_results}")
 
-                if algorithm_name is None:
-                    self.logger.error("No algorithm name provided in decisions")
-                    return False
+                #if algorithm_name is None:
+                #    self.logger.error("No algorithm name provided in decisions")
+                #    return False
 
                 if algorithm_params is None:
                     self.logger.error("No algorithm parameters provided in decisions")
                     return False
 
                 # Type assertions to help type checker
-                assert isinstance(algorithm_name, str)
+                #assert isinstance(algorithm_name, str)
                 assert isinstance(algorithm_params, dict)
 
             posto_id_list = self.data.auxiliary_data.get('posto_id_list', [])
@@ -307,7 +308,8 @@ class AlgoritmoGDService(BaseService):
                         progress=(progress+0.1)/len(posto_id_list),
                         message="Starting the processing stage and consequent substages"
                     )
-                # SUBSTAGE 1: connection
+
+                # SUBSTAGE 1: treat_params
                 valid_connection = self._execute_treatment_params_substage(stage_name)
                 if not valid_connection:
                     if self.stage_handler:
@@ -366,6 +368,8 @@ class AlgoritmoGDService(BaseService):
                 if self.stage_handler:
                     self.stage_handler.start_substage('processing', 'allocation_cycle')
                 # Type assertions to help type checker
+                algorithm_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '')
+                self.logger.info(f"Algorithm name: {algorithm_name}")
                 assert isinstance(algorithm_name, str)
                 assert isinstance(algorithm_params, dict)
                 valid_allocation_cycle = self._execute_allocation_cycle_substage(algorithm_params=algorithm_params, stage_name=stage_name, algorithm_name=algorithm_name)
@@ -459,7 +463,10 @@ class AlgoritmoGDService(BaseService):
             self.logger.info("Starting to treating parameters substage")
             
             # Establish connection to data source
-            valid_params = self.data.treat_params()
+            params = self.data.treat_params()
+            valid_params = params.get('success', False)
+            algorithm_name = params.get('algorithm_name', '')
+            self.logger.info(f"DEBUG: Algorithm name: {algorithm_name}, type: {type(algorithm_name)}")
             
             if not valid_params:
                 if self.stage_handler:
@@ -470,6 +477,26 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": "Error treating parameters"}
                     )
                 return False
+            if algorithm_name == '':
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name,
+                        success=False, 
+                        result_data={"error": "No algorithm name provided in decisions"}
+                    )
+                return False
+
+            if algorithm_name:
+                # Get current decisions for stage
+                stage_sequence, current_decisions = self.get_decisions_for_stage('processing')
+                
+                # Add algorithm name to the decisions
+                current_decisions['algorithm_name'] = algorithm_name
+                self.logger.info(f"DEBUG: Current decisions: {current_decisions}")
+                
+                # Update the defaults with the new decisions
+                self.process_manager.update_default_values(stage_sequence, current_decisions)
 
             # Track progress for the connection substage
             if self.stage_handler:

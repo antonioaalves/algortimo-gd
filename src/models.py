@@ -32,6 +32,8 @@ from base_data_project.storage.models import BaseDataModel
 from base_data_project.storage.containers import BaseDataContainer
 from base_data_project.log_config import get_logger
 
+#from src.services.example_service import AlgoritmoGDService
+
 class DescansosDataModel(BaseDataModel):
     """
     Container for managing and transforming project data.
@@ -336,7 +338,7 @@ class DescansosDataModel(BaseDataModel):
         """
         return True
 
-    def treat_params(self):
+    def treat_params(self) -> dict[str, Any]:
         """
         Treat parameters and store them in memory
         """
@@ -346,7 +348,8 @@ class DescansosDataModel(BaseDataModel):
             params_df = self.auxiliary_data['params_df'].copy()
             params_names_list = CONFIG.get('parameters_names', [])
             params_defaults = CONFIG.get('parameters_defaults', {})
-            
+            self.logger.info(f"params_df before treatment:\n{params_df}")
+
             # Get all parameters in one call
             retrieved_params = get_param_for_posto(
                 df=params_df, 
@@ -355,18 +358,22 @@ class DescansosDataModel(BaseDataModel):
                 secao_id=self.auxiliary_data['secao_id'], 
                 params_names_list=params_names_list
             ) or {}
-            
+
+            self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)
             for param_name in params_names_list:
                 param_value = retrieved_params.get(param_name, params_defaults.get(param_name))
                 self.auxiliary_data[param_name] = param_value
                 self.logger.info(f"Parameter {param_name} = {param_value}")
-            
+
+                # Workaround feito para registar o nome do algoritmo - assim usa-se uma funcionalidade base do base-data-project
+                if param_name == 'GD_algorithmName':
+                    algorithm_name = param_value
             self.logger.info(f"Treating parameters completed successfully")
-            return True
+            return {'success': True, 'algorithm_name': algorithm_name}
         except Exception as e:
             self.logger.error(f"Error treating parameters: {e}", exc_info=True)	
-            return False
+            return {'success': False, 'algorithm_name': ''}
 
     def validate_params(self):
         """
@@ -3343,7 +3350,6 @@ class DescansosDataModel(BaseDataModel):
 
         try:
             self.logger.info(f"Starting allocation_cycle processing")
-            algorithm_name = self.external_call_data.get('algorithm_name', 'salsa_algorithm')
             
             try:
                 self.logger.info("Validating input parameters for allocation cycle")
