@@ -244,7 +244,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             # Find days with specific statuses
             worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
             worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            w_holiday = worker_calendar[worker_calendar['tipo_turno'] == 'A']['data'].dt.dayofyear.tolist()
+            w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
 
             empty_days[w] = worker_empty
@@ -272,10 +272,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                 missing_days[w].extend([d for d in range( 1, first_registered_day[w]) if d not in missing_days[w]])
                 missing_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in missing_days[w]])
             
-            empty_days[w] = list(set(empty_days[w]) - set(closed_holidays))
-            worker_holiday[w] = list(set(worker_holiday[w]) - set(closed_holidays))
-            missing_days[w] = list(set(missing_days[w]) - set(closed_holidays))
-            free_day_complete_cycle[w] = list(set(free_day_complete_cycle[w]) - set(closed_holidays))
+            empty_days[w] = sorted(list(set(empty_days[w]) - set(closed_holidays)))
+            worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays)))
+            missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
+            free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
 
             working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w])
 
@@ -463,7 +463,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
 
         for w in workers:
             if (last_registered_day[w] > 0 and last_registered_day[w] < 364):
-                proportion = last_registered_day[w]  / 364
+                proportion = (last_registered_day[w]- days_of_year[0])  / 364
                 logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion {proportion:.2f}")
                 total_l[w] = int(round(proportion * total_l[w]))
                 total_l_dom[w] = int(round(proportion * total_l_dom[w]))

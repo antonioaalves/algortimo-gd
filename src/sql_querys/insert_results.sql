@@ -1,0 +1,1 @@
+INSERT INTO wfm.int_pre_schedule_algorithm (fk_processo, employee_id, schedule_dt, sched_type, sched_subtype) VALUES (:fk_processo, :employee_id, to_date(:schedule_dt,'YYYY-MM-DD'), :sched_type, :sched_subtype)

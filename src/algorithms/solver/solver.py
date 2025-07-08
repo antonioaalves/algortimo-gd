@@ -178,7 +178,6 @@ def solve(
             'A'     : 'A',  # Missing shift
             'L'     : 'L',  # Free day
             'LQ'    : 'LQ', # Free days semester
-            'LD'    : 'LD',
             'TC'    : 'TC',
         }
         
@@ -224,6 +223,7 @@ def solve(
                                 continue
                                 
                             shift_value = solver.Value(shift[(w, d, s)])
+
 
                             if shift_value == 1:  # If the worker is assigned this shift
                                 shifts_found += 1

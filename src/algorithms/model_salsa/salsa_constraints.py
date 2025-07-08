@@ -33,12 +33,12 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
 def maximum_free_days(model, shift, days_of_year, workers, total_l, c3d):
     #constraint for maximum of free days in a year
     for w in workers:
-        model.Add(sum(shift[(w, d, "L")] + shift[(w, d, "LQ")] + shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0) - c3d.get(w, 0))
+        model.Add(sum(shift[(w, d, "L")] + shift[(w, d, "LQ")]  for d in days_of_year) == total_l.get(w, 0) - c3d.get(w, 0))
 
-def LD_attribution(model, shift, workers, working_days, l_d):
+def LQ_attribution(model, shift, workers, working_days, c2d):
     # #constraint for maximum of LD days in a year
     for w in workers:
-        model.Add(sum(shift[(w, d, "LD")] for d in working_days[w] if (w, d, "LD") in shift) == l_d.get(w, 0))
+        model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if (w, d, "LQ") in shift) == c2d.get(w, 0))
 
 def closed_holiday_attribution(model, shift, workers_complete, closed_holidays):
     #assigns free day in holidays
@@ -101,12 +101,17 @@ def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_
                         # Afternoon shift constraint: worker can only be assigned to T if available for T
                         model.Add(shift[(w, day, "T")] <= worker_week_shift[(w, week, 'T')])
 
-def working_day_shifts(model, shift, workers, working_days, check_shift):
+def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
 # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
   #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
     for w in workers:
         for d in working_days[w]:
             model.add_exactly_one(shift[(w, d, s)] for s in check_shift if (w, d, s) in shift)
+
+    for w in workers_complete_cycle:
+        for d in working_days[w]:
+            # Ensure that the worker can only have M, T, L, LQ, LD and F in working days
+            model.add_exactly_one(shift[(w, d, s)] for s in working_shift if (w, d, s) in shift)
 
 def salsa_2_consecutive_free_days(model, shift, workers, working_days):
     for w in workers: 
@@ -151,6 +156,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days):
 
 def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays):
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
+    print(f"workers: {workers}, c2d: {c2d}")
     for w in workers:
         if contract_type[w] in [4, 5, 6]:
             quality_2weekend_vars = []
@@ -182,7 +188,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         quality_2weekend_vars.append(quality_weekend_2)
                 
                 # Constraint: The worker should have at least c2d quality weekends
-                model.Add(sum(quality_2weekend_vars) >= c2d.get(w, 0))
+                model.Add(sum(quality_2weekend_vars) == c2d.get(w, 0))
                 
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker

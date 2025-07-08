@@ -295,7 +295,7 @@ class AlgoritmoGDService(BaseService):
 
             posto_id_list = self.data.auxiliary_data.get('posto_id_list', [])
             for posto_id in posto_id_list:
-                #if posto_id != 153: continue # TODO: remove this, just for testing purposes
+                #if posto_id != 121: continue # TODO: remove this, just for testing purposes
                 self.data.auxiliary_data['current_posto_id'] = posto_id
                 progress = 0.0
                 if self.stage_handler:

@@ -18,10 +18,10 @@ from src.config import PROJECT_NAME, ROOT_DIR
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    maximum_free_days, LD_attribution, closed_holiday_attribution, holiday_missing_day_attribution,
+    maximum_free_days, LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
     free_days_special_days_salsa, assign_week_shift, working_day_shifts,
     salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
-    salsa_saturday_L_constraint, salsa_week_cut_contraint
+    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -57,7 +57,7 @@ class SalsaAlgorithm(BaseAlgorithm):
         # Default parameters for the SALSA algorithm
         default_parameters = {
             "max_continuous_working_days": 5,
-            "shifts": ["M", "T", "L", "LQ", "LD", "F"],
+            "shifts": ["M", "T", "L", "LQ", "F", "A", "V"],
             "check_shifts": ['M', 'T', 'L', 'LQ'],
             "working_shifts": ["M", "T"],
             "settings":{
@@ -329,32 +329,36 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             # Maximum free days constraint
             maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
-            
-            # LD attribution constraint
-            LD_attribution(model, shift, workers, working_days, l_d)
+
+            logger.info(f"workers: {workers}, c2d: {c2d}")
+            LQ_attribution(model, shift, workers, working_days, c2d)
             
             # Closed holiday attribution constraint
-            closed_holiday_attribution(model, shift, workers, closed_holidays)
+            closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
 
+            logger.info(f"worker_holiday: {worker_holiday}, missing_days: {missing_days}, empty_days: {empty_days}, free_day_complete_cycle: {free_day_complete_cycle}, workers_complete: {workers_complete}")
             holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
             
             # Free days special days constraint (SALSA specific)
             free_days_special_days_salsa(model, shift, special_days, workers, working_days, 
-                                       total_l_dom, free_sundays_plus_c2d, c2d)
+                                      total_l_dom, free_sundays_plus_c2d, c2d)
             
             # Worker week shift assignments
             assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
             
             # Working day shifts constraint
-            working_day_shifts(model, shift, workers, working_days, check_shift)
+            working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
             
             # SALSA specific constraints
             salsa_2_consecutive_free_days(model, shift, workers, working_days)
             
+            self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, 
-                                      sundays, c2d, F_special_day, days_of_year, closed_holidays)
+                                  sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday)
+
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
             
             #salsa_week_cut_contraint(model, shift, workers, week_to_days_salsa, week_cut, start_weekday)
             
@@ -434,6 +438,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             else:
                 melted_schedule = algorithm_results
 
+            # Change column names
+            melted_schedule.rename(columns={'Worker': 'colaborador', 'Date': 'data', 'Status': 'horario'}, inplace=True)
+
             formatted_results = {
                 'schedule': algorithm_results,
                 'metadata': {
@@ -445,7 +452,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'execution_timestamp': datetime.now().isoformat(),
                     'parameters_used': self.parameters
                 },
-                'formatted_schedule': melted_schedule if not algorithm_results.empty else pd.DataFrame(),
+                'formatted_schedule_df': melted_schedule if not algorithm_results.empty else pd.DataFrame(),
                 'summary': {
                     'status': 'completed',
                     'message': f'Successfully scheduled {total_workers} workers over {total_days} days using SALSA algorithm'

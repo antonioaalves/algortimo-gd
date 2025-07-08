@@ -4,6 +4,7 @@ Converted from R functions for processing employee schedules, holidays, and abse
 """
 
 import pandas as pd
+import os
 import numpy as np
 from datetime import datetime, timedelta
 import logging
@@ -13,7 +14,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from src.oracle_config import ORACLE_CONFIG
 from src.config import PROJECT_NAME
 from base_data_project.log_config import get_logger
-from base_data_project.data_manager.managers.managers import BaseDataManager
+from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -1301,3 +1302,145 @@ def get_value_from_row(row):
     elif pd.notna(row['datevalue']):
         return row['datevalue']
     return None
+
+def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert HORARIO values to sched_type and sched_subtype columns
+    
+    Args:
+        df (pd.DataFrame): Input dataframe with HORARIO column
+    
+    Returns:
+        pd.DataFrame: DataFrame with added sched_type and sched_subtype columns
+    """
+    
+    # Create a copy to avoid modifying the original dataframe
+    df = pd.DataFrame(df).copy()
+    
+    # Define mapping for SCHED_TYPE
+    sched_type_mapping = {
+        'M': 'T',
+        'T': 'T', 
+        'MoT': 'T',
+        'ToM': 'T',
+        'P': 'T',
+        'L': 'F',
+        'LD': 'F',
+        'LQ': 'F',
+        'C': 'F',
+        'F': 'R',
+        '-': 'N',
+        'V': 'T',
+        'A': 'T',
+        'DFS': 'T'
+    }
+    
+    # Define mapping for sched_subtype
+    sched_subtype_mapping = {
+        'M': 'M',
+        'T': 'T',
+        'MoT': 'H',
+        'ToM': 'H', 
+        'P': 'P',
+        'L': '',
+        'LD': 'D',
+        'LQ': 'Q',
+        'C': 'C',
+        'F': '',
+        '-': '',
+        'V': 'A',
+        'A': 'A',
+        'DFS': 'C'
+    }
+    
+    # Apply mappings
+    df['sched_type'] = df['horario'].map(sched_type_mapping)
+    df['sched_subtype'] = df['horario'].map(sched_subtype_mapping)
+    
+    return df
+
+
+def bulk_insert_with_query(data_manager: DBDataManager, 
+                          data: pd.DataFrame, 
+                          query_file: str, 
+                          **kwargs) -> bool:
+    """
+    Execute bulk insert using a parameterized query file.
+    
+    Args:
+        data_manager: Database data manager instance
+        data: DataFrame with data to insert
+        query_file: Path to SQL insert query file
+        **kwargs: Additional parameters for query execution
+        
+    Returns:
+        bool: True if successful, False otherwise
+        
+    Example:
+        # SQL file content: INSERT INTO table (col1, col2) VALUES (?, ?)
+        success = bulk_insert_with_query(
+            data_manager=db_manager,
+            data=results_df,
+            query_file='queries/insert_results.sql',
+            fk_processo=123  # Additional parameter
+        )
+    """
+    logger = get_logger(PROJECT_NAME)
+    
+    # Validate inputs
+    if not hasattr(data_manager, 'session') or data_manager.session is None:
+        logger.error("No database session available")
+        return False
+    
+    if not os.path.exists(query_file):
+        logger.error(f"Query file not found: {query_file}")
+        return False
+    
+    if data.empty:
+        logger.warning("Empty DataFrame provided, no records to insert")
+        return True
+    
+    try:
+        from sqlalchemy import text
+        
+        # Read the insert query
+        with open(query_file, 'r', encoding='utf-8') as f:
+            insert_query = f.read().strip()
+        
+        if not insert_query:
+            logger.error(f"Query file is empty: {query_file}")
+            return False
+        
+        logger.info(f"Executing bulk insert of {len(data)} rows using query: {query_file}")
+        
+        # Convert DataFrame to list of dictionaries for parameter binding
+        records = data.to_dict('records')
+        
+        # Execute the insert for each record
+        for i, record in enumerate(records):
+            try:
+                # Merge additional kwargs with record data
+                params = {**kwargs, **record}
+                data_manager.session.execute(text(insert_query), params)
+                
+                # Log progress for large datasets
+                if (i + 1) % 1000 == 0:
+                    logger.info(f"Processed {i + 1}/{len(records)} records")
+                    
+            except Exception as record_error:
+                logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
+                logger.debug(f"Failed record data: {record}")
+                raise
+        
+        # Commit all inserts
+        data_manager.session.commit()
+        
+        logger.info(f"Successfully inserted {len(records)} records")
+        return True
+        
+    except Exception as e:
+        # Rollback on error
+        if hasattr(data_manager, 'session') and data_manager.session:
+            data_manager.session.rollback()
+        logger.error(f"Error during bulk insert: {str(e)}")
+        return False

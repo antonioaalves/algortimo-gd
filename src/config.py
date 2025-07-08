@@ -45,7 +45,7 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 253762,#253762,# 249468,
+        'current_process_id': 227,#253762,# 249468,
         'api_proc_id': 999,
         'wfm_proc_id': 1961,
         'wfm_user': 'WFM',
@@ -179,7 +179,7 @@ CONFIG = {
                     'parameters': {}
                 },
                 'insertions': {
-                    'insert_results': False
+                    'insert_results': True
                 }
             },
             'substages': {
@@ -223,7 +223,7 @@ CONFIG = {
                     'decisions': {}
                 }
             },
-            'auto_complete_on_substages': True, # Auto-complete stage when all substages are done
+            'auto_complete_on_substages': False, # Auto-complete stage when all substages are done
         },
         
 

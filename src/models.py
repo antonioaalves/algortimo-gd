@@ -22,7 +22,7 @@ from src.helpers import (
     add_trads_code, assign_90_cycles, load_pre_ger_scheds, get_limit_mt,
     count_dates_per_year, load_wfm_scheds, func_turnos, adjusted_isoweek,
     custom_round, calcular_folgas2, calcular_folgas3, insert_holidays_absences, insert_closed_days,
-    get_param_for_posto
+    get_param_for_posto, convert_types_out, bulk_insert_with_query
 )
 from src.load_csv_functions.load_valid_emp import load_valid_emp_csv
 from src.algorithms.factory import AlgorithmFactory
@@ -1429,6 +1429,7 @@ class DescansosDataModel(BaseDataModel):
                 missing_colabs = [colab for colab in colabs_id if colab not in unique_colabs]
                 self.logger.warning(f'Colabs {missing_colabs} not present in CORE_ALGORITHM_VARIABLES, proceeding...')
             
+            self.logger.info(f"DEBUG: matriz_ma columns: {matriz_ma.columns}")
             # Rename columns to ensure compatibility
             expected_columns = [
                 "fk_colaborador", "unidade", "secao", "posto", "convenio", "nome", "matricula",
@@ -2669,13 +2670,13 @@ class DescansosDataModel(BaseDataModel):
             # Handle VZ
             if 'vz' not in matrizA_og.columns:
                 matrizA_og['vz'] = 0
-            #self.logger.info(f"DEBUG: vz: {matrizA_og['vz']}")
+            self.logger.info(f"DEBUG: matrizA_og columns: {matrizA_og.columns}")
             
             # Create matrizA with selected columns
             matrizA = matrizA_og[[
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
-                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz'
+                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao'
             ]].copy()
             
             # Rename columns to match R output
@@ -3296,9 +3297,9 @@ class DescansosDataModel(BaseDataModel):
                 
                 # Save CSV files for debugging
                 try:
-                    matrizA_bk.to_csv(os.path.join('data', 'output', f'df_colaborador-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
-                    matriz2_bk.to_csv(os.path.join('data', 'output', f'df_calendario-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
-                    matrizB_bk.to_csv(os.path.join('data', 'output', f'df_estimativas-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
+                    matrizA_bk.to_csv(os.path.join('data', 'output', f'df_colaborador-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
+                    matriz2_bk.to_csv(os.path.join('data', 'output', f'df_calendario-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
+                    matrizB_bk.to_csv(os.path.join('data', 'output', f'df_estimativas-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
                     self.logger.info("CSV debug files saved successfully")
                 except Exception as csv_error:
                     self.logger.warning(f"Failed to save CSV debug files: {csv_error}")
@@ -3403,9 +3404,12 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")
                     return False
 
-                if results.get('status') == 'failed':  # Fixed: was checking for 'completed' which is wrong
-                    self.logger.error(f"Algorithm {algorithm_name} failed to run. Status: {results.get('status')}")
+                if results.get('summary', {}).get('status') == 'failed':  # Fixed: was checking for 'completed' which is wrong
+                    self.logger.error(f"Algorithm {algorithm_name} failed to run. Status: {results.get('summary', {}).get('status')}")
                     return False
+
+                self.logger.info(f"DEBUG: results: {results}")
+
                     
                 self.logger.info(f"Algorithm {algorithm_name} executed successfully with status: {results.get('status')}")
             except Exception as e:
@@ -3414,17 +3418,21 @@ class DescansosDataModel(BaseDataModel):
             
             try:
                 self.logger.info("Storing algorithm results in rare_data")
-                self.rare_data['stage1_schedule'] = pd.DataFrame(results.get('stage1_schedule', pd.DataFrame())) # TODO: define in the algorithm how the results come
-                self.rare_data['stage2_schedule'] = pd.DataFrame(results.get('stage2_schedule', pd.DataFrame())) # TODO: define in the algorithm how the results come
+                #self.rare_data['stage1_schedule'] = pd.DataFrame(results.get('stage1_schedule', pd.DataFrame())) # TODO: define in the algorithm how the results come
+                #self.rare_data['stage2_schedule'] = pd.DataFrame(results.get('stage2_schedule', pd.DataFrame())) # TODO: define in the algorithm how the results come
                 # TODO: add more data to rare_data if needed
                 
                 if not self.rare_data:
                     self.logger.warning("rare_data storage verification failed")
                     return False
+
+                self.rare_data['df_results'] = results.get('formatted_schedule_df', pd.DataFrame())
+                self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
+                self.rare_data['df_results'].to_csv(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
                     
                 results_df = self.rare_data.get('df_results', {})
-                with open(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}.json'), 'w', encoding='utf-8') as f:
-                    json.dump(results_df, f, indent=2, ensure_ascii=False)
+                #with open(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}.json'), 'w', encoding='utf-8') as f:
+                #    json.dump(results_df, f, indent=2, ensure_ascii=False)
                 self.logger.info(f"Results stored - df_results shape: {results_df.shape if results_df is not None else 'None'}")
                 self.logger.info(f"Allocation cycle completed successfully with algorithm {algorithm_name}.")
                 return True
@@ -3458,17 +3466,61 @@ class DescansosDataModel(BaseDataModel):
     def format_results(self) -> bool:
         """
         Method responsible for formatting results before inserting.
+        It is a little bit of a mess, but it works. The purpose of this method is to prepare the final data frame for insertion
         """
         try:
-            self.logger.info("Entered format_results method. Needs to be implemented.")
-            self.formatted_data = self.rare_data
-            self.logger.info(f"formatted_data: {self.formatted_data}")
-            self.logger.info("DEBUG: save final dfs")
-            self.formatted_data['stage1_schedule'].to_csv(os.path.join('data', 'output', f'stage1_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
-            self.formatted_data['stage2_schedule'].to_csv(os.path.join('data', 'output', f'stage2_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
+            self.logger.info("Entered format_results method.")
+            final_df = self.rare_data['df_results'].copy()
+            df_colaborador = self.medium_data['df_colaborador'].copy()
+            self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
+            df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao']]
+
+            self.logger.info(f"Adding wfm_proc_id to final_df")
+            final_df['wfm_proc_id'] = self.external_call_data.get("current_process_id", "")
+            self.logger.info(f"DEBUG: final_df: {final_df}")
+
+            self.logger.info("Merging with df_colaborador")
+            # Convert matricula to int for matching (remove leading zeros)
+            df_colaborador['matricula_int'] = df_colaborador['matricula'].astype(str).str.lstrip('0').astype(int)
+            self.logger.info(f"DEBUG: df_colaborador matricula_int: {df_colaborador['matricula_int'].tolist()}")
+            final_df = pd.merge(final_df, df_colaborador, left_on='colaborador', right_on='matricula_int', how='left')
+            self.logger.info(f"DEBUG: final_df: {final_df}")
+            self.logger.info("Filtering dates greater than each employee's admission date")
+            initial_rows = len(final_df)
+            # Convert data_admissao to datetime if not already
+            #self.logger.info(f"DEBUG: data_admissao: {final_df['data_admissao']}, type: {type(final_df['data_admissao'])}")
+            final_df['data_admissao'] = pd.to_datetime(final_df['data_admissao'], format='%Y-%m-%d')
+            #self.logger.info(f"DEBUG: data_admissao: {final_df['data_admissao']}, type: {type(final_df['data_admissao'])}")
+            # Filter per employee: each row's date must be > that employee's admission date
+            if 'data' in final_df.columns:
+                final_df['data'] = pd.to_datetime(final_df['data'])
+                final_df = final_df[final_df['data'] >= final_df['data_admissao']].copy()
+                #self.logger.info(f"DEBUG: data: {final_df['data']}, type: {type(final_df['data'])}")
+            elif 'date' in final_df.columns:
+                final_df['date'] = pd.to_datetime(final_df['date'])
+                #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
+                final_df = final_df[final_df['date'] >= final_df['data_admissao']].copy()
+            
+            filtered_rows = len(final_df)
+            self.logger.info(f"Filtered {initial_rows - filtered_rows} rows (from {initial_rows} to {filtered_rows}) based on admission dates")
+
+            self.logger.info(f"DEBUG: final_df: {final_df}")
+
+            self.logger.info("Converting types out")
+            final_df = convert_types_out(pd.DataFrame(final_df))
+            self.logger.info(f"DEBUG: final_df:\n {final_df}")
+            final_df = final_df.drop(columns=['matricula_int', 'horario', 'fk_colaborador', 'data_admissao', 'matricula_int', 'colaborador'])
+            final_df = final_df.rename(columns={'matricula': 'colaborador'})
+            final_df['colaborador'] = final_df['colaborador'].astype(str)
+            final_df.to_csv(os.path.join('data', 'output', f'df_insert_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
+            #self.formatted_data['stage1_schedule'].to_csv(os.path.join('data', 'output', f'stage1_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
+            #self.formatted_data['stage2_schedule'].to_csv(os.path.join('data', 'output', f'stage2_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
+            self.logger.info("format_results completed successfully")
+            self.logger.info(f"DEBUG: final_df:\n {final_df}")
+            self.formatted_data['df_final'] = final_df.copy()
             return True            
         except Exception as e:
-            self.logger.error(f"Error performing format_results from data manager: {str(e)}")
+            self.logger.error(f"Error performing format_results: {str(e)}", exc_info=True) 
             return False
 
     def validate_format_results(self) -> bool:
@@ -3482,16 +3534,44 @@ class DescansosDataModel(BaseDataModel):
             self.logger.error(f"Error validating format_results from data manager: {str(e)}")
             return False
         
-    def insert_results(self, data_manager: BaseDataManager, stmt: str = '') -> Tuple[bool, List[str]]:
+    def insert_results(self, data_manager: BaseDataManager, query_path: str = os.path.join(ROOT_DIR, 'src', 'sql_querys', 'insert_results.sql')) -> bool:
         """
         Method for inserting results in the data source.
         """
         try:
-            self.logger.info("Entered insert_results method. Needs to be implemented.")
-            return True, []  # Assuming no errors and no warnings          
+            self.logger.info("Entered insert_results method.")
+            final_df = self.formatted_data['df_final'].copy()
+
+            try:
+                self.logger.info(f"Changing column names to match insert_results query")
+                # Select desired columns
+                final_df = final_df[['colaborador', 'data', 'wfm_proc_id', 'sched_type', 'sched_subtype']]
+                # Convert data to string format for insertion
+                final_df['data'] = final_df['data'].dt.strftime('%Y-%m-%d')
+                # Rename columns to match insert_results query
+                final_df.rename(columns={'colaborador': 'employee_id', 'data': 'schedule_dt', 'wfm_proc_id': 'fk_processo'}, inplace=True)
+            except Exception as e:
+                self.logger.error(f"Error treating final_df column names for insertion: {str(e)}")
+                return False
+
+            try:
+                valid_insertion = bulk_insert_with_query(
+                    data_manager=data_manager, 
+                    data=final_df, 
+                    query_file=query_path,
+                )
+                if not valid_insertion:
+                    self.logger.error("Error inserting results")
+                    return False
+                self.logger.info("Results inserted successfully")
+                return True
+            except Exception as e:
+                self.logger.error(f"Error inserting results with bulk_insert_with_query: {str(e)}", exc_info=True)
+                return False
+
         except Exception as e:
-            self.logger.error(f"Error performing insert_results from data manager: {str(e)}")
-            return False, []       
+            self.logger.error(f"Error performing insert_results from data manager: {str(e)}", exc_info=True)
+            return False
 
     def validate_insert_results(self, data_manager: BaseDataManager) -> bool:
         """
