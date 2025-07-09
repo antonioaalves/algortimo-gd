@@ -304,9 +304,18 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             # Sort calendar by date to get the actual first date
             matriz_calendario_sorted = matriz_calendario_gd.sort_values('data')
             first_date_row = matriz_calendario_sorted.iloc[0]
-            start_weekday = first_date_row['wday']  # Get WDAY from the actual first date
+
+            # Get the year from the first date and create January 1st of that year
+            year = first_date_row['data'].year
+            january_1st = pd.Timestamp(year=year, month=1, day=1)
+
+            # If your system uses 1=Monday, 7=Sunday, add 1:
+            start_weekday = january_1st.weekday() + 1
+        
             
-            logger.info(f"First date: {first_date_row['data']}, WDAY: {start_weekday}")
+            logger.info(f"First date in dataset: {first_date_row['data']}")
+            logger.info(f"Year: {year}, January 1st: {january_1st}")
+            logger.info(f"Start weekday (January 1st): {start_weekday}")
             
             # Create week to days mapping using WW column and day of year
             week_to_days = {}

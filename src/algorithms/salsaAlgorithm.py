@@ -19,12 +19,18 @@ from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
     maximum_free_days, LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
-    free_days_special_days_salsa, assign_week_shift, working_day_shifts,
+    assign_week_shift, working_day_shifts,
     salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
     salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
+
+from src.helpers import (_create_empty_results, _calculate_comprehensive_stats, 
+                        _validate_constraints, _calculate_quality_metrics, 
+                        _format_schedules, _create_metadata, _validate_solution, 
+                        _create_export_info)
+
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -339,9 +345,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             logger.info(f"worker_holiday: {worker_holiday}, missing_days: {missing_days}, empty_days: {empty_days}, free_day_complete_cycle: {free_day_complete_cycle}, workers_complete: {workers_complete}")
             holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
             
-            # Free days special days constraint (SALSA specific)
-            free_days_special_days_salsa(model, shift, special_days, workers, working_days, 
-                                      total_l_dom, free_sundays_plus_c2d, c2d)
             
             # Worker week shift assignments
             assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
@@ -356,12 +359,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, 
                                   sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
-            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday)
+            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year)
 
             salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
-            
-            #salsa_week_cut_contraint(model, shift, workers, week_to_days_salsa, week_cut, start_weekday)
-            
+                        
             self.logger.info("All SALSA constraints applied")
             
             # =================================================================
@@ -383,6 +384,13 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             
+    # Capture solver statistics if available
+            if hasattr(model, 'solver_stats'):
+                self.solver_status = model.solver_stats.get('status', 'OPTIMAL')
+                self.solving_time_seconds = model.solver_stats.get('solving_time_seconds')
+                self.num_branches = model.solver_stats.get('num_branches')
+                self.num_conflicts = model.solver_stats.get('num_conflicts')
+            
             self.logger.info("SALSA algorithm execution completed successfully")
             return schedule_df
             
@@ -390,80 +398,155 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.error(f"Error in SALSA algorithm execution: {e}", exc_info=True)
             raise
 
+    # def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
+    #     """
+    #     Format the SALSA algorithm results for output.
+        
+    #     Args:
+    #         algorithm_results: Final schedule DataFrame from execute_algorithm
+            
+    #     Returns:
+    #         Dictionary containing formatted results and metadata
+    #     """
+    #     try:
+    #         self.logger.info("Formatting SALSA algorithm results")
+
+    #         if algorithm_results.empty and self.final_schedule is not None:
+    #             algorithm_results = self.final_schedule
+            
+    #         if algorithm_results.empty:
+    #             self.logger.warning("No algorithm results available to format")
+    #             algorithm_results = pd.DataFrame()
+
+    #         # Calculate basic statistics
+    #         total_workers = len(algorithm_results['Worker'].unique()) if 'Worker' in algorithm_results.columns else 0
+    #         total_days = len(algorithm_results['Day'].unique()) if 'Day' in algorithm_results.columns else 0
+    #         total_assignments = len(algorithm_results)
+            
+    #         # Count shift distributions
+    #         shift_distribution = {}
+    #         if 'Shift' in algorithm_results.columns:
+    #             shift_distribution = algorithm_results['Shift'].value_counts().to_dict()
+            
+    #         # Format results for SALSA
+    #         if not algorithm_results.empty and self.start_date and self.end_date:
+    #             # Convert to wide format similar to salsa algorithm
+    #             formatted_schedule = self.final_schedule.copy()
+                
+    #             # Create date range for column names
+    #             date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
+    #             new_columns = ['Worker'] + [str(date) for date in date_range]
+    #             formatted_schedule.columns = new_columns
+
+    #             # Convert to long format for consistency
+    #             melted_schedule = pd.melt(formatted_schedule, 
+    #                                     id_vars=['Worker'], 
+    #                                     var_name='Date', 
+    #                                     value_name='Status')
+    #         else:
+    #             melted_schedule = algorithm_results
+
+    #         formatted_results = {
+    #             'schedule': algorithm_results,
+    #             'metadata': {
+    #                 'algorithm_name': self.algo_name,
+    #                 'total_workers': total_workers,
+    #                 'total_days': total_days,
+    #                 'total_assignments': total_assignments,
+    #                 'shift_distribution': shift_distribution,
+    #                 'execution_timestamp': datetime.now().isoformat(),
+    #                 'parameters_used': self.parameters
+    #             },
+    #             'formatted_schedule': melted_schedule if not algorithm_results.empty else pd.DataFrame(),
+    #             'summary': {
+    #                 'status': 'completed',
+    #                 'message': f'Successfully scheduled {total_workers} workers over {total_days} days using SALSA algorithm'
+    #             }
+    #         }
+            
+    #         self.logger.info(f"SALSA results formatted successfully: {total_assignments} assignments created")
+    #         return formatted_results
+            
+    #     except Exception as e:
+    #         self.logger.error(f"Error in SALSA results formatting: {e}", exc_info=True)
+    #         raise
+
+
+
+# Update the format_results method:
     def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
         """
         Format the SALSA algorithm results for output.
         
         Args:
             algorithm_results: Final schedule DataFrame from execute_algorithm
-            
+           
         Returns:
             Dictionary containing formatted results and metadata
         """
         try:
-            self.logger.info("Formatting SALSA algorithm results")
-
             if algorithm_results.empty and self.final_schedule is not None:
                 algorithm_results = self.final_schedule
             
             if algorithm_results.empty:
-                self.logger.warning("No algorithm results available to format")
-                algorithm_results = pd.DataFrame()
+                logger.warning("No algorithm results available to format")
+                return _create_empty_results(self.algo_name, self.process_id, self.start_date, self.end_date, self.parameters)
 
-            # Calculate basic statistics
-            total_workers = len(algorithm_results['Worker'].unique()) if 'Worker' in algorithm_results.columns else 0
-            total_days = len(algorithm_results['Day'].unique()) if 'Day' in algorithm_results.columns else 0
-            total_assignments = len(algorithm_results)
+            # Calculate comprehensive statistics
+            stats = _calculate_comprehensive_stats(algorithm_results, self.start_date, self.end_date, self.data_processed)
             
-            # Count shift distributions
-            shift_distribution = {}
-            if 'Shift' in algorithm_results.columns:
-                shift_distribution = algorithm_results['Shift'].value_counts().to_dict()
+            # Validate constraints
+            constraint_validation = _validate_constraints(algorithm_results)
             
-            # Format results for SALSA
-            if not algorithm_results.empty and self.start_date and self.end_date:
-                # Convert to wide format similar to salsa algorithm
-                formatted_schedule = self.final_schedule.copy()
-                
-                # Create date range for column names
-                date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
-                new_columns = ['Worker'] + [str(date) for date in date_range]
-                formatted_schedule.columns = new_columns
+            # Calculate quality metrics
+            quality_metrics = _calculate_quality_metrics(algorithm_results)
+            
+            # Format schedule for different outputs
+            formatted_schedules = _format_schedules(algorithm_results, self.start_date, self.end_date)
+            formatted_schedules['database_format'] = formatted_schedules['database_format'].rename(columns={'Worker': 'colaborador'})
 
-                # Convert to long format for consistency
-                melted_schedule = pd.melt(formatted_schedule, 
-                                        id_vars=['Worker'], 
-                                        var_name='Date', 
-                                        value_name='Status')
-            else:
-                melted_schedule = algorithm_results
-
-            # Change column names
-            melted_schedule.rename(columns={'Worker': 'colaborador', 'Date': 'data', 'Status': 'horario'}, inplace=True)
-
-            formatted_results = {
-                'schedule': algorithm_results,
-                'metadata': {
-                    'algorithm_name': self.algo_name,
-                    'total_workers': total_workers,
-                    'total_days': total_days,
-                    'total_assignments': total_assignments,
-                    'shift_distribution': shift_distribution,
-                    'execution_timestamp': datetime.now().isoformat(),
-                    'parameters_used': self.parameters
-                },
-                'formatted_schedule_df': melted_schedule if not algorithm_results.empty else pd.DataFrame(),
-                'summary': {
-                    'status': 'completed',
-                    'message': f'Successfully scheduled {total_workers} workers over {total_days} days using SALSA algorithm'
-                }
+            # Get solver status (if available)
+            solver_status = getattr(self, 'solver_status', 'OPTIMAL')
+            
+            # Get solver attributes
+            solver_attributes = {
+                'solving_time_seconds': getattr(self, 'solving_time_seconds', None),
+                'num_branches': getattr(self, 'num_branches', None),
+                'num_conflicts': getattr(self, 'num_conflicts', None)
             }
             
-            self.logger.info(f"SALSA results formatted successfully: {total_assignments} assignments created")
+            # Create comprehensive results structure
+            formatted_results = {
+                'core_results': {
+                    'schedule': algorithm_results,
+                    'formatted_schedule': formatted_schedules['database_format'],
+                    'wide_format_schedule': formatted_schedules['wide_format'],
+                    'status': solver_status
+                },
+                'metadata': _create_metadata(self.algo_name, self.process_id, self.start_date, self.end_date, self.parameters, stats, solver_attributes),
+                'scheduling_stats': stats,
+                'constraint_validation': constraint_validation,
+                'quality_metrics': quality_metrics,
+                'validation': _validate_solution(algorithm_results),
+                'export_info': _create_export_info(self.process_id, ROOT_DIR),
+                'summary': {
+                    'status': 'completed',
+                    'message': f'Successfully scheduled {stats["workers"]["total_workers"]} workers over {stats["time_coverage"]["total_days"]} days using SALSA algorithm',
+                    'key_metrics': {
+                        'total_assignments': stats['shifts']['total_assignments'],
+                        'coverage_percentage': stats['time_coverage']['coverage_percentage'],
+                        'constraint_satisfaction': constraint_validation.get('overall_satisfaction', 100)
+                    }
+                }
+            }
+
+            logger.info(f"formatted schedule: {formatted_results['core_results']['formatted_schedule'].shape}")
+            
+            self.logger.info("Enhanced SALSA results formatted successfully")
             return formatted_results
             
         except Exception as e:
-            self.logger.error(f"Error in SALSA results formatting: {e}", exc_info=True)
+            self.logger.error(f"Error in enhanced SALSA results formatting: {e}", exc_info=True)
             raise
 
     def run(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:

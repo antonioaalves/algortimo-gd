@@ -3477,7 +3477,7 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.warning("rare_data storage verification failed")
                     return False
 
-                self.rare_data['df_results'] = results.get('formatted_schedule_df', pd.DataFrame())
+                self.rare_data['df_results'] = results['core_results']['formatted_schedule']
                 self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
                 self.rare_data['df_results'].to_csv(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
                     
@@ -3522,6 +3522,7 @@ class DescansosDataModel(BaseDataModel):
         try:
             self.logger.info("Entered format_results method.")
             final_df = self.rare_data['df_results'].copy()
+            self.logger.info(f"{final_df.columns.tolist()}")
             df_colaborador = self.medium_data['df_colaborador'].copy()
             self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
             df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao']]
