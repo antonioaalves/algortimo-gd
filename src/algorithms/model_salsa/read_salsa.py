@@ -525,7 +525,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
-                        pess_obj[(d, s)] = int(round(day_shift_data['pessobj'].values[0]))
+                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]))
                     else:
                         pess_obj[(d, s)] = 0  # or any default value you prefer
                 
@@ -534,8 +534,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == shift_type)]
                     if not day_shift_data.empty:
                                     # Convert floats to integers for OR-Tools compatibility
-                                    min_workers[(d, shift_type)] = int(round(day_shift_data['minturno'].values[0]))
-                                    max_workers[(d, shift_type)] = int(round(day_shift_data['maxturno'].values[0]))
+                                    min_workers[(d, shift_type)] = int(round(day_shift_data['min_turno'].values[0]))
+                                    max_workers[(d, shift_type)] = int(round(day_shift_data['max_turno'].values[0]))
 
             logger.info(f"Processing estimativas data with {len(matriz_estimativas_gd)} records")
             logger.info(f"  - pess_obj: {len(pess_obj)} entries")

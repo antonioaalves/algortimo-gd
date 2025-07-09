@@ -368,8 +368,8 @@ class AlgoritmoGDService(BaseService):
                 if self.stage_handler:
                     self.stage_handler.start_substage('processing', 'allocation_cycle')
                 # Type assertions to help type checker
-                algorithm_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '')
-                self.logger.info(f"Algorithm name: {algorithm_name}")
+                algorithm_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
+                self.logger.info(f"DEBUG: Algorithm name before calling allocation_cycle substage: {algorithm_name}")
                 assert isinstance(algorithm_name, str)
                 assert isinstance(algorithm_params, dict)
                 valid_allocation_cycle = self._execute_allocation_cycle_substage(algorithm_params=algorithm_params, stage_name=stage_name, algorithm_name=algorithm_name)
@@ -487,7 +487,7 @@ class AlgoritmoGDService(BaseService):
                     )
                 return False
 
-            if algorithm_name:
+            if algorithm_name and self.process_manager:
                 # Get current decisions for stage
                 stage_sequence, current_decisions = self.get_decisions_for_stage('processing')
                 
@@ -495,8 +495,8 @@ class AlgoritmoGDService(BaseService):
                 current_decisions['algorithm_name'] = algorithm_name
                 self.logger.info(f"DEBUG: Current decisions: {current_decisions}")
                 
-                # Update the defaults with the new decisions
-                self.process_manager.update_default_values(stage_sequence, current_decisions)
+                # Store in current_decisions properly
+                self.process_manager.current_decisions[stage_sequence] = current_decisions
 
             # Track progress for the connection substage
             if self.stage_handler:

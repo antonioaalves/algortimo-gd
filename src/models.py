@@ -1018,6 +1018,7 @@ class DescansosDataModel(BaseDataModel):
                 df_data = df_data.drop('tipo_dia', axis=1)
             
             # Process faixa_horario
+            self.logger.info(f"DEBUG: df_faixa_horario before filter:\n {df_faixa_horario}")
             df_faixa_horario_filtered = df_faixa_horario[df_faixa_horario['fk_secao'] == fk_secao].copy()
             
             # Expand date ranges in faixa_horario
@@ -1028,6 +1029,8 @@ class DescansosDataModel(BaseDataModel):
                     new_row = row.copy()
                     new_row['data'] = date
                     expanded_rows.append(new_row)
+
+            #self.logger.info(f"DEBUG: expanded_rows:\n {expanded_rows}")
             
             if expanded_rows:
                 df_faixa_horario_expanded = pd.DataFrame(expanded_rows)
@@ -1036,14 +1039,20 @@ class DescansosDataModel(BaseDataModel):
                 time_columns = ["aber_seg", "fech_seg", "aber_ter", "fech_ter", "aber_qua", "fech_qua", 
                             "aber_qui", "fech_qui", "aber_sex", "fech_sex", "aber_sab", "fech_sab", 
                             "aber_dom", "fech_dom", "aber_fer", "fech_fer"]
+
+                self.logger.info(f"DEBUG: df_faixa_horario_expanded before melt:\n {df_faixa_horario_expanded}")
                 
                 df_faixa_long = pd.melt(df_faixa_horario_expanded, 
                                     id_vars=['fk_secao', 'data', 'data_ini', 'data_fim'],
                                     value_vars=time_columns,
                                     var_name='wd_ab', value_name='value')
+
+                self.logger.info(f"DEBUG: df_faixa_long after melt:\n {df_faixa_long}")
                 
                 # Split wd_ab into action (aber/fech) and weekday
                 df_faixa_long[['a_f', 'wd']] = df_faixa_long['wd_ab'].str.split('_', expand=True)
+
+                self.logger.info(f"DEBUG: df_faixa_long after split:\n {df_faixa_long}")
                 
                 # Pivot back to get aber and fech columns
                 df_faixa_wide = df_faixa_long.pivot_table(
@@ -1052,6 +1061,8 @@ class DescansosDataModel(BaseDataModel):
                     values='value', 
                     aggfunc='first'
                 ).reset_index()
+
+                self.logger.info(f"DEBUG: df_faixa_wide after pivot:\n {df_faixa_wide}")
                 
                 # Clean column names
                 df_faixa_wide.columns.name = None
@@ -1060,9 +1071,19 @@ class DescansosDataModel(BaseDataModel):
                 df_faixa_wide['wd'] = df_faixa_wide['wd'].str.replace('sab', 'sáb')
                 df_faixa_wide['wd_date'] = df_faixa_wide['data'].dt.day_name().str.lower()
                 df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('saturday', 'sáb')
+                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('sunday', 'dom')
+                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('monday', 'seg')
+                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('tuesday', 'ter')
+                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('wednesday', 'qua')
+                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('thursday', 'qui')
+                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('friday', 'sex')
+
+                self.logger.info(f"DEBUG: df_faixa_wide after weekday replacement:\n {df_faixa_wide}")
                 
                 # Filter matching weekdays
                 df_faixa_horario_final = df_faixa_wide[df_faixa_wide['wd'] == df_faixa_wide['wd_date']].copy()
+
+                self.logger.info(f"DEBUG: df_faixa_horario_final after filter:\n {df_faixa_horario_final}")
                 
                 # Convert time columns to datetime
                 df_faixa_horario_final['aber'] = pd.to_datetime(df_faixa_horario_final['aber'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
@@ -1071,6 +1092,8 @@ class DescansosDataModel(BaseDataModel):
                 df_faixa_horario_final = df_faixa_horario_final[['fk_secao', 'data', 'aber', 'fech']]
             else:
                 df_faixa_horario_final = pd.DataFrame({col: [] for col in ['fk_secao', 'data', 'aber', 'fech']})
+
+            self.logger.info(f"DEBUG: df_faixa_horario_final:\n {df_faixa_horario_final}")
             
             # Merge all data together
             df_turnos = pd.merge(df_turnos, df_data, on=['fk_unidade'], how='left')
@@ -2112,6 +2135,9 @@ class DescansosDataModel(BaseDataModel):
                 matrizB_og = self.raw_data['df_estimativas'].copy() 
                 matrizA_og = self.raw_data['df_colaborador'].copy()
 
+                #DEBUG - TODO: remove
+                matrizB_og.to_csv(os.path.join('data', 'output', f'df_estimativas_debug_inicializa-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
+
                 self.logger.info(f"Matrices loaded - matriz2_og (columns: {matriz2_og.shape[0]}, rows: {matriz2_og.shape[1]}), matrizB_og ( columns: {matrizB_og.shape[0]}, rows: {matrizB_og.shape[1]}), matrizA_og ( columns: {matrizA_og.shape[0]}, rows: {matrizA_og.shape[1]})")
             except KeyError as e:
                 self.logger.error(f"Missing required data matrix in func_inicializa: {e}", exc_info=True)
@@ -2176,6 +2202,7 @@ class DescansosDataModel(BaseDataModel):
             matrizB_ini.loc[matrizB_ini['data'].isin(special_dates), 'min_turno'] = matrizB_ini['max_turno']
             mask_friday = (matrizB_ini['data'].isin(friday_dates)) & (matrizB_ini['turno'] == 'M')
             matrizB_ini.loc[mask_friday, 'min_turno'] = matrizB_ini.loc[mask_friday, 'max_turno']
+            self.logger.info(f"DEBUG: matrizB_ini before matriz2: {matrizB_ini}")
             
             #CRIAR MATRIZ_2--------------------------------------------------
             
@@ -2193,7 +2220,7 @@ class DescansosDataModel(BaseDataModel):
             # Rename columns
             #self.logger.info(f"DEBUG: new_columns func_inicilaiza 2095: {new_columns}")
             matriz2_og.columns = new_columns
-            
+            #self.logger.info(f"DEBUG: matriz2_og: {matriz2_og}")
             # Melt the dataframe
             matriz2_ini = pd.melt(matriz2_og, id_vars='DIA_TURNO', 
                                 var_name='DATA', value_name='TIPO_TURNO')
@@ -2210,17 +2237,19 @@ class DescansosDataModel(BaseDataModel):
                 (matriz2_ini['DATA'] >= start_date) & 
                 (matriz2_ini['DATA'] <= end_date)
             ]
-            self.logger.info(f"end date: {end_date}")
-            self.logger.info(f"DEBUG: matriz2_ini tail after filter by date range: {matriz2_ini.tail(40)}")
+            #self.logger.info(f"end date: {end_date}")
+            #self.logger.info(f"DEBUG: matriz2_ini tail after filter by date range: {matriz2_ini.tail(40)}")
             
             # Filter out unwanted rows
             unwanted_colaboradors = ['Dia', 'maxTurno', 'mediaTurno', 'minTurno', 'sdTurno', 'TURNO']
             matriz2_ini = pd.DataFrame(matriz2_ini)
+            #self.logger.info(f"DEBUG: matriz2_ini last: {matriz2_ini.head(30)}")
             matriz2 = pd.DataFrame(matriz2_ini[~matriz2_ini['COLABORADOR'].isin(unwanted_colaboradors)].copy())
             
             # Previously, we had a filter by date range, but it was not working as expected. it since moved to before melt function
 
             # Add HORARIO column
+            #self.logger.info(f"DEBUG: matriz2 before adding HORARIO column: {matriz2.head(30)}")
             matriz2 = pd.DataFrame(matriz2)
             matriz2['HORARIO'] = np.where(
                 matriz2['TIPO_TURNO'].isin(['M', 'T', 'MoT', 'P']), 'H', matriz2['TIPO_TURNO']
@@ -2238,11 +2267,12 @@ class DescansosDataModel(BaseDataModel):
             # Add date-related columns
             matriz2['DATA'] = pd.to_datetime(matriz2['DATA'])
             matriz2['WDAY'] = matriz2['DATA'].dt.dayofweek + 1  # Convert to 1-7 scale
-            self.logger.info(f"DEBUG: matriz2 max data: {matriz2['DATA'].max()}")
+            #self.logger.info(f"DEBUG: matriz2 max data: {matriz2['DATA'].max()}")
             matriz2['ID'] = range(len(matriz2))
             matriz2['WW'] = matriz2['DATA'].apply(adjusted_isoweek)
             matriz2['WD'] = matriz2['DATA'].dt.day_name().str[:3]
             
+            #self.logger.info(f"DEBUG: matriz2 before assign_dia_tipo: {matriz2}")
             # Calculate DIA_TIPO
             # TODO: pass this function to helpers
             def calculate_dia_tipo(group):
@@ -2271,7 +2301,7 @@ class DescansosDataModel(BaseDataModel):
             # self.logger.info(f"DEBUG: matriz2 post calculate_dia_tipo:\n {matriz2.head(30)}")
 
             matriz2 = matriz2.groupby('DATA', group_keys=False).apply(assign_dia_tipo)
-            self.logger.info(f"DEBUG: matriz2 post assign_dia_tipo:\n {matriz2.tail(30)}")
+            #self.logger.info(f"DEBUG: matriz2 post assign_dia_tipo:\n {matriz2.tail(30)}")
             
             # Merge with employee admission/dismissal dates
             emp_dates = matrizA_og[['emp', 'data_admissao', 'data_demissao']].copy()
@@ -2281,11 +2311,13 @@ class DescansosDataModel(BaseDataModel):
             ])
             
             matriz2 = matriz2.merge(emp_dates, left_on='COLABORADOR', right_on='emp', how='left')
+            #self.logger.info(f"DEBUG: matriz2 after merge with employee admission/dismissal dates:\n {matriz2.tail(30)}")
             
             # Filter by dismissal date and adjust HORARIO based on admission date
             matriz2 = matriz2[
                 matriz2['DATA'] <= matriz2['data_demissao'].fillna(pd.Timestamp('2100-01-01'))
             ]
+            self.logger.info(f"DEBUG: matriz2 after filter by dismissal date:\n {matriz2.tail(30)}")
             
             # TODO: pass this function to helpers
             def adjust_horario(row):
@@ -2298,6 +2330,7 @@ class DescansosDataModel(BaseDataModel):
                     return 'NL'
             
             matriz2['HORARIO'] = matriz2.apply(adjust_horario, axis=1)
+            self.logger.info(f"DEBUG: matriz2 after adjust_horario:\n {matriz2.tail(30)}")
             
             #CRIAR MATRIZ_A--------------------------------------------------
             
@@ -2627,18 +2660,18 @@ class DescansosDataModel(BaseDataModel):
             matrizA_og = self._log_and_clip_l_total(matrizA_og, "after LD_at subtraction", clip_negative=False)
             
             # Log all columns and their data
-            self.logger.info(f"DEBUG: matrizA_og shape: {matrizA_og.shape}")
-            self.logger.info(f"DEBUG: matrizA_og columns: {matrizA_og.columns.tolist()}")
-            self.logger.info(f"DEBUG: matrizA_og dtypes:\n{matrizA_og.dtypes}")
+            #self.logger.info(f"DEBUG: matrizA_og shape: {matrizA_og.shape}")
+            #self.logger.info(f"DEBUG: matrizA_og columns: {matrizA_og.columns.tolist()}")
+            #self.logger.info(f"DEBUG: matrizA_og dtypes:\n{matrizA_og.dtypes}")
             
             # Log data with better formatting - using CSV format for readability
-            self.logger.info("DEBUG: matrizA_og data (CSV format):")
-            self.logger.info(matrizA_og.to_csv(sep='\t', index=False))
+            #self.logger.info("DEBUG: matrizA_og data (CSV format):")
+            #self.logger.info(matrizA_og.to_csv(sep='\t', index=False))
             
             # Alternative: Log each column separately for very detailed view
-            self.logger.info("DEBUG: matrizA_og column-by-column data:")
-            for col in matrizA_og.columns:
-                self.logger.info(f"  {col}: {matrizA_og[col].tolist()}")
+            #self.logger.info("DEBUG: matrizA_og column-by-column data:")
+            #for col in matrizA_og.columns:
+            #    self.logger.info(f"  {col}: {matrizA_og[col].tolist()}")
             
             # Log specific column for backward compatibility
             self.logger.info(f"DEBUG: matrizA_og ld: {matrizA_og['ld']}")
@@ -2881,7 +2914,7 @@ class DescansosDataModel(BaseDataModel):
                 tipo_contrato = int(mmA['tipo_contrato'].iloc[0])
                 ciclo = str(mmA['ciclo'].iloc[0]).upper() if 'ciclo' in mmA.columns else ''
                 dyf_max_t = int(mmA['dyf_max_t'].iloc[0]) if 'dyf_max_t' in mmA.columns else 0
-                self.logger.info(f"DEBUG: colab {colab} mmA: {mmA}")
+                #self.logger.info(f"DEBUG: colab {colab} mmA: {mmA}")
                 
                 if tipo_contrato == 2:
                     # Process 2-day contracts using calcular_folgas2
@@ -2946,8 +2979,8 @@ class DescansosDataModel(BaseDataModel):
                     matrizA_bk = pd.concat([matrizA_bk, mmA], ignore_index=True)
                     
                 elif dyf_max_t == 0 and ciclo not in ['COMPLETO']:
-                    self.logger.info(f"DEBUG: primeiro if")
-                    self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
+                    #self.logger.info(f"DEBUG: primeiro if")
+                    #self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
                     # Employee doesn't work any Sunday - force all Sundays with L
                     mmA.loc[:, 'l_total'] = mmA['l_total'].iloc[0] - mmA['l_dom'].iloc[0]
                     mmA.loc[:, 'l_dom'] = 0
@@ -2964,7 +2997,7 @@ class DescansosDataModel(BaseDataModel):
                     matriz2_bk = pd.concat([pd.DataFrame(matriz2_bk), pd.DataFrame(new_c)], ignore_index=True)
                     
                 elif ciclo in ['SIN DYF']:
-                    self.logger.info(f"DEBUG: segundo if")
+                    #self.logger.info(f"DEBUG: segundo if")
                     #self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
                     # Special cycle: only assign Sundays and LD
                     mmA.loc[:, 'c2d'] = mmA['c2d'].iloc[0] - mmA['c3d'].iloc[0]
@@ -2982,8 +3015,8 @@ class DescansosDataModel(BaseDataModel):
                 
                 # Handle COMPLETO cycle - reset all L values
                 if ciclo == 'COMPLETO':
-                    self.logger.info(f"DEBUG: terceiro if")
-                    self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
+                    #self.logger.info(f"DEBUG: terceiro if")
+                    #self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
                     # Reset all columns from position 9 onwards to 0
                     #cols_to_reset = mmA.columns[8:]  # Assuming position 9 is index 8
                     cols_to_reset = ['l_total', 'l_dom', 'l_d', 'l_q', 'l_qs', 'c2d', 'c3d', 'cxx','descansos_atrb', 'dyf_max_t', 'lq_og', 'vz', 'l_res']
@@ -2997,7 +3030,7 @@ class DescansosDataModel(BaseDataModel):
                 # Handle CXX for 4/5 day contracts
                 if (tipo_contrato in [4, 5] and mmA['cxx'].iloc[0] > 0 and 
                     ciclo not in ['SIN DYF', 'COMPLETO']):
-                    self.logger.info(f"DEBUG: quarto if")
+                    #self.logger.info(f"DEBUG: quarto if")
                     
                     mmA.loc[:, 'l_res2'] = mmA['l_res'].iloc[0] - mmA['cxx'].iloc[0]
                     mmA.loc[:, 'l_res'] = mmA['cxx'].iloc[0]
@@ -3013,16 +3046,16 @@ class DescansosDataModel(BaseDataModel):
                     matrizA_bk = matrizA_bk[matrizA_bk['matricula'] != colab]
                     matrizA_bk = pd.concat([pd.DataFrame(matrizA_bk), pd.DataFrame(mmA)], ignore_index=True)
             
-            self.logger.info(f"DEBUG: algoritmo: {self.auxiliary_data['GD_algorithmName']}")
-            self.logger.info(f"DEBUG: matrizA_bk shape: {matrizA_bk.shape}")
-            self.logger.info(f"DEBUG: matrizA_bk columns: {matrizA_bk.columns.tolist()}")
+            #self.logger.info(f"DEBUG: algoritmo: {self.auxiliary_data['GD_algorithmName']}")
+            #self.logger.info(f"DEBUG: matrizA_bk shape: {matrizA_bk.shape}")
+            #self.logger.info(f"DEBUG: matrizA_bk columns: {matrizA_bk.columns.tolist()}")
             
             # Check if target columns exist
             target_cols = ['l_res', 'l_d']
             existing_cols = [col for col in target_cols if col in matrizA_bk.columns]
             missing_cols = [col for col in target_cols if col not in matrizA_bk.columns]
-            self.logger.info(f"DEBUG: existing target columns: {existing_cols}")
-            self.logger.info(f"DEBUG: missing target columns: {missing_cols}")
+            #self.logger.info(f"DEBUG: existing target columns: {existing_cols}")
+            #self.logger.info(f"DEBUG: missing target columns: {missing_cols}")
             
             # Log before values
             for col in existing_cols:
@@ -3141,22 +3174,31 @@ class DescansosDataModel(BaseDataModel):
                 })
             
             trab_tarde = pd.DataFrame(trab_tarde_data)
+
+            # Transform turno column to uppercase
+            matrizB_ini['turno'] = matrizB_ini['turno'].str.upper()
             
             # Merge +H with matrizB for morning
+            self.logger.info(f"matrizB_ini before filter:\n {matrizB_ini}")
             matrizB_m = matrizB_ini[matrizB_ini['turno'] == 'M'].copy()
+            self.logger.info(f"matrizB_m after filter turno m:\n {matrizB_m}")
             
             # Convert dates to date objects
+            # TODO: check if it does not need %Y-%m-%d
             matrizB_m['data'] = pd.to_datetime(matrizB_m['data']).dt.date
             trab_manha['DATA'] = pd.to_datetime(trab_manha['DATA']).dt.date
             
-            self.logger.info(f"matrizB_m: {matrizB_m}")
+            #TODO: from this point, the dataframe is empty
             self.logger.info(f"trab_manha: {trab_manha}")
             matrizB_m = matrizB_m.merge(trab_manha, left_on=['data', 'turno'], 
                                     right_on=['DATA', 'TURNO'], how='left')
             matrizB_m = matrizB_m.drop(['DATA', 'TURNO'], axis=1, errors='ignore')
+            self.logger.info(f"matrizB_m after merge with trab_manha:\n {matrizB_m}")
             
-            # Merge +H with matrizB for afternoon  
+            # Merge +H with matrizB for afternoon
+            self.logger.info(f"matrizB_ini before filter: {matrizB_ini}")
             matrizB_t = matrizB_ini[matrizB_ini['turno'] == 'T'].copy()
+            self.logger.info(f"matrizB_t after filter turno t:\n {matrizB_t}")
             
             # Convert dates for afternoon merge to date objects
             matrizB_t['data'] = pd.to_datetime(matrizB_t['data']).dt.date
@@ -3165,7 +3207,7 @@ class DescansosDataModel(BaseDataModel):
             matrizB_t = matrizB_t.merge(trab_tarde, left_on=['data', 'turno'],
                                     right_on=['DATA', 'TURNO'], how='left')
             matrizB_t = matrizB_t.drop(['DATA', 'TURNO'], axis=1, errors='ignore')
-            self.logger.info(f"matrizB_t: {matrizB_t}")
+            self.logger.info(f"matrizB_t after merge with trab_tarde:\n {matrizB_t}")
             
             # Combine morning and afternoon
             matrizB_ini = pd.concat([matrizB_m, matrizB_t], ignore_index=True)
@@ -3180,6 +3222,7 @@ class DescansosDataModel(BaseDataModel):
             matrizB_ini['sd_turno'] = pd.to_numeric(matrizB_ini['sd_turno'], errors='coerce')
             matrizB_ini['media_turno'] = pd.to_numeric(matrizB_ini['media_turno'], errors='coerce')
             matrizB_ini['+H'] = pd.Series(pd.to_numeric(matrizB_ini['+H'], errors='coerce')).fillna(0)
+            self.logger.info(f"matrizB_ini after merge with trab_tarde: {matrizB_ini}")
             
             # Calculate aux (coefficient of variation)
             matrizB_ini['aux'] = np.where(
@@ -3207,6 +3250,7 @@ class DescansosDataModel(BaseDataModel):
             # Add weekday
             matrizB['data'] = pd.to_datetime(matrizB['data'])
             matrizB['WDAY'] = matrizB['data'].dt.dayofweek + 1
+            self.logger.info(f"matrizB after adding WDAY: {matrizB}")
             
             # Create backup
             matrizB_bk = matrizB.copy()
@@ -3279,6 +3323,7 @@ class DescansosDataModel(BaseDataModel):
             
             try:
                 self.logger.info("Storing final results in medium_data")
+                self.logger.info(f"DEBUG: matrizB_bk: {matrizB_bk}")
                 # Store final results in transformed_data
                 self.medium_data.update({
                     'df_colaborador': matrizA_bk.copy(),

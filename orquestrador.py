@@ -152,7 +152,7 @@ if not sec_to_proc.empty:
 
                             # In Python we use subprocess instead of system
                             subprocess.Popen([
-                                "python", "main.py", 
+                                "python", "batch_process.py", 
                                 str(api_proc_id), 
                                 str(wfm_proc_id),
                                 wfm_user,

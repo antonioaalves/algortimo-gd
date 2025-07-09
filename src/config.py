@@ -45,9 +45,9 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 2618,#253762,# 249468,
+        'current_process_id': 1427,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 2618,
+        'wfm_proc_id': 1427,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
@@ -175,10 +175,10 @@ CONFIG = {
                     'fill_missing': True,       # Whether to fill missing values
                     'fill_method': 'mean'       # Method for filling missing values
                 },
-                'algorithm': {
-                    'name': 'salsa_algorithm',  # Default algorithm to use - should come from the parameters_defaults in the future
-                    'parameters': {}
-                },
+                #'algorithm': {
+                #    'name': 'salsa_algorithm',  # Default algorithm to use - should come from the parameters_defaults in the future
+                #    'parameters': {}
+                #},
                 'insertions': {
                     'insert_results': False
                 }
@@ -208,7 +208,7 @@ CONFIG = {
                     'required': True,
                     'decisions': {
                         # Very important define the algorithms here
-                        'algorithms': ['salsa_algorithm']
+                        #'algorithms': ['salsa_algorithm']
                     }                     
                 },
                 'format_results': {
