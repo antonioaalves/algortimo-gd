@@ -1,3 +1,6 @@
+
+
+
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
     for w in workers_complete:
@@ -79,14 +82,6 @@ def holiday_missing_day_attribution(model, shift, workers_complete, worker_holid
             else:
                 print(f"Missing shift for worker {w}, day {d}, shift L")
 
-def free_days_special_days_salsa(model, shift, special_days, workers, working_days, total_l_dom, free_sundays_plus_c2d, c2d):
-    for w in workers:
-        # Only consider special days that are in this worker's working days
-        worker_special_days = [d for d in special_days if d in working_days[w]]
-        if free_sundays_plus_c2d == True:
-            model.Add(sum(shift[(w, d, "L")] for d in worker_special_days) >= total_l_dom.get(w, 0) + c2d.get(w, 0) )
-        else:
-            model.Add(sum(shift[(w, d, "L")] for d in worker_special_days) >= total_l_dom.get(w, 0) )
 
 def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift):
     # Contraint for workers shifts taking into account the worker_week_shift (each week a worker can either be )
@@ -299,23 +294,35 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         # Final constraint: LQ can only be assigned if this day could be part of a quality weekend
                         model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
 
-def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday):
-    # For each worker, constrain L/LD on Friday if LQ on Saturday, and L/LD on Monday if L on Sunday
+def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year):
+    # For each worker, constrain L on Saturday if L on Sunday
+
     for w in workers:
         for day in working_days[w]:
             # Get day of week (5 = Saturday)
-            day_of_week = (day + start_weekday - 2 ) % 7
-        
-            # Case 1: Friday (day_of_week == 5) followed by LQ on Saturday
-            if day_of_week == 5 and day_of_week in working_days[w]:
-                # If LQ on Saturday, then no L/LD on Friday
-                sunday_l = shift.get((w, day + 1, "LQ"), 0)
-                saturday_l = shift.get((w, day, "L"), 0)
-                
-                # If Sunday has L, then Saturday can't have L 
-                model.Add(saturday_l == 0).OnlyEnforceIf(sunday_l)
+            day_of_week = (day + start_weekday - 2) % 7
             
-        
+            # Case 1: Saturday (day_of_week == 5)
+            if day_of_week == 5:
+                sunday_day = day + 1
+                
+                # Check if Sunday exists and is within the year bounds
+                if sunday_day in working_days[w]:
+                    # Check if both Saturday and Sunday shifts exist for this worker
+                    saturday_l_key = (w, day, "L")
+                    sunday_l_key = (w, sunday_day, "L")
+                    
+                    if saturday_l_key in shift and sunday_l_key in shift:
+                        saturday_l = shift[saturday_l_key]
+                        sunday_l = shift[sunday_l_key]
+                        print(f"DEBUG: Adding constraint for Worker {w}, Saturday {day}, Sunday {sunday_day}")
+
+                        
+                        # If Sunday has L, then Saturday can't have L
+                        # This translates to: sunday_l == 1 → saturday_l == 0
+                        # Which is equivalent to: saturday_l + sunday_l <= 1
+                        model.Add(saturday_l + sunday_l <= 1)
+            
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days):
     for w in workers:
