@@ -1208,50 +1208,85 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
     """
     Get configuration for a specific posto_id following hierarchy:
     1. Posto-specific (fk_tipo_posto = posto_id)
-    2. Section-specific (fk_tipo_posto is null, fk_secao has value)  
-    3. Default (all FKs are null)
+    2. Section-specific (fk_tipo_posto is null, fk_secao = secao_id)  
+    3. Unit-specific (fk_tipo_posto is null, fk_secao is null, fk_unidade = unit_id)
+    4. Default (all FKs are null)
     Args:
         df: pd.DataFrame, dataframe with parameters
         posto_id: int, posto ID
+        unit_id: int, unit ID  
+        secao_id: int, section ID
+        params_names_list: list, list of parameter names to retrieve
     Returns:
         dict, configuration for the posto_id
-    """
-    """
-    Get configuration following the same logic as your original function.
-    Filters by unit_id, secao_id, posto_id with null fallbacks, then applies hierarchy.
     """
     if params_names_list is None or len(params_names_list) == 0 or not isinstance(params_names_list, list):
         logger.error(f"params_names_list is None or empty")
         return None
-
-    # Filter by parameter names
+    posto_id = str(posto_id)
+    secao_id = str(secao_id)
+    unit_id = str(unit_id)
+    # Filter by parameter names only initially
     df_filtered = df[df['sys_p_name'].isin(params_names_list)].copy()
     
-    # Filter by unit_id (exact match or null)
-    if unit_id is not None:
-        df_filtered = df_filtered[
-            (df_filtered['fk_unidade'] == unit_id) | 
-            (df_filtered['fk_unidade'].isna())
-        ]
+    logger.info(f"DEBUG: Input parameters - posto_id: {posto_id}, secao_id: {secao_id}, unit_id: {unit_id}")
+    logger.info(f"DEBUG: df_filtered initial (after param names filter):\n {df_filtered}")
     
-    # Filter by secao (exact match or null)  
-    if secao_id is not None:
-        df_filtered = df_filtered[
-            (df_filtered['fk_secao'] == secao_id) | 
-            (df_filtered['fk_secao'].isna())
-        ]
+    # Keep all potentially relevant rows based on hierarchy rules
+    # Build conditions that match the hierarchy patterns
     
-    # Filter by posto (exact match or null)
+    conditions = []
+    
+    # 1. Posto-specific: fk_tipo_posto = posto_id (most specific)
     if posto_id is not None:
-        df_filtered = df_filtered[
-            (df_filtered['fk_tipo_posto'] == posto_id) | 
-            (df_filtered['fk_tipo_posto'].isna())
-        ]
+        posto_condition = (df_filtered['fk_tipo_posto'] == posto_id)
+        conditions.append(posto_condition)
+        logger.info(f"DEBUG: Added posto condition for posto_id={posto_id}")
     
-    # Remove duplicates (equivalent to your uniqueness logic)
+    # 2. Section-specific: fk_tipo_posto is null AND fk_secao = secao_id
+    if secao_id is not None:
+        section_condition = (
+            (df_filtered['fk_tipo_posto'].isna()) & 
+            (df_filtered['fk_secao'] == secao_id)
+        )
+        conditions.append(section_condition)
+        logger.info(f"DEBUG: Added section condition for secao_id={secao_id}")
+        
+        # Debug: check which rows match this condition
+        matching_section = df_filtered[section_condition]
+        logger.info(f"DEBUG: Rows matching section condition:\n {matching_section}")
+    
+    # 3. Unit-specific: fk_tipo_posto is null AND fk_secao is null AND fk_unidade = unit_id
+    if unit_id is not None:
+        unit_condition = (
+            (df_filtered['fk_tipo_posto'].isna()) & 
+            (df_filtered['fk_secao'].isna()) & 
+            (df_filtered['fk_unidade'] == unit_id)
+        )
+        conditions.append(unit_condition)
+        logger.info(f"DEBUG: Added unit condition for unit_id={unit_id}")
+    
+    # 4. Default: all main FKs are null (fallback)
+    default_condition = (
+        (df_filtered['fk_tipo_posto'].isna()) & 
+        (df_filtered['fk_secao'].isna()) & 
+        (df_filtered['fk_unidade'].isna()) &
+        (df_filtered['fk_grupo'].isna())
+    )
+    conditions.append(default_condition)
+    logger.info(f"DEBUG: Added default condition")
+    
+    # Combine all conditions with OR
+    if conditions:
+        final_condition = conditions[0]
+        for condition in conditions[1:]:
+            final_condition = final_condition | condition
+        df_filtered = df_filtered[final_condition]
+    
+    # Remove duplicates
     df_filtered = df_filtered.drop_duplicates()
 
-    logger.info(f"DEBUG: df_filtered:\n {df_filtered}")
+    logger.info(f"DEBUG: df_filtered after hierarchy filtering in helpers.py:\n {df_filtered}")
     
     # Now apply hierarchy for each parameter
     params_dict = {}
@@ -1260,35 +1295,54 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
         param_rows = df_filtered[df_filtered['sys_p_name'] == param_name]
         
         # Priority 1: Exact posto_id match (most specific)
-        posto_specific = param_rows[param_rows['fk_tipo_posto'] == posto_id]
-        if not posto_specific.empty:
-            value = get_value_from_row(posto_specific.iloc[0])
-            if value is not None:
-                params_dict[param_name] = value
-                continue
+        if posto_id is not None:
+            posto_specific = param_rows[param_rows['fk_tipo_posto'] == posto_id]
+            if not posto_specific.empty:
+                value = get_value_from_row(posto_specific.iloc[0])
+                if value is not None:
+                    params_dict[param_name] = value
+                    logger.info(f"DEBUG: Found posto-specific param {param_name}:{value}")
+                    continue
         
         # Priority 2: Section-specific (fk_tipo_posto is null, fk_secao matches)
-        section_specific = param_rows[
-            (param_rows['fk_tipo_posto'].isna()) & 
-            (param_rows['fk_secao'] == secao_id)
-        ]
-        if not section_specific.empty:
-            value = get_value_from_row(section_specific.iloc[0])
-            if value is not None:
-                params_dict[param_name] = value
-                continue
+        if secao_id is not None:
+            section_specific = param_rows[
+                (param_rows['fk_tipo_posto'].isna()) & 
+                (param_rows['fk_secao'] == secao_id)
+            ]
+            if not section_specific.empty:
+                value = get_value_from_row(section_specific.iloc[0])
+                if value is not None:
+                    params_dict[param_name] = value
+                    logger.info(f"DEBUG: Found section-specific param {param_name}:{value}")
+                    continue
         
-        # Priority 3: Default (all FKs are null)
+        # Priority 3: Unit-specific (fk_tipo_posto and fk_secao are null, fk_unidade matches)
+        if unit_id is not None:
+            unit_specific = param_rows[
+                (param_rows['fk_tipo_posto'].isna()) & 
+                (param_rows['fk_secao'].isna()) & 
+                (param_rows['fk_unidade'] == unit_id)
+            ]
+            if not unit_specific.empty:
+                value = get_value_from_row(unit_specific.iloc[0])
+                if value is not None:
+                    params_dict[param_name] = value
+                    logger.info(f"DEBUG: Found unit-specific param {param_name}:{value}")
+                    continue
+        
+        # Priority 4: Default (all FKs are null)
         default_rows = param_rows[
             (param_rows['fk_tipo_posto'].isna()) & 
             (param_rows['fk_secao'].isna()) & 
+            (param_rows['fk_unidade'].isna()) &
             (param_rows['fk_grupo'].isna())
         ]
         if not default_rows.empty:
             value = get_value_from_row(default_rows.iloc[0])
             if value is not None:
                 params_dict[param_name] = value
-                logger.info(f"DEBUG: params values: {param_name}:{value}")
+                logger.info(f"DEBUG: Found default param {param_name}:{value}")
     
     return params_dict
 

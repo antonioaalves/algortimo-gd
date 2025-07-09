@@ -45,15 +45,16 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 227,#253762,# 249468,
+        'current_process_id': 2618,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 1961,
+        'wfm_proc_id': 2618,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
         'wfm_proc_colab': None, 
     }, # TODO: create the default values to run locally
 
+    # Params names and defaults - understand why they are here
     'parameters_names': [
         'algorithm_name', # TODO: Define the real params names
         'GD_gloablMaxThreads',
@@ -69,7 +70,7 @@ CONFIG = {
     ],
 
     'parameters_defaults': {
-        'algorithm_name': 'salsa_algorithm',
+        #'algorithm_name': 'salsa_algorithm',
         'GD_gloablMaxThreads': 4,
         'GD_maxThreads': 2,
         'gloablMaxThreads': 4,
@@ -77,7 +78,7 @@ CONFIG = {
         'maxRetries': 3,
         'sleepTime': 1000,
         'test_param_scheduling_threshold': 0.75,
-        'GD_algorithmName': 'salsa_algorithm',
+        #'GD_algorithmName': '',
         'GD_consideraFestivos': 1,
         'GD_convenioBD': 'ALCAMPO',
     },
@@ -179,7 +180,7 @@ CONFIG = {
                     'parameters': {}
                 },
                 'insertions': {
-                    'insert_results': True
+                    'insert_results': False
                 }
             },
             'substages': {
