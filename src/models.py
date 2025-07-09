@@ -3477,7 +3477,7 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.warning("rare_data storage verification failed")
                     return False
 
-                self.rare_data['df_results'] = results.get('formatted_schedule_df', pd.DataFrame())
+                self.rare_data['df_results'] = results.get('core_results', {}).get('formatted_schedule_df', pd.DataFrame())
                 self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
                 self.rare_data['df_results'].to_csv(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
                     

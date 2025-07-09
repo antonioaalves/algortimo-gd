@@ -540,7 +540,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 }
             }
 
-            logger.info(f"formatted schedule: {formatted_results['core_results']['formatted_schedule'].shape}")
+            #logger.info(f"DEBUG: formatted schedule: {formatted_results['core_results']['formatted_schedule'].shape}")
             
             self.logger.info("Enhanced SALSA results formatted successfully")
             return formatted_results
