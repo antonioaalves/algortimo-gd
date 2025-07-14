@@ -9,7 +9,7 @@ THIS IS THE GETTERS FOR THE FUNCTIONS REGARDING THE WFM PROCESSES AND CONTROL OF
 @author: jason.vogensen
 """
 
-from Connection.connect import ensure_connection
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 import os
 import pandas as pd
 import cx_Oracle
@@ -163,7 +163,7 @@ def get_total_process_by_status(pathOS, connection):
             query = file.read().strip().replace("\n", " ")
         
         # Replace placeholders in the query
-        query = query.replace(":i_process_type", "'ESC'")
+        query = query.replace(":i_process_type", "'MPD'")
         query = query.replace(":i_status", "'P'")
         print(query)
         # Execute the query and fetch results into a DataFrame

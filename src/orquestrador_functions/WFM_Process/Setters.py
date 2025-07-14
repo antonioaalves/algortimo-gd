@@ -10,7 +10,7 @@ THIS IS THE SETTERS FOR THE FUNCTIONS REGARDING THE WFM PROCESSES AND CONTROL OF
 @author: jason.vogensen
 """
 import os
-from Connection.connect import ensure_connection
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 
 def set_process_errors(connection, pathOS, user, fk_process, type_error, process_type, error_code, description, employee_id, schedule_day):
     """

@@ -128,6 +128,10 @@ def solve(
         # 3. SOLVE THE PROBLEM
         # =================================================================
         logger.info("Starting optimization process...")
+        # Add solver parameters before solving
+        solver.parameters.max_time_in_seconds = 600  # 5 minutes timeout
+        solver.parameters.num_search_workers = 1     # Single thread
+        solver.parameters.log_search_progress = True # Enable logging
         start_time = datetime.now()
         
         status = solver.Solve(model)

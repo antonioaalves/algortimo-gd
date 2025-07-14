@@ -1,0 +1,6 @@
+10072025 16:42:07 ERROR CONNECTING TO DATABASE: Configuration file not found at C:\ALCAMPO\python-algorithms\algortimo-gd/Connection\acessos.txt
+10072025 16:46:22 ERROR CONNECTING TO DATABASE: Configuration file not found at C:\ALCAMPO\python-algorithms\algortimo-gd/Connection\acessos.txt
+10072025 16:47:36 ERROR CONNECTING TO DATABASE: Configuration file not found at C:\ALCAMPO\python-algorithms\algortimo-gd/Connection\acessos.txt
+11072025 15:12:10 ERROR CONNECTING TO DATABASE: ORA-12170: TNS:Connect timeout occurred
+11072025 15:12:32 ERROR CONNECTING TO DATABASE: ORA-12170: TNS:Connect timeout occurred
+11072025 15:40:37 ERROR CONNECTING TO DATABASE: ORA-12170: TNS:Connect timeout occurred

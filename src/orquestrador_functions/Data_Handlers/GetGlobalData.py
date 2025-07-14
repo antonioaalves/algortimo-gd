@@ -14,8 +14,17 @@ def get_all_params(path_os, unit_id=None, secao=None, posto=None,  connection=No
     Returns a list of dictionaries (rows) or 'Error' if an error occurs.
     """
     try:
+        # Check if connection is valid
+        if connection is None:
+            print("Error in get_all_params: Connection is None")
+            return "Error"
+        
         # Read the SQL query from the file
-        query_path = os.path.join(path_os, "Data/Queries/GlobalData/get_all_parameters.sql")
+        query_path = os.path.join(path_os, "data/Queries/GlobalData/get_all_parameters.sql")
+        if not os.path.exists(query_path):
+            print(f"Error in get_all_params: SQL file not found at {query_path}")
+            return "Error"
+            
         with open(query_path, 'r') as query_file:
             query = query_file.read()
 
@@ -68,6 +77,11 @@ def get_gran_equi(path_os, secao, connection=None):
     Returns the granularity as a number or 'Error' if an error occurs.
     """
     try:
+        # Check if connection is valid
+        if connection is None:
+            print("Error in get_gran_equi: Connection is None")
+            return "Error"
+            
         query = """
         SELECT s_pck_core_parameter.getnumberattr('GRANULARIDADE_ESCALA', 'S', :secao) 
         FROM dual
@@ -111,8 +125,17 @@ def get_faixa_sec(path_os, uni, sec, dia1, dia2, connection=None):
         str: "Error" if an error occurs.
     """
     try:
+        # Check if connection is valid
+        if connection is None:
+            print("Error in get_faixa_sec: Connection is None")
+            return "Error"
+            
         # Load the SQL query from file
-        query_path = os.path.join(path_os, "Data/Queries/GlobalData/get_faixas_sec.sql")
+        query_path = os.path.join(path_os, "data/Queries/GlobalData/get_faixas_sec.sql")
+        if not os.path.exists(query_path):
+            print(f"Error in get_faixa_sec: SQL file not found at {query_path}")
+            return "Error"
+            
         with open(query_path, 'r') as query_file:
             query = query_file.read()
 
@@ -128,10 +151,10 @@ def get_faixa_sec(path_os, uni, sec, dia1, dia2, connection=None):
         rows = cursor.fetchall()
 
         # Fetch column names
-        col_names = [col[0] for col in cursor.description]
+        col_names = [str(col[0]) for col in cursor.description]
 
         # Convert result to DataFrame
-        df_data = pd.DataFrame(rows, columns=col_names)
+        df_data = pd.DataFrame(data=rows, columns=pd.Index(col_names))
 
         return df_data
 
