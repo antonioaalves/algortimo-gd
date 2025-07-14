@@ -204,6 +204,14 @@ if not sec_to_proc.empty:
                                 if success:
                                     print(f"Direct function call completed successfully for process {wfm_proc_id}")
                                     local_processes += 1
+                                    logger.info(f"DEBUG: setting process {wfm_proc_id} to status G")
+                                    set_process_param_status(
+                                        connection,
+                                        pathOS=path_ficheiros_global,
+                                        user=api_user,
+                                        process_id=wfm_proc_id,
+                                        new_status='G'
+                                    )  
                                 else:
                                     print(f"Direct function call failed for process {wfm_proc_id}")
                                     
