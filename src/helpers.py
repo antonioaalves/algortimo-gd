@@ -1772,7 +1772,7 @@ def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date
                 # Clean up the Day column to extract day numbers
                 logger.info(f"DEBUG: melted_df['Day'] type: {type(melted_df['Day'])}")
                 logger.info(f"DEBUG: melted_df['Day'].str.replace('Day ', ''): {melted_df['Day'].str.replace('Day ', '')}")
-                melted_df['Day'] = melted_df['Day'].str.replace('Day ', '').astype(int)
+                melted_df['Day'] = melted_df['Day'].str.replace('Day_', '').astype(int)
                 
                 # Convert day numbers to actual dates if start_date is available
                 if start_date:
