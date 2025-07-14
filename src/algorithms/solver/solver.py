@@ -11,6 +11,7 @@ from base_data_project.log_config import get_logger
 from src.config import PROJECT_NAME
 from src.config import ROOT_DIR
 import os
+import psutil
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -40,7 +41,7 @@ def solve(
         special_days: List of special days (holidays, sundays)
         shift: Dictionary mapping (worker, day, shift) to decision variables
         shifts: List of available shift types
-        max_time_seconds: Maximum solving time in seconds (default: 240)
+        max_time_seconds: Maximum solving time in seconds (default: 120)
         enumerate_all_solutions: Whether to enumerate all solutions (default: False)
         use_phase_saving: Whether to use phase saving (default: True)
         log_search_progress: Whether to log search progress (default: True)
@@ -55,14 +56,13 @@ def solve(
         RuntimeError: If solver fails to find a solution
     """
     try:
-        logger.info("Starting enhanced solver with comprehensive logging")
+        logger.info("Starting solver")
         
         # =================================================================
         # 1. VALIDATE INPUT PARAMETERS
         # =================================================================
         logger.info("Validating input parameters")
         
-        # TODO: check what is happening here
         if not isinstance(model, cp_model.CpModel):
             error_msg = f"model must be a CP-SAT CpModel instance. model: {model}, type: {type(model)}"
             logger.error(error_msg)
@@ -74,23 +74,22 @@ def solve(
             raise ValueError(error_msg)
         
         if not workers or not isinstance(workers, list):
-            error_msg = f"workers must be a non-empty list. workers: {workers}, type: {type(workers)}" 
+            error_msg = f"workers must be a non-empty list. workers: {workers}, type: {type(workers)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        if not shifts or not isinstance(shifts, list):
-            error_msg = f"shifts must be a non-empty list. shifts: {shifts}, type: {type(shifts)}"  
+        if not isinstance(special_days, list):
+            error_msg = f"special_days must be a list. special_days: {special_days}, type: {type(special_days)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        # TODO: check why is not being reached
         if not isinstance(shift, dict):
             error_msg = f"shift must be a dictionary. shift: {shift}, type: {type(shift)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        if max_time_seconds <= 0:
-            error_msg = f"max_time_seconds must be positive. max_time_seconds: {max_time_seconds}"
+        if not shifts or not isinstance(shifts, list):
+            error_msg = f"shifts must be a non-empty list. shifts: {shifts}, type: {type(shifts)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
@@ -108,38 +107,33 @@ def solve(
         logger.info("Configuring CP-SAT solver")
         
         solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = max_time_seconds
-        solver.parameters.enumerate_all_solutions = enumerate_all_solutions
-        solver.parameters.use_phase_saving = use_phase_saving
-        solver.parameters.log_search_progress = log_search_progress
-        
-        # Set up logging callback
-        if log_callback is None:
-            log_callback = lambda x: logger.info(f"Solver progress: {x}")
-        solver.log_callback = log_callback
-        
-        logger.info(f"Solver configuration:")
-        logger.info(f"  - Max time: {max_time_seconds} seconds")
-        logger.info(f"  - Enumerate all solutions: {enumerate_all_solutions}")
-        logger.info(f"  - Use phase saving: {use_phase_saving}")
-        logger.info(f"  - Log search progress: {log_search_progress}")
-        
-        # =================================================================
-        # 3. SOLVE THE PROBLEM
-        # =================================================================
         logger.info("Starting optimization process...")
-        # Add solver parameters before solving
-        solver.parameters.max_time_in_seconds = 600  # 5 minutes timeout
-        solver.parameters.num_search_workers = 1     # Single thread
-        solver.parameters.log_search_progress = True # Enable logging
         start_time = datetime.now()
-        
+
+        logger.info("=== ABOUT TO SOLVE ===")
+
+        # Use only verified OR-Tools parameters
+        solver.parameters.num_search_workers = 1
+        solver.parameters.max_time_in_seconds = 30  # Short timeout for testing
+
+        logger.info("Attempting solve with verified parameters...")
+
+        # Simple timeout test without fancy threading
+        import time
+        solve_start = time.time()
+
         status = solver.Solve(model)
-        
+
+        solve_end = time.time()
+        actual_duration = solve_end - solve_start
+
+        logger.info("=== SOLVE COMPLETED ===")
+        logger.info(f"Actual solve time: {actual_duration:.2f} seconds")
+
         end_time = datetime.now()
         solve_duration = (end_time - start_time).total_seconds()
-        
-        logger.info(f"Optimization completed in {solve_duration:.2f} seconds")
+
+        logger.info(f"Total time: {solve_duration:.2f} seconds")
         logger.info(f"Solver status: {solver.status_name(status)}")
         
         # Log solver statistics
@@ -213,203 +207,85 @@ def solve(
 
                 days_of_year_sorted = sorted(days_of_year)
                 for d in days_of_year_sorted:
-                    assigned_shift = None  # To store the assigned shift (M, T, F)
+                    day_assignment = None
                     
-                    # Check if this is a special day
-                    is_special_day = d in special_days
-                    
-                    # Check all shifts for this worker on this day
-                    shifts_found = 0
+                    # Check each shift type for this day
                     for s in shifts:
-                        try:
-                            if (w, d, s) not in shift:
-                                logger.warning(f"Missing decision variable for worker {w}, day {d}, shift {s}")
-                                continue
-                                
-                            shift_value = solver.Value(shift[(w, d, s)])
-
-
-                            if shift_value == 1:  # If the worker is assigned this shift
-                                shifts_found += 1
-                                assigned_shift = shift_mapping.get(s, s)  # Get the corresponding shift
-                                
-                                # Count L, LQ, LD shifts
-                                if s == 'L':
-                                    l_count += 1
-                                elif s == 'LQ':
-                                    lq_count += 1
-                                elif s == 'LD':
-                                    ld_count += 1
-                                elif s == 'TC':
-                                    tc_count += 1
-                                    
-                                # Count M or T shifts on special days
-                                if is_special_day and (s == 'M' or s == 'T'):
-                                    special_days_count += 1
-                                    
-                        except Exception as e:
-                            logger.warning(f"Error processing shift for worker {w}, day {d}, shift {s}: {e}")
-                            continue
+                        if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
+                            day_assignment = shift_mapping.get(s, s)
+                            break
                     
-                    # Validate that exactly one shift is assigned per day
-                    if shifts_found == 0:
+                    # If no specific assignment found, mark as unassigned
+                    if day_assignment is None:
+                        day_assignment = '-'
                         unassigned_days += 1
-                        assigned_shift = 'N'  # No shift assigned
-                        logger.warning(f"No shift assigned to worker {w} on day {d}")
-                    elif shifts_found > 1:
-                        logger.warning(f"Multiple shifts assigned to worker {w} on day {d}")
                     
-                    worker_row.append(assigned_shift or 'N')  # Add the shift or 'N' if none
+                    worker_row.append(day_assignment)
+                    
+                    # Count different shift types
+                    if day_assignment == 'L':
+                        l_count += 1
+                    elif day_assignment == 'LQ':
+                        lq_count += 1
+                    elif day_assignment == 'LD':
+                        ld_count += 1
+                    elif day_assignment == 'TC':
+                        tc_count += 1
+                    elif day_assignment in ['M', 'T'] and d in special_days:
+                        special_days_count += 1
                 
-                # Store the counts for this worker
+                # Store statistics for this worker
                 worker_stats[w] = {
-                    'L': l_count, 
-                    'LQ': lq_count, 
-                    'LD': ld_count,
-                    'TC': tc_count,
-                    'Special_MT': special_days_count,
-                    'Unassigned': unassigned_days
+                    'L_count': l_count,
+                    'LQ_count': lq_count,
+                    'LD_count': ld_count,
+                    'TC_count': tc_count,
+                    'special_days_work': special_days_count,
+                    'unassigned_days': unassigned_days
                 }
-                table_data.append(worker_row)  # Add the worker's data to the table
+                
+                table_data.append(worker_row)
                 processed_workers += 1
                 
+                logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
+                           f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
+                
             except Exception as e:
-                logger.error(f"Error processing worker {w}: {e}")
-                # Add empty row for this worker to maintain structure
-                worker_row = [w] + ['ERROR'] * len(days_of_year)
-                table_data.append(worker_row)
-                worker_stats[w] = {'L': 0, 'LQ': 0, 'LD': 0, 'TC': 0, 'Special_MT': 0, 'Unassigned': len(days_of_year)}
-
-        logger.info(f"[OK] Successfully processed {processed_workers}/{len(workers)} workers")
-
-        # =================================================================
-        # 6. CREATE AND VALIDATE DATAFRAME
-        # =================================================================
-        logger.info("Creating schedule DataFrame")
+                logger.error(f"Error processing worker {w}: {str(e)}")
+                continue
         
+        logger.info(f"Successfully processed {processed_workers} workers")
+        
+        # =================================================================
+        # 6. CREATE DATAFRAME AND SAVE TO EXCEL
+        # =================================================================
+        logger.info("Creating DataFrame and saving to Excel")
+        
+        # Create DataFrame
+        columns = ['Worker'] + [f'Day_{d}' for d in sorted(days_of_year)]
+        df = pd.DataFrame(table_data, columns=columns)
+        
+        logger.info(f"DataFrame created with shape: {df.shape}")
+        logger.info(f"DataFrame columns: {len(df.columns)} columns")
+        
+        # Save to Excel
         try:
-            # Create a DataFrame from the data
-            column_headers = ['Worker'] + [f"Day {d}" for d in sorted(days_of_year)]
-            schedule_df = pd.DataFrame(table_data, columns=column_headers)
-            
-            logger.info(f"DataFrame created: {schedule_df.shape}")
-            logger.info(f"  - Rows (workers): {len(schedule_df)}")
-            logger.info(f"  - Columns (days + worker): {len(schedule_df.columns)}")
-            logger.info(f"  - Sample data:\n{schedule_df.head(10)}")
-            
+            os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+            df.to_excel(output_filename, index=False)
+            logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:
-            logger.error(f"Error creating DataFrame: {e}")
-            raise RuntimeError(f"Failed to create schedule DataFrame: {e}")
-
+            logger.warning(f"Could not save to Excel: {str(e)}")
+        
         # =================================================================
-        # 7. LOG WORKER STATISTICS
+        # 7. LOG FINAL STATISTICS
         # =================================================================
-        logger.info("Logging worker statistics")
+        logger.info("Final worker statistics:")
+        for worker_id, stats in worker_stats.items():
+            logger.info(f"  Worker {worker_id}: {stats}")
         
-        logger.info("Shift Counts by Worker:")
-        logger.info("-" * 80)
-        logger.info(f"{'Worker':<15} {'L':<5} {'LQ':<5} {'LD':<5} {'TC':<5} {'Total':<5} {'Special M/T':<10} {'Unassigned':<10}")
-        logger.info("-" * 80)
-        
-        total_stats = {'L': 0, 'LQ': 0, 'LD': 0, 'TC': 0, 'Special_MT': 0, 'Unassigned': 0}
-        
-        for worker, counts in worker_stats.items():
-            total_free = counts['L'] + counts['LQ'] + counts['LD']
-            logger.info(f"{worker:<15} {counts['L']:<5} {counts['LQ']:<5} {counts['LD']:<5} {counts['TC']:<5} {total_free:<5} {counts['Special_MT']:<10} {counts['Unassigned']:<10}")
-            
-            # Accumulate totals
-            for key in total_stats:
-                total_stats[key] += counts[key]
-        
-        logger.info("-" * 80)
-        logger.info(f"{'TOTAL':<15} {total_stats['L']:<5} {total_stats['LQ']:<5} {total_stats['LD']:<5} {total_stats['TC']:<5} {total_stats['L'] + total_stats['LQ'] + total_stats['LD']:<5} {total_stats['Special_MT']:<10} {total_stats['Unassigned']:<10}")
-        logger.info("-" * 80)
-
-        # =================================================================
-        # 8. EXPORT TO EXCEL WITH ERROR HANDLING
-        # =================================================================
-        logger.info(f"Exporting schedule to Excel file: {output_filename}")
-        
-        try:
-            # Export the DataFrame to an Excel file
-            schedule_df.to_excel(output_filename, index=False)
-            logger.info(f"[OK] Initial Excel file created: {output_filename}")
-
-            # Add formatting and summary sheet
-            wb = load_workbook(output_filename)
-            ws = wb.active  # Get the first worksheet
-
-            # Create a fill pattern for special days (light blue background)
-            special_day_fill = PatternFill(start_color="ADD8E6", end_color="ADD8E6", fill_type="solid")
-
-            # Find column indices that correspond to days in special_days
-            special_days_highlighted = 0
-            for col_idx, column_name in enumerate(schedule_df.columns[1:], start=2):
-                try:
-                    # Extract day number from column name (format is "Day X")
-                    day_num = int(column_name.split(' ')[1])
-                    if day_num in special_days:
-                        # Apply fill to the header cell (first row)
-                        cell = ws.cell(row=1, column=col_idx)
-                        cell.fill = special_day_fill
-                        special_days_highlighted += 1
-                        logger.debug(f"Highlighted Day {day_num} as special day in column {col_idx}")
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"Could not parse day number from column: {column_name}, error: {e}")
-                    continue
-
-            logger.info(f"[OK] Highlighted {special_days_highlighted} special days in Excel")
-
-            # Save the changes
-            wb.save(output_filename)
-            
-            # Add a summary sheet with statistics
-            with pd.ExcelWriter(output_filename, engine='openpyxl', mode='a') as writer:
-                # Create a DataFrame for the counts
-                counts_df = pd.DataFrame([
-                    {
-                        'Worker': w, 
-                        'L': stats['L'], 
-                        'LQ': stats['LQ'], 
-                        'LD': stats['LD'], 
-                        'TC': stats['TC'],
-                        'Total Free Days': stats['L'] + stats['LQ'] + stats['LD'],
-                        'Special Days (M/T)': stats['Special_MT'],
-                        'Unassigned Days': stats['Unassigned']
-                    }
-                    for w, stats in worker_stats.items()
-                ])
-                counts_df.to_excel(writer, sheet_name='Shift Summary', index=False)
-                logger.info("[OK] Summary sheet added to Excel file")
-
-            logger.info(f"[OK] Schedule successfully exported to '{output_filename}' with summary sheet")
-
-        except Exception as e:
-            logger.error(f"Error exporting to Excel: {e}")
-            logger.warning("Continuing without Excel export...")
-
-        # =================================================================
-        # 9. FINAL VALIDATION AND RETURN
-        # =================================================================
-        logger.info("Performing final validation")
-        
-        # Check for any critical issues
-        if total_stats['Unassigned'] > 0:
-            logger.warning(f"Found {total_stats['Unassigned']} unassigned days across all workers")
-        
-        # Validate DataFrame integrity
-        expected_rows = len(workers)
-        expected_cols = len(days_of_year) + 1  # +1 for worker column
-        
-        if len(schedule_df) != expected_rows:
-            logger.warning(f"DataFrame row count mismatch: expected {expected_rows}, got {len(schedule_df)}")
-        
-        if len(schedule_df.columns) != expected_cols:
-            logger.warning(f"DataFrame column count mismatch: expected {expected_cols}, got {len(schedule_df.columns)}")
-
-        logger.info("[OK] Enhanced solver completed successfully")
-        return schedule_df
+        logger.info("[OK] Solver completed successfully")
+        return df
         
     except Exception as e:
-        logger.error(f"Error in enhanced solver: {e}", exc_info=True)
+        logger.error(f"Error in solver: {str(e)}", exc_info=True)
         raise

@@ -1770,6 +1770,8 @@ def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date
                 )
                 
                 # Clean up the Day column to extract day numbers
+                logger.info(f"DEBUG: melted_df['Day'] type: {type(melted_df['Day'])}")
+                logger.info(f"DEBUG: melted_df['Day'].str.replace('Day ', ''): {melted_df['Day'].str.replace('Day ', '')}")
                 melted_df['Day'] = melted_df['Day'].str.replace('Day ', '').astype(int)
                 
                 # Convert day numbers to actual dates if start_date is available
@@ -1791,7 +1793,7 @@ def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date
 
         return formatted_schedules
     except Exception as e:
-        logger.error(f"Error formatting schedules: {e}")
+        logger.error(f"Error formatting schedules: {e}", exc_info=True)
         return {'database_format': pd.DataFrame(), 'wide_format': pd.DataFrame()}
 
 def _create_metadata(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any], stats: Dict[str, Any], solver_attributes: Dict[str, Any]) -> Dict[str, Any]:

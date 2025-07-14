@@ -10,12 +10,21 @@ import signal
 import sys
 import time
 import datetime
-import subprocess
-# Set locale for time
-# Python doesn't have an exact equivalent to R's Sys.setlocale("LC_TIME", "English")
-# but we can use locale module if needed
-# import locale
-# locale.setlocale(locale.LC_TIME, 'en_US.UTF-8')  # Adjust as needed for your OS
+
+# Import batch process components
+from base_data_project.log_config import setup_logger, get_logger
+from base_data_project.utils import create_components
+from batch_process import run_batch_process
+from src.config import CONFIG, PROJECT_NAME
+
+# Initialize logger
+setup_logger(
+    project_name=PROJECT_NAME,
+    log_level=CONFIG.get('log_level', 'INFO'),
+    log_dir=CONFIG.get('log_dir', 'logs'),
+    console_output=CONFIG.get('console_output', True)
+)
+logger = get_logger(PROJECT_NAME)
 
 # SET INITIAL PATH -----------------------------------
 import platform
@@ -66,7 +75,7 @@ PROC_COD = 'AlgoritmoHorariosPython_Pai'
 # VER QUANTAS THREADS
 # Get parameters with defaults
 all_params = get_all_params(path_ficheiros_global, connection = connection)
-#print(f"all_params: {all_params}")
+print(f"all_params: {all_params}")
 GLOBAL_MAX_CONCURRENT_PROCESSES = next((item['NUMBERVALUE'] for item in all_params if item['SYS_P_NAME'] == 'GLOBAL_MAX_CONCURRENT_PROCESSES'), None)
 if GLOBAL_MAX_CONCURRENT_PROCESSES is not None: 
     max(GLOBAL_MAX_CONCURRENT_PROCESSES,3)
@@ -153,59 +162,54 @@ if not sec_to_proc.empty:
                             )
                             print(f"running the process")
                             
-                            # Close database connection before starting subprocess to avoid conflicts
-                            print("Closing parent database connection before subprocess...")
-                            connection_object.disconnect_database()
+                            # Commit any pending transactions to prevent database lock conflicts
+                            if connection:
+                                connection.commit()
                             
-                            # Use virtual environment's Python executable
-                            venv_python = os.path.join(path_ficheiros_global, ".venv", "Scripts", "python.exe")
-                            print(f"Using Python executable: {venv_python}")
-                            print(f"Python executable exists: {os.path.exists(venv_python)}")
-                            print(f"Batch script exists: {os.path.exists('batch_process.py')}")
-                            # Build command arguments
-                            cmd_args = [
-                                venv_python, "batch_process.py",
-                                "--use-db",  # Use database instead of CSV
-                                "--current-process-id", str(wfm_proc_id),
-                                "--api-proc-id", str(api_proc_id), 
-                                "--wfm-proc-id", str(wfm_proc_id),
-                                "--wfm-user", wfm_user,
-                                "--start-date", str(data_ini),
-                                "--end-date", str(data_fim),
-                            ]
-                            
-                            # Only add wfm-proc-colab if it's not None
-                            if wfm_proc_colab is not None:
-                                cmd_args.extend(["--wfm-proc-colab", str(wfm_proc_colab)])
-                            
-                            # Start the subprocess with fire-and-forget approach
-                            command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in cmd_args)
-                            print(f"Starting subprocess with command: {command_str}")
+                            # Call batch process function directly instead of subprocess
+                            print(f"Starting direct function call for process {wfm_proc_id}")
                             
                             try:
-                                # Use PowerShell Start-Process for complete detachment (visible window for debugging)
-                                args_str = "'" + "','".join(cmd_args[1:]) + "'"
-                                ps_command = f'Start-Process -FilePath "{venv_python}" -ArgumentList {args_str} -WindowStyle Normal'
-                                print(f"PowerShell command: {ps_command}")
-                                subprocess.run([
-                                    "powershell", "-Command", ps_command
-                                ], check=True)
-                                print(f"Started detached subprocess for process {wfm_proc_id}")
-                                local_processes += 1
-                            except Exception as e:
-                                print(f"PowerShell method failed, trying Popen: {e}")
-                                # Fallback to Popen method
-                                process = subprocess.Popen(
-                                    cmd_args,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, 
-                                    stdin=subprocess.DEVNULL,
-                                    start_new_session=True,
-                                    cwd=path_ficheiros_global,
-                                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0
+                                # Create components for batch process
+                                data_manager, process_manager = create_components(
+                                    use_db=True,  # Always use database 
+                                    no_tracking=False,
+                                    config=CONFIG,
+                                    project_name=PROJECT_NAME
                                 )
-                                print(f"Started subprocess for process {wfm_proc_id} (PID: {process.pid})")
-                                local_processes += 1
+                                
+                                # Build external call dict with same parameters
+                                external_call_dict = {
+                                    'current_process_id': wfm_proc_id,
+                                    'api_proc_id': api_proc_id,
+                                    'wfm_proc_id': wfm_proc_id,
+                                    'wfm_user': wfm_user,
+                                    'start_date': str(data_ini),
+                                    'end_date': str(data_fim),
+                                }
+                                
+                                # Add wfm-proc-colab if it exists
+                                if wfm_proc_colab is not None:
+                                    external_call_dict['wfm_proc_colab'] = str(wfm_proc_colab)
+                                
+                                # Call the function directly
+                                with data_manager:
+                                    success = run_batch_process(
+                                        data_manager=data_manager,
+                                        process_manager=process_manager,
+                                        algorithm="example_algorithm",
+                                        external_call_dict=external_call_dict
+                                    )
+                                
+                                if success:
+                                    print(f"Direct function call completed successfully for process {wfm_proc_id}")
+                                    local_processes += 1
+                                else:
+                                    print(f"Direct function call failed for process {wfm_proc_id}")
+                                    
+                            except Exception as e:
+                                print(f"Direct function call failed: {e}")
+                                logger.error(f"Error calling batch process directly: {e}", exc_info=True)
 
                         else:
                             print(f"erro ao chamar processo {wfm_proc_id}")
@@ -239,7 +243,7 @@ if not sec_to_proc.empty:
                             schedule_day=None
                         )
                         
-                        print(f'0. Error calling child proc {i+1}: {str(e)}')
+                        print(f'Error calling child proc {i+1}: {str(e)}')
             
             break
             
@@ -257,6 +261,6 @@ if not sec_to_proc.empty:
             schedule_day=None
         )
         
-# Database connection already closed before subprocess start
+# Database connection remains active for parent process
 print("Parent process completed successfully - subprocess is independent")
 sys.exit(0)

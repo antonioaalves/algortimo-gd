@@ -170,7 +170,7 @@ data/
 !data/diagnostics/.gitkeep
 
 # Logs and monitoring
-logs/
+/logs/
 *.log
 
 # Output and processing results
