@@ -27,7 +27,7 @@ setup_logger(
 # Then get the logger instance for use throughout the file
 logger = get_logger(PROJECT_NAME)
 
-def run_batch_process(data_manager, process_manager, algorithm="example_algorithm", external_call_dict=None):
+def run_batch_process(data_manager, process_manager, algorithm="example_algorithm", external_call_dict=None, external_raw_connection=None):
     """
     Run the process in batch mode without user interaction.
     
@@ -48,6 +48,7 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             data_manager=data_manager,
             process_manager=process_manager,
             external_call_dict=external_call_dict or {},
+            external_raw_connection=external_raw_connection,
             config=CONFIG,
             project_name=PROJECT_NAME
         )

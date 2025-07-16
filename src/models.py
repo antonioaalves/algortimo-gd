@@ -154,16 +154,21 @@ class DescansosDataModel(BaseDataModel):
         Returns:
             True if successful, False otherwise
         """
-        # Load messages df, from where?
+        # Load messages df - CRITICAL for set_process_errors to work
+        messages_df = pd.DataFrame()
         try:
-            self.logger.info(f"Loading messages_df from data manager. Not implemented yet")
-            messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', '') # TODO: add the file path
-
-            pass
+            self.logger.info(f"DEBUGGING: Loading messages_df from CSV file")
+            messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
+            messages_df = pd.read_csv(messages_path)
+            self.logger.info(f"DEBUGGING: messages_df loaded successfully with {len(messages_df)} rows")
         except Exception as e:
-            self.logger.error(f"Error loading messages_df: {e}")
-            return False
-        
+            self.logger.error(f"DEBUGGING: Error loading messages_df: {e}")
+            # Don't return False - continue without messages_df for now
+            
+        if messages_df.empty:
+            self.logger.warning("DEBUGGING: messages_df is empty - set_process_errors will be skipped")
+        else:
+            self.logger.info(f"DEBUGGING: messages_df has {len(messages_df)} rows - set_process_errors will work")
 
         try:
             self.logger.info("Loading process data from data manager")
@@ -191,6 +196,11 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"valid_emp shape (rows {valid_emp.shape[0]}, columns {valid_emp.shape[1]}): {valid_emp.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading valid_emp: {e}", exc_info=True)
+                return False
+
+            if valid_emp.empty:
+                self.logger.error("valid_emp is empty")
+                # TODO: Add set process errors
                 return False
 
             # Load important info into memory
@@ -310,6 +320,8 @@ class DescansosDataModel(BaseDataModel):
                 self.auxiliary_data['start_date2'] = start_date2
                 self.auxiliary_data['end_date2'] = end_date2
                 self.auxiliary_data['colabs_id_list'] = colabs_id_list
+                self.auxiliary_data['messages_df'] = messages_df
+                self.logger.info(f"DEBUGGING: Stored messages_df in auxiliary_data with {len(messages_df)} rows")
 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
@@ -443,6 +455,35 @@ class DescansosDataModel(BaseDataModel):
             self.logger.error(f"Error loading colaborador info method: {e}", exc_info=True)
             return False
         
+    def validate_colaborador_info(self) -> bool:
+        """Function to validate the colaborador info"""
+        try:
+            self.logger.info("Starting validate_colaborador_info processing")
+            # Get colaborador info data
+            try:
+                df_colaborador = self.raw_data['df_colaborador'].copy()
+                #num_fer_dom = self.auxiliary_data['num_fer_dom']
+            except KeyError as e:
+                self.logger.error(f"Missing required DataFrame in validate_colaborador_info: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error loading data in validate_colaborador_info: {e}", exc_info=True)
+                return False
+
+            # Validate colaborador info
+            if df_colaborador.empty or len(df_colaborador) < 1:
+                self.logger.error(f"df_colaborador is empty. df_colaborador shape: {df_colaborador.shape}")
+                return False
+
+            # Validate specific df_colaborador columns
+            
+            #if num_fer_dom is None:
+            #    self.logger.error("num_fer_dom is None")
+            #    return False
+            return True
+        except Exception as e:
+            self.logger.error(f"Error in validate_colaborador_info method: {e}", exc_info=True)
+            return False
 
     def load_estimativas_info(self, data_manager: BaseDataManager, posto_id: int = 0, start_date: str = '', end_date: str = ''):
         """
@@ -577,6 +618,78 @@ class DescansosDataModel(BaseDataModel):
         except Exception as e:
             self.logger.error(f"Error in load_estimativas_info method: {e}", exc_info=True)
             return False
+
+    def validate_estimativas_info(self) -> tuple[bool, list[str]]:
+        """Function to validate the estimativas info"""
+        try:
+            self.logger.info("Starting validate_estimativas_info processing")
+            validation_success = True
+            invalid_entities = []
+            # Get estimativas info data
+            # Not needed since df_estimativas is empty
+            #try:
+            #    df_estimativas = self.raw_data['df_estimativas'].copy()
+            #except KeyError as e:
+            #    self.logger.error(f"Missing required DataFrame in validate_estimativas_info: {e}", exc_info=True)
+            #    validation_success = False
+            #    invalid_entities.append('df_estimativas')
+            #except Exception as e:
+            #    self.logger.error(f"Error loading data in validate_estimativas_info: {e}", exc_info=True)
+            #    validation_success = False
+            #    invalid_entities.append('df_estimativas')
+
+            ## Validate estimativas info
+            #if df_estimativas.empty or len(df_estimativas) < 1:
+            #    self.logger.error(f"df_estimativas is empty. df_estimativas shape: {df_estimativas.shape}")
+            #    validation_success = False
+            #    invalid_entities.append('df_estimativas')
+
+            # Validate granularidade info
+            try:
+                df_granularidade = self.auxiliary_data['df_granularidade'].copy()
+            except KeyError as e:
+                self.logger.error(f"Missing required DataFrame in validate_estimativas_info: {e}", exc_info=True)
+                validation_success = False
+                invalid_entities.append('df_granularidade')
+            except Exception as e:
+                self.logger.error(f"Error loading data in validate_estimativas_info: {e}", exc_info=True)
+                validation_success = False
+                invalid_entities.append('df_granularidade')
+
+            # Validate granularidade info
+            if df_granularidade.empty or len(df_granularidade) < 1:
+                self.logger.error(f"df_granularidade is empty. df_granularidade shape: {df_granularidade.shape}")
+                validation_success = False
+                invalid_entities.append('df_granularidade')
+
+            # Validate df_faixa_horario info
+            try:
+                df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
+            except KeyError as e:
+                self.logger.error(f"Missing required df_faixa_horario DataFrame in auxiliary_data: {e}", exc_info=True)
+                validation_success = False
+                invalid_entities.append('df_faixa_horario')
+            except Exception as e:
+                self.logger.error(f"Error loading data in validate_estimativas_info: {e}", exc_info=True)
+                validation_success = False
+                invalid_entities.append('df_faixa_horario')
+
+            if df_faixa_horario.empty or len(df_faixa_horario) < 1:
+                self.logger.error(f"df_faixa_horario is empty. df_faixa_horario shape: {df_faixa_horario.shape}")
+                validation_success = False
+                invalid_entities.append('df_faixa_horario')
+
+            # Overall validation result return
+            if not validation_success:
+                self.logger.error(f"Invalid entities: {invalid_entities}")
+                return False, invalid_entities
+            # If validation is successful, return True and an empty list of invalid entities
+            return True, []
+
+        except Exception as e:
+            self.logger.error(f"Error in validate_estimativas_info method: {e}", exc_info=True)
+            return False, []
+
     
     def load_calendario_info(self, data_manager: BaseDataManager, process_id: int = 0, posto_id: int = 0, start_date: str = '', end_date: str = '', colabs_passado: List[int] = []):
         """
@@ -827,6 +940,42 @@ class DescansosDataModel(BaseDataModel):
         except Exception as e:
             self.logger.error(f"Error in load_calendario_info method: {e}", exc_info=True)
             return False
+
+    def validate_calendario_info(self) -> tuple[bool, list[str]]:
+        """
+        Validate the calendario info.
+        """
+        try:
+            # TODO: implement validation
+            self.logger.info("Validating calendario info")
+            validation_success = True
+            invalid_entities = []
+
+            # Validate df_calendario
+            #try:
+            #    df_calendario = self.auxiliary_data['df_calendario']
+            #except KeyError as e:
+            #    self.logger.error(f"Missing required DataFrame: {e}", exc_info=True)
+            #    validation_success = False
+            #    invalid_entities.append('df_calendario')
+            #except Exception as e:
+            #    self.logger.error(f"Error loading DataFrames: {e}", exc_info=True)
+            #    validation_success = False
+            #    invalid_entities.append('df_calendario_missing')
+            #
+            #if df_calendario.empty and len(df_calendario) == 0:
+            #    validation_success = False
+            #    invalid_entities.append('df_calendario_empty')
+
+            if not validation_success:
+                self.logger.error(f"Validation failed for entities: {invalid_entities}")
+                return False, []
+            
+            self.logger.info("Validation completed successfully")
+            return True, []
+        except Exception as e:  
+            self.logger.error(f"Error in validate_calendario_info method: {e}", exc_info=True)
+            return False, []
     
     def load_estimativas_transformations(self) -> bool:
         """
@@ -1714,12 +1863,12 @@ class DescansosDataModel(BaseDataModel):
                 # Store result in raw_data
                 self.raw_data['df_colaborador'] = matriz_ma_final.copy()
                 self.auxiliary_data['num_fer_doms'] = num_fer_dom
-                self.logger.info(f"DEBUG: matriz_ma_final columns: {matriz_ma_final.columns.tolist()}")
-                self.logger.info(f"DEBUG: matriz_ma_final dtypes:\n{matriz_ma_final.dtypes}")
+                #self.logger.info(f"DEBUG: matriz_ma_final columns: {matriz_ma_final.columns.tolist()}")
+                #self.logger.info(f"DEBUG: matriz_ma_final dtypes:\n{matriz_ma_final.dtypes}")
                 
                 # Log data with better formatting - using CSV format for readability
-                self.logger.info("DEBUG: matriz_ma_final data (CSV format):")
-                self.logger.info(matriz_ma_final.to_csv(sep='\t', index=False))
+                #self.logger.info("DEBUG: matriz_ma_final data (CSV format):")
+                #self.logger.info(matriz_ma_final.to_csv(sep='\t', index=False))
                 
                 if not self.raw_data or not self.auxiliary_data:
                     self.logger.warning("Data storage verification failed")
@@ -1740,6 +1889,8 @@ class DescansosDataModel(BaseDataModel):
         except Exception as e:
             self.logger.error(f"Error in load_colaborador_transformations method: {e}", exc_info=True)
             return False
+
+
 
     def load_calendario_transformations(self) -> bool:
         try:

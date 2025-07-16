@@ -38,7 +38,8 @@ print("-------------------------------")
 
 # Add correct path to the functions
 from src.orquestrador_functions.WFM_Process.Getters import get_process_by_status, get_process_by_id, get_total_process_by_status
-from src.orquestrador_functions.WFM_Process.Setters import set_process_status, set_process_errors, set_process_param_status
+from src.orquestrador_functions.WFM_Process.Setters import set_process_status, set_process_param_status
+from src.helpers import set_process_errors
 from src.orquestrador_functions.Data_Handlers.GetGlobalData import get_all_params, get_gran_equi
 from src.orquestrador_functions.Logs.message_loader import get_messages, set_messages
 from src.orquestrador_functions.Classes.AlgorithmPrepClasses.ConnectionHandler import ConnectionHandler
@@ -192,28 +193,49 @@ if not sec_to_proc.empty:
                                 if wfm_proc_colab is not None:
                                     external_call_dict['wfm_proc_colab'] = str(wfm_proc_colab)
                                 
-                                # Call the function directly
+                                # Call the function directly - pass the orquestrador connection to avoid session limit
                                 with data_manager:
                                     success = run_batch_process(
                                         data_manager=data_manager,
                                         process_manager=process_manager,
                                         algorithm="example_algorithm",
-                                        external_call_dict=external_call_dict
+                                        external_call_dict=external_call_dict,
+                                        external_raw_connection=connection
                                     )
                                 
                                 if success:
                                     print(f"Direct function call completed successfully for process {wfm_proc_id}")
                                     local_processes += 1
-                                    logger.info(f"DEBUG: setting process {wfm_proc_id} to status G")
+                                    logger.info(f"Setting process {wfm_proc_id} to status G. Setting last process status description")
                                     set_process_param_status(
                                         connection,
                                         pathOS=path_ficheiros_global,
                                         user=api_user,
                                         process_id=wfm_proc_id,
                                         new_status='G'
-                                    )  
+                                    )
+                                    # Log the end of the process errors
+                                    set_process_errors(
+                                        connection,
+                                        pathOS=path_ficheiros_global,
+                                        user=api_user,
+                                        fk_process=wfm_proc_id,
+                                        type_error='I',
+                                        process_type=PROC_COD,
+                                        error_code=None,
+                                        description=set_messages(df_msg, 'endSubproc', {'1': wfm_proc_id, '2': ''}),
+                                        employee_id=None, 
+                                        schedule_day=None
+                                    )
                                 else:
                                     print(f"Direct function call failed for process {wfm_proc_id}")
+                                    set_process_param_status(
+                                        connection,
+                                        pathOS=path_ficheiros_global,
+                                        user=api_user,
+                                        process_id=wfm_proc_id,
+                                        new_status='I'
+                                    ) 
                                     
                             except Exception as e:
                                 print(f"Direct function call failed: {e}")

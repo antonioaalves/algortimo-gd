@@ -22,7 +22,8 @@ def get_messages(path_os, lang='ES'):
     try:
         # Read CSV file into DataFrame
         df_msg = pd.read_csv(os.path.join(path_os, 'data', 'csvs', 'messages_df.csv'), sep=',')
-        df_msg.rename(columns={df_msg.columns[0]: 'VAR'}, inplace=True)
+        first_col = str(df_msg.columns[0])
+        df_msg.rename(columns={first_col: 'VAR'}, inplace=True)
         
         # Reshape DataFrame and filter based on language
         df_msg = df_msg.melt(id_vars=['VAR'], var_name='LANG', value_name='DESC')
@@ -63,9 +64,19 @@ def set_messages(df_msg, var, values):
     Returns:
         str: The formatted message with placeholders replaced.
     """
-    message_row = df_msg[df_msg['VAR'] == var]
-    if not message_row.empty:
-        template = message_row.iloc[0]['DESC']
-        return replace_placeholders(template, values)
+    if 'ES' in df_msg.columns:
+        message_row = df_msg[df_msg['VAR'] == var]
+        if not message_row.empty:
+            template = message_row.iloc[0]['ES']
+            return replace_placeholders(template, values)
+        else:
+            return ""
+    elif 'DESC' in df_msg.columns:
+        message_row = df_msg[df_msg['VAR'] == var]
+        if not message_row.empty:
+            template = message_row.iloc[0]['DESC']
+            return replace_placeholders(template, values)
+        else:
+            return ""
     else:
         return ""

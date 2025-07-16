@@ -41,13 +41,14 @@ CONFIG = {
         'environment': 'server',  # or 'local' for development
         'db_logging_enabled': True,
         'df_messages_path': 'data/csvs/messages.csv',
+        'log_errors_db': True,  # Enable/disable database error logging with set_process_errors
     },
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 2347,#253762,# 249468,
+        'current_process_id': 2429,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 2347,
+        'wfm_proc_id': 2429,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
@@ -180,7 +181,7 @@ CONFIG = {
                 #    'parameters': {}
                 #},
                 'insertions': {
-                    'insert_results': True
+                    'insert_results': False
                 }
             },
             'substages': {
