@@ -1540,58 +1540,56 @@ def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_
 
 def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: str, end_date: str, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Calculate comprehensive statistics from algorithm results in wide format."""
+    if algorithm_results.empty:
+        logger.error(f"Error calculating comprehensive stats: No schedule data available")
+        return {}
+    shift_distribution = {}
+    unassigned_slots = 0
+    total_assignments = 0
+    total_workers = 0
+    day_columns = []
+    all_shifts = []
+    worker_list = []
+    working_days_covered = 0
+    special_days_covered = 0
     try:
         # Basic counts
-        total_workers = len(algorithm_results) if not algorithm_results.empty else 0
+        total_workers = len(algorithm_results)
         
         # Get day columns (all columns except 'Worker')
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
-        total_days = len(day_columns)
-        
+        for col in algorithm_results.columns:
+            if col != 'Worker' and col.startswith('Day'):
+                day_columns.append(col)
+                # Get all shift values from the wide format
+                all_shifts.extend(algorithm_results[col].dropna().astype(str).tolist())
+            elif 'Worker' == col:
+                # Worker statistics
+                worker_list = algorithm_results['Worker'].astype(str).tolist()
+        # Shift distribution - flatten all shift values
+        # Count shift types
+        shift_series = pd.Series(all_shifts)
+        shift_distribution = shift_series.value_counts().to_dict()
+        total_assignments = len(all_shifts)
+        unassigned_slots = shift_distribution.get('N', 0) + shift_distribution.get('ERROR', 0) + shift_distribution.get('-', 0)
+
         # Calculate date range
         if start_date and end_date:
-            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-            total_days = len(date_range)
-        
-        # Shift distribution - flatten all shift values
-        shift_distribution = {}
-        unassigned_slots = 0
-        total_assignments = 0
-        
-        if not algorithm_results.empty and day_columns:
-            # Get all shift values from the wide format
-            all_shifts = []
-            for col in day_columns:
-                all_shifts.extend(algorithm_results[col].dropna().astype(str).tolist())
-            
-            # Count shift types
-            shift_series = pd.Series(all_shifts)
-            shift_distribution = shift_series.value_counts().to_dict()
-            total_assignments = len(all_shifts)
-            unassigned_slots = shift_distribution.get('N', 0) + shift_distribution.get('ERROR', 0) + shift_distribution.get('-', 0)
-        
-        # Worker statistics
-        workers_scheduled = total_workers
-        worker_list = algorithm_results['Worker'].astype(str).tolist() if 'Worker' in algorithm_results.columns else []
+            total_days = len(pd.date_range(start=start_date, end=end_date, freq='D'))
+        else:
+            total_days = len(day_columns)
         
         # Time coverage
-        scheduled_days = total_days
         coverage_percentage = 100.0 if total_days > 0 else 0
         
-        # Working days and special days coverage
-        working_days_covered = 0
-        special_days_covered = 0
-        
+        # Working days and special days coverage    
         if data_processed:
-            working_days = data_processed.get('working_days', [])
-            special_days = data_processed.get('special_days', [])
-            working_days_covered = len(working_days)
-            special_days_covered = len(special_days)
+            working_days_covered = len(data_processed.get('working_days', []))
+            special_days_covered = len(data_processed.get('special_days', []))
         
         return {
             'workers': {
                 'total_workers': total_workers,
-                'workers_scheduled': workers_scheduled,
+                'workers_scheduled': total_workers,
                 'worker_list': worker_list
             },
             'shifts': {
@@ -1611,8 +1609,9 @@ def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: 
         logger.error(f"Error calculating comprehensive stats: {e}")
         return {}
 
-def _validate_constraints(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
+def _validate_constraints(algorithm_results: pd.DataFrame, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Validate constraint satisfaction from wide format."""
+    print(f"\n\n\n\n\t\t\t\t\033[5mVALIDAÇÃO\033[0m\n\n\n\n{data_processed}\n\n\n\n\n\n")
     try:
         constraint_validation = {
             'working_days': {
@@ -1684,6 +1683,10 @@ def _validate_constraints(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
             constraint_validation['salsa_specific']['quality_weekends']['violations'] = weekend_violations
             constraint_validation['overall_satisfaction'] -= 10
         
+        if constraint_validation['overall_satisfaction'] < 0:
+            constraint_validation['overall_satisfaction'] = 0
+
+
         return constraint_validation
     except Exception as e:
         logger.error(f"Error validating constraints: {e}")

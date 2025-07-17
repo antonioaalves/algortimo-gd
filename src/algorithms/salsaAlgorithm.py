@@ -30,7 +30,7 @@ from src.helpers import (_create_empty_results, _calculate_comprehensive_stats,
                         _validate_constraints, _calculate_quality_metrics, 
                         _format_schedules, _create_metadata, _validate_solution, 
                         _create_export_info)
-
+import time
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -472,7 +472,6 @@ class SalsaAlgorithm(BaseAlgorithm):
     #         raise
 
 
-
 # Update the format_results method:
     def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
         """
@@ -496,7 +495,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             stats = _calculate_comprehensive_stats(algorithm_results, self.start_date, self.end_date, self.data_processed)
             
             # Validate constraints
-            constraint_validation = _validate_constraints(algorithm_results)
+            constraint_validation = _validate_constraints(algorithm_results, self.data_processed)
             
             # Calculate quality metrics
             quality_metrics = _calculate_quality_metrics(algorithm_results)
@@ -543,6 +542,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             #logger.info(f"DEBUG: formatted schedule: {formatted_results['core_results']['formatted_schedule'].shape}")
             
             self.logger.info("Enhanced SALSA results formatted successfully")
+            
             return formatted_results
             
         except Exception as e:
@@ -568,8 +568,26 @@ class SalsaAlgorithm(BaseAlgorithm):
         results = self.execute_algorithm(adapted_data)
         
         # Step 3: Format results
-        formatted_results = self.format_results(results)
-        
+        if (1 == 2):
+            i = 0
+            times = []
+            while (i < 1000):
+                start = time.time()
+                formatted_results = self.format_results(results)
+                #print(f"\n\n\n-----------------------------------------\n\n\n{formatted_results}\n\n\n-----------------------------------------\n\n\n")
+
+                end = time.time()
+                times.append(end - start)
+                i += 1
+            print(f"Average execution time: {sum(times)/len(times):.4f} seconds")
+        else :
+            start = time.time()
+            formatted_results = self.format_results(results)
+            print(f"\n\n\n-----------------------------------------\n\n\n{formatted_results}\n\n\n-----------------------------------------\n\n\n")
+
+            end = time.time()
+            print(f"Execution time: {end - start:.4f} seconds")
+        exit(0)
         self.logger.info("Full SALSA algorithm pipeline completed successfully")
 
         return formatted_results
