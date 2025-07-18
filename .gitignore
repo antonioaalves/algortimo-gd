@@ -163,11 +163,18 @@ cython_debug/
 *.code-workspace
 
 # Project-specific data and output files
-# Data directories
-data/
-!data/csvs/.gitkeep
+# Data directories - exclude specific subdirectories instead of entire data/
+data/output/
 !data/output/.gitkeep
+data/diagnostics/
 !data/diagnostics/.gitkeep
+data/temp/
+data/raw/
+data/processed/
+# Exclude all CSV files in data/csvs/ except specific ones
+data/csvs/*
+!data/csvs/.gitkeep
+!data/csvs/messages_df.csv
 
 # Logs and monitoring
 /logs/
@@ -181,6 +188,7 @@ reports/
 
 # Data files
 *.csv
+!data/csvs/messages_df.csv
 *.xlsx
 *.xls
 *.json

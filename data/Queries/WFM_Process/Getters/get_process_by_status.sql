@@ -1,0 +1,1 @@
+select * from table(S_PROCESSO.GET_PROCESS_BY_STATUS(:user,:process_type,:event_type,:status))

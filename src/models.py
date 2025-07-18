@@ -143,7 +143,7 @@ class DescansosDataModel(BaseDataModel):
         
         self.logger.info("DescansosDataModel initialized")
     
-    def load_process_data(self, data_manager: BaseDataManager, entities_dict: Dict[str, str]) -> bool:
+    def load_process_data(self, data_manager: BaseDataManager, entities_dict: Dict[str, str]) -> tuple[bool, str, Optional[str]]:
         """
         Load data from the data manager.
         
@@ -156,13 +156,16 @@ class DescansosDataModel(BaseDataModel):
         """
         # Load messages df - CRITICAL for set_process_errors to work
         messages_df = pd.DataFrame()
+        # This variable is only initialized because of the type checker
+        # In the future it should contain the error message to add to the log
+        error_message = None
         try:
             self.logger.info(f"DEBUGGING: Loading messages_df from CSV file")
             messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
             messages_df = pd.read_csv(messages_path)
             self.logger.info(f"DEBUGGING: messages_df loaded successfully with {len(messages_df)} rows")
         except Exception as e:
-            self.logger.error(f"DEBUGGING: Error loading messages_df: {e}")
+            self.logger.error(f"Error loading messages_df: {e}")
             # Don't return False - continue without messages_df for now
             
         if messages_df.empty:
@@ -176,7 +179,7 @@ class DescansosDataModel(BaseDataModel):
             # Get entities to load from configuration
             if not entities_dict:
                 self.logger.warning("No entities passed as argument")
-                return False
+                return False, "errSubproc", 'No entities passed as argument'
 
             # Load valid_emp
             try:
@@ -196,12 +199,12 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"valid_emp shape (rows {valid_emp.shape[0]}, columns {valid_emp.shape[1]}): {valid_emp.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading valid_emp: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             if valid_emp.empty:
                 self.logger.error("valid_emp is empty")
                 # TODO: Add set process errors
-                return False
+                return False, "errNoColab", "valid_emp is empty"
 
             # Load important info into memory
             try:
@@ -223,7 +226,7 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"main_year: {main_year} stored in variables")
             except Exception as e:
                 self.logger.error(f"Error loading important info into memory(unit_id, secao_id, posto_id_list, colabs_id_list, main_year): {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # TODO: semanas_restantes logic to add to auxiliary_data
 
@@ -243,7 +246,7 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"params_lq shape (rows {params_lq.shape[0]}, columns {params_lq.shape[1]}): {params_lq.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading params_lq: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Load festivos information
             try:
@@ -255,7 +258,7 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"df_festivos shape (rows {df_festivos.shape[0]}, columns {df_festivos.shape[1]}): {df_festivos.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_festivos: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Load start_date2 and end_date2
             try:
@@ -264,7 +267,7 @@ class DescansosDataModel(BaseDataModel):
                 end_date2 = pd.to_datetime(f"{main_year}-12-31")
             except Exception as e:
                 self.logger.error(f"Error treating start_date2 and end_date2: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Load closed days information
             try:
@@ -275,7 +278,7 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"df_closed_days shape (rows {df_closed_days.shape[0]}, columns {df_closed_days.shape[1]}): {df_closed_days.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_closed_days: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Treat df_closed_days
             try:
@@ -289,7 +292,7 @@ class DescansosDataModel(BaseDataModel):
                             .drop_duplicates())
             except Exception as e:
                 self.logger.error(f"Error treating df_closed_days: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Load global parameters - Very important!! This could be done with params_lq query most probably
             try:
@@ -301,7 +304,7 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"DEBUG: params_df {params_df}")
             except Exception as e:
                 self.logger.error(f"Error loading parameters: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Copy the dataframes into the apropriate dict
             try:
@@ -325,24 +328,23 @@ class DescansosDataModel(BaseDataModel):
 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
-                    return False 
+                    return False, "errSubproc", "No data was loaded into auxiliary_data"
             except KeyError as e:
                 self.logger.error(f"KeyError: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             except ValueError as e:
                 self.logger.error(f"ValueError: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             except Exception as e:
                 self.logger.error(f"Error copying dataframes into the apropriate dict, saving them in auxiliary_data: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
                 
             self.logger.info(f"Successfully loaded {len(self.raw_data)} entities")
-            return True
+            return True, "validSubProc", ''
             
         except Exception as e:
             self.logger.error(f"Error loading process data: {str(e)}", exc_info=True)
-
-            return False
+            return False, "errSubproc", str(e)
 
     def validate_process_data(self):
         """

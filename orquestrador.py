@@ -32,9 +32,9 @@ import warnings
 sis = platform.system()
 path_ficheiros_global = os.getcwd() + "/"
 os.chdir(path_ficheiros_global)
-print("-------------------------------")
-print(path_ficheiros_global)
-print("-------------------------------")
+logger.info("-------------------------------")
+logger.info(path_ficheiros_global)
+logger.info("-------------------------------")
 
 # Add correct path to the functions
 from src.orquestrador_functions.WFM_Process.Getters import get_process_by_status, get_process_by_id, get_total_process_by_status
@@ -49,7 +49,7 @@ connection_object = ConnectionHandler(path=path_ficheiros_global)
 connection_object.connect_to_database()
 connection = connection_object.get_connection()
 connection = connection_object.ensure_connection()
-print(f"connection: {connection}")
+logger.info(f"connection: {connection}")
 # GET LOG MESSAGES
 df_msg = get_messages(path_ficheiros_global, lang='ES')
 #print(f"df_msg: {df_msg}")
@@ -76,7 +76,7 @@ PROC_COD = 'AlgoritmoHorariosPython_Pai'
 # VER QUANTAS THREADS
 # Get parameters with defaults
 all_params = get_all_params(path_ficheiros_global, connection = connection)
-print(f"all_params: {all_params}")
+logger.info(f"all_params: {all_params}")
 GLOBAL_MAX_CONCURRENT_PROCESSES = next((item['NUMBERVALUE'] for item in all_params if item['SYS_P_NAME'] == 'GLOBAL_MAX_CONCURRENT_PROCESSES'), None)
 if GLOBAL_MAX_CONCURRENT_PROCESSES is not None: 
     max(GLOBAL_MAX_CONCURRENT_PROCESSES,3)
@@ -104,7 +104,7 @@ else:
 
 # GET PROCESSES -----------------------------------
 sec_to_proc = get_process_by_status(path_ficheiros_global, 'WFM', 'MPD', '2', 'N', connection)
-print(f"Nr of process {len(sec_to_proc)}")
+logger.info(f"Nr of process {len(sec_to_proc)}")
 
 local_processes = 0
 retries = 0
@@ -123,7 +123,7 @@ if not sec_to_proc.empty:
                 type_error='I', 
                 process_type=PROC_COD, 
                 error_code=None, 
-                description=set_messages(df_msg, 'iniProc', {'1': api_user, '2': retries}),
+                description=set_messages(df_msg, 'iniProc', {'1': '', '2': retries}),
                 employee_id=None, 
                 schedule_day=None
             )
@@ -135,17 +135,18 @@ if not sec_to_proc.empty:
             available_global_slots = GLOBAL_MAX_CONCURRENT_PROCESSES - num_processing_processes
             available_local_slots = LOCAL_MAX_CONCURRENT_PROCESSES - local_processes
             processes_to_start = min(available_global_slots, available_local_slots, num_new_processes)
-            print(f"processes_to_start: {processes_to_start}")
+            logger.info(f"processes_to_start: {processes_to_start}")
             if processes_to_start > 0:
                 for i in range(processes_to_start):
                     try:
+                        # Retrieve variables from sec_to_proc
                         wfm_proc_id = int(sec_to_proc.iloc[i]['CODIGO'])
                         wfm_user = str(sec_to_proc.iloc[i]['USER_CRIACAO'])
                         data_ini = sec_to_proc.iloc[i]['DATA_INI'].strftime('%Y-%m-%d') 
                         data_fim = sec_to_proc.iloc[i]['DATA_FIM'].strftime('%Y-%m-%d')
                         wfm_proc_colab = sec_to_proc.iloc[i]['FK_COLABORADOR']
                         res = set_process_status(connection,path_ficheiros_global, wfm_user, wfm_proc_id, status='P')
-                        print(f"res: {res}")
+                        logger.info(f"res: {res}")
                         if(wfm_proc_colab is not None):
                             wfm_proc_colab = int(wfm_proc_colab)
                         if res == 1:
@@ -157,18 +158,18 @@ if not sec_to_proc.empty:
                                 type_error='I', 
                                 process_type=PROC_COD, 
                                 error_code=None, 
-                                description=set_messages(df_msg, 'callSubproc', {'1': api_user, '2': i+1}),
+                                description=set_messages(df_msg, 'callSubproc', {'1': wfm_proc_id, '2': i+1}),
                                 employee_id=None, 
                                 schedule_day=None
                             )
-                            print(f"running the process")
+                            logger.info(f"running the process")
                             
                             # Commit any pending transactions to prevent database lock conflicts
                             if connection:
                                 connection.commit()
                             
                             # Call batch process function directly instead of subprocess
-                            print(f"Starting direct function call for process {wfm_proc_id}")
+                            logger.info(f"Starting direct function call for process {wfm_proc_id}")
                             
                             try:
                                 # Create components for batch process
@@ -204,7 +205,7 @@ if not sec_to_proc.empty:
                                     )
                                 
                                 if success:
-                                    print(f"Direct function call completed successfully for process {wfm_proc_id}")
+                                    logger.info(f"Direct function call completed successfully for process {wfm_proc_id}")
                                     local_processes += 1
                                     logger.info(f"Setting process {wfm_proc_id} to status G. Setting last process status description")
                                     set_process_param_status(
@@ -228,7 +229,7 @@ if not sec_to_proc.empty:
                                         schedule_day=None
                                     )
                                 else:
-                                    print(f"Direct function call failed for process {wfm_proc_id}")
+                                    logger.info(f"Direct function call failed for process {wfm_proc_id}")
                                     set_process_param_status(
                                         connection,
                                         pathOS=path_ficheiros_global,
@@ -238,11 +239,11 @@ if not sec_to_proc.empty:
                                     ) 
                                     
                             except Exception as e:
-                                print(f"Direct function call failed: {e}")
+                                logger.info(f"Direct function call failed: {e}")
                                 logger.error(f"Error calling batch process directly: {e}", exc_info=True)
 
                         else:
-                            print(f"erro ao chamar processo {wfm_proc_id}")
+                            logger.info(f"erro ao chamar processo {wfm_proc_id}")
                             set_process_errors(
                                 connection,
                                 pathOS=path_ficheiros_global, 
@@ -251,7 +252,7 @@ if not sec_to_proc.empty:
                                 type_error='E', 
                                 process_type=PROC_COD, 
                                 error_code=None, 
-                                description=set_messages(df_msg, 'errCallSubProc', {'1': api_user, '2': "Error calling process"}),
+                                description=set_messages(df_msg, 'errCallSubProc', {'1': wfm_proc_id, '2': i+1, '3': ''}),
                                 employee_id=None, 
                                 schedule_day=None
                             )
@@ -268,12 +269,12 @@ if not sec_to_proc.empty:
                             type_error='E', 
                             process_type=PROC_COD, 
                             error_code=None,
-                            description=set_messages(df_msg, 'errCallSubProc', {'1': api_user, '2': str(e)}),
+                            description=set_messages(df_msg, 'errCallSubProc', {'1': wfm_proc_id, '2': i+1, '3': str(e)}),
                             employee_id=None, 
                             schedule_day=None
                         )
                         
-                        print(f'Error calling child proc {i+1}: {str(e)}')
+                        logger.info(f'Error calling child proc {i+1}: {str(e)}')
             
             break
             
@@ -286,11 +287,11 @@ if not sec_to_proc.empty:
             type_error='I', 
             process_type=PROC_COD, 
             error_code=None, 
-            description=set_messages(df_msg, 'errMaxThreads', {'1': api_user}),
+            description=set_messages(df_msg, 'errMaxThreads', {'1': wfm_proc_id, '2': f"if retries >= MAX_RETRIES: {retries >= MAX_RETRIES}"}),
             employee_id=None, 
             schedule_day=None
         )
         
 # Database connection remains active for parent process
-print("Parent process completed successfully - subprocess is independent")
+logger.info("Parent process completed successfully - subprocess is independent")
 sys.exit(0)
