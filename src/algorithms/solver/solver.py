@@ -24,7 +24,7 @@ def solve(
     special_days: List[int], 
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
-    max_time_seconds: int = 120,
+    max_time_seconds: int = 40,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = True,

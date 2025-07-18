@@ -1611,25 +1611,38 @@ def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: 
 
 def _validate_constraints(algorithm_results: pd.DataFrame, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Validate constraint satisfaction from wide format."""
-    print(f"\n\n\n\n\t\t\t\t\033[5mVALIDAÇÃO\033[0m\n\n\n\n{data_processed}\n\n\n\n\n\n")
+    #print(f"\n\n\n\n\t\t\t\t\033[1mVALIDAÇÃO\033[0m\n\n\n\n{data_processed["pess_obj"]}\n\n\n\n\n\n")
+    #data_processed["pess_obj"]
+    #data_processed["min_workers"]
+    #data_processed["max_workers"]
     try:
         constraint_validation = {
-            'working_days': {
-                'violations': [],
-                'satisfied': True,
-                'details': 'All workers have proper working day assignments'
+            'working_days' :
+            {
+                'violations' : [],
+                'satisfied' : True,
+                'details' : 'All workers have proper working day assignments'
             },
-            'continuous_working_days': {
-                'violations': [],
-                'max_continuous_exceeded': [],
-                'satisfied': True
+            'continuous_working_days' :
+            {
+                'violations' : [],
+                'max_continuous_exceeded' : [],
+                'satisfied' : True
             },
-            'salsa_specific': {
-                'consecutive_free_days': {'satisfied': True, 'violations': []},
-                'quality_weekends': {'satisfied': True, 'violations': []},
-                'saturday_L_constraint': {'satisfied': True, 'violations': []}
+            'salsa_specific' :
+            {
+                'consecutive_free_days' : {'satisfied' : True, 'violations' : []},
+                'quality_weekends' : {'satisfied' : True, 'violations' : []},
+                'saturday_L_constraint' : {'satisfied' : True, 'violations' : []}
             },
-            'overall_satisfaction': 100
+            'workers_per_store' :
+            {
+                'pess_obj_non_complied' : [],
+                'max_per_shift_non_complied' : [],
+                'min_per_shift_non_complied' : [],
+            },
+
+            'overall_satisfaction' : 100
         }
         
         if algorithm_results.empty:
@@ -1639,8 +1652,29 @@ def _validate_constraints(algorithm_results: pd.DataFrame, data_processed: Dict[
             return constraint_validation
         
         # Get day columns
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
-        
+        day_columns = []
+        i = 0
+        for col in algorithm_results.columns:
+            if col != 'Worker' and col.startswith('Day'):
+                day_columns.append(col)
+                m_counts = (algorithm_results[col] == 'M').sum()
+                t_counts = (algorithm_results[col] == 'T').sum()
+                if m_counts < data_processed['min_workers'].get((i, 'M'), 0) or t_counts < data_processed['min_workers'].get((i, 'T'), 0):
+                    #constraint_validation['workers_per_store']['min_per_shift_non_complied'].append(f"Minimum workers not allocated on day {i + 1}")
+                    constraint_validation['workers_per_store']['min_per_shift_non_complied'].append(f"day{i + 1}")
+                    constraint_validation['overall_satisfaction'] -= 0.5
+                if m_counts > data_processed['max_workers'].get((i, 'M'), 0) or t_counts > data_processed['max_workers'].get((i, 'T'), 0):
+                    #constraint_validation['workers_per_store']['max_per_shift_non_complied'].append(f"Over maximum workers allocated on day {i + 1}")
+                    constraint_validation['workers_per_store']['max_per_shift_non_complied'].append(f"day{i + 1}")
+                    constraint_validation['overall_satisfaction'] -= 0.25
+
+                #pessOBJ is almost never hit so im not evaluating it for now
+                '''
+                elif m_counts != data_processed['pess_obj'].get((i, 'M'), 0) or t_counts != data_processed['pess_obj'].get((i, 'T'), 0):
+                    constraint_validation['workers_per_store']['pess_obj_non_complied'].append(f"Different amount of workers than the objective allocated on day {i + 1}")
+                    print(f"day {i + 1} workers: {m_counts} M {t_counts} T with {data_processed['pess_obj'].get((i, 'M'), 0)} {data_processed['pess_obj'].get((i, 'T'), 0)} pessOBJ")
+                '''
+                i += 1
         # Check for continuous working days violations
         continuous_violations = []
         max_continuous_work = 5  # Assume max 5 consecutive working days
@@ -1695,6 +1729,10 @@ def _validate_constraints(algorithm_results: pd.DataFrame, data_processed: Dict[
 def _calculate_quality_metrics(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
     """Calculate quality metrics for the solution from wide format."""
     try:
+        #'worker_satisfaction' :
+        #{
+        #    'all_same_shift_type_week' : []
+        #},
         # Calculate basic metrics
         total_workers = len(algorithm_results) if not algorithm_results.empty else 0
         
