@@ -498,7 +498,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             constraint_validation = _validate_constraints(algorithm_results, self.data_processed)
             
             # Calculate quality metrics
-            quality_metrics = _calculate_quality_metrics(algorithm_results)
+            quality_metrics = _calculate_quality_metrics(algorithm_results, self.data_processed)
             
             # Format schedule for different outputs
             formatted_schedules = _format_schedules(algorithm_results, self.start_date, self.end_date)
