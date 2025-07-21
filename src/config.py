@@ -27,8 +27,63 @@ CONFIG = {
     'data_dir': os.path.join(ROOT_DIR, 'data'),
     'output_dir': os.path.join(ROOT_DIR, 'data', 'output'),
     'log_dir': os.path.join(ROOT_DIR, 'logs'),
+
+    'storage_strategy': {
+        'mode': 'memory',  # Options: 'memory', 'persist', 'hybrid'
+        'persist_intermediate_results': False,
+        'stages_to_persist': [],  # Empty list means all stages
+        'cleanup_policy': 'keep_latest',  # Options: 'keep_all', 'keep_latest', 'keep_none'
+        'persist_format': '',  # Options: 'csv', 'db'
+        'storage_dir': 'data/intermediate'  # For CSV storage 
+    }, # TODO: ensure data/intermediate is created if it doesnt exist
+
+    'logging': {
+        'environment': 'server',  # or 'local' for development
+        'db_logging_enabled': True,
+        'df_messages_path': 'data/csvs/messages.csv',
+        'log_errors_db': True,  # Enable/disable database error logging with set_process_errors
+    },
     
     # File paths for CSV data sources
+    'external_call_data': {
+        'current_process_id': 249468,#253762,# 249468,
+        'api_proc_id': 999,
+        'wfm_proc_id': 249468,
+        'wfm_user': 'WFM',
+        'start_date': '2025-01-01',
+        'end_date': '2025-12-31',
+        'wfm_proc_colab': None, 
+    }, # TODO: create the default values to run locally
+
+    # Params names and defaults - understand why they are here
+    'parameters_names': [
+        'algorithm_name', # TODO: Define the real params names
+        'GD_gloablMaxThreads',
+        'GD_maxThreads',
+        'gloablMaxThreads',
+        'maxThreads',
+        'maxRetries',
+        'sleepTime',
+        'test_param_scheduling_threshold',
+        'GD_algorithmName',
+        'GD_consideraFestivos',
+        'GD_convenioBD',
+    ],
+
+    'parameters_defaults': {
+        #'algorithm_name': 'salsa_algorithm',
+        'GD_gloablMaxThreads': 4,
+        'GD_maxThreads': 2,
+        'gloablMaxThreads': 4,
+        'maxThreads': 2,
+        'maxRetries': 3,
+        'sleepTime': 1000,
+        'test_param_scheduling_threshold': 0.75,
+        'GD_algorithmName': 'alcampo_algorithm',
+        'GD_consideraFestivos': 1,
+        'GD_convenioBD': 'ALCAMPO',
+    },
+
     'dummy_data_filepaths': {
         # Example data files mapping - replace with your actual data files
         'valid_emp': os.path.join(ROOT_DIR, 'data', 'csvs', 'valid_emp.csv'),
@@ -47,16 +102,6 @@ CONFIG = {
         'df_calendario_passado': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_calendario_passado.csv'),
         'df_granularidade': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_granularidade.csv'),
     },
-
-    'external_call_data': {
-        'current_process_id': 249652,
-        'api_proc_id': 999,
-        'wfm_proc_id': 249652,
-        'wfm_user': 'WFM',
-        'start_date': '2025-01-01',
-        'end_date': '2025-12-31',
-        'wfm_proc_colab': None, 
-    }, # TODO: create the default values to run locally
     
     'available_entities_processing': {
         'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'get_process_valid_employess.sql'),
@@ -64,6 +109,8 @@ CONFIG = {
         'params_algo': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_lq': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_params_LQ.sql'),
         'df_festivos':  os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_festivos.sql'),
+        'df_closed_days': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_closed_days.sql'),
+        'params_df': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAlgoParameters.sql'),
     },
 
     'available_entities_aux': {
@@ -75,7 +122,8 @@ CONFIG = {
         'df_faixa_horario': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscFaixaHorario.sql'),
         'df_orcamento': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscOrcamento.sql'),
         'df_calendario_passado': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreSchedule.sql'),
-        'df_granularidade': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscEstimado.sql')
+        'df_granularidade': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscEstimado.sql'),
+        'df_days_off': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetDaysOff.sql')
     },
 
     'available_entities_raw': {
@@ -86,8 +134,9 @@ CONFIG = {
 
     # Available algorithms for the project
     'available_algorithms': [
-        'solverOne',
-        'example_algorithm'
+        'alcampo_algorithm',
+        'example_algorithm',
+        'salsa_algorithm',
         # Add your custom algorithms here
     ],
      
@@ -118,21 +167,25 @@ CONFIG = {
             'requires_previous': True,   # Requires previous stage completion
             'validation_required': True,
             ### NOT NEEDED SINCE NO DECISIONS FOR THIS PROJECT
-            #'decisions': {
-            #    'transformations': {     # Decision point for transformation options
-            #        'apply_filtering': False,
-            #        'filter_column': '',
-            #        'filter_value': '',
-            #        'normalize_numeric': True,  # Whether to normalize numerical data
-            #        'fill_missing': True,       # Whether to fill missing values
-            #        'fill_method': 'mean'       # Method for filling missing values
-            #    },
-            #    'insertions': {
-            #        'insert_results': False
-            #    }
-            #},
+            'decisions': {
+                'transformations': {     # Decision point for transformation options
+                    'apply_filtering': False,
+                    'filter_column': '',
+                    'filter_value': '',
+                    'normalize_numeric': True,  # Whether to normalize numerical data
+                    'fill_missing': True,       # Whether to fill missing values
+                    'fill_method': 'mean'       # Method for filling missing values
+                },
+                #'algorithm': {
+                #    'name': 'salsa_algorithm',  # Default algorithm to use - should come from the parameters_defaults in the future
+                #    'parameters': {}
+                #},
+                'insertions': {
+                    'insert_results': False
+                }
+            },
             'substages': {
-                'connection': {
+                'treat_params': {
                     'sequence': 1,
                     'description': 'Establishing connection to data source',
                     'required': True,
@@ -156,7 +209,7 @@ CONFIG = {
                     'required': True,
                     'decisions': {
                         # Very important define the algorithms here
-                        'algorithms': ['solverOne']
+                        #'algorithms': ['salsa_algorithm']
                     }                     
                 },
                 'format_results': {
@@ -172,7 +225,7 @@ CONFIG = {
                     'decisions': {}
                 }
             },
-            'auto_complete_on_substages': True, # Auto-complete stage when all substages are done
+            'auto_complete_on_substages': False, # Auto-complete stage when all substages are done
         },
         
 
@@ -201,4 +254,61 @@ CONFIG = {
     'log_dir': 'logs'
 }
 
-# Add any project-specific configuration below
+# For algorithm_GD development
+ALGORITHM_GD_DEV_CONFIG = {
+    'logging': {
+        'environment': 'local',
+        'db_logging_enabled': False,
+        'df_messages_path': 'data/csvs/messages.csv',
+        'server_file_logging': True,
+        'log_level': 'DEBUG',
+        'log_dir': 'logs'
+    },
+    'external_call_data': {
+        'current_process_id': 1961,
+        'api_proc_id': 999,
+        'wfm_proc_id': 1961,
+        'wfm_user': 'WFM_DEV',
+        'start_date': '2025-01-01',
+        'end_date': '2025-12-31',
+        'wfm_proc_colab': None,
+    }
+}
+
+# For algorithm_GD production
+ALGORITHM_GD_PROD_CONFIG = {
+    'logging': {
+        'environment': 'server',
+        'db_logging_enabled': True,
+        'df_messages_path': 'data/csvs/messages.csv',
+        'db_logging_query': 'queries/log_process_errors.sql',
+        'server_file_logging': True,
+        'retention_days_server': 60,
+        'log_level': 'INFO',
+        'log_dir': 'logs'
+    },
+    'external_call_data': {
+        'current_process_id': None,  # Set at runtime
+        'api_proc_id': 999,
+        'wfm_proc_id': None,  # Set at runtime
+        'wfm_user': 'WFM',
+        'start_date': None,  # Set at runtime
+        'end_date': None,    # Set at runtime
+        'wfm_proc_colab': None,
+    }
+}
+
+# Helper function to merge environment-specific config
+def get_environment_config(base_config: dict, env_config: dict) -> dict:
+    """
+    Merge environment-specific configuration with base configuration.
+    
+    Args:
+        base_config: Base configuration dictionary
+        env_config: Environment-specific overrides
+        
+    Returns:
+        Merged configuration dictionary
+    """
+    from base_data_project.utils import merge_configs
+    return merge_configs(base_config, env_config)

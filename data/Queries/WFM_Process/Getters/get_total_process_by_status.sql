@@ -1,0 +1,1 @@
+select S_PROCESSO.get_total_process_by_status(:i_process_type,:i_status) TOTAL_P from dual

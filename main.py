@@ -11,23 +11,32 @@ from pathlib import Path
 from datetime import datetime
 
 # Import base_data_project components
-from base_data_project.log_config import setup_logger
+from base_data_project.log_config import setup_logger, get_logger
 from base_data_project.utils import create_components
 from base_data_project.process_management.manager import ProcessManager
 
 # Import project-specific components
 from src.config import CONFIG, PROJECT_NAME
-from src.services.example_service import AlgoritmoGDService
 
-# Set up logger
-logger = setup_logger(PROJECT_NAME, log_level=logging.INFO)
+# Initialize logger with configuration first
+setup_logger(
+    project_name=PROJECT_NAME,
+    log_level=CONFIG.get('log_level', logging.INFO),
+    log_dir=CONFIG.get('log_dir', 'logs'),
+    console_output=CONFIG.get('console_output', True)
+)
+
+# Then get the logger instance for use throughout the file
+logger = get_logger(PROJECT_NAME)
+
+# Import components that might use logging after logger is initialized
+from src.services.example_service import AlgoritmoGDService
 
 @click.group()
 def cli():
     """Interactive command-line interface for the my_new_project project."""
     pass
 
-# Rest of your code remains the same
 @cli.command(help="Run the interactive process")
 @click.option("--use-db/--use-csv", prompt="Use database for data storage", default=False, 
               help="Use database instead of CSV files")
@@ -56,24 +65,27 @@ def run_process(use_db, no_tracking):
         # Create spinner for initialization
         with click.progressbar(length=100, label="Initializing") as bar:
             # Create and configure components
-            data_manager, process_manager = create_components(use_db=use_db, no_tracking=no_tracking, config=CONFIG)
+            data_manager, process_manager = create_components(
+                use_db=use_db, 
+                no_tracking=no_tracking, 
+                config=CONFIG, 
+                project_name=PROJECT_NAME
+            )
 
-            # TODO: Remove this
-            # Debug: Check what's in the process_manager
-            # Right after: data_manager, process_manager = create_components(...)
-            print("=== DEBUG PROCESS MANAGER ===")
+            # Debug logging for process manager
+            logger.debug("=== DEBUG PROCESS MANAGER ===")
             if process_manager:
-                print(f"ProcessManager type: {type(process_manager)}")
-                print(f"ProcessManager attributes: {[attr for attr in dir(process_manager) if not attr.startswith('_')]}")
-                print(f"Has config: {hasattr(process_manager, 'config')}")
-                print(f"Has core_data: {hasattr(process_manager, 'core_data')}")
+                logger.debug(f"ProcessManager type: {type(process_manager)}")
+                logger.debug(f"ProcessManager attributes: {[attr for attr in dir(process_manager) if not attr.startswith('_')]}")
+                logger.debug(f"Has config: {hasattr(process_manager, 'config')}")
+                logger.debug(f"Has core_data: {hasattr(process_manager, 'core_data')}")
                 if hasattr(process_manager, 'core_data'):
-                    print(f"Core data type: {type(process_manager.core_data)}")
+                    logger.debug(f"Core data type: {type(process_manager.core_data)}")
                     if isinstance(process_manager.core_data, dict):
-                        print(f"Core data keys: {list(process_manager.core_data.keys())}")
+                        logger.debug(f"Core data keys: {list(process_manager.core_data.keys())}")
             else:
-                print("No process_manager created")
-            print("=== END DEBUG ===")
+                logger.debug("No process_manager created")
+            logger.debug("=== END DEBUG ===")
         
             bar.update(100)
 
@@ -83,13 +95,14 @@ def run_process(use_db, no_tracking):
         
         with data_manager:
             external_call_dict = CONFIG.get('external_call_data', {})
-            print(external_call_dict)
+            logger.debug(f"External call dict: {external_call_dict}")
             # Create service with data and process managers
             service = AlgoritmoGDService(
                 data_manager=data_manager,
                 process_manager=process_manager,
                 external_call_dict=external_call_dict,
-                config=CONFIG
+                config=CONFIG,
+                project_name=PROJECT_NAME
             )
             
             # Initialize process
@@ -106,9 +119,6 @@ def run_process(use_db, no_tracking):
                 # Let user decide whether to run this stage
                 if click.confirm(f"Execute {stage} stage?", default=True):
                     success = service.execute_stage(stage)
-                    
-                    #TODO: remove this
-                    #click.echo(f"valid_emp_df: {service.data.auxiliary_data['valid_emp']}")
 
                     if success:
                         click.echo(click.style(f"✓ {stage} completed successfully", fg="green"))

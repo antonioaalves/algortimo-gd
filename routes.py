@@ -30,7 +30,8 @@ app = Flask(__name__)
 data_manager, process_manager = create_components(
     use_db=CONFIG.get('use_db', False),
     no_tracking=False,
-    config=CONFIG
+    config=CONFIG,
+    project_name=PROJECT_NAME
 )
 
 # Create service

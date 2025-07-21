@@ -1,0 +1,1 @@
+select * from esc_processo where codigo = :i

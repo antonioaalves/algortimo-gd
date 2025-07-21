@@ -5,12 +5,12 @@ a coordinated multi-stage data processing flow.
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Type, cast
 from datetime import datetime
 import pandas as pd
 
 # Import base_data_project components
-from base_data_project.algorithms.factory import AlgorithmFactory
+from src.algorithms.factory import AlgorithmFactory
 from base_data_project.data_manager.managers.base import BaseDataManager
 from base_data_project.process_management.manager import ProcessManager
 from base_data_project.process_management.stage_handler import ProcessStageHandler
@@ -20,23 +20,25 @@ from base_data_project.storage.models import BaseDataModel
 from base_data_project.log_config import get_logger
 
 # Import project-specific components
-from src.config import PROJECT_NAME, CONFIG
+from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
 from src.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
+from src.helpers import set_process_errors
+from src.orquestrador_functions.Logs.message_loader import set_messages
 
 class AlgoritmoGDService(BaseService):
     """
     Example service class that demonstrates how to coordinate data management,
     process tracking, and algorithm execution.
     
-    This service implements a complete prfrom base_data_project.storage.models import BaseDataModelocess flow with multiple stages:
+    This service implements a complete process flow with multiple stages:
     1. Data Loading: Load data from sources
     2. Data Transformation: Clean and prepare the data
     3. Processing: Apply algorithms to the data
     4. Result Analysis: Analyze and save the results
     """
 
-    def __init__(self, data_manager: BaseDataManager, process_manager: Optional[ProcessManager] = None, external_call_dict: Dict[str, Any] = {}, config: Dict[str, Any] = None):
+    def __init__(self, data_manager: BaseDataManager, project_name: str, process_manager: Optional[ProcessManager] = None, external_call_dict: Dict[str, Any] = {}, config: Dict[str, Any] = {}, external_raw_connection=None):
         """
         Initialize the service with data and process managers.
         
@@ -47,7 +49,6 @@ class AlgoritmoGDService(BaseService):
 
         # Import CONFIG if not provided
         if config is None:
-            from src.config import CONFIG
             config = CONFIG
         
         # Work around the config property issue
@@ -61,8 +62,8 @@ class AlgoritmoGDService(BaseService):
         super().__init__(
             data_manager=data_manager, 
             process_manager=process_manager, 
-            project_name='R_allocation_project',
-            data_model_class=DescansosDataModel
+            project_name=project_name,
+            data_model_class=cast(BaseDataModel, DescansosDataModel)  # Tell the linter this is okay
         )
 
         # Storing data here to pass it to data model in the first stage (when the class is instanciated)
@@ -74,14 +75,68 @@ class AlgoritmoGDService(BaseService):
             'start_date': external_call_dict.get('start_date', 0),                   # arg4
             'end_date': external_call_dict.get('end_date', 0),                       # arg5
             'wfm_proc_colab': external_call_dict.get('wfm_proc_colab', 0),           # arg6
-            'child_number': external_call_dict.get('child_number', 0),               # arg7
-        }
+            'child_number': external_call_dict.get('child_number', 1),               # arg7
+        } if external_call_dict is not None else {}
 
         # Process tracking
-        self.stage_handler = ProcessStageHandler(process_manager=process_manager, config=config) if process_manager else None
+        self.stage_handler = process_manager.get_stage_handler() if process_manager else None
         self.algorithm_results = {}
+
+        self._register_decision_points()
+        
+        self.logger = get_logger(project_name)
+        self.logger.info(f"project_name in service init: {project_name}")
+        
+        # Setup database connection for error logging - needed to pass as argument
+        self.raw_connection = None
+        if external_raw_connection is not None:
+            # Use the provided external connection (from orquestrador)
+            self.raw_connection = external_raw_connection
+            self.logger.info("Using external database connection for error logging")
+        elif CONFIG.get('logging', {}).get('log_errors_db', True):
+            from base_data_project.data_manager.managers.managers import DBDataManager
+            if isinstance(data_manager, DBDataManager):
+                try:
+                    self.raw_connection = data_manager.session.connection().connection
+                    self.logger.info("Database connection established for error logging")
+                except Exception as e:
+                    self.logger.warning(f"Failed to establish database connection for error logging: {e}")
+                    self.raw_connection = None
+            else:
+                self.logger.info("Non-database data manager detected, database error logging disabled")
+        else:
+            self.logger.info("Database error logging disabled in configuration")
         
         self.logger.info("AlgoritmoGDService initialized")
+
+    def _register_decision_points(self):
+        """Register decision points from config with the process manager"""
+        if not self.process_manager:
+            return
+            
+        stages_config = CONFIG.get('stages', {})
+        
+        for stage_name, stage_config in stages_config.items():
+            sequence = stage_config.get('sequence')
+            decisions = stage_config.get('decisions', {})
+            
+            if decisions and sequence is not None:
+                self.logger.info(f"Registering stage {stage_name} with full decisions: {decisions}")
+                # Flatten all decision groups into one dict of defaults
+                defaults = {}
+                for decision_group in decisions.values():
+                    if isinstance(decision_group, dict):
+                        defaults.update(decision_group)
+                
+                # Register with process manager
+                self.process_manager.register_decision_point(
+                    stage=sequence,
+                    schema=dict,  # Keep it simple with dict schema
+                    required=True,
+                    defaults=defaults
+                )
+                
+                self.logger.info(f"Registered decisions for stage {stage_name} (seq: {sequence})")
 
     def _dispatch_stage(self, stage_name, algorithm_name = None, algorithm_params = None):
         """Dispatch to appropriate stage method."""
@@ -90,7 +145,7 @@ class AlgoritmoGDService(BaseService):
         if stage_name == "data_loading":
             return self._load_process_data()
         elif stage_name == "processing":
-            return self._execute_processing_stage()
+            return self._execute_processing_stage(algorithm_name=algorithm_name, algorithm_params=algorithm_params)
         else:
             self.logger.error(f"Unknown stage name: {stage_name}")
             return False
@@ -105,12 +160,10 @@ class AlgoritmoGDService(BaseService):
             True if successful, False otherwise
         """
         try:
-            self.logger.info("Executing data loading raw stage")
             stage_name = 'data_loading'
+            self.logger.info("Executing process data loading stage")
             # Get decisions from process manager if available
             load_entities_dict = CONFIG.get('available_entities_processing', {})
-            
-            # TODO: remove this, the entities are defined in the config file on a separate dict
     
             # Track progress
             if self.stage_handler:
@@ -121,8 +174,15 @@ class AlgoritmoGDService(BaseService):
                 )
             
             # Load each entity
-            self.data = DescansosDataModel(DescansosDataModel, project_name=PROJECT_NAME, external_data=self.external_data)
+            self.data = DescansosDataModel(
+                data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
+                    project_name=PROJECT_NAME,
+                    external_data=self.external_data if self.external_data else {}
+                )
             
+            # Declare the messages dataframe
+            messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+            child_num = str(self.external_data.get('child_number', 1))
             # Progress update
             if self.stage_handler:
                 self.stage_handler.track_progress(
@@ -132,7 +192,7 @@ class AlgoritmoGDService(BaseService):
                     {"entities": load_entities_dict}
                 )
 
-            valid_process_loading = self.data.load_process_data(self.data_manager, load_entities_dict)
+            valid_process_loading, error_code, error_message = self.data.load_process_data(self.data_manager, load_entities_dict)
 
             if not valid_process_loading:
                 if self.stage_handler:
@@ -142,8 +202,21 @@ class AlgoritmoGDService(BaseService):
                         "Failed to load raw data.",
                         {"valid_process_loading": valid_process_loading}
                     )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type='data_loading',
+                        error_code=None,
+                        description=set_messages(messages_df, error_code, {'1': child_num, '2': error_message}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
                 return False
-            
+
             # Progress update
             if self.stage_handler:
                 self.stage_handler.track_progress(
@@ -162,6 +235,19 @@ class AlgoritmoGDService(BaseService):
                         0.0,
                         "Failed to validate raw data.",
                         {'valid_raw_data': valid_raw_data}
+                    )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type='data_loading',
+                        error_code=None,
+                        description=set_messages(messages_df, error_code, {'1': child_num, '2': error_message}),
+                        employee_id=None,
+                        schedule_day=None
                     )
                 return False
 
@@ -187,6 +273,21 @@ class AlgoritmoGDService(BaseService):
                         }
                     }
                 )
+            
+            # Set process errors completition for process data loading
+            if self.raw_connection and not messages_df.empty:
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=ROOT_DIR,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='I',
+                    process_type='data_loading',
+                    error_code=None,
+                    description=set_messages(messages_df, error_code, {'1': child_num, '2': error_message}),
+                    employee_id=None,
+                    schedule_day=None
+                )
 
             return True
             
@@ -199,6 +300,19 @@ class AlgoritmoGDService(BaseService):
                     stage_name=stage_name,
                     progress=0.0,
                     message=error_msg
+                )
+            if self.raw_connection and not messages_df.empty:
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=ROOT_DIR,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='E',
+                    process_type='data_loading',
+                    error_code=None,
+                    description=set_messages(messages_df, error_code, {'1': child_num, '2': str(e)}),
+                    employee_id=None,
+                    schedule_day=None
                 )
             return False
 
@@ -223,43 +337,136 @@ class AlgoritmoGDService(BaseService):
         """
         try:
             stage_name = 'processing'
+            process_type = 'processing_stage'
             decisions = {}
+            messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+            child_num = str(self.external_data.get('child_number', 1))
             # TODO: check if it should exit the loop if anything fails or continue
             if self.stage_handler and self.process_manager:
                 stage_sequence = self.stage_handler.stages[stage_name]['sequence']
                 insert_results = self.process_manager.current_decisions.get(stage_sequence, {}).get('insertions', {}).get('insert_results', False)
+                #algorithm_name = self.process_manager.current_decisions.get(stage_sequence, {}).get('algorithm', {}).get('name', algorithm_name)
+                #algorithm_params = self.process_manager.current_decisions.get(stage_sequence, {}).get('algorithm', {}).get('parameters', algorithm_params)
+                self.logger.info(f"Looking for defaults with stage_sequence: {stage_sequence}, type: {type(stage_sequence)}")
+                stage_config = CONFIG.get('stages', {}).get('processing', {})
+                decisions = stage_config.get('decisions', {})
+
+                #self.logger.info(f"DEBUG: Decisions: {decisions}")
+                #self.logger.info(f"DEBUG: Decisions type: {type(decisions)}")
+
+                # TODO: Remove this sine the algorithm_name comes from parasm
+                #algorithm_name = decisions.get('algorithm', {}).get('name', algorithm_name)
+                algorithm_name = ''
+                algorithm_params = decisions.get('algorithm', {}).get('parameters', algorithm_params)
+                insert_results = decisions.get('insertions', {}).get('insert_results', False)
+                #self.logger.info(f"Found defaults: {defaults}")
+                #self.logger.info(f"Retrieving these values from config algorithm_name: {algorithm_name}, algorithm_params: {algorithm_params}, insert_results: {insert_results}")
+
+                #if algorithm_name is None:
+                #    self.logger.error("No algorithm name provided in decisions")
+                #    return False
+
+                if algorithm_params is None:
+                    self.logger.error("No algorithm parameters provided in decisions")
+                    return False
+
+                # Type assertions to help type checker
+                #assert isinstance(algorithm_name, str)
+                assert isinstance(algorithm_params, dict)
+
+            # Log start of the process to database
+            #self.logger.info(f"DEBUG set_process_errors condition BEFORE LOOP: raw_connection={self.raw_connection is not None}, messages_df_empty={messages_df.empty}, messages_df_len={len(messages_df)}")
+            
+            # Check condition step by step
+            #conn_check = self.raw_connection is not None
+            #df_check = not messages_df.empty
+            #self.logger.info(f"DEBUG CONDITION: conn_check={conn_check}, df_check={df_check}, combined={conn_check and df_check}")
+            
+            #if self.raw_connection and not messages_df.empty:
+            #    #self.logger.info(f"DEBUG SERVICE: INSIDE THE IF CONDITION!")
+            #    description = set_messages(messages_df, 'iniProc', {'1': child_num})
+            #    #self.logger.info(f"DEBUG SERVICE: About to call set_process_errors with description: {description}")
+            #    set_process_errors(
+            #        connection=self.raw_connection,
+            #        pathOS=ROOT_DIR,
+            #        user='WFM',
+            #        fk_process=self.external_data['current_process_id'],
+            #        type_error='I',
+            #        process_type=process_type,
+            #        error_code=None,
+            #        description=description,
+            #        employee_id=None,
+            #        schedule_day=None
+            #    )
+            #    self.logger.info(f"DEBUG SERVICE: set_process_errors call completed")
+            #else:
+            #    self.logger.info(f"DEBUG SERVICE: CONDITION FAILED - not calling set_process_errors")
+
             posto_id_list = self.data.auxiliary_data.get('posto_id_list', [])
             for posto_id in posto_id_list:
+                #if posto_id != 121: continue # TODO: remove this, just for testing purposes
+                # Save the current posto_id to the auxiliary data
+                self.data.auxiliary_data['current_posto_id'] = posto_id
+                self.logger.info(f"Current posto_id: {posto_id}")
                 progress = 0.0
+                # Log messages to database
+                #self.logger.info(f"DEBUG set_process_errors condition: raw_connection={self.raw_connection is not None}, messages_df_empty={messages_df.empty}, messages_df_len={len(messages_df)}")
+                if self.raw_connection and not messages_df.empty:
+                    #self.logger.info(f"DEBUG SERVICE: INSIDE IF CONDITION for posto {posto_id}!")
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='I',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'iniSubprocPosto', {'1': child_num, '2': str(posto_id)}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+
                 if self.stage_handler:
-                    self.stage_handler.start_substage('processing', 'connection')
-                
-                if self.stage_handler:
+                    self.stage_handler.start_substage(stage_name, 'treat_params')
                     self.stage_handler.track_progress(
                         stage_name=stage_name,
                         progress=(progress+0.1)/len(posto_id_list),
                         message="Starting the processing stage and consequent substages"
                     )
-                # SUBSTAGE 1: connection
-                valid_connection = self._execute_connection_substage(stage_name)
-                if not valid_connection:
+
+                # SUBSTAGE 1: treat_params
+                valid_treat_params = self._execute_treatment_params_substage(stage_name)
+                if not valid_treat_params:
                     if self.stage_handler:
                         self.stage_handler.track_progress(
                             stage_name=stage_name,
                             progress=0.0,
-                            message="Error connecting to data source, returning False"
+                            message="Error treating parameters, returning False"
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidParamsTreat', {'1': child_num, '2': ''}),
+                            employee_id=None,
+                            schedule_day=None
                         )
                     return False
                 if self.stage_handler:
                     self.stage_handler.track_progress(
                         stage_name=stage_name,
                         progress=(progress+0.2)/len(posto_id_list),
-                        message="Valid connection established, advancing to next substage"
+                        message="Valid treat_params substage, advancing to next substage"
                     )
 
                 # SUBSTAGE 2: load_matrices
                 if self.stage_handler:
-                    self.stage_handler.start_substage('processing', 'load_matrices')
+                    self.stage_handler.start_substage(stage_name, 'load_matrices')
                 valid_loading_matrices = self._execute_load_matrices_substage(stage_name, posto_id)
                 if not valid_loading_matrices:
                     if self.stage_handler:
@@ -267,6 +474,19 @@ class AlgoritmoGDService(BaseService):
                             stage_name=stage_name,
                             progress=0.0,
                             message="Invalid matrices loading substage, returning False"
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidLoadMatrices', {'1': child_num, '2': ''}),
+                            employee_id=None,
+                            schedule_day=None
                         )
                     return False
                 if self.stage_handler:
@@ -278,7 +498,7 @@ class AlgoritmoGDService(BaseService):
 
                 # SUBSTAGE 3: func_inicializa
                 if self.stage_handler:
-                    self.stage_handler.start_substage('processing', 'func_inicializa')
+                    self.stage_handler.start_substage(stage_name, 'func_inicializa')
                 valid_func_inicializa = self._execute_func_inicializa_substage(stage_name)
                 if not valid_func_inicializa:
                     if self.stage_handler:
@@ -286,6 +506,19 @@ class AlgoritmoGDService(BaseService):
                             stage_name=stage_name,
                             progress=0.0,
                             message="Invalid result in func_inicializa substage, returning False"
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidFuncInicializa', {'1': child_num, '2': ''}),
+                            employee_id=None,
+                            schedule_day=None
                         )
                     return False
                 if self.stage_handler:
@@ -297,14 +530,32 @@ class AlgoritmoGDService(BaseService):
 
                 # SUBSTAGE 4: allocation_cycle
                 if self.stage_handler:
-                    self.stage_handler.start_substage('processing', 'allocation_cycle')
-                valid_allocation_cycle = self._execute_allocation_cycle_substage(stage_name)
+                    self.stage_handler.start_substage(stage_name, 'allocation_cycle')
+                # Type assertions to help type checker
+                algorithm_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
+                #self.logger.info(f"DEBUG: Algorithm name before calling allocation_cycle substage: {algorithm_name}")
+                assert isinstance(algorithm_name, str)
+                assert isinstance(algorithm_params, dict)
+                valid_allocation_cycle = self._execute_allocation_cycle_substage(algorithm_params=algorithm_params, stage_name=stage_name, algorithm_name=algorithm_name)
                 if not valid_allocation_cycle:
                     if self.stage_handler:
                         self.stage_handler.track_progress(
                             stage_name=stage_name,
                             progress=0.0,
                             message="Invalid result in allocation_cycle substage, returning False"
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidAllocationCycle', {'1': child_num, '2': ''}),
+                            employee_id=None,
+                            schedule_day=None
                         )
                     return False
                 if self.stage_handler:
@@ -316,7 +567,7 @@ class AlgoritmoGDService(BaseService):
 
                 # SUBSTAGE 5: format_results
                 if self.stage_handler:
-                    self.stage_handler.start_substage('processing', 'format_results')
+                    self.stage_handler.start_substage(stage_name, 'format_results')
                 valid_format_results = self._execute_format_results_substage(stage_name)
                 if not valid_format_results:
                     if self.stage_handler:
@@ -324,6 +575,19 @@ class AlgoritmoGDService(BaseService):
                             stage_name=stage_name,
                             progress=0.0,
                             message="Invalid result in format_results substage, returning False"
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidFormatResults', {'1': child_num, '2': ''}),
+                            employee_id=None,
+                            schedule_day=None
                         )
                     return False
                 if self.stage_handler:
@@ -336,7 +600,7 @@ class AlgoritmoGDService(BaseService):
                 # SUBSTAGE 6: insert_results
                 if insert_results:
                     if self.stage_handler:
-                        self.stage_handler.start_substage('processing', 'insert_results')
+                        self.stage_handler.start_substage(stage_name, 'insert_results')
                     valid_insert_results = self._execute_insert_results_substage(stage_name)
                     if not valid_insert_results:
                         if self.stage_handler:
@@ -344,6 +608,19 @@ class AlgoritmoGDService(BaseService):
                                 stage_name=stage_name,
                                 progress=0.0,
                                 message="Invalid result in insert_results substage, returning False"
+                            )
+                        if self.raw_connection and not messages_df.empty:
+                            set_process_errors(
+                                connection=self.raw_connection,
+                                pathOS=ROOT_DIR,
+                                user='WFM',
+                                fk_process=self.external_data['current_process_id'],
+                                type_error='E',
+                                process_type=process_type,
+                                error_code=None,
+                                description=set_messages(messages_df, 'invalidInsertResults', {'1': child_num}),
+                                employee_id=None,
+                                schedule_day=None
                             )
                         return False
                     if self.stage_handler:
@@ -361,11 +638,37 @@ class AlgoritmoGDService(BaseService):
                     progress=1.0,
                     message="Finnished processing stage with success. Returnig True."
                 )
+            if self.raw_connection and not messages_df.empty:
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=ROOT_DIR,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='I',
+                    process_type=process_type,
+                    error_code=None,
+                    description=set_messages(messages_df, 'okSubprocPosto', {'1': child_num, '2': str(posto_id), '3': ''}),
+                    employee_id=None,
+                    schedule_day=None
+                )
             return True
 
         except Exception as e:
             self.logger.error(f"Error in processing stage: {str(e)}", exc_info=True)
             # TODO: add progress tracking
+            if self.raw_connection and not messages_df.empty:
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=ROOT_DIR,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='E',
+                    process_type=process_type,
+                    error_code=None,
+                    description=set_messages(messages_df, 'errSubprocPosto', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                    employee_id=None,
+                    schedule_day=None
+                )
             return False
 
     def _execute_result_analysis_stage(self) -> bool:
@@ -378,43 +681,119 @@ class AlgoritmoGDService(BaseService):
             True if successful, False otherwise
         """
         # Implement the logic if needed
-        pass
+        return True
 
-    def _execute_connection_substage(self, stage_name: str = 'processing') -> bool:
+    def _execute_treatment_params_substage(self, stage_name: str = 'processing') -> bool:
         """
         Execute the processing substage of connection. This could be implemented as a method or directly on the _execute_processing_stage() method
         """
         try:
-            substage_name = 'connection'
-            self.logger.info("Connecting to data source")
+            substage_name = 'treat_params'
+            self.logger.info("Starting to treating parameters substage")
             
+            try:
+                self.logger.info(f"DEBUG: About to execute substage logic")
+                self.logger.info(f"DEBUG SUBSTAGE: Inside _execute_treatment_params_substage")
+            except Exception as e:
+                self.logger.error(f"DEBUG: Exception in substage after line 547: {e}", exc_info=True)
+                return False
+            
+            # Log start of parameter treatment to database
+            messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+            child_num = str(self.external_data.get('child_number', 1))
+            self.logger.info(f"DEBUG SUBSTAGE: messages_df.empty = {messages_df.empty}, raw_connection = {self.raw_connection is not None}")
+            if self.raw_connection and not messages_df.empty:
+                self.logger.info(f"DEBUG SUBSTAGE: About to call set_process_errors for param treatment")
+                description = set_messages(messages_df, 'iniSubprocPosto', {'1': child_num, '2': 'param_treatment'})
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=ROOT_DIR,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='I',
+                    process_type='treat_params',
+                    error_code=None,
+                    description=description,
+                    employee_id=None,
+                    schedule_day=None
+                )
+                self.logger.info(f"DEBUG SUBSTAGE: set_process_errors completed for param treatment")
+            else:
+                self.logger.info(f"DEBUG SUBSTAGE: Skipping set_process_errors for param treatment - condition failed")
+
             # Establish connection to data source
-            self.data_manager.connect()
+            params = self.data.treat_params()
+            valid_params = params.get('success', False)
+            algorithm_name = params.get('algorithm_name', '')
+            #self.logger.info(f"DEBUG: Algorithm name: {algorithm_name}, type: {type(algorithm_name)}")
             
+            if not valid_params:
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name,
+                        success=False, 
+                        result_data={"error": "Error treating parameters"}
+                    )
+                return False
+            if algorithm_name == '':
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name,
+                        success=False, 
+                        result_data={"error": "No algorithm name provided in decisions"}
+                    )
+                return False
+
+            if algorithm_name and self.process_manager:
+                # Get current decisions for stage
+                stage_sequence, current_decisions = self.get_decisions_for_stage('processing')
+                
+                # Add algorithm name to the decisions
+                current_decisions['algorithm_name'] = algorithm_name
+                #self.logger.info(f"DEBUG: Current decisions: {current_decisions}")
+                
+                # Store in current_decisions properly
+                self.process_manager.current_decisions[stage_sequence] = current_decisions
+
             # Track progress for the connection substage
             if self.stage_handler:
                 self.stage_handler.track_substage_progress(
                     stage_name=stage_name, 
                     substage_name=substage_name,
-                    progress=1.0,  # 100% complete
-                    message="Connection established successfully"
+                    progress=0.5,  # 50% complete
+                    message="Parameters treated successfully"
                 )
+
+            valid_params_info = self.data.validate_params()
+            if not valid_params_info:
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name,
+                        success=False, 
+                        result_data={"error": "Error validating parameters"}
+                    )
+                return False
+
+            if self.stage_handler:
                 self.stage_handler.complete_substage(
                     stage_name=stage_name, 
                     substage_name=substage_name,
                     success=True, 
-                    result_data={"connection_info": "Connected to data source"}
+                    result_data={"params_info": "Parameters treated successfully"}
                 )
             return True
     
         except Exception as e:
-            self.logger.error(f"Error connecting to data source: {str(e)}")
+            self.logger.error(f"Error treating parameters: {str(e)}")
             if self.stage_handler:
                 self.stage_handler.complete_substage(
-                    "data_loading", 
-                    "connection", 
-                    False, 
-                    {"error": str(e)}
+                    stage_name=stage_name, 
+                    substage_name=substage_name, 
+                    success=False, 
+                    result_data={"error": str(e)}
                 )
             return False
         
@@ -422,149 +801,581 @@ class AlgoritmoGDService(BaseService):
         """
         Execute the processing substage of load_matrices. This could be implemented as a method or directly on the _execute_processing_stage() method
         """
-        self.logger.info("Starting load_matrices substage")
-        substage_name = "load_matrices"
-        if not posto_id:
-            # TODO: do something, likely raise error
-            if self.stage_handler:
-                self.stage_handler.complete_substage(
-                    stage_name=stage_name, 
-                    substage_name=substage_name,
-                    success=False,
-                    result_data={
-                        'posto_id': posto_id,
-                        'message': "No posto_id provided"
-                    }
-                )
-            return False
+        self.logger.info(f"Entering loading matrices substage for posto_id: {posto_id}")
 
         try:
-            entities = ['matriz_A', 'params_LQ'] # TODO: remove this
-
-            # Has to be in this order
-            # Get colaborador info using data model (it uses the data manager)
-            valid_load_colaborador_info = self.data.load_colaborador_info(
-                data_manager=self.data_manager, 
-                posto_id=posto_id
-            )
-            if not valid_load_colaborador_info:
+            substage_name = "load_matrices"
+            process_type = 'load_matrices_substage'
+            messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+            child_num = str(self.external_data.get('child_number', 1))
+            secao_id = str(self.external_data.get('secao_id', ''))
+            # Checkpoint for posto_id
+            if not posto_id:
+                # TODO: do something, likely raise error
+                self.logger.error("No posto_id provided, cannot load matrices")
                 if self.stage_handler:
                     self.stage_handler.complete_substage(
-                        stage_name=stage_name,
-                        substage_name=substage_name,
-                        success=False, # TODO: create a progress logic values
-                        result_data={"valid_load_colaborador_info": valid_load_colaborador_info}
-                    )
-                    return False
-
-            # Get estimativas info
-            valid_load_estimativas_info = self.data.load_estimativas_info(
-                data_manager=self.data_manager, 
-                posto_id=posto_id,
-                start_date=self.external_data['start_date'],
-                end_date=self.external_data['end_date']
-            )
-            if not valid_load_estimativas_info:
-                if self.stage_handler:
-                    self.stage_handler.complete_substage(
-                        stage_name=stage_name,
-                        substage_name=substage_name,
-                        success=False, # TODO: create a progress logic values
-                        result_data={
-                            "valid_load_colaborador_info": valid_load_colaborador_info,
-                            "valid_load_estimativas_info": valid_load_estimativas_info
-                        }
-                    )
-                    return False
-
-            # Get calendario info
-            valid_load_calendario_info = self.data.load_calendario_info(
-                data_manager=self.data_manager, 
-                process_id=self.external_data['current_process_id'],
-                posto_id=posto_id,
-                start_date=self.external_data['start_date'],
-                end_date=self.external_data['end_date']
-            )
-            if not valid_load_calendario_info:
-                if self.stage_handler:
-                    self.stage_handler.complete_substage(
-                        stage_name=stage_name,
+                        stage_name=stage_name, 
                         substage_name=substage_name,
                         success=False,
                         result_data={
-                            "valid_load_colaborador_info": valid_load_colaborador_info,
-                            "valid_load_estimativas_info": valid_load_estimativas_info,
-                            "valid_load_calendario_info": valid_load_calendario_info
+                            'posto_id': posto_id,
+                            'message': "No posto_id provided"
                         }
                     )
+                return False
+
+            # Load colaborador info (df_colaborador)
+            try:
+                self.logger.info(f"Loading colaborador info for posto_id: {posto_id}")
+                # Has to be in this order
+                # Get colaborador info using data model (it uses the data manager)
+                valid_load_colaborador_info = self.data.load_colaborador_info(
+                    data_manager=self.data_manager, 
+                    posto_id=posto_id
+                )
+                if not valid_load_colaborador_info:
+                    # Set process error for colaborador loading failure
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'noMColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            employee_id=None,
+                            schedule_day=None
+                        )
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False, # TODO: create a progress logic values
+                            result_data={"valid_load_colaborador_info": valid_load_colaborador_info}
+                        )
+                    return False
+                if self.stage_handler:
+                    self.stage_handler.track_substage_progress(
+                        stage_name=stage_name,
+                        substage_name=substage_name,
+                        progress=0.1,
+                        message="Valid load colaborador info"
+                    )
+                
+                # Validate colaborador info
+                valid_colaborador_info_data = self.data.validate_colaborador_info()
+                if not valid_colaborador_info_data:
+                    # Set process error for colaborador validation failure
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            employee_id=None,
+                            schedule_day=None
+                        )
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_colaborador_info_data": valid_colaborador_info_data
+                            }
+                        )
+                    return False
+                if self.stage_handler:
+                    self.stage_handler.track_substage_progress(
+                        stage_name=stage_name,
+                        substage_name=substage_name,
+                        progress=0.2,
+                        message="Valid colaborador info data"
+                    )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='I',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'okColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+
+            except Exception as e:
+                self.logger.error(f"Error loading colaborador info: {str(e)}", exc_info=True)
+                self.logger.error(f"posto_id type: {type(posto_id)}")
+                self.logger.error(f"data_manager type: {type(self.data_manager)}")
+                if hasattr(self.data, 'auxiliary_data') and 'valid_emp' in self.data.auxiliary_data:
+                    self.logger.error(f"valid_emp shape: {self.data.auxiliary_data['valid_emp'].shape}")
+                    self.logger.error(f"valid_emp columns: {self.data.auxiliary_data['valid_emp'].columns.tolist()}")
+                    self.logger.error(f"valid_emp dtypes: {self.data.auxiliary_data['valid_emp'].dtypes}")
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name, 
+                        success=False, 
+                        result_data={"error": str(e)}
+                    )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'errColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+                return False
+
+            
+            # Load estimativas info (df_estimativas)
+            try:
+                self.logger.info(f"Loading estimativas info for posto_id: {posto_id}")
+                # Get estimativas info
+                valid_load_estimativas_info = self.data.load_estimativas_info(
+                    data_manager=self.data_manager, 
+                    posto_id=posto_id,
+                    start_date=self.external_data['start_date'],
+                    end_date=self.external_data['end_date']
+                )
+                if not valid_load_estimativas_info:
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False, # TODO: create a progress logic values
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info
+                            }
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'noMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            employee_id=None,
+                            schedule_day=None
+                        )
                     return False
                 
-            # Do all the merges and data transformations
-            valid_estimativas_transformations = self.data.load_estimativas_transformations()
-            if not valid_estimativas_transformations:
+                # Validate estimativas info
+                valid_estimativas_validation, invalid_entities = self.data.validate_estimativas_info()
+                if not valid_estimativas_validation:
+                    # Set process error based on invalid entities
+                    messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+                    if self.raw_connection and not messages_df.empty:
+                        child_num = str(self.external_data.get('child_number', 1))
+                        description_list = []
+                        # Choose appropriate message key based on invalid entities
+                        if 'df_faixa_horario' in invalid_entities:
+                            message_key = 'errFaixaSec'
+                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(secao_id), '3': ''}))
+                        if 'df_granularidade' in invalid_entities:
+                            message_key = 'errGran'
+                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                        if 'df_estimativas' in invalid_entities:
+                            message_key = 'errAllInfo'
+                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                        for description in description_list:
+                            set_process_errors(
+                                connection=self.raw_connection,
+                                pathOS=ROOT_DIR,
+                                user='WFM',
+                                fk_process=self.external_data['current_process_id'],
+                                type_error='E',
+                                process_type=process_type,
+                                error_code=None,
+                                description=description,
+                                employee_id=None,
+                                schedule_day=None
+                            )
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info,
+                                "valid_estimativas_validation": valid_estimativas_validation,
+                                "invalid_entities": invalid_entities
+                            }
+                        )
+                    return False
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='I',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'okMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+            
+            except Exception as e:
+                self.logger.error(f"Error loading estimativas info: {str(e)}")
                 if self.stage_handler:
                     self.stage_handler.complete_substage(
-                        stage_name=stage_name,
-                        substage_name=substage_name,
-                        success=False,
-                        result_data={
-                            "valid_load_colaborador_info": valid_load_colaborador_info,
-                            "valid_load_estimativas_info": valid_load_estimativas_info,
-                            "valid_load_calendario_info": valid_load_calendario_info,
-                            "valid_estimativas_transformations": valid_estimativas_transformations                            
-                        }
+                        stage_name=stage_name, 
+                        substage_name=substage_name, 
+                        success=False, 
+                        result_data={"error": str(e)}
                     )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'errMinIdeal', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+                return False
+            
+            # Load calendario info (df_calendario)
+            try:
+                self.logger.info(f"Loading calendario info for posto_id: {posto_id}")
+                # Get calendario info
+                valid_load_calendario_info = self.data.load_calendario_info(
+                    data_manager=self.data_manager, 
+                    process_id=self.external_data['current_process_id'],
+                    posto_id=posto_id,
+                    start_date=self.external_data['start_date'],
+                    end_date=self.external_data['end_date']
+                )
+                if not valid_load_calendario_info:
+                    #self.logger.error("Error loading calendario info")
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info,
+                                "valid_load_calendario_info": valid_load_calendario_info
+                            }
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'noCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            employee_id=None,
+                            schedule_day=None
+                        )
+                    return False
+                valid_calendario_validation, invalid_entities = self.data.validate_calendario_info()
+                if not valid_calendario_validation:
+                    # Set process error based on invalid entities
+                    messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+                    if self.raw_connection and not messages_df.empty:
+                        child_num = str(self.external_data.get('child_number', 1))
+                        description_list = []
+                        if 'df_calendario_empty' in invalid_entities:
+                            message_key = 'noCalendar'
+                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                        if 'df_calendario_missing' in invalid_entities:
+                            message_key = 'errCalendar'
+                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                        for description in description_list:
+                            set_process_errors(
+                                connection=self.raw_connection,
+                                pathOS=ROOT_DIR,
+                                user='WFM',
+                                fk_process=self.external_data['current_process_id'],
+                                type_error='E',
+                                process_type=process_type,
+                                error_code=None,
+                                description=description,
+                                employee_id=None,
+                                schedule_day=None
+                            )
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info,
+                                "valid_load_calendario_info": valid_load_calendario_info,
+                                "valid_calendario_validation": valid_calendario_validation,
+                                "invalid_entities": invalid_entities
+                            }
+                        )
+                    return False
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='I',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'okCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+            
+            except Exception as e:
+                self.logger.error(f"Error loading calendario info: {str(e)}")
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name, 
+                        success=False, 
+                        result_data={"error": str(e)}
+                    )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'errCalendar', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        employee_id=None,
+                        schedule_day=None
+                )
+                return False
+            
+            try:
+                self.logger.info(f"Loading estimativas transformations for posto_id: {posto_id}")
+                # Do all the merges and data transformations
+                valid_estimativas_transformations = self.data.load_estimativas_transformations()
+                if not valid_estimativas_transformations:
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info,
+                                "valid_load_calendario_info": valid_load_calendario_info,
+                                "valid_estimativas_transformations": valid_estimativas_transformations                            
+                            }
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            employee_id=None,
+                            schedule_day=None
+                        )
                     return False
                 
-            valid_colaborador_transformations = self.data.load_colaborador_transformations()
-            if not valid_colaborador_transformations:
+            except Exception as e:
+                self.logger.error(f"Error loading estimativas transformations: {str(e)}")
                 if self.stage_handler:
                     self.stage_handler.complete_substage(
-                        stage_name=stage_name,
-                        substage_name=substage_name,
-                        success=False,
-                        result_data={
-                            "valid_load_colaborador_info": valid_load_colaborador_info,
-                            "valid_load_estimativas_info": valid_load_estimativas_info,
-                            "valid_load_calendario_info": valid_load_calendario_info,
-                            "valid_estimativas_transformations": valid_estimativas_transformations,
-                            "valid_colaborador_transformations": valid_colaborador_transformations                
-                        }
+                        stage_name=stage_name, 
+                        substage_name=substage_name, 
+                        success=False, 
+                        result_data={"error": str(e)}
                     )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'invalidMinIdeal', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+                return False
 
-            valid_calendario_transformations = self.data.load_calendario_transformations()
-            if not valid_calendario_transformations:
-                if self.stage_handler:
-                    self.stage_handler.complete_substage(
-                        stage_name=stage_name,
-                        substage_name=substage_name,
-                        success=False,
-                        result_data={
-                            "valid_load_colaborador_info": valid_load_colaborador_info,
-                            "valid_load_estimativas_info": valid_load_estimativas_info,
-                            "valid_load_calendario_info": valid_load_calendario_info,
-                            "valid_estimativas_transformations": valid_estimativas_transformations,
-                            "valid_colaborador_transformations": valid_colaborador_transformations,
-                            "valid_calendario_transformations": valid_calendario_transformations                   
-                        }
-                    )
-
-            # Ensure the loaded data is valid
-            valid_substage = self.data.validate_matrices_loading()
-            if not valid_substage:
-                if self.stage_handler:
-                    self.stage_handler.complete_substage(
-                        stage_name=stage_name,
-                        substage_name=substage_name,
-                        success=False,
-                        result_data={
-                            "valid_load_colaborador_info": valid_load_colaborador_info,
-                            "valid_load_estimativas_info": valid_load_estimativas_info,
-                            "valid_load_calendario_info": valid_load_calendario_info
-                        }
-                    )
+            try:
+                self.logger.info(f"Loading colaborador transformations for posto_id: {posto_id}")
+                valid_colaborador_transformations = self.data.load_colaborador_transformations()
+                if not valid_colaborador_transformations:
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info,
+                                "valid_load_calendario_info": valid_load_calendario_info,
+                                "valid_estimativas_transformations": valid_estimativas_transformations,
+                                "valid_colaborador_transformations": valid_colaborador_transformations                
+                            }
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            employee_id=None,
+                            schedule_day=None
+                        )
                     return False
             
+            except Exception as e:
+                self.logger.error(f"Error loading colaborador transformations: {str(e)}")
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name, 
+                        success=False, 
+                        result_data={"error": str(e)}
+                    )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+                return False
+            
+            try:
+                self.logger.info(f"Loading calendario transformations for posto_id: {posto_id}")
+                valid_calendario_transformations = self.data.load_calendario_transformations()
+                if not valid_calendario_transformations:
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info,
+                                "valid_load_calendario_info": valid_load_calendario_info,
+                                "valid_estimativas_transformations": valid_estimativas_transformations,
+                                "valid_colaborador_transformations": valid_colaborador_transformations,
+                                "valid_calendario_transformations": valid_calendario_transformations                   
+                            }
+                        )
+                    if self.raw_connection and not messages_df.empty:
+                        set_process_errors(
+                            connection=self.raw_connection,
+                            pathOS=ROOT_DIR,
+                            user='WFM',
+                            fk_process=self.external_data['current_process_id'],
+                            type_error='E',
+                            process_type=process_type,
+                            error_code=None,
+                            description=set_messages(messages_df, 'invalidCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            employee_id=None,
+                            schedule_day=None
+                        )
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error loading calendario transformations: {str(e)}")
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name, 
+                        success=False, 
+                        result_data={"error": str(e)}
+                    )
+                if self.raw_connection and not messages_df.empty:
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'invalidCalendar', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+                return False
+            
+            try:
+                self.logger.info(f"Validating loaded matrices for posto_id: {posto_id}")
+                # Ensure the loaded data is valid
+                valid_substage = self.data.validate_matrices_loading()
+                if not valid_substage:
+                    if self.stage_handler:
+                        self.stage_handler.complete_substage(
+                            stage_name=stage_name,
+                            substage_name=substage_name,
+                            success=False,
+                            result_data={
+                                "valid_load_colaborador_info": valid_load_colaborador_info,
+                                "valid_load_estimativas_info": valid_load_estimativas_info,
+                                "valid_load_calendario_info": valid_load_calendario_info
+                            }
+                        )
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error validating loaded matrices: {str(e)}")
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name=stage_name, 
+                        substage_name=substage_name, 
+                        success=False, 
+                        result_data={"error": str(e)}
+                    )
+                return False
+            
+                
             if self.stage_handler:
                 self.stage_handler.complete_substage(
                     stage_name=stage_name,
@@ -576,10 +1387,11 @@ class AlgoritmoGDService(BaseService):
                             "valid_load_calendario_info": valid_load_calendario_info
                     }
                 )
-
+            
             return True
+
         except Exception as e:
-                self.logger.error(f"Error loading matrices: {str(e)}")
+                self.logger.error(f"Error loading matrices: {str(e)}", exc_info=True)
                 if self.stage_handler:
                     self.stage_handler.complete_substage(
                         stage_name=stage_name, 
@@ -597,7 +1409,18 @@ class AlgoritmoGDService(BaseService):
             substage_name = 'func_inicializa'
             self.logger.info("Initializing func inicializa substage")
             # TODO: define semanas restantes
-            success = self.data.func_inicializa(start_date=self.external_data.get('start_date'), end_date=self.external_data.get('end_date'), fer=self.data.auxiliary_data.get('df_festivos'), closed_days=self.data.auxiliary_data.get('df_closed_days')) 
+            start_date = self.external_data.get('start_date')
+            end_date = self.external_data.get('end_date')
+            
+            if not isinstance(start_date, str) or not isinstance(end_date, str):
+                self.logger.error("Invalid start_date or end_date")
+                return False
+                
+            success = self.data.func_inicializa(
+                start_date=start_date,
+                end_date=end_date,
+                fer=self.data.auxiliary_data.get('df_festivos'),
+            )
             if not success:
                 self.logger.warning("Performing func_inicializa unsuccessful, returning False")
                 if self.stage_handler:
@@ -655,21 +1478,37 @@ class AlgoritmoGDService(BaseService):
                 )
             return False
 
-    def _execute_allocation_cycle_substage(self, algorithm_params: Dict[str, Any], stage_name: str = 'processing', algorithm_name: List[str] = ['example_algorithm']) -> bool:
+    def _execute_allocation_cycle_substage(self, algorithm_params: Dict[str, Any], stage_name: str = 'processing', algorithm_name: str = 'example_algorithm') -> bool:
         """
-        Execute the processing substage of allocation_cycle. This could be implemented as a method or directly on the _execute_processing_stage() method.
+        Execute the processing substage of allocation_cycle.  This could be implemented as a method or directly on the _execute_processing_stage() method.
         """
         try:
             substage_name = 'allocation_cycle'
-            msg = "Starting allocation cycle algorithm substage."
-            self.logger.info(msg=msg)
-            if self.stage_handler:
-                self.stage_handler.track_substage_progress(
-                    stage_name=stage_name,
-                    substage_name=substage_name,
-                    progress=0.1,
-                    message=msg,
-                )
+            self.logger.info("Initializing allocation cycle substage")
+            
+            self.logger.info(f"DEBUG SUBSTAGE: Inside _execute_allocation_cycle_substage")
+            
+            # Log start of algorithm execution to database
+            #messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+            #child_num = str(self.external_data.get('child_number', 1))
+            #self.logger.info(f"DEBUG SUBSTAGE ALLOC: messages_df.empty = {messages_df.empty}, raw_connection = {self.raw_connection is not None}")
+            #if self.raw_connection and not messages_df.empty:
+            #    self.logger.info(f"DEBUG SUBSTAGE ALLOC: About to call set_process_errors for allocation_cycle")
+            #    set_process_errors(
+            #        connection=self.raw_connection,
+            #        pathOS=ROOT_DIR,
+            #        user='WFM',
+            #        fk_process=self.external_data['current_process_id'],
+            #        type_error='I',
+            #        process_type='allocation_cycle',
+            #        error_code=None,
+            #        description=set_messages(messages_df, 'iniSubprocPosto', {'1': child_num, '2': 'allocation_cycle'}),
+            #        employee_id=None,
+            #        schedule_day=None
+            #    )
+            #    self.logger.info(f"DEBUG SUBSTAGE ALLOC: set_process_errors completed for allocation_cycle")
+            #else:
+            #    self.logger.info(f"DEBUG SUBSTAGE ALLOC: Skipping set_process_errors for allocation_cycle - condition failed")
 
             valid_algorithm_run = self.data.allocation_cycle(
                 algorithm_name=algorithm_name, 
@@ -731,13 +1570,14 @@ class AlgoritmoGDService(BaseService):
         Execute the processing substage of format_results for insertion. This could be implemented as a method or directly on the _execute_processing_stage() method.
         """
         try:
-            self.logger.info()
+            self.logger.info(f"Starting format_results substage for stage: {stage_name}")
+            stage_name = 'format_results'
             success = self.data.format_results()
             if not success:
                 self.logger.warning("Performing allocation_cycle unsuccessful, returning False")
                 if self.stage_handler:
                     self.stage_handler.complete_substage(
-                        stage_name='processing',
+                        stage_name=stage_name,
                         substage_name='format_results',
                         success=False
                     )
@@ -761,12 +1601,12 @@ class AlgoritmoGDService(BaseService):
                     result_data={
                         'format_results_success': success,
                         'validation_result': validation_result,
-                        'data': self.data.formated_data
+                        'data': self.data.formatted_data
                     }
                 )
             return validation_result
         except Exception as e:
-            self.logger.error()
+            self.logger.error(f"Error in format_results substage: {str(e)}")
             if self.stage_handler:
                 self.stage_handler.complete_substage(
                     "processing", 
@@ -781,16 +1621,33 @@ class AlgoritmoGDService(BaseService):
         Execute the processing substage of insert_result.  This could be implemented as a method or directly on the _execute_processing_stage() method.
         """
         try:
-            self.logger.info()
-            success = self.data.insert_results()
+            self.logger.info(f"Starting insert_results substage for stage: {stage_name}")
+            messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
+            child_num = str(self.external_data.get('child_number', 1))
+            posto_id = self.data.auxiliary_data.get('current_posto_id', None)
+            process_type = self.external_data.get('process_type', None)
+
+            success = self.data.insert_results(data_manager=self.data_manager)
             if not success:
-                self.logger.warning("Performing allocation_cycle unsuccessful, returning False")
+                self.logger.warning("Performing insert_results unsuccessful, returning False")
                 if self.stage_handler:
                     self.stage_handler.complete_substage(
                         stage_name='processing',
                         substage_name='insert_results',
                         success=False
                     )
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=ROOT_DIR,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='E',
+                    process_type=process_type,
+                    error_code=None,
+                    description=set_messages(messages_df, 'errInsertWFM', {'1': child_num, '2': str(posto_id)}),
+                    employee_id=None,
+                    schedule_day=None
+                )
                 return False
             
             if self.stage_handler:
@@ -801,8 +1658,28 @@ class AlgoritmoGDService(BaseService):
                     message="insert_results successful, running validations"
                 )
 
-            validation_result, valid_insertions = self.data.validate_insert_results()
-            self.logger.info(f"allocation_cycle returning: {validation_result}")
+            validation_result = self.data.validate_insert_results(data_manager=self.data_manager)
+            if not validation_result:
+                if self.stage_handler:
+                    self.stage_handler.complete_substage(
+                        stage_name='processing',
+                        substage_name='insert_results',
+                        success=False
+                    )
+                    set_process_errors(
+                        connection=self.raw_connection,
+                        pathOS=ROOT_DIR,
+                        user='WFM',
+                        fk_process=self.external_data['current_process_id'],
+                        type_error='E',
+                        process_type=process_type,
+                        error_code=None,
+                        description=set_messages(messages_df, 'errInsertWFM', {'1': child_num, '2': str(posto_id)}),
+                        employee_id=None,
+                        schedule_day=None
+                    )
+                return False
+
             if self.stage_handler:
                 self.stage_handler.complete_substage(
                     stage_name='processing',
@@ -811,12 +1688,23 @@ class AlgoritmoGDService(BaseService):
                     result_data={
                         'insert_results_success': success,
                         'validation_result': validation_result,
-                        'valid_insertions': valid_insertions
                     }
                 )
+            set_process_errors(
+                connection=self.raw_connection,
+                pathOS=ROOT_DIR,
+                user='WFM',
+                fk_process=self.external_data['current_process_id'],
+                type_error='I',
+                process_type=process_type,
+                error_code=None,
+                description=set_messages(messages_df, 'okInsertWFM', {'1': child_num, '2': str(posto_id)}),
+                employee_id=None,
+                schedule_day=None
+            )
             return validation_result            
         except Exception as e:
-            self.logger.error()
+            self.logger.error(f"Error in insert_results substage: {str(e)}")
             if self.stage_handler:
                 self.stage_handler.complete_substage(
                     "processing", 
@@ -864,5 +1752,5 @@ class AlgoritmoGDService(BaseService):
             Decision dictionary or None if not available
         """
         if self.process_manager:
-            return self.process_manager.get_stage_decision(stage, decision_name)
+            return self.process_manager.current_decisions.get(stage, {}).get(decision_name)
         return None

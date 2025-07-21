@@ -1,0 +1,1 @@
+select * from table(S_PROCESSO.GET_PROCESS_VALID_EMPLOYEES(:process_id))

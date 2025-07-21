@@ -4,6 +4,7 @@ Converted from R functions for processing employee schedules, holidays, and abse
 """
 
 import pandas as pd
+import os
 import numpy as np
 from datetime import datetime, timedelta
 import logging
@@ -12,10 +13,129 @@ from typing import List, Dict, Any, Optional, Tuple
 # Local stuff
 from src.oracle_config import ORACLE_CONFIG
 from src.config import PROJECT_NAME
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 from base_data_project.log_config import get_logger
+from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
+
+def log_process_event(message_key:str, messages_df: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
+    """
+    Log a process event with a message key and a message dataframe.
+    """
+    message = pd.DataFrame(messages_df[messages_df['VAR'] == message_key])
+    if message.empty:
+        logger.error(f"Message key {message_key} not found in messages_df")
+        return
+    message_str = message['ES'].values[0]
+    message_str = replace_placeholders(message_str, values_replace_dict)
+    logger.info(f"DEBUG: message_str: {message_str}")
+    data_manager.set_process_errors(message_key=message_key, rendered_message=message_str, values_replace_dict=external_call_data, error_type=level)
+
+def set_process_errors(connection, pathOS, user, fk_process, type_error, process_type, error_code, description, employee_id, schedule_day):
+    """
+    Inserts process error details into the database.
+
+    Args:
+        connection: Active database connection.
+        pathOS (str): Base path for configurations and query files.
+        user (str): Username for the operation.
+        fk_process (int): Foreign key for the process.
+        type_error (str): Type of error.
+        process_type (str): Type of process.
+        error_code (int): Error code.
+        description (str): Description of the error.
+        employee_id (int): ID of the employee.
+        schedule_day (str): Scheduled day for the error (formatted as 'yyyy-mm-dd').
+    Returns:
+        int: 1 if successful, 0 otherwise.
+    """
+    try:
+        logger.info(f"DEBUG set_process_errors CALLED - connection: {connection}, user: {user}, fk_process: {fk_process}, description: {description}")
+        
+        # Only call ensure_connection for direct cx_Oracle connections
+        # SQLAlchemy connections manage their own lifecycle
+        if hasattr(connection, 'ping') and callable(getattr(connection, 'ping')):
+            connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+            logger.info(f"DEBUG: ensured cx_Oracle connection")
+        else:
+            logger.info(f"DEBUG: using SQLAlchemy connection as-is")
+        
+        query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_errors.sql')
+        logger.info(f"DEBUG: query_file_path: {query_file_path}")
+        
+        # Load the query from file
+        with open(query_file_path, 'r') as f:
+            query = f.read().strip().replace("\n", " ")
+        
+        logger.info(f"DEBUG: loaded query: {query[:100]}...")
+        
+        # Execute the query - handle both cx_Oracle and SQLAlchemy connections
+        if connection is None:
+            logger.error("ERROR: No database connection available")
+            return 0
+            
+        if hasattr(connection, 'cursor') and callable(getattr(connection, 'cursor')):
+            # Direct cx_Oracle connection
+            cursor_context = connection.cursor()
+            logger.info(f"DEBUG: using direct cx_Oracle cursor")
+        elif hasattr(connection, 'connection') and hasattr(connection.connection, 'cursor'):
+            # SQLAlchemy wrapped connection - get the raw connection
+            cursor_context = connection.connection.cursor()
+            logger.info(f"DEBUG: using SQLAlchemy wrapped cursor")
+        else:
+            logger.error(f"ERROR: Unknown connection type: {type(connection)}")
+            return 0
+        
+        with cursor_context as cursor:
+            params = {
+               'i_user': user,
+               'i_fk_process': fk_process,
+               'i_type_error': type_error,
+               'i_process_type': process_type,
+               'i_error_code': error_code if error_code is not None else None,
+               'i_description': description,
+               'i_employee_id': employee_id if employee_id is not None else None,
+               'i_schedule_day': schedule_day if schedule_day is not None else None
+           }
+            logger.info(f"DEBUG: executing with params: {params}")
+            cursor.execute(query, params)
+            logger.info(f"DEBUG: query executed successfully")
+            
+            # Handle commit for both connection types
+            if hasattr(connection, 'commit') and callable(getattr(connection, 'commit')):
+                # Direct cx_Oracle connection
+                connection.commit()
+                logger.info(f"DEBUG: committed cx_Oracle connection")
+            elif hasattr(connection, 'connection') and hasattr(connection.connection, 'commit'):
+                # SQLAlchemy wrapped connection
+                connection.connection.commit()
+                logger.info(f"DEBUG: committed SQLAlchemy connection")
+        
+        logger.info(f"DEBUG: set_process_errors returning 1 (success)")
+        return 1
+        
+    except Exception as e:
+        logger.info(f"Error in set_process_errors: {e}")
+        return 0
+
+def replace_placeholders(template, values_dict):
+    """
+    Replaces placeholders in the template string with corresponding values from the values dictionary.
+    
+    Parameters:
+        template (str): The template string with placeholders.
+        values (dict): A dictionary with keys corresponding to placeholder names and values as replacements.
+    
+    Returns:
+        str: The template string with placeholders replaced by values.
+    """
+    for name, value in values_dict.items():
+        placeholder = f"{{{name}}}"
+        template = template.replace(placeholder, str(value))
+    return template
 
 def get_oracle_url_cx():
     """Create Oracle connection URL for cx_Oracle driver"""
@@ -154,7 +274,7 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
                 temp = str(absence_row['data_ini'])
                 data = temp[:10]  # Extract date
                 val = absence_row['tipo_ausencia']
-                fk_motivo_ausencia = absence_row['fk_motivo_ausencia']
+                fk_motivo_ausencia = int(absence_row['fk_motivo_ausencia']) 
                 
                 # Find column indices for this date
                 col_indices = []
@@ -162,7 +282,9 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
                     if data in col_data.values:
                         col_indices.append(col_idx)
                 
+                #logger.info(f"DEBUG: col_indices: {col_indices}")
                 if len(col_indices) >= 2:
+                    #logger.info(f"DEBUG: fk_motivo_ausencia: {fk_motivo_ausencia}, type: {type(fk_motivo_ausencia)}")
                     if fk_motivo_ausencia == 1:
                         # Vacation
                         reshaped_final_3.iloc[row_index, col_indices[0]] = "V"
@@ -247,10 +369,14 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
             else:
                 eachrep = 14
             
+            #logger.info(f"DEBUG: eachrep: {eachrep}")
+            #logger.info(f"DEBUG: seq_turno: {seq_turno}")
+            #logger.info(f"DEBUG: semana1: {semana1}")
+
             # Generate shift patterns based on seq_turno and semana1
             if seq_turno == "MT" and semana1 in ["T", "T1"]:
                 new_row = ['T'] * eachrep
-                new_row2 = (['T'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 2 // 14) + 1)
+                new_row2 = (['M'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 2 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MT" and semana1 in ["M", "M1"]:
@@ -292,6 +418,9 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
                 # Default case
                 new_row = [seq_turno] * reshaped_final_3.shape[1]
                 new_row = [emp] + new_row[1:]
+
+            #logger.info(f"DEBUG: new_row: {new_row}")
+
             
             # Trim to match matrix width
             elements_to_drop = len(new_row) - reshaped_final_3.shape[1]
@@ -303,6 +432,8 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
             # Add row to matrix
             new_row_df = pd.DataFrame([new_row], columns=reshaped_final_3.columns)
             reshaped_final_3 = pd.concat([reshaped_final_3, new_row_df], ignore_index=True)
+            #logger.info(f"DEBUG: new_row after concat: {new_row}")
+            #logger.info(f"DEBUG: elements_to_drop after concat: {elements_to_drop}")
         
         # Reset column and row names
         reshaped_final_3.columns = range(reshaped_final_3.shape[1])
@@ -488,6 +619,20 @@ def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str, l
             df_cycle90_info_filtered[['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']].max(axis=1) - 
             pd.Timedelta(minutes=15)
         )
+
+        # Calculate intervalo column
+        #df_cycle90_info_filtered['intervalo'] = df_cycle90_info_filtered.apply(
+        #    lambda row: 0 if pd.isna(row['hora_ini_2']) else 
+        #    (pd.to_datetime(row['hora_ini_2']) - pd.to_datetime(row['hora_fim_1'])).total_seconds() / 3600,
+        #    axis=1
+        #)
+#
+        # Calculate max_exit column
+        #time_columns = ['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']
+        #df_cycle90_info_filtered['max_exit'] = df_cycle90_info_filtered[time_columns].apply(
+        #    lambda row: pd.to_datetime(row.dropna()).max() - pd.Timedelta(minutes=15),
+        #    axis=1
+        #)
         
         # Apply TRADS code logic
         def get_trads_code(row):
@@ -535,7 +680,7 @@ def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str, l
 
 def assign_90_cycles(reshaped_final_3: pd.DataFrame, df_cycle90_info_filtered: pd.DataFrame,
                     colab: int, matriz_festivos: pd.DataFrame, lim_sup_manha: str, lim_inf_tarde: str,
-                    day: str, reshaped_col_index: int, reshaped_row_index: int, matricula: str) -> pd.DataFrame:
+                    day: str, reshaped_col_index: list, reshaped_row_index: list, matricula: str) -> pd.DataFrame:
     """
     Convert R assign_90_cycles function to Python.
     Assign 90-day cycles to the schedule matrix.
@@ -561,36 +706,48 @@ def assign_90_cycles(reshaped_final_3: pd.DataFrame, df_cycle90_info_filtered: p
         lim_sup_manha = pd.to_datetime(lim_sup_manha, format="%Y-%m-%d %H:%M")
         lim_inf_tarde = f"2000-01-01 {lim_inf_tarde}"
         lim_inf_tarde = pd.to_datetime(lim_inf_tarde, format="%Y-%m-%d %H:%M")
+        #logger.info(f"DEBUG: lim_sup_manha: {lim_sup_manha}")
+        #logger.info(f"DEBUG: lim_inf_tarde: {lim_inf_tarde}")
         
         # Add TRADS codes
         df_cycle90_info_filtered = add_trads_code(df_cycle90_info_filtered, 
                                                  lim_sup_manha.strftime("%Y-%m-%d %H:%M:%S"), 
                                                  lim_inf_tarde.strftime("%Y-%m-%d %H:%M:%S"))
         
+        #logger.info(f"DEBUG: df_cycle90_info_filtered: {df_cycle90_info_filtered}")
+
         # Reset row names
         reshaped_final_3.reset_index(drop=True, inplace=True)
         
         # Get holidays as list of strings
-        festivos = [str(date) for date in matriz_festivos['data']]
+        # TODO: remove non used variables. during code convertion we didnt find the need for this variable
+        #festivos = [str(date) for date in matriz_festivos['data']]
         
         # Process the specific day range
         if isinstance(reshaped_col_index, list) and len(reshaped_col_index) >= 2:
-            col_range = range(reshaped_col_index[0], reshaped_col_index[1] + 1)
+            col_range = [reshaped_col_index[0], reshaped_col_index[1]]
         else:
             col_range = [reshaped_col_index]
+
+        #logger.info(f"DEBUG: col_range: {col_range}")
         
         for k in col_range:
+            
             day_number = pd.to_datetime(day).weekday() + 1  # Convert to 1-7 format
             
             # Find matching cycle row for this day
             cycle_rows = df_cycle90_info_filtered[
-                df_cycle90_info_filtered.apply(lambda row: day in str(row).values, axis=1)
+                df_cycle90_info_filtered['schedule_day'].dt.strftime('%Y-%m-%d') == day
             ]
+
+            #logger.info(f"DEBUG: cycle_rows: {cycle_rows}")
+            #logger.info(f"DEBUG: k: {k}")
             
             if len(cycle_rows) > 0:
                 cycle_row = cycle_rows.iloc[0]
                 val = cycle_row.get('codigo_trads', '-')
                 reshaped_final_3.iloc[reshaped_row_index, k] = val
+
         
         return reshaped_final_3
         
@@ -694,12 +851,33 @@ def count_days_in_week(date_str: str) -> int:
     Returns:
         Number of days (default 7)
     """
-    try:
-        # Simplified implementation - returns 7 days per week
-        return 7
-    except Exception as e:
-        logger.error(f"Error in count_days_in_week: {str(e)}")
-        return 7
+    # Ensure the date is a datetime object
+    if isinstance(date_str, str):
+        date_str = pd.to_datetime(date_str)
+    elif isinstance(date_str, datetime):
+        date_str = pd.to_datetime(date_str)
+    
+    # Convert pandas weekday (0=Monday, 6=Sunday) to R's wday (1=Sunday, 7=Saturday)
+    pandas_weekday = date_str.weekday()
+    r_weekday = 1 if pandas_weekday == 6 else pandas_weekday + 2
+    
+    # If the date is a Sunday (wday=1), move to the previous Monday
+    if r_weekday == 1:
+        start_of_week = date_str - timedelta(days=6)
+    else:
+        # Otherwise, find the Monday of the given week
+        start_of_week = date_str - timedelta(days=r_weekday - 2)
+    
+    # Find the Sunday of the given week
+    end_of_week = start_of_week + timedelta(days=6)
+    
+    # Generate a sequence of dates from Monday to Sunday
+    week_days = pd.date_range(start=start_of_week, end=end_of_week, freq='D')
+    
+    # Count the number of days from the given date onwards
+    num_days = len(week_days[week_days >= date_str])
+    
+    return num_days
 
 def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> Tuple[pd.DataFrame, List[str], pd.DataFrame]:
     """
@@ -1115,3 +1293,692 @@ def calcular_folgas3(semana_df):
     l_dom = max(len(feriados) - 2, 0) if len(feriados) > 0 else 0
     
     return pd.DataFrame({'L_RES': [l_res], 'L_DOM': [l_dom]})
+
+def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None):
+    """
+    Get configuration for a specific posto_id following hierarchy:
+    1. Posto-specific (fk_tipo_posto = posto_id)
+    2. Section-specific (fk_tipo_posto is null, fk_secao = secao_id)  
+    3. Unit-specific (fk_tipo_posto is null, fk_secao is null, fk_unidade = unit_id)
+    4. Default (all FKs are null)
+    Args:
+        df: pd.DataFrame, dataframe with parameters
+        posto_id: int, posto ID
+        unit_id: int, unit ID  
+        secao_id: int, section ID
+        params_names_list: list, list of parameter names to retrieve
+    Returns:
+        dict, configuration for the posto_id
+    """
+    if params_names_list is None or len(params_names_list) == 0 or not isinstance(params_names_list, list):
+        logger.error(f"params_names_list is None or empty")
+        return None
+    posto_id = str(posto_id)
+    secao_id = str(secao_id)
+    unit_id = str(unit_id)
+    # Filter by parameter names only initially
+    df_filtered = df[df['sys_p_name'].isin(params_names_list)].copy()
+    
+    logger.info(f"DEBUG: Input parameters - posto_id: {posto_id}, secao_id: {secao_id}, unit_id: {unit_id}")
+    logger.info(f"DEBUG: df_filtered initial (after param names filter):\n {df_filtered}")
+    
+    # Keep all potentially relevant rows based on hierarchy rules
+    # Build conditions that match the hierarchy patterns
+    
+    conditions = []
+    
+    # 1. Posto-specific: fk_tipo_posto = posto_id (most specific)
+    if posto_id is not None:
+        posto_condition = (df_filtered['fk_tipo_posto'] == posto_id)
+        conditions.append(posto_condition)
+        logger.info(f"DEBUG: Added posto condition for posto_id={posto_id}")
+    
+    # 2. Section-specific: fk_tipo_posto is null AND fk_secao = secao_id
+    if secao_id is not None:
+        section_condition = (
+            (df_filtered['fk_tipo_posto'].isna()) & 
+            (df_filtered['fk_secao'] == secao_id)
+        )
+        conditions.append(section_condition)
+        logger.info(f"DEBUG: Added section condition for secao_id={secao_id}")
+        
+        # Debug: check which rows match this condition
+        matching_section = df_filtered[section_condition]
+        logger.info(f"DEBUG: Rows matching section condition:\n {matching_section}")
+    
+    # 3. Unit-specific: fk_tipo_posto is null AND fk_secao is null AND fk_unidade = unit_id
+    if unit_id is not None:
+        unit_condition = (
+            (df_filtered['fk_tipo_posto'].isna()) & 
+            (df_filtered['fk_secao'].isna()) & 
+            (df_filtered['fk_unidade'] == unit_id)
+        )
+        conditions.append(unit_condition)
+        logger.info(f"DEBUG: Added unit condition for unit_id={unit_id}")
+    
+    # 4. Default: all main FKs are null (fallback)
+    default_condition = (
+        (df_filtered['fk_tipo_posto'].isna()) & 
+        (df_filtered['fk_secao'].isna()) & 
+        (df_filtered['fk_unidade'].isna()) &
+        (df_filtered['fk_grupo'].isna())
+    )
+    conditions.append(default_condition)
+    logger.info(f"DEBUG: Added default condition")
+    
+    # Combine all conditions with OR
+    if conditions:
+        final_condition = conditions[0]
+        for condition in conditions[1:]:
+            final_condition = final_condition | condition
+        df_filtered = df_filtered[final_condition]
+    
+    # Remove duplicates
+    df_filtered = df_filtered.drop_duplicates()
+
+    logger.info(f"DEBUG: df_filtered after hierarchy filtering in helpers.py:\n {df_filtered}")
+    
+    # Now apply hierarchy for each parameter
+    params_dict = {}
+    
+    for param_name in params_names_list:
+        param_rows = df_filtered[df_filtered['sys_p_name'] == param_name]
+        
+        # Priority 1: Exact posto_id match (most specific)
+        if posto_id is not None:
+            posto_specific = param_rows[param_rows['fk_tipo_posto'] == posto_id]
+            if not posto_specific.empty:
+                value = get_value_from_row(posto_specific.iloc[0])
+                if value is not None:
+                    params_dict[param_name] = value
+                    logger.info(f"DEBUG: Found posto-specific param {param_name}:{value}")
+                    continue
+        
+        # Priority 2: Section-specific (fk_tipo_posto is null, fk_secao matches)
+        if secao_id is not None:
+            section_specific = param_rows[
+                (param_rows['fk_tipo_posto'].isna()) & 
+                (param_rows['fk_secao'] == secao_id)
+            ]
+            if not section_specific.empty:
+                value = get_value_from_row(section_specific.iloc[0])
+                if value is not None:
+                    params_dict[param_name] = value
+                    logger.info(f"DEBUG: Found section-specific param {param_name}:{value}")
+                    continue
+        
+        # Priority 3: Unit-specific (fk_tipo_posto and fk_secao are null, fk_unidade matches)
+        if unit_id is not None:
+            unit_specific = param_rows[
+                (param_rows['fk_tipo_posto'].isna()) & 
+                (param_rows['fk_secao'].isna()) & 
+                (param_rows['fk_unidade'] == unit_id)
+            ]
+            if not unit_specific.empty:
+                value = get_value_from_row(unit_specific.iloc[0])
+                if value is not None:
+                    params_dict[param_name] = value
+                    logger.info(f"DEBUG: Found unit-specific param {param_name}:{value}")
+                    continue
+        
+        # Priority 4: Default (all FKs are null)
+        default_rows = param_rows[
+            (param_rows['fk_tipo_posto'].isna()) & 
+            (param_rows['fk_secao'].isna()) & 
+            (param_rows['fk_unidade'].isna()) &
+            (param_rows['fk_grupo'].isna())
+        ]
+        if not default_rows.empty:
+            value = get_value_from_row(default_rows.iloc[0])
+            if value is not None:
+                params_dict[param_name] = value
+                logger.info(f"DEBUG: Found default param {param_name}:{value}")
+    
+    return params_dict
+
+def get_value_from_row(row):
+    """Get the actual value from CHARVALUE, NUMBERVALUE, or DATEVALUE"""
+    # TODO: Check this logic
+    if pd.notna(row['charvalue']):
+        return row['charvalue']
+    elif pd.notna(row['numbervalue']):
+        return row['numbervalue']
+    elif pd.notna(row['datevalue']):
+        return row['datevalue']
+    return None
+
+def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert HORARIO values to sched_type and sched_subtype columns
+    
+    Args:
+        df (pd.DataFrame): Input dataframe with HORARIO column
+    
+    Returns:
+        pd.DataFrame: DataFrame with added sched_type and sched_subtype columns
+    """
+    
+    # Create a copy to avoid modifying the original dataframe
+    df = pd.DataFrame(df).copy()
+    
+    # Define mapping for SCHED_TYPE
+    sched_type_mapping = {
+        'M': 'T',
+        'T': 'T', 
+        'MoT': 'T',
+        'ToM': 'T',
+        'P': 'T',
+        'L': 'F',
+        'LD': 'F',
+        'LQ': 'F',
+        'C': 'F',
+        'F': 'R',
+        '-': 'N',
+        'V': 'T',
+        'A': 'T',
+        'DFS': 'T'
+    }
+    
+    # Define mapping for sched_subtype
+    sched_subtype_mapping = {
+        'M': 'M',
+        'T': 'T',
+        'MoT': 'H',
+        'ToM': 'H', 
+        'P': 'P',
+        'L': '',
+        'LD': 'D',
+        'LQ': 'Q',
+        'C': 'C',
+        'F': '',
+        '-': '',
+        'V': 'A',
+        'A': 'A',
+        'DFS': 'C'
+    }
+    
+    # Apply mappings
+    df['sched_type'] = df['horario'].map(sched_type_mapping)
+    df['sched_subtype'] = df['horario'].map(sched_subtype_mapping)
+    
+    return df
+
+
+def bulk_insert_with_query(data_manager: DBDataManager, 
+                          data: pd.DataFrame, 
+                          query_file: str, 
+                          **kwargs) -> bool:
+    """
+    Execute bulk insert using a parameterized query file.
+    
+    Args:
+        data_manager: Database data manager instance
+        data: DataFrame with data to insert
+        query_file: Path to SQL insert query file
+        **kwargs: Additional parameters for query execution
+        
+    Returns:
+        bool: True if successful, False otherwise
+        
+    Example:
+        # SQL file content: INSERT INTO table (col1, col2) VALUES (?, ?)
+        success = bulk_insert_with_query(
+            data_manager=db_manager,
+            data=results_df,
+            query_file='queries/insert_results.sql',
+            fk_processo=123  # Additional parameter
+        )
+    """
+    logger = get_logger(PROJECT_NAME)
+    
+    # Validate inputs
+    if not hasattr(data_manager, 'session') or data_manager.session is None:
+        logger.error("No database session available")
+        return False
+    
+    if not os.path.exists(query_file):
+        logger.error(f"Query file not found: {query_file}")
+        return False
+    
+    if data.empty:
+        logger.warning("Empty DataFrame provided, no records to insert")
+        return True
+    
+    try:
+        from sqlalchemy import text
+        
+        # Read the insert query
+        with open(query_file, 'r', encoding='utf-8') as f:
+            insert_query = f.read().strip()
+        
+        if not insert_query:
+            logger.error(f"Query file is empty: {query_file}")
+            return False
+        
+        logger.info(f"Executing bulk insert of {len(data)} rows using query: {query_file}")
+        
+        # Convert DataFrame to list of dictionaries for parameter binding
+        records = data.to_dict('records')
+        
+        # Execute the insert for each record
+        for i, record in enumerate(records):
+            try:
+                # Merge additional kwargs with record data
+                params = {**kwargs, **record}
+                data_manager.session.execute(text(insert_query), params)
+                
+                # Log progress for large datasets
+                if (i + 1) % 1000 == 0:
+                    logger.info(f"Processed {i + 1}/{len(records)} records")
+                    
+            except Exception as record_error:
+                logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
+                logger.debug(f"Failed record data: {record}")
+                raise
+        
+        # Commit all inserts
+        data_manager.session.commit()
+        
+        logger.info(f"Successfully inserted {len(records)} records")
+        return True
+        
+    except Exception as e:
+        # Rollback on error
+        if hasattr(data_manager, 'session') and data_manager.session:
+            data_manager.session.rollback()
+        logger.error(f"Error during bulk insert: {str(e)}")
+        return False
+    
+def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """Create empty results structure when no data is available."""
+    return {
+        'core_results': {
+            'schedule': pd.DataFrame(),
+            'formatted_schedule': pd.DataFrame(),
+            'wide_format_schedule': pd.DataFrame(),
+            'status': 'UNKNOWN'
+        },
+        'metadata': {
+            'algorithm_name': algo_name,
+            'algorithm_version': '1.0',
+            'execution_timestamp': datetime.now().isoformat(),
+            'process_id': process_id,
+            'date_range': {
+                'start_date': start_date,
+                'end_date': end_date,
+                'total_days': 0
+            },
+            'parameters_used': parameters,
+            'solver_info': {
+                'solver_name': 'CP-SAT',
+                'solving_time_seconds': None,
+                'num_branches': None,
+                'num_conflicts': None
+            }
+        },
+        'scheduling_stats': {},
+        'constraint_validation': {},
+        'quality_metrics': {},
+        'validation': {'is_valid_solution': False, 'validation_errors': ['No schedule data available']},
+        'export_info': {},
+        'summary': {
+            'status': 'failed',
+            'message': 'No schedule data available',
+            'key_metrics': {}
+        }
+    }
+
+def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: str, end_date: str, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Calculate comprehensive statistics from algorithm results in wide format."""
+    try:
+        # Basic counts
+        total_workers = len(algorithm_results) if not algorithm_results.empty else 0
+        
+        # Get day columns (all columns except 'Worker')
+        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+        total_days = len(day_columns)
+        
+        # Calculate date range
+        if start_date and end_date:
+            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+            total_days = len(date_range)
+        
+        # Shift distribution - flatten all shift values
+        shift_distribution = {}
+        unassigned_slots = 0
+        total_assignments = 0
+        
+        if not algorithm_results.empty and day_columns:
+            # Get all shift values from the wide format
+            all_shifts = []
+            for col in day_columns:
+                all_shifts.extend(algorithm_results[col].dropna().astype(str).tolist())
+            
+            # Count shift types
+            shift_series = pd.Series(all_shifts)
+            shift_distribution = shift_series.value_counts().to_dict()
+            total_assignments = len(all_shifts)
+            unassigned_slots = shift_distribution.get('N', 0) + shift_distribution.get('ERROR', 0) + shift_distribution.get('-', 0)
+        
+        # Worker statistics
+        workers_scheduled = total_workers
+        worker_list = algorithm_results['Worker'].astype(str).tolist() if 'Worker' in algorithm_results.columns else []
+        
+        # Time coverage
+        scheduled_days = total_days
+        coverage_percentage = 100.0 if total_days > 0 else 0
+        
+        # Working days and special days coverage
+        working_days_covered = 0
+        special_days_covered = 0
+        
+        if data_processed:
+            working_days = data_processed.get('working_days', [])
+            special_days = data_processed.get('special_days', [])
+            working_days_covered = len(working_days)
+            special_days_covered = len(special_days)
+        
+        return {
+            'workers': {
+                'total_workers': total_workers,
+                'workers_scheduled': workers_scheduled,
+                'worker_list': worker_list
+            },
+            'shifts': {
+                'shift_distribution': shift_distribution,
+                'total_assignments': total_assignments,
+                'shift_types_used': list(shift_distribution.keys()),
+                'unassigned_slots': unassigned_slots
+            },
+            'time_coverage': {
+                'total_days': total_days,
+                'working_days_covered': working_days_covered,
+                'special_days_covered': special_days_covered,
+                'coverage_percentage': coverage_percentage
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error calculating comprehensive stats: {e}")
+        return {}
+
+def _validate_constraints(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
+    """Validate constraint satisfaction from wide format."""
+    try:
+        constraint_validation = {
+            'working_days': {
+                'violations': [],
+                'satisfied': True,
+                'details': 'All workers have proper working day assignments'
+            },
+            'continuous_working_days': {
+                'violations': [],
+                'max_continuous_exceeded': [],
+                'satisfied': True
+            },
+            'salsa_specific': {
+                'consecutive_free_days': {'satisfied': True, 'violations': []},
+                'quality_weekends': {'satisfied': True, 'violations': []},
+                'saturday_L_constraint': {'satisfied': True, 'violations': []}
+            },
+            'overall_satisfaction': 100
+        }
+        
+        if algorithm_results.empty:
+            constraint_validation['working_days']['satisfied'] = False
+            constraint_validation['working_days']['violations'].append('No schedule data available')
+            constraint_validation['overall_satisfaction'] = 0
+            return constraint_validation
+        
+        # Get day columns
+        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+        
+        # Check for continuous working days violations
+        continuous_violations = []
+        max_continuous_work = 5  # Assume max 5 consecutive working days
+        
+        for idx, row in algorithm_results.iterrows():
+            worker = row['Worker']
+            worker_shifts = [str(row[col]) for col in day_columns if pd.notna(row[col])]
+            
+            consecutive_work = 0
+            max_consecutive = 0
+            
+            for shift in worker_shifts:
+                if shift in ['M', 'T']:  # Working shifts
+                    consecutive_work += 1
+                    max_consecutive = max(max_consecutive, consecutive_work)
+                else:
+                    consecutive_work = 0
+            
+            if max_consecutive > max_continuous_work:
+                continuous_violations.append(f"Worker {worker}: {max_consecutive} consecutive working days")
+        
+        if continuous_violations:
+            constraint_validation['continuous_working_days']['satisfied'] = False
+            constraint_validation['continuous_working_days']['violations'] = continuous_violations
+            constraint_validation['overall_satisfaction'] -= 20
+        
+        # Check SALSA-specific constraints
+        weekend_violations = []
+        for idx, row in algorithm_results.iterrows():
+            worker = row['Worker']
+            worker_shifts = [str(row[col]) for col in day_columns if pd.notna(row[col])]
+            
+            # Check for quality weekends (LQ should be followed by proper rest)
+            lq_count = worker_shifts.count('LQ')
+            if lq_count == 0:
+                weekend_violations.append(f"Worker {worker}: No quality weekends assigned")
+        
+        if weekend_violations:
+            constraint_validation['salsa_specific']['quality_weekends']['satisfied'] = False
+            constraint_validation['salsa_specific']['quality_weekends']['violations'] = weekend_violations
+            constraint_validation['overall_satisfaction'] -= 10
+        
+        return constraint_validation
+    except Exception as e:
+        logger.error(f"Error validating constraints: {e}")
+        return {}
+    
+def _calculate_quality_metrics(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
+    """Calculate quality metrics for the solution from wide format."""
+    try:
+        # Calculate basic metrics
+        total_workers = len(algorithm_results) if not algorithm_results.empty else 0
+        
+        # Get day columns
+        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+
+        
+        # SALSA-specific metrics
+        two_day_quality_weekends = 0
+        consecutive_free_days_achieved = 0
+        saturday_L_assignments = 0
+        
+        if not algorithm_results.empty and day_columns:
+            # Count LQ (two-day quality weekends)
+            for col in day_columns:
+                two_day_quality_weekends += (algorithm_results[col] == 'LQ').sum()
+            
+            # Count L assignments (including Saturday L)
+            for col in day_columns:
+                saturday_L_assignments += (algorithm_results[col] == 'L').sum()
+            
+            # Count consecutive free days (simplified - count sequences of L, LQ, F)
+            for idx, row in algorithm_results.iterrows():
+                worker_shifts = [str(row[col]) for col in day_columns if pd.notna(row[col])]
+                consecutive_count = 0
+                max_consecutive = 0
+                
+                for shift in worker_shifts:
+                    if shift in ['L', 'LQ']:
+                        consecutive_count += 1
+                        max_consecutive = max(max_consecutive, consecutive_count)
+                    else:
+                        consecutive_count = 0
+                
+                if max_consecutive >= 2:
+                    consecutive_free_days_achieved += 1
+        
+        
+        return {
+            'salsa_specific_metrics': {
+                'two_day_quality_weekends': two_day_quality_weekends,
+                'consecutive_free_days_achieved': consecutive_free_days_achieved,
+                'saturday_L_assignments': saturday_L_assignments
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error calculating quality metrics: {e}")
+        return {}
+    
+def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
+    """Format schedule for different output types from wide format."""
+    try:
+        formatted_schedules = {
+            'database_format': pd.DataFrame(),
+            'wide_format': pd.DataFrame()
+        }
+        
+        if algorithm_results.empty:
+            return formatted_schedules
+        
+        # Wide format is already available (the input format)
+        formatted_schedules['wide_format'] = algorithm_results.copy()
+        
+        # Database format (long format) - convert from wide to long
+        if 'Worker' in algorithm_results.columns:
+            day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+            
+            if day_columns:
+                # Melt the DataFrame to long format
+                melted_df = pd.melt(
+                    algorithm_results,
+                    id_vars=['Worker'],
+                    value_vars=day_columns,
+                    var_name='Day',
+                    value_name='Shift'
+                )
+                
+                # Clean up the Day column to extract day numbers
+                logger.info(f"DEBUG: melted_df['Day'] type: {type(melted_df['Day'])}")
+                logger.info(f"DEBUG: melted_df['Day'].str.replace('Day ', ''): {melted_df['Day'].str.replace('Day ', '')}")
+                melted_df['Day'] = melted_df['Day'].str.replace('Day_', '').astype(int)
+                
+                # Convert day numbers to actual dates if start_date is available
+                if start_date:
+                    try:
+                        base_date = pd.to_datetime(start_date)
+                        melted_df['Date'] = melted_df['Day'].apply(lambda x: base_date + pd.Timedelta(days=x-1))
+                        melted_df['Date'] = melted_df['Date'].dt.strftime('%Y-%m-%d')
+                    except:
+                        melted_df['Date'] = melted_df['Day'].astype(str)
+                else:
+                    melted_df['Date'] = melted_df['Day'].astype(str)
+                
+                # Rename columns and select relevant ones
+                formatted_schedules['database_format'] = melted_df[['Worker', 'Date', 'Shift']].copy()
+                formatted_schedules['database_format'].rename(columns={'Worker': 'colaborador'}, inplace=True)
+                formatted_schedules['database_format'].rename(columns={'Shift': 'horario'}, inplace=True)
+                formatted_schedules['database_format'].rename(columns={'Date': 'data'}, inplace=True)
+
+        return formatted_schedules
+    except Exception as e:
+        logger.error(f"Error formatting schedules: {e}", exc_info=True)
+        return {'database_format': pd.DataFrame(), 'wide_format': pd.DataFrame()}
+
+def _create_metadata(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any], stats: Dict[str, Any], solver_attributes: Dict[str, Any]) -> Dict[str, Any]:
+    """Create metadata information."""
+    return {
+        'algorithm_name': algo_name,
+        'algorithm_version': '1.0',
+        'execution_timestamp': datetime.now().isoformat(),
+        'process_id': process_id,
+        'date_range': {
+            'start_date': start_date,
+            'end_date': end_date,
+            'total_days': stats.get('time_coverage', {}).get('total_days', 0)
+        },
+        'parameters_used': parameters,
+        'solver_info': {
+            'solver_name': 'CP-SAT',
+            'solving_time_seconds': solver_attributes.get('solving_time_seconds'),
+            'num_branches': solver_attributes.get('num_branches'),
+            'num_conflicts': solver_attributes.get('num_conflicts')
+        }
+    }
+
+def _validate_solution(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
+    """Validate the solution and return validation results for wide format."""
+    try:
+        validation_errors = []
+        warnings = []
+        recommendations = []
+        
+        # Check if solution is valid
+        if algorithm_results.empty:
+            validation_errors.append("No schedule data available")
+        else:
+            # Check for required columns
+            if 'Worker' not in algorithm_results.columns:
+                validation_errors.append("Missing 'Worker' column")
+            
+            # Check for day columns
+            day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+            if not day_columns:
+                validation_errors.append("No day columns found")
+            
+            # Check for unassigned days
+            if day_columns:
+                unassigned_count = 0
+                for col in day_columns:
+                    unassigned_count += (algorithm_results[col].isin(['N', 'ERROR', '-'])).sum()
+                
+                if unassigned_count > 0:
+                    warnings.append(f"Found {unassigned_count} unassigned shifts")
+                    recommendations.append("Review worker constraints and availability")
+                
+                # Check for missing data
+                missing_count = 0
+                for col in day_columns:
+                    missing_count += algorithm_results[col].isna().sum()
+                
+                if missing_count > 0:
+                    warnings.append(f"Found {missing_count} missing shift assignments")
+                    recommendations.append("Verify data completeness")
+        
+        is_valid_solution = len(validation_errors) == 0
+        
+        return {
+            'is_valid_solution': is_valid_solution,
+            'validation_errors': validation_errors,
+            'warnings': warnings,
+            'recommendations': recommendations
+        }
+    except Exception as e:
+        logger.error(f"Error validating solution: {e}")
+        return {
+            'is_valid_solution': False,
+            'validation_errors': [f"Validation error: {e}"],
+            'warnings': [],
+            'recommendations': []
+        }
+    
+def _create_export_info(process_id: int, ROOT_DIR) -> Dict[str, Any]:
+    """Create export information."""
+    try:
+        # Get output filename from ROOT_DIR
+        output_filename = os.path.join(ROOT_DIR, 'data', 'output', f'salsa_schedule_{process_id}.xlsx')
+        
+        return {
+            'export_files': {
+                'excel_file': output_filename,
+                'csv_file': None,
+                'json_file': None
+            },
+            'export_timestamp': datetime.now().isoformat(),
+            'export_status': 'completed'
+        }
+    except Exception as e:
+        logger.error(f"Error creating export info: {e}")
+        return {}
+        

@@ -308,3 +308,19 @@ class ExampleAlgorithm(BaseAlgorithm):
                 "status": "failed",
                 "error": str(e)
             }
+
+    def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
+        """
+        Format the algorithm results for output.
+        
+        Args:
+            algorithm_results: Results from execute_algorithm
+            
+        Returns:
+            Dictionary with formatted results
+        """
+        self.logger.info(f"Formatting results for {self.algo_name}")
+
+        # TODO: implement the logic
+        return {}
+
