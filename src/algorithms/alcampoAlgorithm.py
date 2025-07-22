@@ -566,8 +566,6 @@ class AlcampoAlgorithm(BaseAlgorithm):
                 }
             }
 
-
-            
             self.logger.info(f"Results formatted successfully: {total_assignments} assignments created")
             return formatted_results
             

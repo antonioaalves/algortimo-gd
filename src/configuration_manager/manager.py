@@ -1,10 +1,14 @@
 """File containing the configuration manager class"""
 
 # Dependencies
+import os
 
 # Local stuff
 from src.configuration_manager.path_config import PathConfig
 from src.configuration_manager.parameter_config import ParameterConfig
+from src.configuration_manager.base_config import BaseConfig
+from src.configuration_manager.oracle_config import OracleConfig
+from base_data_project.log_config import get_logger
 
 # Configuration manager class
 
@@ -14,33 +18,38 @@ class ConfigurationManager:
 
     def __init__(self):
         """Initialize the configuration manager"""
+        self.logger = get_logger(project_name="algoritmo_GD")
 
         # Load the configuration files
-        self.config = self.load_base_config()
-        self.oracle_config = self.load_oracle_config()
-        self.path_config = self.load_path_config()
+        self.base_config = self.load_base_config()
+
+        # Retrieve important variables
+        use_db = self.base_config["use_db"]
+        project_root_dir = self.base_config["project_root_dir"]
+        environment = self.base_config["environment"]
+
+        if use_db:
+            self.oracle_config = self.load_oracle_config(environment=environment)
+        else:
+            self.oracle_config = None
+
+        self.path_config = self.load_path_config(project_root_dir=project_root_dir, use_db=use_db)
         self.parameter_config = self.load_parameter_config()
         self.stages_config = self.load_stages_config()
 
     def load_base_config(self):
         """Load the configuration file"""
-        # TODO: Implement the loading function for python config files
-        try:
-            from src.settings.system_settings import system_configs
-            
-        except Exception as e:
-            self.logger.error(f"Error loading base config: {e}")
-            raise e
+        return BaseConfig()
 
-    def load_oracle_config(self):
+    def load_oracle_config(self, environment: str):
         """Load the Oracle configuration file"""
         # TODO: Implement the loading function for python config files
-        pass
+        return OracleConfig(environment=environment)
 
-    def load_path_config(self):
+    def load_path_config(self, project_root_dir: str, use_db: bool):
         """Load the path configuration file"""
         # TODO: Implement the loading logic
-        return PathConfig()
+        return PathConfig(project_root_dir=project_root_dir, use_db=use_db)
 
     def load_parameter_config(self):
         """Load the parameter configuration file"""

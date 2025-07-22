@@ -8,13 +8,14 @@ import os
 system_configs = {
     "environment": "development", # Options: development, production
     "use_db": True, # Options: True, False
+    "override_parameter_defaults": False, # Options: True, False
     
     "project_name": "algoritmo_GD", # Important for environment management
     "project_version": "1.0.1", # Important for environment management
     "project_author": "Tlantic SI - Strategic Solutions Team", # Important for environment management
     "project_author_url": "https://github.com/antonioaalves/algortimo-gd", # Important for environment management
     "project_license": "MIT",
-    "project_root_dir": os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "project_root_dir": os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
 
     "storage_strategy": {
         "mode": "memory", # Options: memory, persist, hybrid
