@@ -6,8 +6,8 @@
 from src.configuration_manager.path_config import PathConfig
 from src.configuration_manager.parameter_config import ParameterConfig
 
-
 # Configuration manager class
+
 
 class ConfigurationManager:
     """Class used to manage the severeal configurations needed for the project"""
@@ -25,7 +25,12 @@ class ConfigurationManager:
     def load_base_config(self):
         """Load the configuration file"""
         # TODO: Implement the loading function for python config files
-        pass
+        try:
+            from src.settings.system_settings import system_configs
+            
+        except Exception as e:
+            self.logger.error(f"Error loading base config: {e}")
+            raise e
 
     def load_oracle_config(self):
         """Load the Oracle configuration file"""
