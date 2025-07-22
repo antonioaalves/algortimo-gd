@@ -32,7 +32,7 @@ class AlgoritmoGDService(BaseService):
     process tracking, and algorithm execution.
     
     This service implements a complete process flow with multiple stages:
-    1. Data Loading: Load data from sources
+    1. Data Loading: Load datab from sources
     2. Data Transformation: Clean and prepare the data
     3. Processing: Apply algorithms to the data
     4. Result Analysis: Analyze and save the results
@@ -726,6 +726,8 @@ class AlgoritmoGDService(BaseService):
             valid_params = params.get('success', False)
             algorithm_name = params.get('algorithm_name', '')
             #self.logger.info(f"DEBUG: Algorithm name: {algorithm_name}, type: {type(algorithm_name)}")
+
+            # TODO: Add data_model method for overriding
             
             if not valid_params:
                 if self.stage_handler:

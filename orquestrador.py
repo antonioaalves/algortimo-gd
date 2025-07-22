@@ -15,7 +15,7 @@ import datetime
 from base_data_project.log_config import setup_logger, get_logger
 from base_data_project.utils import create_components
 from batch_process import run_batch_process
-from src.config import CONFIG, PROJECT_NAME
+from src.configuration_manager.config import CONFIG, PROJECT_NAME
 
 # Initialize logger
 setup_logger(
