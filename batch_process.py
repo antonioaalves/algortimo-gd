@@ -13,19 +13,24 @@ from base_data_project.log_config import setup_logger, get_logger
 from base_data_project.utils import create_components
 
 # Import project-specific components
-from src.config import CONFIG, PROJECT_NAME
+from src.settings.log_parameters import log_parameters
+from src.configuration_manager.manager import ConfigurationManager
 from src.services.example_service import AlgoritmoGDService
+
+project_name = log_parameters.get("project_name", 'algoritmo_GD')
 
 # Initialize logger with configuration first
 setup_logger(
-    project_name=PROJECT_NAME,
-    log_level=CONFIG.get('log_level', 'INFO'),
-    log_dir=CONFIG.get('log_dir', 'logs'),
-    console_output=CONFIG.get('console_output', True)
+    project_name=project_name,
+    log_level=log_parameters.get('log_level', 'INFO'),
+    log_dir=log_parameters.get('log_dir', 'logs'),
+    console_output=log_parameters.get('console_output', True)
 )
 
 # Then get the logger instance for use throughout the file
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(project_name)
+
+config_manager = ConfigurationManager()
 
 def run_batch_process(data_manager, process_manager, algorithm="example_algorithm", external_call_dict=None, external_raw_connection=None):
     """
@@ -49,8 +54,8 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             process_manager=process_manager,
             external_call_dict=external_call_dict or {},
             external_raw_connection=external_raw_connection,
-            config=CONFIG,
-            project_name=PROJECT_NAME
+            config_manager=config_manager,
+            project_name=project_name
         )
         
         # Initialize a new process

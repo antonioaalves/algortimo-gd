@@ -1,17 +1,14 @@
 """File containing the configuration manager class"""
 
 # Dependencies
-import os
 
 # Local stuff
 from src.configuration_manager.path_config import PathConfig
 from src.configuration_manager.parameter_config import ParameterConfig
 from src.configuration_manager.base_config import BaseConfig
 from src.configuration_manager.oracle_config import OracleConfig
+from src.configuration_manager.stages_config import StagesConfig
 from base_data_project.log_config import get_logger
-
-# Configuration manager class
-
 
 class ConfigurationManager:
     """Class used to manage the severeal configurations needed for the project"""
@@ -43,21 +40,16 @@ class ConfigurationManager:
 
     def load_oracle_config(self, environment: str):
         """Load the Oracle configuration file"""
-        # TODO: Implement the loading function for python config files
         return OracleConfig(environment=environment)
 
     def load_path_config(self, project_root_dir: str, use_db: bool):
         """Load the path configuration file"""
-        # TODO: Implement the loading logic
         return PathConfig(project_root_dir=project_root_dir, use_db=use_db)
 
     def load_parameter_config(self):
         """Load the parameter configuration file"""
-        # TODO: Implement the loading logic
         return ParameterConfig()
 
     def load_stages_config(self):
         """Load the stages configuration file"""
-        # TODO: Implement the loading logic
-        pass
-
+        return StagesConfig()

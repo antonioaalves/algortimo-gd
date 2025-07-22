@@ -167,7 +167,6 @@ class PathConfig:
 
     def validate_csv_filepaths(self, csv_filenames_dict: dict, path_config_dict: dict) -> bool:
         """Validate the csv filepaths"""
-        # TODO: Implement the validation function for the csv filepaths
         try:
             # Validate the csv filepaths
             if not csv_filenames_dict:

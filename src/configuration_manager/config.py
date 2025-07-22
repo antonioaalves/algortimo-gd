@@ -208,7 +208,7 @@ CONFIG = {
                     'description': 'Allocation cycle for all the required days.',
                     'required': True,
                     'decisions': {
-                        # Very important define the algorithms here
+                        # Very important define the algorithms here if you want to define as a decision point
                         #'algorithms': ['salsa_algorithm']
                     }                     
                 },

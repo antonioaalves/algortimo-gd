@@ -20,7 +20,7 @@ from base_data_project.storage.models import BaseDataModel
 from base_data_project.log_config import get_logger
 
 # Import project-specific components
-from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
+from src.configuration_manager.manager import ConfigurationManager
 from src.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.helpers import set_process_errors
@@ -38,7 +38,7 @@ class AlgoritmoGDService(BaseService):
     4. Result Analysis: Analyze and save the results
     """
 
-    def __init__(self, data_manager: BaseDataManager, project_name: str, process_manager: Optional[ProcessManager] = None, external_call_dict: Dict[str, Any] = {}, config: Dict[str, Any] = {}, external_raw_connection=None):
+    def __init__(self, data_manager: BaseDataManager, project_name: str, process_manager: Optional[ProcessManager] = None, external_call_dict: Dict[str, Any] = {}, config_manager: ConfigurationManager = None, external_raw_connection=None):
         """
         Initialize the service with data and process managers.
         
@@ -48,16 +48,16 @@ class AlgoritmoGDService(BaseService):
         """
 
         # Import CONFIG if not provided
-        if config is None:
-            config = CONFIG
+        if config_manager is None:
+            config_manager = ConfigurationManager()
         
         # Work around the config property issue
         if process_manager:
             try:
-                process_manager.config = config
+                process_manager.config = config_manager
             except AttributeError:
                 # If config is a property without setter, use __dict__ directly
-                process_manager.__dict__['config'] = config
+                process_manager.__dict__['config'] = config_manager
 
         super().__init__(
             data_manager=data_manager, 
@@ -163,7 +163,7 @@ class AlgoritmoGDService(BaseService):
             stage_name = 'data_loading'
             self.logger.info("Executing process data loading stage")
             # Get decisions from process manager if available
-            load_entities_dict = CONFIG.get('available_entities_processing', {})
+            load_entities_dict = self.config_manager.path_config.get('available_entities_processing', {})
     
             # Track progress
             if self.stage_handler:
@@ -175,8 +175,8 @@ class AlgoritmoGDService(BaseService):
             
             # Load each entity
             self.data = DescansosDataModel(
-                data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
-                    project_name=PROJECT_NAME,
+                data_container=BaseDataContainer(config=config_manager, project_name=project_name),
+                    project_name=project_name,
                     external_data=self.external_data if self.external_data else {}
                 )
             

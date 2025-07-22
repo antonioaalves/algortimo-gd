@@ -4,13 +4,14 @@
 import os
 
 # Local stuff
+from src.settings.log_parameters import log_parameters
 
 system_configs = {
     "environment": "development", # Options: development, production
     "use_db": True, # Options: True, False
     "override_parameter_defaults": False, # Options: True, False
     
-    "project_name": "algoritmo_GD", # Important for environment management
+    "project_name": log_parameters.get("project_name", 'algoritmo_GD'), # Important for environment management
     "project_version": "1.0.1", # Important for environment management
     "project_author": "Tlantic SI - Strategic Solutions Team", # Important for environment management
     "project_author_url": "https://github.com/antonioaalves/algortimo-gd", # Important for environment management
