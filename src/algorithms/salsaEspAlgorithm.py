@@ -1,4 +1,4 @@
-"""File containing the SalsaAlgorithm class"""
+"""File containing the SalsaEspAlgorithm class"""
 
 import logging
 from typing import Dict, Any, Optional, List, Union
@@ -6,6 +6,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from ortools.sat.python import cp_model
 import os
+
 
 # Import base algorithm class
 from base_data_project.algorithms.base import BaseAlgorithm
@@ -15,15 +16,18 @@ from base_data_project.log_config import get_logger
 from src.config import PROJECT_NAME, ROOT_DIR
 
 # Import shift scheduler components
-from src.algorithms.model_salsa.variables import decision_variables
-from src.algorithms.model_salsa.salsa_constraints import (
+from src.algorithms.model_salsa_esp.variables import decision_variables
+from src.algorithms.model_salsa_esp.salsa_esp_constraints import (
     shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    maximum_free_days, LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
-    assign_week_shift, working_day_shifts,
-    salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
-    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint
+    maximum_continuous_working_special_days, maximum_free_days, free_days_special_days, 
+    tc_atribution, working_days_special_days, LQ_attribution, LD_attribution, 
+    closed_holiday_attribution, holiday_missing_day_attribution, assign_week_shift,
+    special_day_shifts, working_day_shifts, complete_cycle_shifts, free_day_next_2c, no_free__days_close, 
+    space_LQs, day2_quality_weekend, compensation_days, prio_2_3_workers,
+    limits_LDs_week, one_free_day_weekly, maxi_free_days_c3d, maxi_LQ_days_c3d, 
+    assigns_solution_days, day3_quality_weekend
 )
-from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
+from src.algorithms.model_salsa_esp.optimization_salsa_esp import optimization_prediction
 from src.algorithms.solver.solver import solve
 
 from src.helpers import (_create_empty_results, _calculate_comprehensive_stats, 
@@ -35,37 +39,37 @@ import time
 # Set up logger
 logger = get_logger(PROJECT_NAME)
 
-class SalsaAlgorithm(BaseAlgorithm):
+class SalsaEspAlgorithm(BaseAlgorithm):
     """
-    SALSA shift scheduling algorithm implementation.
+    salsa_esp shift scheduling algorithm implementation.
 
-    This algorithm implements a constraint programming approach for shift scheduling:
+    This algorithm implements a two-stage constraint programming approach for shift scheduling:
     1. Adapt data: Read and process input DataFrames (calendario, estimativas, colaborador)
-    2. Execute algorithm: Solve scheduling problem with SALSA-specific constraints
+    2. Execute algorithm: 
+       - Stage 1: Solve initial scheduling problem with all constraints
+       - Stage 2: Refine solution with additional quality constraints for 3-day weekends
     3. Format results: Return final schedule DataFrame
 
     The algorithm uses OR-Tools CP-SAT solver to optimize shift assignments while respecting
-    worker contracts, labor laws, and SALSA-specific operational requirements.
+    worker contracts, labor laws, and operational requirements.
     """
 
-    def __init__(self, parameters=None, algo_name: str = 'salsa_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0, start_date: str = '', end_date: str = ''):
+    def __init__(self, parameters=None, algo_name: str = 'salsa_esp_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0, start_date: str = '', end_date: str = ''):
         """
-        Initialize the SALSA Algorithm.
+        Initialize the salsa_esp Algorithm.
         
         Args:
             parameters: Dictionary containing algorithm configuration
             algo_name: Name identifier for the algorithm
-            project_name: Project name
-            process_id: Process identifier
-            start_date: Start date for scheduling
-            end_date: End date for scheduling
         """
-        # Default parameters for the SALSA algorithm
+        # Default parameters for the algorithm
         default_parameters = {
-            "max_continuous_working_days": 5,
-            "shifts": ["M", "T", "L", "LQ", "F", "A", "V"],
-            "check_shifts": ['M', 'T', 'L', 'LQ'],
-            "working_shifts": ["M", "T"],
+            "shifts": ["M", "T", "L", "LQ", "F", "V", "LD", "A", "TC"],
+            "check_shifts": ['M', 'T', 'L', 'LQ', "LD", "TC"],
+            "check_shift_special": ['M', 'T', 'L', "TC"],
+            "working_shifts": ["M", "T", "TC"],
+            "max_continuous_working_days": 10,
+
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -80,11 +84,13 @@ class SalsaAlgorithm(BaseAlgorithm):
             default_parameters.update(parameters)
         
         # Initialize the parent class with algorithm name and parameters
-        super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=project_name)
+        super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=PROJECT_NAME)
         
         # Initialize algorithm-specific attributes
         self.data_processed = None
-        self.model = None
+        self.model_stage1 = None
+        self.model_stage2 = None
+        self.schedule_stage1 = None
         self.final_schedule = None
         self.process_id = process_id
         self.start_date = start_date
@@ -93,19 +99,21 @@ class SalsaAlgorithm(BaseAlgorithm):
         # Add any algorithm-specific initialization
         self.logger.info(f"Initialized {self.algo_name} with parameters: {self.parameters}")
 
+
+
     def adapt_data(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         """
-        Adapt input data for the SALSA shift scheduling algorithm.
+        Adapt input data for the shift scheduling algorithm.
         
         Args:
             data: Dictionary containing DataFrames:
-                - Should contain medium_dataframes with calendar, estimates, and collaborator data
+                - Should contain medium_dataframes with 'matrizA_bk', 'matrizB_bk', 'matriz2_bk'
                 
         Returns:
             Dictionary containing processed data elements for the algorithm
         """
         try:
-            self.logger.info("Starting data adaptation for SALSA algorithm")
+            self.logger.info("Starting data adaptation for salsa_esp algorithm")
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE
@@ -149,16 +157,15 @@ class SalsaAlgorithm(BaseAlgorithm):
                 
             #     self.logger.info(f"✅ {df_name}: {df.shape} - {df.memory_usage(deep=True).sum()/1024/1024:.2f} MB")
             
-
             # =================================================================
-            # 3. PROCESS DATA USING SALSA FUNCTION
+            # 3. PROCESS DATA USING ENHANCED FUNCTION
             # =================================================================
-            self.logger.info("Calling SALSA data processing function")
+            self.logger.info("Calling enhanced data processing function")
             
-            # Import the SALSA data processing function
-            from src.algorithms.model_salsa.read_salsa import read_data_salsa
+            # Import the enhanced function
+            from src.algorithms.model_salsa_esp.read_salsa_esp import read_data_salsa_esp
             
-            processed_data = read_data_salsa(medium_dataframes)
+            processed_data = read_data_salsa_esp(medium_dataframes)
             
             # =================================================================
             # 4. UNPACK AND VALIDATE PROCESSED DATA
@@ -181,7 +188,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'start_weekday': processed_data[11],
                     'week_to_days': processed_data[12],
                     'worker_week_shift': processed_data[13],
-                    'matriz_colaborador_gd': processed_data[14],
+                    'matriz_colaboradores_gd': processed_data[14],
                     'workers': processed_data[15],
                     'contract_type': processed_data[16],
                     'total_l': processed_data[17],
@@ -192,16 +199,15 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'l_q': processed_data[22],
                     'cxx': processed_data[23],
                     't_lq': processed_data[24],
-                    'matriz_estimativas_gd': processed_data[25],
-                    'pess_obj': processed_data[26],
-                    'min_workers': processed_data[27],
-                    'max_workers': processed_data[28],
-                    'working_shift_2': processed_data[29],  # Adjusted for SALSA
-                    'workers_complete': processed_data[30],  # Adjusted for SALSA
-                    'workers_complete_cycle': processed_data[31],  # Adjusted for SALSA
-                    'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
-                    'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
-                    # 'week_cut': processed_data[34]
+                    'tc': processed_data[25],
+                    'matriz_estimativas_gd': processed_data[26],
+                    'pessObj': processed_data[27],
+                    'min_workers': processed_data[28],
+                    'max_workers': processed_data[29],
+                    'working_shift_2': processed_data[30],
+                    'workers_complete': processed_data[31],
+                    'workers_complete_cycle': processed_data[32],
+                    'free_day_complete_cycle': processed_data[33]
                 }
 
             except IndexError as e:
@@ -212,12 +218,19 @@ class SalsaAlgorithm(BaseAlgorithm):
             # 5. FINAL VALIDATION AND LOGGING
             # =================================================================
             workers = data_dict['workers']
+            workers_complete = data_dict['workers_complete']
             days_of_year = data_dict['days_of_year']
             special_days = data_dict['special_days']
             working_days = data_dict['working_days']
 
+            for w in workers_complete:
+                self.logger.info(f"Worker {w}, working days: {working_days[w]}, special days: {special_days}")
+            
+            for w in workers:
+                self.logger.info(f"Worker {w}, working days: {working_days[w]}, special days: {special_days}")
+
             # Validate critical data
-            if not workers:
+            if not workers_complete:
                 raise ValueError("No valid workers found after processing")
             
             if not days_of_year:
@@ -226,7 +239,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Log final statistics
             self.logger.info("[OK] Data adaptation completed successfully")
             self.logger.info(f"[STATS] Final statistics:")
-            self.logger.info(f"   Total workers: {len(workers)}")
+            self.logger.info(f"   Total workers: {len(workers_complete)}")
+            self.logger.info(f"   Valid workers (cycle_not complete): {len(workers)}")
             self.logger.info(f"   Total days: {len(days_of_year)}")
             self.logger.info(f"   Working days: {len(working_days)}")
             self.logger.info(f"   Special days: {len(special_days)}")
@@ -241,9 +255,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.error(f"Error in data adaptation: {e}", exc_info=True)
             raise
 
+
     def execute_algorithm(self, adapted_data: Dict[str, Any]) -> pd.DataFrame:
         """
-        Execute the SALSA shift scheduling algorithm.
+        Execute the two-stage salsa_esp shift scheduling algorithm.
         
         Args:
             adapted_data: Processed data from adapt_data method
@@ -252,7 +267,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             Final schedule DataFrame
         """
         try:
-            self.logger.info("Starting SALSA algorithm execution")
+            self.logger.info("Starting salsa_esp algorithm execution")
             
             if adapted_data is None:
                 adapted_data = self.data_processed
@@ -272,7 +287,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             start_weekday = adapted_data['start_weekday']
             week_to_days = adapted_data['week_to_days']
             worker_week_shift = adapted_data['worker_week_shift']
-            matriz_colaborador_gd = adapted_data['matriz_colaborador_gd']
             workers = adapted_data['workers']
             contract_type = adapted_data['contract_type']
             total_l = adapted_data['total_l']
@@ -283,196 +297,203 @@ class SalsaAlgorithm(BaseAlgorithm):
             l_q = adapted_data['l_q']
             cxx = adapted_data['cxx']
             t_lq = adapted_data['t_lq']
-            matriz_estimativas_gd = adapted_data['matriz_estimativas_gd']
-            pessObj = adapted_data['pess_obj']
+            tc = adapted_data['tc']
+            pessObj = adapted_data['pessObj']
             min_workers = adapted_data['min_workers']
             max_workers = adapted_data['max_workers']
+            working_shift_2 = adapted_data['working_shift_2']
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
-            week_to_days_salsa = adapted_data['week_to_days_salsa']
-            # week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
             check_shift = self.parameters["check_shifts"]
+            check_shift_special = self.parameters["check_shift_special"]
             working_shift = self.parameters["working_shifts"]
             max_continuous_days = self.parameters["max_continuous_working_days"]
             
-            # Extract settings
-            settings = self.parameters["settings"]
-            F_special_day = settings["F_special_day"]
-            free_sundays_plus_c2d = settings["free_sundays_plus_c2d"]
-            missing_days_afect_free_days = settings["missing_days_afect_free_days"]
-            
             # =================================================================
-            # CREATE MODEL AND DECISION VARIABLES
+            # STAGE 1: Initial scheduling with all constraints
             # =================================================================
-            self.logger.info("Creating SALSA model and decision variables")
+            self.logger.info("Starting Stage 1: Initial scheduling")
             
             model = cp_model.CpModel()
-            self.model = model
+            self.model_stage1 = model
             
-            logger.info(f"workers_complete: {workers_complete}")
+            self.logger.info("Model initialized for Stage 1")
+
             # Create decision variables
             shift = decision_variables(model, days_of_year, workers_complete, shifts)
-            
-            self.logger.info("Decision variables created for SALSA")
-            
-            # =================================================================
-            # APPLY ALL SALSA CONSTRAINTS
-            # =================================================================
-            self.logger.info("Applying SALSA constraints")
-            
-            # Basic constraint: each worker has exactly one shift per day
-            shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
-            
-            # Week working days constraint based on contract type
-            week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type)
-            
-            # Maximum continuous working days constraint
-            maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
-            
-            # Maximum free days constraint
-            maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
 
-            logger.info(f"workers: {workers}, c2d: {c2d}")
-            LQ_attribution(model, shift, workers, working_days, c2d)
+            self.logger.info("Decision variables created for Stage 1")
             
-            # Closed holiday attribution constraint
-            closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
+            # Apply all constraints
+            self._apply_stage1_constraints(
+                                 model, shift, days_of_year, workers, shifts, check_shift, 
+                                 check_shift_special, working_shift, max_continuous_days, week_to_days,
+                                 working_shift_2, contract_type, special_days, holidays, total_l, c2d, c3d, working_days,
+                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, worker_holiday,
+                                 missing_days, empty_days, worker_week_shift, start_weekday, sundays,
+                                 t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
+                                 free_day_complete_cycle
+)
 
-            logger.info(f"worker_holiday: {worker_holiday}, missing_days: {missing_days}, empty_days: {empty_days}, free_day_complete_cycle: {free_day_complete_cycle}, workers_complete: {workers_complete}")
-            holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
+            self.logger.info("Constraints applied for Stage 1")
             
+            # Set up optimization objective
+            optimization_prediction(
+                model, days_of_year, workers_complete, workers_complete_cycle, working_shift, shift, pessObj, 
+                min_workers, closed_holidays, week_to_days, working_days, contract_type
+            )
             
-            # Worker week shift assignments
-            assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
-            
-            # Working day shifts constraint
-            working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
-            
-            # SALSA specific constraints
-            salsa_2_consecutive_free_days(model, shift, workers, working_days)
-            
-            self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
-            salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, 
-                                  sundays, c2d, F_special_day, days_of_year, closed_holidays)
-            
-            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year)
-
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
-                        
-            self.logger.info("All SALSA constraints applied")
+            # Solve Stage 1
+            self.logger.info("Solving Stage 1 model")
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, max_time_seconds=60, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
+            self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
-            # SET UP OPTIMIZATION OBJECTIVE
+            # STAGE 2: Refinement with 3-day weekend constraints
             # =================================================================
-            self.logger.info("Setting up SALSA optimization objective")
+            self.logger.info("Starting Stage 2: Schedule refinement")
             
-            salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days)
+            new_model = cp_model.CpModel()
+            self.model_stage2 = new_model
             
-            # =================================================================
-            # SOLVE THE MODEL
-            # =================================================================
-            self.logger.info("Solving SALSA model")
+            # Create new decision variables
+            new_shift = decision_variables(new_model, days_of_year, workers_complete, shifts)
             
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, 
-                              output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
-                                                         f'salsa_schedule_{self.process_id}.xlsx'))
+            # Apply Stage 2 constraints
+            self._apply_stage2_constraints(new_model, new_shift, days_of_year, workers, shifts,
+                                 total_l, working_days, l_q, c2d, c3d, schedule_df, start_weekday,
+                                 contract_type, closed_holidays, workers_complete, workers_complete_cycle)
             
-            self.final_schedule = pd.DataFrame(schedule_df).copy()
+            # Apply optimization (reusing from Stage 1)
+            optimization_prediction(
+                new_model, days_of_year, workers_complete, workers_complete_cycle,working_shift, new_shift, pessObj,
+                min_workers, closed_holidays, week_to_days, working_days, contract_type
+            )
             
-    # Capture solver statistics if available
-            if hasattr(model, 'solver_stats'):
-                self.solver_status = model.solver_stats.get('status', 'OPTIMAL')
-                self.solving_time_seconds = model.solver_stats.get('solving_time_seconds')
-                self.num_branches = model.solver_stats.get('num_branches')
-                self.num_conflicts = model.solver_stats.get('num_conflicts')
             
-            self.logger.info("SALSA algorithm execution completed successfully")
-            return schedule_df
+            # Solve Stage 2
+            self.logger.info("Solving Stage 2 model")
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, max_time_seconds=60, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
+            #final_schedule_df = solve_salsa_esp(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
+            self.final_schedule = pd.DataFrame(final_schedule_df).copy()
+            
+            self.logger.info("salsa_esp algorithm execution completed successfully")
+            return final_schedule_df
             
         except Exception as e:
-            self.logger.error(f"Error in SALSA algorithm execution: {e}", exc_info=True)
+            self.logger.error(f"Error in algorithm execution: {e}", exc_info=True)
             raise
 
-    # def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
-    #     """
-    #     Format the SALSA algorithm results for output.
+    def _apply_stage1_constraints(self, model, shift, days_of_year, workers, shifts, check_shift, 
+                                 check_shift_special, working_shift, max_continuous_days, week_to_days,
+                                 working_shift_2, contract_type, special_days, holidays, total_l, c2d, c3d, working_days,
+                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, worker_holiday,
+                                 missing_days, empty_days, worker_week_shift, start_weekday, sundays,
+                                 t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
+                                 free_day_complete_cycle):
+        """Apply all Stage 1 constraints to the model."""
         
-    #     Args:
-    #         algorithm_results: Final schedule DataFrame from execute_algorithm
-            
-    #     Returns:
-    #         Dictionary containing formatted results and metadata
-    #     """
-    #     try:
-    #         self.logger.info("Formatting SALSA algorithm results")
 
-    #         if algorithm_results.empty and self.final_schedule is not None:
-    #             algorithm_results = self.final_schedule
-            
-    #         if algorithm_results.empty:
-    #             self.logger.warning("No algorithm results available to format")
-    #             algorithm_results = pd.DataFrame()
+        shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
+        
+        # Constraint to limit working days in a week based on contract type
+        week_working_days_constraint(model, shift, week_to_days, workers, working_shift_2, contract_type)
+        
+        # Constraint to limit maximum continuous working days
+        maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
+        
+        # Constraint to limit maximum continuous working special days
+        maximum_continuous_working_special_days(model, shift, special_days, workers, working_shift, contract_type)
+        
+        # Constraint to limit maximum free days in a year
+        maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
+        
+        # Constraint for free days on special days
+        # free_days_special_days(model, shift, special_days, workers, working_days, total_l_dom)
+        
+        # TC attribution constraint
+        # tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days)
+        
+        # Working days special days constraint
+        working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type)
+        
+        # LQ attribution constraint
+        LQ_attribution(model, shift, workers, working_days, l_q, c2d)
+        
+        # LD attribution constraint
+        LD_attribution(model, shift, workers, working_days, l_d)
+        
+        # Closed holiday attribution
+        closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
+        
+        # Holiday, missing days and empty days attribution
+        holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
+        
+        # Worker week shift assignments #####
+        assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
+        self.logger.info(f"Debugging check_shift {check_shift}")
+        
+        # Working day shifts constraint
+        working_day_shifts(model, shift, workers, working_days, check_shift)
+        
+        # Special day shifts constraint
+        special_day_shifts(model, shift, workers, special_days, check_shift_special, working_days)
 
-    #         # Calculate basic statistics
-    #         total_workers = len(algorithm_results['Worker'].unique()) if 'Worker' in algorithm_results.columns else 0
-    #         total_days = len(algorithm_results['Day'].unique()) if 'Day' in algorithm_results.columns else 0
-    #         total_assignments = len(algorithm_results)
-            
-    #         # Count shift distributions
-    #         shift_distribution = {}
-    #         if 'Shift' in algorithm_results.columns:
-    #             shift_distribution = algorithm_results['Shift'].value_counts().to_dict()
-            
-    #         # Format results for SALSA
-    #         if not algorithm_results.empty and self.start_date and self.end_date:
-    #             # Convert to wide format similar to salsa algorithm
-    #             formatted_schedule = self.final_schedule.copy()
-                
-    #             # Create date range for column names
-    #             date_range = pd.date_range(start=self.start_date, end=self.end_date, freq='D')
-    #             new_columns = ['Worker'] + [str(date) for date in date_range]
-    #             formatted_schedule.columns = new_columns
+        # Complete cycle shifts constraint
+        complete_cycle_shifts(model, shift, workers_complete_cycle, working_days, working_shift_2)
+        
+        # Free days adjacent to weekends
+        free_day_next_2c(model, shift, workers, working_days, start_weekday, closed_holidays)
+        
+        # Limit consecutive free days during the week
+        no_free__days_close(model, shift, workers, working_days, start_weekday, week_to_days, cxx, contract_type, closed_holidays, days_of_year)
+        
+        # Day2 quality weekends
+        day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays)
+        
+        # Space LQs constraint
+        space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
+        
+        # Priority 2-3 workers constraint
+        prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, 
+                        week_to_days, contract_type, working_shift)
+        
+        # Compensation days constraint
+        compensation_days(model, shift, workers, working_days, holidays, start_weekday, 
+                     week_to_days, contract_type, working_shift)
+        
+        # Limits LDs per week
+        limits_LDs_week(model, shift, week_to_days, workers, special_days)
+    
+        # One free day weekly
+        one_free_day_weekly(model, shift, week_to_days, workers, working_days, contract_type, closed_holidays)
+        
 
-    #             # Convert to long format for consistency
-    #             melted_schedule = pd.melt(formatted_schedule, 
-    #                                     id_vars=['Worker'], 
-    #                                     var_name='Date', 
-    #                                     value_name='Status')
-    #         else:
-    #             melted_schedule = algorithm_results
+    def _apply_stage2_constraints(self, new_model, new_shift, days_of_year, workers, shifts,
+                                 total_l, working_days, l_q, c2d, c3d, schedule_df, start_weekday,
+                                 contract_type, closed_holidays, workers_complete, workers_complete_cycle):
+        """Apply Stage 2 specific constraints."""
+        
+        # Constraint for workers having an assigned shift for each day
+        shift_day_constraint(new_model, new_shift, days_of_year, workers, shifts)
+        
+        # Constraint for maximum free days in a year
+        maxi_free_days_c3d(new_model, new_shift, workers, days_of_year, total_l)
+        
+        # Constraint for maximum LQ days in a year
+        maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d)
+        
+        # Assign solution days based on the previous schedule
+        assigns_solution_days(new_model, new_shift, workers_complete, workers_complete_cycle, days_of_year, schedule_df, working_days, start_weekday, shifts)
+        
+        # Constraint for 3-day quality weekends
+        day3_quality_weekend(new_model, new_shift, workers, working_days, start_weekday, 
+                            schedule_df, c3d, contract_type, closed_holidays)
 
-    #         formatted_results = {
-    #             'schedule': algorithm_results,
-    #             'metadata': {
-    #                 'algorithm_name': self.algo_name,
-    #                 'total_workers': total_workers,
-    #                 'total_days': total_days,
-    #                 'total_assignments': total_assignments,
-    #                 'shift_distribution': shift_distribution,
-    #                 'execution_timestamp': datetime.now().isoformat(),
-    #                 'parameters_used': self.parameters
-    #             },
-    #             'formatted_schedule': melted_schedule if not algorithm_results.empty else pd.DataFrame(),
-    #             'summary': {
-    #                 'status': 'completed',
-    #                 'message': f'Successfully scheduled {total_workers} workers over {total_days} days using SALSA algorithm'
-    #             }
-    #         }
-            
-    #         self.logger.info(f"SALSA results formatted successfully: {total_assignments} assignments created")
-    #         return formatted_results
-            
-    #     except Exception as e:
-    #         self.logger.error(f"Error in SALSA results formatting: {e}", exc_info=True)
-    #         raise
-
-
-# Update the format_results method:
     def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
         """
         Format the SALSA algorithm results for output.
@@ -551,7 +572,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
     def run(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         """
-        Run the complete SALSA algorithm pipeline: adapt_data -> execute_algorithm -> format_results.
+        Run the complete algorithm pipeline: adapt_data -> execute_algorithm -> format_results.
         
         Args:
             data: Input data dictionary containing DataFrames
@@ -559,7 +580,7 @@ class SalsaAlgorithm(BaseAlgorithm):
         Returns:
             Formatted results dictionary
         """
-        self.logger.info("Running full SALSA algorithm pipeline")
+        self.logger.info("Running full salsa_esp algorithm pipeline")
         
         # Step 1: Adapt data
         adapted_data = self.adapt_data(data)
@@ -568,26 +589,8 @@ class SalsaAlgorithm(BaseAlgorithm):
         results = self.execute_algorithm(adapted_data)
         
         # Step 3: Format results
-        if (1 == 2):
-            i = 0
-            times = []
-            while (i < 1000):
-                start = time.time()
-                formatted_results = self.format_results(results)
-                print(f"\n\n\n-----------------------------------------\n\n\n{formatted_results}\n\n\n-----------------------------------------\n\n\n")
-
-                end = time.time()
-                times.append(end - start)
-                i += 1
-            print(f"Average execution time: {sum(times)/len(times):.4f} seconds")
-        else :
-            start = time.time()
-            formatted_results = self.format_results(results)
-            print(f"\n\n\n-----------------------------------------\n\n\n{formatted_results}\n\n\n-----------------------------------------\n\n\n")
-
-            end = time.time()
-            print(f"Execution time: {end - start:.4f} seconds")
-        exit(0)
-        self.logger.info("Full SALSA algorithm pipeline completed successfully")
+        formatted_results = self.format_results(results)
+        
+        self.logger.info("Full algorithm pipeline completed successfully")
 
         return formatted_results

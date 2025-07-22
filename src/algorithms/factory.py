@@ -10,6 +10,7 @@ from base_data_project.storage.models import BaseDataModel
 # Local stuff
 from src.algorithms.alcampoAlgorithm import AlcampoAlgorithm
 from src.algorithms.salsaAlgorithm import SalsaAlgorithm
+from src.algorithms.salsaEspAlgorithm import SalsaEspAlgorithm
 from src.config import PROJECT_NAME, CONFIG
 
 logger = get_logger(PROJECT_NAME)
@@ -45,6 +46,9 @@ class AlgorithmFactory:
         elif decision.lower() == 'salsa_algorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
             return SalsaAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date)
+        elif decision.lower() == 'salsa_esp_algorithm':
+            logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
+            return SalsaEspAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date)
         else:
             error_msg = f"Unsupported algorithm type: {decision}"
             logger.error(error_msg)

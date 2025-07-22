@@ -1652,6 +1652,7 @@ def _validate_constraints(algorithm_results: pd.DataFrame, data_processed: Dict[
         # Get day columns
         day_columns = []
         i = 0
+        #TODO: investigar melhor se os index i estao corretos para data_processed[].get((i, 'M'), 0)
         for col in algorithm_results.columns:
             if col != 'Worker' and col.startswith('Day'):
                 day_columns.append(col)

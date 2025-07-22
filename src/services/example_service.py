@@ -368,7 +368,8 @@ class AlgoritmoGDService(BaseService):
                 if self.stage_handler:
                     self.stage_handler.start_substage('processing', 'allocation_cycle')
                 # Type assertions to help type checker
-                algorithm_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
+                #algorithm_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
+                algorithm_name = 'salsa_esp_algorithm'
                 self.logger.info(f"DEBUG: Algorithm name before calling allocation_cycle substage: {algorithm_name}")
                 assert isinstance(algorithm_name, str)
                 assert isinstance(algorithm_params, dict)

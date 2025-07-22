@@ -343,7 +343,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, max_time_seconds=60, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
             self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
@@ -371,7 +371,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 2
             self.logger.info("Solving Stage 2 model")
-            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, max_time_seconds=60, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
             #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
             self.final_schedule = pd.DataFrame(final_schedule_df).copy()
             
