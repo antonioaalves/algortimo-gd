@@ -113,9 +113,15 @@ def solve(
         logger.info("=== ABOUT TO SOLVE ===")
 
         # Use only verified OR-Tools parameters
-        solver.parameters.num_search_workers = 8
+        #using max cores for multi threading 
+        available_cores = os.cpu_count()
+        solver.parameters.num_search_workers = max(1, available_cores)
         solver.parameters.max_time_in_seconds = max_time_seconds  # Short timeout for testing
         solver.parameters.log_search_progress = log_search_progress
+
+        testing = False
+        if testing == True:
+            solver.parameters.random_seed = 42 # useful for reproducibility
 
         if log_callback is None:
             log_calback = lambda x: logger.info(f"Solver progress: {x}")
