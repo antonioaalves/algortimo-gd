@@ -1,0 +1,11 @@
+{
+  "entities": {
+    "valid_emp": "get_process_valid_employess.sql",
+    "df_messages": "",
+    "params_algo": "",
+    "params_lq": "qry_params_LQ.sql",
+    "df_festivos": "qry_festivos.sql",
+    "df_closed_days": "qry_closed_days.sql",
+    "params_df": "queryGetAlgoParameters.sql"
+  }
+}

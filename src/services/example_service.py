@@ -93,7 +93,9 @@ class AlgoritmoGDService(BaseService):
             # Use the provided external connection (from orquestrador)
             self.raw_connection = external_raw_connection
             self.logger.info("Using external database connection for error logging")
-        elif CONFIG.get('logging', {}).get('log_errors_db', True):
+            
+        #elif CONFIG.get('logging', {}).get('log_errors_db', True):
+        elif config_manager.base_config.get('logging', {}).get('log_errors_db', True):
             from base_data_project.data_manager.managers.managers import DBDataManager
             if isinstance(data_manager, DBDataManager):
                 try:
@@ -114,7 +116,8 @@ class AlgoritmoGDService(BaseService):
         if not self.process_manager:
             return
             
-        stages_config = CONFIG.get('stages', {})
+        #stages_config = CONFIG.get('stages', {})
+        stages_config = self.config_manager.stages_config
         
         for stage_name, stage_config in stages_config.items():
             sequence = stage_config.get('sequence')

@@ -59,6 +59,7 @@ class BaseConfig:
             "project_root_dir",
             "storage_strategy",
             "available_algorithms",
+            "logging",
         ]
 
         # Validate the base configuration

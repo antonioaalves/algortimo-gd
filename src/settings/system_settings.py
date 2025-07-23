@@ -27,6 +27,13 @@ system_configs = {
         "storage_dir": "data/intermediate" # For CSV storage 
     },
 
+    "logging": {
+        'environment': 'server',  # or 'local' for development
+        'db_logging_enabled': True,
+        'df_messages_path': 'data/csvs/messages.csv',
+        'log_errors_db': True,  # Enable/disable database error logging with set_process_errors
+    },
+
     "available_algorithms": [
         "alcampo_algorithm",
         "salsa_algorithm",

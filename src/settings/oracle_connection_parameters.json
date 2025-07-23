@@ -1,0 +1,18 @@
+{
+    "production": {
+        "host": "10.175.28.20",
+        "port": 1525,
+        "service_name": "WFM_ALCAMPO_TST01.private.database.oraclevcn.com",
+        "username": "ANTONIO_ALVES",
+        "password": "4dB>(fUU77P?/",
+        "schema": "wfm"
+    },
+    "development": {
+        "host": "10.175.28.20",
+        "port": 1525,
+        "service_name": "WFM_ALCAMPO_TST01.private.database.oraclevcn.com",
+        "username": "ANTONIO_ALVES",
+        "password": "4dB>(fUU77P?/",
+        "schema": "wfm"
+    }
+}
