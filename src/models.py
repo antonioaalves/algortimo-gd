@@ -1750,7 +1750,7 @@ class DescansosDataModel(BaseDataModel):
                     cc['c3d'] = np.ceil(cc['c3d'] * div)
 
                     if (cc['c3d'] + cc['c2d']).iloc[0] > cc['lq'].iloc[0]:
-                        cc['lq'] = cc['c2d'].iloc[0] + cc['c3d'].iloc[0]
+                        cc['lq'] = cc['c2d'].iloc[0] + cc['c3d'].iloc[0] + cc['c3d'].iloc[0]
                         self.logger.error(f"Empleado {cc['matricula'].iloc[0]} sin suficiente LQ para fines de semana de calidad. Recalculated l_total: {cc['l_total'].iloc[0]}")
                 
                 # Apply business logic: C2D = C2D + C3D

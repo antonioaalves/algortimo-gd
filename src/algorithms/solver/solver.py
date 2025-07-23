@@ -113,8 +113,8 @@ def solve(
         logger.info("=== ABOUT TO SOLVE ===")
 
         # Use only verified OR-Tools parameters
-        solver.parameters.num_search_workers = 1
-        solver.parameters.max_time_in_seconds = 30  # Short timeout for testing
+        solver.parameters.num_search_workers = 8
+        solver.parameters.max_time_in_seconds = 200  # Short timeout for testing
 
         logger.info("Attempting solve with verified parameters...")
 

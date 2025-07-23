@@ -181,7 +181,7 @@ CONFIG = {
                 #    'parameters': {}
                 #},
                 'insertions': {
-                    'insert_results': False
+                    'insert_results': True
                 }
             },
             'substages': {
