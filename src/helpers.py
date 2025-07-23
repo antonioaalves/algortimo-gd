@@ -74,8 +74,11 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         
         # Execute the query - handle both cx_Oracle and SQLAlchemy connections
         if connection is None:
-            logger.error("ERROR: No database connection available")
-            return 0
+            logger.info("No database connection available. Creating new connection...")
+            connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+            if connection is None:
+                logger.error("ERROR: Failed to create database connection after retry")
+                return 0
             
         if hasattr(connection, 'cursor') and callable(getattr(connection, 'cursor')):
             # Direct cx_Oracle connection
