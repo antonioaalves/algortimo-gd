@@ -3,7 +3,7 @@
         "csvs": {},
         "intermediate": {},
         "output": {},
-        "sql_queries": {
+        "Queries": {
             "GlobalData": {},
             "sql": {},
             "WFM_Process": {}

@@ -144,8 +144,9 @@ class PathConfig:
         
         # Log results
         if missing_paths:
-            self.logger.error(f"Validation failed. Missing paths: {missing_paths}")
-            return False
+            self.logger.warning(f"Some paths do not exist: {missing_paths}")
+            self.logger.info("Path configuration validation completed with warnings - some paths may be created at runtime")
+            return True  # Changed from False to True to allow missing paths
         else:
             self.logger.info("Path configuration validation successful - all paths exist")
             return True

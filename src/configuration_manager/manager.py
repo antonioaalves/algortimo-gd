@@ -5,12 +5,13 @@
 # Local stuff
 from src.configuration_manager.path_config import PathConfig
 from src.configuration_manager.parameter_config import ParameterConfig
-from src.configuration_manager.base_config import BaseConfig
+from src.configuration_manager.system_config import SystemConfig
+from src.configuration_manager.base import BaseConfig
 from src.configuration_manager.oracle_config import OracleConfig
 from src.configuration_manager.stages_config import StagesConfig
 from base_data_project.log_config import get_logger
 
-class ConfigurationManager:
+class ConfigurationManager(BaseConfig):
     """Class used to manage the severeal configurations needed for the project"""
 
     def __init__(self):
@@ -18,12 +19,12 @@ class ConfigurationManager:
         self.logger = get_logger(project_name="algoritmo_GD")
 
         # Load the configuration files
-        self.base_config = self.load_base_config()
+        self.system_config = self.load_system_config()
 
         # Retrieve important variables
-        use_db = self.base_config["use_db"]
-        project_root_dir = self.base_config["project_root_dir"]
-        environment = self.base_config["environment"]
+        use_db = self.system_config["use_db"]
+        project_root_dir = self.system_config["project_root_dir"]
+        environment = self.system_config["environment"]
 
         if use_db:
             self.oracle_config = self.load_oracle_config(environment=environment)
@@ -34,9 +35,9 @@ class ConfigurationManager:
         self.parameter_config = self.load_parameter_config()
         self.stages_config = self.load_stages_config()
 
-    def load_base_config(self):
+    def load_system_config(self):
         """Load the configuration file"""
-        return BaseConfig()
+        return SystemConfig()
 
     def load_oracle_config(self, environment: str):
         """Load the Oracle configuration file"""

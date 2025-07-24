@@ -17,20 +17,18 @@ from src.settings.log_parameters import log_parameters
 from src.configuration_manager.manager import ConfigurationManager
 from src.services.example_service import AlgoritmoGDService
 
-project_name = log_parameters.get("project_name", 'algoritmo_GD')
+config_manager = ConfigurationManager()
 
 # Initialize logger with configuration first
 setup_logger(
-    project_name=project_name,
-    log_level=log_parameters.get('log_level', 'INFO'),
-    log_dir=log_parameters.get('log_dir', 'logs'),
-    console_output=log_parameters.get('console_output', True)
+    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD'),
+    log_level=config_manager.system_config.get('logging', {}).get('log_level', 'INFO'),
+    log_dir=config_manager.system_config.get('logging', {}).get('log_dir', 'logs'),
+    console_output=True
 )
 
 # Then get the logger instance for use throughout the file
-logger = get_logger(project_name)
-
-config_manager = ConfigurationManager()
+logger = get_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'))
 
 def run_batch_process(data_manager, process_manager, algorithm="example_algorithm", external_call_dict=None, external_raw_connection=None):
     """
@@ -55,7 +53,7 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             external_call_dict=external_call_dict or {},
             external_raw_connection=external_raw_connection,
             config_manager=config_manager,
-            project_name=project_name
+            project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
         )
         
         # Initialize a new process
@@ -77,7 +75,8 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             # Execute stage without user interaction
             if stage == 'processing':
                 # Prepare algorithm parameters if needed
-                algorithm_params = CONFIG.get('algorithm_defaults', {}).get(algorithm, {})
+                #algorithm_params = CONFIG.get('algorithm_defaults', {}).get(algorithm, {})
+                algorithm_params = config_manager.parameter_config.get('algorithm_defaults', {})
                 success = service.execute_stage(stage, algorithm_name=algorithm, algorithm_params=algorithm_params)
             else:
                 success = service.execute_stage(stage)
@@ -106,8 +105,9 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             click.echo()
         
         # Display output location
-        output_dir = os.path.abspath(CONFIG.get('output_dir', "data/output"))
-        
+        #output_dir = os.path.abspath(CONFIG.get('output_dir', "data/output"))
+        output_dir = os.path.join(config_manager.system_config.get('project_root_dir'), 'data', 'output')
+
         click.echo(click.style("Output Files:", fg="blue", bold=True))
         click.echo(f"Results have been saved to: {output_dir}")
         click.echo()

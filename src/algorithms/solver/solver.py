@@ -8,13 +8,22 @@ from openpyxl.styles import PatternFill
 import logging
 from typing import Dict, Any, List, Tuple, Optional, Callable
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
-from src.config import ROOT_DIR
+from src.configuration_manager.manager import ConfigurationManager
+
+# Get configuration manager instance
+_config_manager = None
+
+def get_config_manager():
+    """Get or create the global configuration manager instance."""
+    global _config_manager
+    if _config_manager is None:
+        _config_manager = ConfigurationManager()
+    return _config_manager
 import os
 import psutil
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
 
 #----------------------------------------SOLVER-----------------------------------------------------------
 def solve(

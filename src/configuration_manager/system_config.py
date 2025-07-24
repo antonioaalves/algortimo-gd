@@ -3,8 +3,7 @@
 # Local stuff
 from base_data_project.log_config import get_logger
 
-
-class BaseConfig:
+class SystemConfig:
     """Class used to import the base configuration"""
 
     def __init__(self):

@@ -7,7 +7,8 @@
         "params_lq": "qry_params_LQ.sql",
         "df_festivos": "qry_festivos.sql",
         "df_closed_days": "qry_closed_days.sql",
-        "params_df": "queryGetAlgoParameters.sql"
+        "params_df": "queryGetAlgoParameters.sql",
+        "insert_results_df": "insert_results.sql"
     },
     "sql_auxiliary_paths": {
         "df_ausencias_ferias": "queryGetAusencias.sql",

@@ -11,9 +11,10 @@ import os
 # Import base algorithm class
 from base_data_project.algorithms.base import BaseAlgorithm
 from base_data_project.log_config import get_logger
+from src.configuration_manager.base import BaseConfig
 
 # Import project-specific components
-from src.config import PROJECT_NAME, ROOT_DIR
+#from src.config import PROJECT_NAME, ROOT_DIR
 
 # Import shift scheduler components
 from src.algorithms.model_alcampo.variables import decision_variables
@@ -30,8 +31,6 @@ from src.algorithms.model_alcampo.alcampo_constraints import (
 from src.algorithms.model_alcampo.optimization_alcampos import optimization_prediction
 from src.algorithms.solver.solver import solve
 
-# Set up logger
-logger = get_logger(PROJECT_NAME)
 
 class AlcampoAlgorithm(BaseAlgorithm):
     """
@@ -48,7 +47,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
     worker contracts, labor laws, and operational requirements.
     """
 
-    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0, start_date: str = '', end_date: str = ''):
+    def __init__(self, parameters=None, algo_name: str = 'alcampo_algorithm', project_name: str = 'algoritmo_GD', process_id: int = 0, start_date: str = '', end_date: str = '', config_manager: BaseConfig = None):
         """
         Initialize the Alcampo Algorithm.
         
@@ -56,6 +55,16 @@ class AlcampoAlgorithm(BaseAlgorithm):
             parameters: Dictionary containing algorithm configuration
             algo_name: Name identifier for the algorithm
         """
+        self.logger = get_logger(project_name)
+        self.logger.info(f"Initializing {algo_name} algorithm")
+        
+        if config_manager is None:
+            self.logger.error(f"config_manager is None. Please configure the file config.py. config_manager: {config_manager}, type: {type(config_manager)}")
+            raise ValueError(f"config_manager is None. Please configure the file config.py. config_manager: {config_manager}, type: {type(config_manager)}")
+        
+        self.config_manager = config_manager
+        project_name = self.config_manager.system_config.get('project_name', 'algoritmo_GD')
+
         # Default parameters for the algorithm
         default_parameters = {
             "shifts": ["M", "T", "L", "LQ", "F", "V", "LD", "A", "TC"],
@@ -78,7 +87,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             default_parameters.update(parameters)
         
         # Initialize the parent class with algorithm name and parameters
-        super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=PROJECT_NAME)
+        super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=project_name)
         
         # Initialize algorithm-specific attributes
         self.data_processed = None
@@ -343,7 +352,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(self.config_manager.base_config.get('project_root_dir'), 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
             self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
@@ -371,7 +380,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 2
             self.logger.info("Solving Stage 2 model")
-            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(self.config_manager.base_config.get('project_root_dir'), 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
             #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
             self.final_schedule = pd.DataFrame(final_schedule_df).copy()
             

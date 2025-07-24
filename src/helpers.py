@@ -11,8 +11,17 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 
 # Local stuff
-from src.oracle_config import ORACLE_CONFIG
-from src.config import PROJECT_NAME
+from src.configuration_manager.manager import ConfigurationManager
+
+# Get configuration manager instance
+_config_manager = None
+
+def get_config_manager():
+    """Get or create the global configuration manager instance."""
+    global _config_manager
+    if _config_manager is None:
+        _config_manager = ConfigurationManager()
+    return _config_manager
 from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
@@ -139,10 +148,11 @@ def replace_placeholders(template, values_dict):
 
 def get_oracle_url_cx():
     """Create Oracle connection URL for cx_Oracle driver"""
-    return (f"oracle+cx_oracle://{ORACLE_CONFIG['username']}:"
-            f"{ORACLE_CONFIG['password']}@"
-            f"{ORACLE_CONFIG['host']}:{ORACLE_CONFIG['port']}/"
-            f"?service_name={ORACLE_CONFIG['service_name']}")
+    config_manager = get_config_manager()
+    if config_manager.oracle_config is None:
+        raise ValueError("Oracle configuration not available - use_db is False")
+    
+    return config_manager.oracle_config.get_connection_url()
 
 def insert_feriados(df_feriados: pd.DataFrame, reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
     """

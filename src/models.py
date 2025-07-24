@@ -26,6 +26,7 @@ from src.helpers import (
 )
 from src.load_csv_functions.load_valid_emp import load_valid_emp_csv
 from src.algorithms.factory import AlgorithmFactory
+from src.configuration_manager.base import BaseConfig 
 from base_data_project.data_manager.managers.base import BaseDataManager
 from base_data_project.data_manager.managers.managers import CSVDataManager, DBDataManager
 from base_data_project.storage.models import BaseDataModel
@@ -139,7 +140,7 @@ class DescansosDataModel(BaseDataModel):
             'stage2_schedule': None,
         }
         # External call data coming from the product
-        self.external_call_data = external_data
+        self.external_call_data = self.config_manager.parameter_config.get('external_call_data', {})
         
         self.logger.info("DescansosDataModel initialized")
     
@@ -161,7 +162,8 @@ class DescansosDataModel(BaseDataModel):
         error_message = None
         try:
             self.logger.info(f"DEBUGGING: Loading messages_df from CSV file")
-            messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
+            #messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
+            messages_path = self.config_manager.path_config.get('dummy_data_filepaths').get('df_messages', '')
             messages_df = pd.read_csv(messages_path)
             self.logger.info(f"DEBUGGING: messages_df loaded successfully with {len(messages_df)} rows")
         except Exception as e:
@@ -360,8 +362,11 @@ class DescansosDataModel(BaseDataModel):
             # Treat params
             self.logger.info(f"Treating parameters in load_process_data")
             params_df = self.auxiliary_data['params_df'].copy()
-            params_names_list = CONFIG.get('parameters_names', [])
-            params_defaults = CONFIG.get('parameters_defaults', {})
+            #params_names_list = CONFIG.get('parameters_names', [])
+            #params_defaults = CONFIG.get('parameters_defaults', {})
+            params_names_list = self.config_manager.parameter_config.process_parameters.get('parameters_names', [])
+            params_defaults = self.config_manager.parameter_config.process_parameters.get('parameters_defaults', {})
+            
             self.logger.info(f"params_df before treatment:\n{params_df}")
 
             # Get all parameters in one call
@@ -433,7 +438,9 @@ class DescansosDataModel(BaseDataModel):
             try:
                 # colaborador info
                 self.logger.info(f"Loading df_colaborador info from data manager")
-                query_path = CONFIG.get('available_entities_raw', {}).get('df_colaborador')
+                #query_path = CONFIG.get('available_entities_raw', {}).get('df_colaborador')
+                query_path = self.config_manager.path_config.available_entities_raw.get('df_colaborador')
+
                 df_colaborador = data_manager.load_data('df_colaborador', query_file=query_path, colabs_id=colabs_str)
                 df_colaborador = df_colaborador.rename(columns={'ec.codigo': 'fk_colaborador', 'codigo': 'fk_colaborador'})
                 self.logger.info(f"df_colaborador shape (rows {df_colaborador.shape[0]}, columns {df_colaborador.shape[1]}): {df_colaborador.columns.tolist()}")
@@ -529,7 +536,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_estrutura_wfm from data manager")
                 # Estrutura wfm information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_estrutura_wfm', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_estrutura_wfm', '')
+                query_path = self.config_manager.path_config.available_entities_aux.get('df_estrutura_wfm', '')
                 if not query_path:
                     self.logger.warning("df_estrutura_wfm query path not found in config")
                 df_estrutura_wfm = data_manager.load_data('df_estrutura_wfm', query_file=query_path)
@@ -541,7 +549,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_feriados from data manager")
                 # feriados information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_feriados', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_feriados', '')
+                query_path = self.config_manager.path_config.available_entities_aux.get('df_feriados', '')
                 if not query_path:
                     self.logger.warning("df_feriados query path not found in config")
                 df_feriados = data_manager.load_data('df_feriados', query_file=query_path)
@@ -553,7 +562,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_faixa_horario from data manager")
                 # faixa horario information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_faixa_horario', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_faixa_horario', '')
+                query_path = self.config_manager.path_config.available_entities_aux.get('df_faixa_horario', '')
                 if not query_path:
                     self.logger.warning("df_faixa_horario query path not found in config")
                 df_faixa_horario = data_manager.load_data('df_faixa_horario', query_file=query_path)
@@ -565,7 +575,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_orcamento from data manager")
                 # orcamento information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_orcamento', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_orcamento', '')
+                query_path = self.config_manager.path_config.available_entities_aux.get('df_orcamento', '')
                 if not query_path:
                     self.logger.warning("df_orcamento query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
@@ -579,7 +590,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_granularidade from data manager")
                 # granularidade information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_granularidade', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_granularidade', '')
+                query_path = self.config_manager.path_config.available_entities_aux.get('df_granularidade', '')
                 if not query_path:
                     self.logger.warning("df_granularidade query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
@@ -801,7 +813,8 @@ class DescansosDataModel(BaseDataModel):
                 # Only query if we have employees and the date range makes sense
                 if len(colabs_passado) > 0 and start_date_dt != pd.to_datetime(first_date_passado):
                     self.logger.info("Loading df_calendario_passado since conditions are met")
-                    query_path = CONFIG.get('available_entities_aux', {}).get('df_calendario_passado', '')
+                    #query_path = CONFIG.get('available_entities_aux', {}).get('df_calendario_passado', '')
+                    query_path = self.config_manager.path_config.available_entities_aux.get('df_calendario_passado', '')
                     if not query_path:
                         self.logger.warning("df_calendario_passado query path not found in config")
                         df_calendario_passado = pd.DataFrame()
@@ -845,7 +858,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_ausencias_ferias from data manager")
                 # Ausencias ferias information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_ausencias_ferias', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_ausencias_ferias', '')
+                query_path = self.config_manager.path_config.available_entities_aux.get('df_ausencias_ferias', '')
                 if query_path:
                     colabs_id="'" + "','".join([str(x) for x in colaborador_list]) + "'"
                     df_ausencias_ferias = data_manager.load_data(
@@ -865,7 +879,8 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info("Loading df_ciclos_90 from data manager")
                 # Ciclos de 90
                 if len(colaborador_90_list) > 0:
-                    query_path = CONFIG.get('available_entities_aux', {}).get('df_ciclos_90', '')
+                    #query_path = CONFIG.get('available_entities_aux', {}).get('df_ciclos_90', '')
+                    query_path = self.config_manager.path_config.available_entities_aux.get('df_ciclos_90', '')
                     if query_path:
                         df_ciclos_90 = data_manager.load_data(
                             'df_ciclos_90', 
@@ -888,7 +903,8 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info("Loading df_days_off from data manager")
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_days_off', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_days_off', '')
+                query_path = self.config_manager.path_config.available_entities_aux.get('df_days_off', '')
                 if query_path:
                     colabs_id="'" + "','".join([str(x) for x in colaborador_list]) + "'"
                     df_days_off = data_manager.load_data(
@@ -3567,11 +3583,13 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info(f"Creating algorithm instance for: {algorithm_name}")
                 algorithm = AlgorithmFactory.create_algorithm(
+                    project_name=self.config_manager.system_config.get('project_name', 'algoritmo_GD'),
                     decision=algorithm_name,
                     parameters=algorithm_params,
                     process_id=self.external_call_data.get("current_process_id", 0),
                     start_date=self.external_call_data.get("start_date", ''),
-                    end_date=self.external_call_data.get("end_date", '')
+                    end_date=self.external_call_data.get("end_date", ''),
+                    config_manager=self.config_manager
                 )
 
                 if not algorithm:
@@ -3738,12 +3756,13 @@ class DescansosDataModel(BaseDataModel):
             self.logger.error(f"Error validating format_results from data manager: {str(e)}")
             return False
         
-    def insert_results(self, data_manager: BaseDataManager, query_path: str = os.path.join(ROOT_DIR, 'src', 'sql_querys', 'insert_results.sql')) -> bool:
+    def insert_results(self, data_manager: BaseDataManager, query_path: str = os.path.join('C:\\ALCAMPO\\python-algorithms\\algortimo-gd', 'src', 'sql_querys', 'insert_results.sql')) -> bool:
         """
         Method for inserting results in the data source.
         """
         try:
             self.logger.info("Entered insert_results method.")
+            query_path = self.config_manager.path_config.available_entities_processing.get('insert_results_df', '')
             final_df = self.formatted_data['df_final'].copy()
 
             try:

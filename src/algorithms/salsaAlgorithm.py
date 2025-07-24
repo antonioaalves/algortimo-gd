@@ -12,7 +12,17 @@ from base_data_project.algorithms.base import BaseAlgorithm
 from base_data_project.log_config import get_logger
 
 # Import project-specific components
-from src.config import PROJECT_NAME, ROOT_DIR
+from src.configuration_manager.manager import ConfigurationManager
+
+# Get configuration manager instance
+_config_manager = None
+
+def get_config_manager():
+    """Get or create the global configuration manager instance."""
+    global _config_manager
+    if _config_manager is None:
+        _config_manager = ConfigurationManager()
+    return _config_manager
 
 # Import shift scheduler components
 from src.algorithms.model_salsa.variables import decision_variables
@@ -33,7 +43,7 @@ from src.helpers import (_create_empty_results, _calculate_comprehensive_stats,
 
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
 
 class SalsaAlgorithm(BaseAlgorithm):
     """
@@ -48,7 +58,7 @@ class SalsaAlgorithm(BaseAlgorithm):
     worker contracts, labor laws, and SALSA-specific operational requirements.
     """
 
-    def __init__(self, parameters=None, algo_name: str = 'salsa_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0, start_date: str = '', end_date: str = ''):
+    def __init__(self, parameters=None, algo_name: str = 'salsa_algorithm', project_name: str = None, process_id: int = 0, start_date: str = '', end_date: str = ''):
         """
         Initialize the SALSA Algorithm.
         
@@ -78,6 +88,10 @@ class SalsaAlgorithm(BaseAlgorithm):
         # Merge with provided parameters
         if parameters:
             default_parameters.update(parameters)
+        
+        # Set project name if not provided
+        if project_name is None:
+            project_name = get_config_manager().system_config.get('project_name', 'algoritmo_GD')
         
         # Initialize the parent class with algorithm name and parameters
         super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=project_name)
