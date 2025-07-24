@@ -3525,7 +3525,6 @@ class DescansosDataModel(BaseDataModel):
             df_colaborador = self.medium_data['df_colaborador'].copy()
             self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
             df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao']]
-
             self.logger.info(f"Adding wfm_proc_id to final_df")
             final_df['wfm_proc_id'] = self.external_call_data.get("current_process_id", "")
             self.logger.info(f"DEBUG: final_df: {final_df}")
@@ -3592,7 +3591,6 @@ class DescansosDataModel(BaseDataModel):
         try:
             self.logger.info("Entered insert_results method.")
             final_df = self.formatted_data['df_final'].copy()
-
             try:
                 self.logger.info(f"Changing column names to match insert_results query")
                 # Select desired columns
@@ -3604,7 +3602,6 @@ class DescansosDataModel(BaseDataModel):
             except Exception as e:
                 self.logger.error(f"Error treating final_df column names for insertion: {str(e)}")
                 return False
-
             try:
                 valid_insertion = bulk_insert_with_query(
                     data_manager=data_manager, 

@@ -119,7 +119,7 @@ def solve(
         solver.parameters.max_time_in_seconds = max_time_seconds  # Short timeout for testing
         solver.parameters.log_search_progress = log_search_progress
 
-        testing = False
+        testing = True
         if testing == True:
             solver.parameters.random_seed = 42 # useful for reproducibility
 

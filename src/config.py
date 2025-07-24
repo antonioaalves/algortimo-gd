@@ -181,7 +181,7 @@ CONFIG = {
                 #    'parameters': {}
                 #},
                 'insertions': {
-                    'insert_results': False #false para nao mandar para a base de dados
+                    'insert_results': True #false para nao mandar para a base de dados
                 }
             },
             'substages': {

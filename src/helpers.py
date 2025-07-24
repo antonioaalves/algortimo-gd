@@ -1386,7 +1386,8 @@ def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
         '-': 'N',
         'V': 'T',
         'A': 'T',
-        'DFS': 'T'
+        'DFS': 'T',
+        'TC':'T'
     }
     
     # Define mapping for sched_subtype
@@ -1404,7 +1405,8 @@ def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
         '-': '',
         'V': 'A',
         'A': 'A',
-        'DFS': 'C'
+        'DFS': 'C',
+        'TC':'T'
     }
     
     # Apply mappings
