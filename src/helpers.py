@@ -1406,7 +1406,7 @@ def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
         'V': 'A',
         'A': 'A',
         'DFS': 'C',
-        'TC':'T'
+        'TC':'C'
     }
     
     # Apply mappings
