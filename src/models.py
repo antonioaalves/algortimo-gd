@@ -14,7 +14,7 @@ from isoweek import Week
 import json
 
 # Import project-specific components
-from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
+#from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
 from src.helpers import (
     calcular_max, count_open_holidays, 
     insert_feriados, insert_closed_days, insert_holidays_absences,
@@ -44,7 +44,7 @@ class DescansosDataModel(BaseDataModel):
     - Tracking data lineage and operations
     """
     
-    def __init__(self, data_container: BaseDataContainer, project_name: str = PROJECT_NAME, external_data: Dict[str, Any] = CONFIG.get('defaults_external_data', {})):
+    def __init__(self, data_container: BaseDataContainer, project_name: str = 'algoritmo_GD', config_manager: BaseConfig = None):
         """Initialize the DescansosDataModel with data dictionaries for storing dataframes.
         
         Args:

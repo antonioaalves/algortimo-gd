@@ -51,6 +51,8 @@ class AlgoritmoGDService(BaseService):
         if config_manager is None:
             config_manager = ConfigurationManager()
         
+        self.config_manager = config_manager
+
         # Work around the config property issue
         if process_manager:
             try:
@@ -178,10 +180,10 @@ class AlgoritmoGDService(BaseService):
             
             # Load each entity
             self.data = DescansosDataModel(
-                data_container=BaseDataContainer(config=config_manager, project_name=project_name),
-                    project_name=project_name,
-                    external_data=self.external_data if self.external_data else {}
-                )
+                data_container=BaseDataContainer(config=self.config_manager, project_name=self.config_manager.base_config.get('project_name', 'algoritmo_GD')),
+                project_name=self.config_manager.base_config.get('project_name', 'algoritmo_GD'),
+                external_data=self.external_data if self.external_data else {}
+            )
             
             # Declare the messages dataframe
             messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
@@ -208,7 +210,8 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        #pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -242,7 +245,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -281,7 +284,7 @@ class AlgoritmoGDService(BaseService):
             if self.raw_connection and not messages_df.empty:
                 set_process_errors(
                     connection=self.raw_connection,
-                    pathOS=ROOT_DIR,
+                    pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
                     type_error='I',
@@ -307,7 +310,7 @@ class AlgoritmoGDService(BaseService):
             if self.raw_connection and not messages_df.empty:
                 set_process_errors(
                     connection=self.raw_connection,
-                    pathOS=ROOT_DIR,
+                    pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
                     type_error='E',
@@ -351,7 +354,7 @@ class AlgoritmoGDService(BaseService):
                 #algorithm_name = self.process_manager.current_decisions.get(stage_sequence, {}).get('algorithm', {}).get('name', algorithm_name)
                 #algorithm_params = self.process_manager.current_decisions.get(stage_sequence, {}).get('algorithm', {}).get('parameters', algorithm_params)
                 self.logger.info(f"Looking for defaults with stage_sequence: {stage_sequence}, type: {type(stage_sequence)}")
-                stage_config = CONFIG.get('stages', {}).get('processing', {})
+                stage_config = self.config_manager.stages_config.get('processing', {})
                 decisions = stage_config.get('decisions', {})
 
                 #self.logger.info(f"DEBUG: Decisions: {decisions}")
@@ -418,7 +421,7 @@ class AlgoritmoGDService(BaseService):
                     #self.logger.info(f"DEBUG SERVICE: INSIDE IF CONDITION for posto {posto_id}!")
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='I',
@@ -449,7 +452,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -481,7 +484,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -513,7 +516,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -550,7 +553,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -582,7 +585,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -615,7 +618,7 @@ class AlgoritmoGDService(BaseService):
                         if self.raw_connection and not messages_df.empty:
                             set_process_errors(
                                 connection=self.raw_connection,
-                                pathOS=ROOT_DIR,
+                                pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                                 user='WFM',
                                 fk_process=self.external_data['current_process_id'],
                                 type_error='E',
@@ -644,7 +647,7 @@ class AlgoritmoGDService(BaseService):
             if self.raw_connection and not messages_df.empty:
                 set_process_errors(
                     connection=self.raw_connection,
-                    pathOS=ROOT_DIR,
+                    pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
                     type_error='I',
@@ -662,7 +665,7 @@ class AlgoritmoGDService(BaseService):
             if self.raw_connection and not messages_df.empty:
                 set_process_errors(
                     connection=self.raw_connection,
-                    pathOS=ROOT_DIR,
+                    pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
                     type_error='E',
@@ -710,7 +713,7 @@ class AlgoritmoGDService(BaseService):
                 description = set_messages(messages_df, 'iniSubprocPosto', {'1': child_num, '2': 'param_treatment'})
                 set_process_errors(
                     connection=self.raw_connection,
-                    pathOS=ROOT_DIR,
+                    pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
                     type_error='I',
@@ -844,7 +847,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -877,7 +880,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -908,7 +911,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='I',
@@ -937,7 +940,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -974,7 +977,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -1007,7 +1010,7 @@ class AlgoritmoGDService(BaseService):
                         for description in description_list:
                             set_process_errors(
                                 connection=self.raw_connection,
-                                pathOS=ROOT_DIR,
+                                pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                                 user='WFM',
                                 fk_process=self.external_data['current_process_id'],
                                 type_error='E',
@@ -1033,7 +1036,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='I',
@@ -1056,7 +1059,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -1095,7 +1098,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -1122,7 +1125,7 @@ class AlgoritmoGDService(BaseService):
                         for description in description_list:
                             set_process_errors(
                                 connection=self.raw_connection,
-                                pathOS=ROOT_DIR,
+                                pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                                 user='WFM',
                                 fk_process=self.external_data['current_process_id'],
                                 type_error='E',
@@ -1149,7 +1152,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='I',
@@ -1172,7 +1175,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -1204,7 +1207,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -1228,7 +1231,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -1260,7 +1263,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -1284,7 +1287,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -1317,7 +1320,7 @@ class AlgoritmoGDService(BaseService):
                     if self.raw_connection and not messages_df.empty:
                         set_process_errors(
                             connection=self.raw_connection,
-                            pathOS=ROOT_DIR,
+                            pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
                             type_error='E',
@@ -1340,7 +1343,7 @@ class AlgoritmoGDService(BaseService):
                 if self.raw_connection and not messages_df.empty:
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -1643,7 +1646,7 @@ class AlgoritmoGDService(BaseService):
                     )
                 set_process_errors(
                     connection=self.raw_connection,
-                    pathOS=ROOT_DIR,
+                    pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
                     type_error='E',
@@ -1673,7 +1676,7 @@ class AlgoritmoGDService(BaseService):
                     )
                     set_process_errors(
                         connection=self.raw_connection,
-                        pathOS=ROOT_DIR,
+                        pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
                         type_error='E',
@@ -1697,7 +1700,7 @@ class AlgoritmoGDService(BaseService):
                 )
             set_process_errors(
                 connection=self.raw_connection,
-                pathOS=ROOT_DIR,
+                pathOS=self.config_manager.base_config.get('project_root_dir', ''),
                 user='WFM',
                 fk_process=self.external_data['current_process_id'],
                 type_error='I',
