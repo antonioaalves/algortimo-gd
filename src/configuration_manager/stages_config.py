@@ -1,207 +1,318 @@
-"""File containing the stages configuration class"""
+"""
+Process stages and workflow configuration management.
 
-# Dependencies
-from typing import Dict, Any
+This module handles workflow stage definitions including:
+- Stage sequences and dependencies
+- Stage-specific configurations
+- Workflow orchestration settings
 
-# Local stuff
+Configuration is loaded from src/settings/project_structure.py
+"""
+
+from typing import Dict, Any, List, Optional
 from base_data_project.log_config import get_logger
 
+
 class StagesConfig:
-    """Class used to manage the stages configuration"""
-
-    def __init__(self):
-        """Initialize the stages configuration"""
-        self.logger = get_logger(project_name="algoritmo_GD")
-
-        # Load the stages configuration
-        self.stages_config_dict = self.load_stages_config()
-
-        # Validate the stages configuration
-        if not self.validate_stages_config():
-            raise ValueError("Stages configuration validation failed")
-
-    def __getitem__(self, key):
-        """Allow dictionary-style access to config values"""
-        return self.stages_config_dict[key]
+    """
+    Process stages and workflow configuration management.
     
-    def __contains__(self, key):
-        """Allow 'in' operator to check if key exists"""
-        return key in self.stages_config_dict
+    This class manages workflow stage definitions that control the
+    execution sequence and configuration of different process phases.
     
-    def get(self, key, default=None):
-        """Safe dictionary-style access with default value"""
-        return self.stages_config_dict.get(key, default)
+    Dynamic dictionary (structure depends on configuration):
+        stages: Dict[str, Any] - Complete stages configuration including:
+            - Stage definitions with sequences
+            - Stage-specific parameters
+            - Dependencies and execution order
+            - Any custom stage configurations
+    """
     
-    def keys(self):
-        """Return config keys"""
-        return self.stages_config_dict.keys()
+    def __init__(self, project_name: str):
+        """
+        Initialize stages configuration.
+        
+        Args:
+            project_name: Project name for logging purposes
+            
+        Raises:
+            FileNotFoundError: If project_structure.py cannot be imported
+            ValueError: If configuration validation fails
+        """
+        self.logger = get_logger(project_name)
+        
+        # Load stages configuration
+        self.stages: Dict[str, Any] = self._load_stages_config()
+        
+        self._validate_stages()
+        self.logger.info("Stages configuration loaded successfully")
     
-    def items(self):
-        """Return config items"""
-        return self.stages_config_dict.items()
-
-    def load_stages_config(self) -> Dict[str, Any]:
-        """Load the stages configuration from config.py"""
+    def _load_stages_config(self) -> Dict[str, Any]:
+        """
+        Load stages configuration from project structure module.
+        
+        Returns:
+            Dict[str, Any]: Complete stages configuration
+            
+        Raises:
+            FileNotFoundError: If project_structure.py cannot be imported
+            ValueError: If configuration loading fails
+        """
         try:
             from src.settings.project_structure import project_structure
-            self.logger.info(f"Stages configuration loaded successfully")
+            self.logger.info("Stages configuration imported successfully")
             return project_structure
         except ImportError:
-            self.logger.error(f"Error importing project_structure from project_structure.py")
-            raise ImportError(f"Error importing project_structure from project_structure.py")
+            raise FileNotFoundError("Could not import project_structure from project_structure.py")
         except Exception as e:
-            self.logger.error(f"Error loading stages configuration: {e}")
-            raise e
-
-    def validate_stages_config(self) -> bool:
-        """Validate the stages configuration - TO BE IMPLEMENTED BY USER"""
-        # TODO: Implement validation logic as needed
-        # For now, just check if stages config exists
-        if not self.stages_config_dict:
-            self.logger.error("Stages configuration is empty")
-            return False
-
-        # Check if the stages configuration is valid
-        if not self.stages_config_dict:
-            self.logger.error("Stages configuration is empty")
-            return False
+            raise ValueError(f"Error loading stages configuration: {e}")
+    
+    def _validate_stages(self) -> None:
+        """
+        Validate stages configuration structure.
         
-        if not self.stages_config_dict.get("stages"):
-            self.logger.error("Stages configuration is empty or it does not contain the 'stages' key")
-            return False
-
-        if len(self.stages_config_dict.get("stages")) == 0:
-            self.logger.error("Stages configuration is empty or it does not contain any stages")
-            return False
-
-        # Cycle through the stages and ensure everything is conforming
-        stages = self.stages_config_dict.get("stages", {})
+        Raises:
+            ValueError: If stages configuration is invalid
+        """
+        if not isinstance(self.stages, dict):
+            raise ValueError("Stages configuration must be a dictionary")
         
-        # Collect stage sequences for validation
-        stage_sequences = []
-        stage_sequences_by_name = {}
+        if not self.stages:
+            self.logger.warning("Stages configuration is empty")
+        else:
+            # Validate that each stage has basic required structure
+            for stage_name, stage_config in self.stages.items():
+                if not isinstance(stage_config, dict):
+                    raise ValueError(f"Stage '{stage_name}' configuration must be a dictionary")
         
-        for stage_name, stage_config in stages.items():
-            if not isinstance(stage_config, dict):
-                self.logger.error(f"Stage '{stage_name}' configuration must be a dictionary")
-                return False
+        self.logger.info("Stages configuration validation passed")
+    
+    def get_all_stages(self) -> Dict[str, Any]:
+        """
+        Get all configured stages.
+        
+        Returns:
+            Dict[str, Any]: Complete stages configuration
+        """
+        return self.stages.copy()
+    
+    def get_stage_names(self) -> List[str]:
+        """
+        Get list of all configured stage names.
+        
+        Returns:
+            List[str]: List of stage names
+        """
+        return list(self.stages.keys())
+    
+    def get_stage_config(self, stage_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get configuration for a specific stage.
+        
+        Args:
+            stage_name: Name of the stage
             
-            # Validate required fields
-            required_fields = ["sequence", "requires_previous", "validation_required"]
-            for field in required_fields:
-                if field not in stage_config:
-                    self.logger.error(f"Stage '{stage_name}' missing required field: {field}")
-                    return False
+        Returns:
+            Optional[Dict[str, Any]]: Stage configuration or None if not found
+        """
+        return self.stages.get(stage_name)
+    
+    def has_stage(self, stage_name: str) -> bool:
+        """
+        Check if a stage is configured.
+        
+        Args:
+            stage_name: Name of the stage to check
             
-            # Collect sequence for later validation
+        Returns:
+            bool: True if stage exists in configuration
+        """
+        return stage_name in self.stages
+    
+    def get_stage_sequence(self, stage_name: str) -> Optional[int]:
+        """
+        Get the sequence number for a specific stage.
+        
+        Args:
+            stage_name: Name of the stage
+            
+        Returns:
+            Optional[int]: Stage sequence number or None if not found/configured
+        """
+        stage_config = self.get_stage_config(stage_name)
+        if stage_config:
+            return stage_config.get("sequence")
+        return None
+    
+    def get_stages_by_sequence(self) -> List[tuple]:
+        """
+        Get stages ordered by their sequence number.
+        
+        Returns:
+            List[tuple]: List of (stage_name, sequence_number) ordered by sequence
+        """
+        stages_with_sequence = []
+        
+        for stage_name, stage_config in self.stages.items():
             sequence = stage_config.get("sequence")
             if sequence is not None:
-                stage_sequences.append(sequence)
-                stage_sequences_by_name[stage_name] = sequence
-                
-            for key, value in stage_config.items():
-                if key == "sequence":
-                    if not isinstance(value, int) or value < 0:
-                        self.logger.error(f"Stage '{stage_name}' has an invalid sequence number: {value}")
-                        return False
-                elif key == "requires_previous":
-                    if not isinstance(value, bool):
-                        self.logger.error(f"Stage '{stage_name}' has an invalid requires_previous value: {value}")
-                        return False
-                elif key == "validation_required":
-                    if not isinstance(value, bool):
-                        self.logger.error(f"Stage '{stage_name}' has an invalid validation_required value: {value}")
-                        return False
-                elif key == "decisions":
-                    if not isinstance(value, dict):
-                        self.logger.error(f"Stage '{stage_name}' has an invalid decisions value: {value}")
-                        return False
-                elif key == "substages":
-                    if not isinstance(value, dict):
-                        self.logger.error(f"Stage '{stage_name}' has an invalid substages value: {value}")
-                        return False
-                    
-                    # Validate substages
-                    substage_sequences = []
-                    for substage_name, substage_config in value.items():
-                        if not isinstance(substage_config, dict):
-                            self.logger.error(f"Substage '{substage_name}' in stage '{stage_name}' must be a dictionary")
-                            return False
-                        
-                        # Validate required substage fields
-                        required_substage_fields = ["sequence", "description", "required"]
-                        for field in required_substage_fields:
-                            if field not in substage_config:
-                                self.logger.error(f"Substage '{substage_name}' in stage '{stage_name}' missing required field: {field}")
-                                return False
-                            
-                        for substage_key, substage_value in substage_config.items():
-                            if substage_key == "sequence":
-                                if not isinstance(substage_value, int) or substage_value < 0:
-                                    self.logger.error(f"Substage '{substage_name}' in stage '{stage_name}' has an invalid sequence number: {substage_value}")
-                                    return False
-                                substage_sequences.append(substage_value)
-                            elif substage_key == "description":
-                                if not isinstance(substage_value, str):
-                                    self.logger.error(f"Substage '{substage_name}' in stage '{stage_name}' has an invalid description: {substage_value}")
-                                    return False
-                            elif substage_key == "required":
-                                if not isinstance(substage_value, bool):
-                                    self.logger.error(f"Substage '{substage_name}' in stage '{stage_name}' has an invalid required value: {substage_value}")
-                                    return False
-                            elif substage_key == "decisions":
-                                if not isinstance(substage_value, dict):
-                                    self.logger.error(f"Substage '{substage_name}' in stage '{stage_name}' has an invalid decisions value: {substage_value}")
-                                    return False
-                    
-                    # Validate substage sequence continuity
-                    if substage_sequences:
-                        substage_sequences.sort()
-                        expected_substage_sequence = 1
-                        for actual_sequence in substage_sequences:
-                            if actual_sequence != expected_substage_sequence:
-                                self.logger.error(f"Substage sequence gap in stage '{stage_name}': expected {expected_substage_sequence}, got {actual_sequence}")
-                                return False
-                            expected_substage_sequence += 1
-                            
-                elif key == "auto_complete_on_substages":
-                    if not isinstance(value, bool):
-                        self.logger.error(f"Stage '{stage_name}' has an invalid auto_complete_on_substages value: {value}")
-                        return False
+                stages_with_sequence.append((stage_name, sequence))
         
-        # Validate stage sequence continuity
-        if stage_sequences:
-            stage_sequences.sort()
-            expected_sequence = 1
-            for actual_sequence in stage_sequences:
-                if actual_sequence != expected_sequence:
-                    self.logger.error(f"Stage sequence gap: expected {expected_sequence}, got {actual_sequence}")
-                    return False
-                expected_sequence += 1
+        # Sort by sequence number
+        stages_with_sequence.sort(key=lambda x: x[1])
+        return stages_with_sequence
+    
+    def get_ordered_stage_names(self) -> List[str]:
+        """
+        Get stage names ordered by sequence.
         
-        # Validate stage dependencies
-        for stage_name, stage_config in stages.items():
-            if stage_config.get("requires_previous", False):
-                current_sequence = stage_config.get("sequence")
-                if current_sequence is None or current_sequence <= 1:
-                    self.logger.error(f"Stage '{stage_name}' requires previous but is first stage (sequence: {current_sequence})")
-                    return False
-                
-                # Check if previous stage exists
-                previous_stage_exists = False
-                for other_stage_name, other_stage_config in stages.items():
-                    if other_stage_config.get("sequence") == current_sequence - 1:
-                        previous_stage_exists = True
-                        break
-                
-                if not previous_stage_exists:
-                    self.logger.error(f"Stage '{stage_name}' requires previous stage but no stage with sequence {current_sequence - 1} exists")
-                    return False
-
-        self.logger.info("Stages configuration validation successful")
-        return True
-
-    @property
-    def stages(self) -> Dict[str, Any]:
-        """Access stages with same interface as CONFIG"""
-        return self.stages_config_dict
+        Returns:
+            List[str]: Stage names in execution order
+        """
+        ordered_stages = self.get_stages_by_sequence()
+        return [stage_name for stage_name, _ in ordered_stages]
+    
+    def get_next_stage(self, current_stage: str) -> Optional[str]:
+        """
+        Get the next stage in the sequence after the current stage.
+        
+        Args:
+            current_stage: Name of the current stage
+            
+        Returns:
+            Optional[str]: Name of the next stage or None if current is last/not found
+        """
+        ordered_stages = self.get_ordered_stage_names()
+        
+        try:
+            current_index = ordered_stages.index(current_stage)
+            if current_index < len(ordered_stages) - 1:
+                return ordered_stages[current_index + 1]
+        except ValueError:
+            # Current stage not found in ordered list
+            pass
+        
+        return None
+    
+    def get_previous_stage(self, current_stage: str) -> Optional[str]:
+        """
+        Get the previous stage in the sequence before the current stage.
+        
+        Args:
+            current_stage: Name of the current stage
+            
+        Returns:
+            Optional[str]: Name of the previous stage or None if current is first/not found
+        """
+        ordered_stages = self.get_ordered_stage_names()
+        
+        try:
+            current_index = ordered_stages.index(current_stage)
+            if current_index > 0:
+                return ordered_stages[current_index - 1]
+        except ValueError:
+            # Current stage not found in ordered list
+            pass
+        
+        return None
+    
+    def is_first_stage(self, stage_name: str) -> bool:
+        """
+        Check if a stage is the first in the sequence.
+        
+        Args:
+            stage_name: Name of the stage to check
+            
+        Returns:
+            bool: True if stage is first in sequence
+        """
+        ordered_stages = self.get_ordered_stage_names()
+        return ordered_stages and ordered_stages[0] == stage_name
+    
+    def is_last_stage(self, stage_name: str) -> bool:
+        """
+        Check if a stage is the last in the sequence.
+        
+        Args:
+            stage_name: Name of the stage to check
+            
+        Returns:
+            bool: True if stage is last in sequence
+        """
+        ordered_stages = self.get_ordered_stage_names()
+        return ordered_stages and ordered_stages[-1] == stage_name
+    
+    def get_stage_parameter(self, stage_name: str, parameter_name: str, default: Any = None) -> Any:
+        """
+        Get a specific parameter value for a stage.
+        
+        Args:
+            stage_name: Name of the stage
+            parameter_name: Name of the parameter
+            default: Default value if parameter not found
+            
+        Returns:
+            Any: Parameter value or default
+        """
+        stage_config = self.get_stage_config(stage_name)
+        if stage_config:
+            return stage_config.get(parameter_name, default)
+        return default
+    
+    def validate_stage_sequence(self) -> Dict[str, str]:
+        """
+        Validate that stage sequences are properly configured.
+        
+        Returns:
+            Dict[str, str]: Validation errors (empty if all valid)
+        """
+        errors = {}
+        sequences = []
+        
+        # Collect all sequence numbers
+        for stage_name, stage_config in self.stages.items():
+            sequence = stage_config.get("sequence")
+            if sequence is not None:
+                if not isinstance(sequence, int):
+                    errors[stage_name] = f"Sequence must be an integer, got {type(sequence)}"
+                elif sequence < 0:
+                    errors[stage_name] = "Sequence must be non-negative"
+                else:
+                    sequences.append((stage_name, sequence))
+        
+        # Check for duplicate sequences
+        sequence_counts = {}
+        for stage_name, sequence in sequences:
+            if sequence in sequence_counts:
+                existing_stage = sequence_counts[sequence]
+                errors[stage_name] = f"Duplicate sequence {sequence} with stage '{existing_stage}'"
+            else:
+                sequence_counts[sequence] = stage_name
+        
+        return errors
+    
+    def export_workflow_summary(self) -> Dict[str, Any]:
+        """
+        Export a summary of the workflow configuration for debugging/logging.
+        
+        Returns:
+            Dict[str, Any]: Workflow summary
+        """
+        ordered_stages = self.get_stages_by_sequence()
+        validation_errors = self.validate_stage_sequence()
+        
+        summary = {
+            "total_stages": len(self.stages),
+            "stages_with_sequence": len(ordered_stages),
+            "execution_order": [stage for stage, _ in ordered_stages],
+            "validation_errors": validation_errors,
+            "has_validation_errors": bool(validation_errors)
+        }
+        
+        return summary
+    
+    def __repr__(self) -> str:
+        """String representation of StagesConfig."""
+        stage_count = len(self.stages)
+        sequenced_count = len(self.get_stages_by_sequence())
+        return f"StagesConfig(total_stages={stage_count}, sequenced_stages={sequenced_count})"
