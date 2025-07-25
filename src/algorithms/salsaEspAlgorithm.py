@@ -65,17 +65,17 @@ class SalsaEspAlgorithm(BaseAlgorithm):
         # Default parameters for the algorithm
         default_parameters = {
             "shifts": ["M", "T", "L", "LQ", "F", "V", "LD", "A", "TC"],
-            "check_shifts": ['M', 'T', 'L', 'LQ', "LD", "TC"],
+            "check_shifts": ['M', 'T', 'L', 'LQ', "LD"],
             "check_shift_special": ['M', 'T', 'L', "TC"],
             "working_shifts": ["M", "T", "TC"],
-            "max_continuous_working_days": 10,
+            "max_continuous_working_days": 7,
 
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
                 #defines if we should sum 2 day quality weekends with the number of free sundays
-                "free_sundays_plus_c2d": False,
-                "missing_days_afect_free_days": False,
+                "free_sundays_plus_c2d": True,
+                "missing_days_afect_free_days": True,
             }
         }
         
@@ -349,7 +349,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, max_time_seconds=60, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, max_time_seconds=30, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
             self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
@@ -377,7 +377,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             
             # Solve Stage 2
             self.logger.info("Solving Stage 2 model")
-            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, max_time_seconds=60, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, max_time_seconds=30, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
             #final_schedule_df = solve_salsa_esp(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
             self.final_schedule = pd.DataFrame(final_schedule_df).copy()
             
@@ -416,7 +416,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
         # free_days_special_days(model, shift, special_days, workers, working_days, total_l_dom)
         
         # TC attribution constraint
-        # tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days)
+        tc_atribution(model, shift, workers, days_of_year, tc, holidays, working_days)
         
         # Working days special days constraint
         working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type)

@@ -21,12 +21,9 @@ def compensation_days(model, shift, workers, working_days, holidays, start_weekd
                     # Collect potential compensation days
                     compensation_days = []
                     for week in filter(None, possible_weeks):
-                        compensation_days.extend([
-                            day for day in week_to_days.get(week, [])
+                        compensation_days.extend([day for day in week_to_days.get(week, [])
                             if (day in working_days[w] and 
-                                day != d and 
-                            day not in holidays
-                            and (day + start_weekday - 2) % 7 != 5)
+                            day != d and day not in holidays and (day + start_weekday - 2) % 7 != 5)
                         ])
                     
                     # Store possible compensation days for this special day
@@ -197,17 +194,17 @@ def free_days_special_days(model, shift, special_days, workers, working_days, to
         model.Add(sum(shift[(w, d, "L")] for d in worker_special_days) == total_l_dom.get(w, 0) )
 
 
-def tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days):
-    # Constraint for TC shifts: only on special days and total equals tc[w]
+def tc_atribution(model, shift, workers, days_of_year, tc, holidays, working_days):
+    # Constraint for TC shifts: only on holidays and total equals tc[w]
     
     for w in workers:
-        # Create a list of all TC shift variables for this worker on special days
+        # Create a list of all TC shift variables for this worker on holidays
         for d in days_of_year:
-            if d not in special_days:
+            if d not in holidays:
                 model.Add(shift[(w, d, "TC")] == 0)
     
-        worker_special_days = [d for d in special_days if d in working_days[w]]
-        model.Add(sum(shift[(w, d, "TC")] for d in worker_special_days) == tc.get(w, 0))  
+        worker_holidays = [d for d in holidays if d in working_days[w]]
+        model.Add(sum(shift[(w, d, "TC")] for d in worker_holidays) == tc.get(w, 0))  
 
 def working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type):
     for w in workers:
@@ -283,12 +280,10 @@ def assign_week_shift(model, shift, workers_complete, week_to_days, working_days
 
 def working_day_shifts(model, shift, workers, working_days, check_shift):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
-    #check_shift = ['M', 'T', 'L', 'LQ', 'LD', 'TC']
-    '''
+    # check_shift = ['M', 'T', 'L', 'LQ', 'LD', 'TC']
     for w in workers:
         for d in working_days[w]:
             model.add_exactly_one(shift[(w, d, s)] for s in check_shift if (w, d, s) in shift)
-    '''
 
 def special_day_shifts(model, shift, workers, special_days, check_shift_special, working_days):
     for w in workers:
@@ -314,7 +309,7 @@ def free_day_next_2c(model, shift, workers, working_days,start_weekday, closed_h
         for day in working_days[w]:
             # Get day of week (0 = Monday, 6 = Sunday)
             day_of_week = (start_weekday + day - 2) % 7
-            
+
             # Case 1: Friday (day_of_week == 4) followed by LQ on Saturday
             if (day_of_week == 4) and ((day + 1 in working_days[w]) or (day + 1 in closed_holidays)):
                     has_saturday_lq = model.NewBoolVar(f"has_saturday_lq_{w}_{day+1}")
