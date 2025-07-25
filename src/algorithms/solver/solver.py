@@ -22,8 +22,9 @@ def get_config_manager():
 import os
 import psutil
 
-# Set up logger
-logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
+# Get project name and set up logger
+project_name = get_config_manager().system.project_name
+logger = get_logger(project_name)
 
 #----------------------------------------SOLVER-----------------------------------------------------------
 def solve(
@@ -38,7 +39,7 @@ def solve(
     use_phase_saving: bool = True,
     log_search_progress: bool = True,
     log_callback: Optional[Callable] = None,
-    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx')
+    output_filename: str = os.path.join(get_config_manager().paths.get_output_dir(), 'working_schedule.xlsx')
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.

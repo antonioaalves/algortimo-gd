@@ -20,7 +20,7 @@ def get_config_manager():
         _config_manager = ConfigurationManager()
     return _config_manager
 
-logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
+logger = get_logger(get_config_manager().system.project_name)
 
 
 def load_valid_emp_csv() -> pd.DataFrame:

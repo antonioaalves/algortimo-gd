@@ -32,6 +32,8 @@ system_configs = {
         'db_logging_enabled': True,
         'df_messages_path': 'data/csvs/messages.csv',
         'log_errors_db': True,  # Enable/disable database error logging with set_process_errors
+        'log_level': 'INFO',
+        'log_dir': 'logs',
     },
 
     "available_algorithms": [

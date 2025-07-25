@@ -269,6 +269,16 @@ class PathsConfig:
             return self.sql_auxiliary_paths.copy()
         else:
             return {}
+
+    def get_output_dir(self) -> str:
+        """
+        Get output directory path.
+        
+        Returns:
+            str: Output directory path
+        """
+        self.logger.info(f"Project root directory: {self._path_hierarchy}")
+        return os.path.join(self.project_root_dir,"data", "output")
     
     def get_raw_paths(self) -> Dict[str, str]:
         """

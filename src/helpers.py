@@ -28,7 +28,7 @@ from base_data_project.data_manager.managers.managers import BaseDataManager, DB
 from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(get_config_manager().system.project_name)
 
 def log_process_event(message_key:str, messages_df: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
     """

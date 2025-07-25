@@ -21,14 +21,14 @@ config_manager = ConfigurationManager()
 
 # Initialize logger with configuration first
 setup_logger(
-    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD'),
-    log_level=config_manager.system_config.get('logging', {}).get('log_level', 'INFO'),
-    log_dir=config_manager.system_config.get('logging', {}).get('log_dir', 'logs'),
+    project_name=config_manager.system.project_name,
+    log_level=config_manager.system.logging.log_level,
+    log_dir=config_manager.system.logging.log_dir,
     console_output=True
 )
 
 # Then get the logger instance for use throughout the file
-logger = get_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'))
+logger = get_logger(config_manager.system.project_name)
 
 def run_batch_process(data_manager, process_manager, algorithm="example_algorithm", external_call_dict=None, external_raw_connection=None):
     """

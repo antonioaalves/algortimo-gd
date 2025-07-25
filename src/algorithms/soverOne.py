@@ -23,7 +23,7 @@ def get_config_manager():
     return _config_manager
 
 # Set up logger
-logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
+logger = get_logger(get_config_manager().system.project_name)
 
 class SolverOne(BaseAlgorithm):
     """
