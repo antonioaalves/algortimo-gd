@@ -25,7 +25,7 @@ from src.algorithms.model_alcampo.alcampo_constraints import (
     special_day_shifts, working_day_shifts, complete_cycle_shifts, free_day_next_2c, no_free__days_close, 
     space_LQs, day2_quality_weekend, compensation_days, prio_2_3_workers,
     limits_LDs_week, one_free_day_weekly, maxi_free_days_c3d, maxi_LQ_days_c3d, 
-    assigns_solution_days, day3_quality_weekend, closed_holidays_50_percent
+    assigns_solution_days, day3_quality_weekend
 )
 from src.algorithms.model_alcampo.optimization_alcampos import optimization_prediction
 from src.algorithms.solver.solver import solve
@@ -331,7 +331,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
                                  total_l_dom, tc, l_d, l_q, cxx, closed_holidays, holidays, worker_holiday,
                                  missing_days, empty_days, worker_week_shift, start_weekday, sundays,
                                  t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
-                                 free_day_complete_cycle, closed_days)
+                                 free_day_complete_cycle)
 
             self.logger.info("Constraints applied for Stage 1")
             
@@ -388,12 +388,11 @@ class AlcampoAlgorithm(BaseAlgorithm):
                                  total_l_dom, tc, l_d, l_q, cxx, closed_holidays, holidays, worker_holiday,
                                  missing_days, empty_days, worker_week_shift, start_weekday, sundays,
                                  t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
-                                 free_day_complete_cycle, closed_days):
+                                 free_day_complete_cycle):
         """Apply all Stage 1 constraints to the model."""
         
 
         shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
-        closed_holidays_50_percent(model, workers, sundays, holidays, closed_holidays, closed_days)
 
         
         # Constraint to limit working days in a week based on contract type

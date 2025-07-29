@@ -43,10 +43,15 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
+        if (medium_dataframes["df_closed_days"]):
+            closed_days = medium_dataframes["df_closed_days"].copy()
+            closed_days.columns = closed_days.columns.str.lower()
+        else:
+            closed_days = []
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
-        matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()       
+        matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()
 
         logger.info(f"Input DataFrames loaded:")
         logger.info(f"  - matriz_colaborador: {matriz_colaborador_gd.shape}")
@@ -128,6 +133,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         try:
             matriz_calendario_gd['data'] = pd.to_datetime(matriz_calendario_gd['data'])
             matriz_estimativas_gd['data'] = pd.to_datetime(matriz_estimativas_gd['data'])
+            if len(closed_days) > 1:
+                closed_days['data'] = pd.to_datetime(closed_days['data'])
             logger.info(f"Date range: {matriz_calendario_gd['data'].min()} to {matriz_calendario_gd['data'].max()}")
         except Exception as e:
             raise ValueError(f"Error converting data column to datetime: {e}")
@@ -207,12 +214,17 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         ]['data'].dt.dayofyear.unique().tolist())
         
         special_days = sorted(list(set(sundays + holidays)))
-        
         logger.info(f"Special days identified:")
         logger.info(f"  - Sundays: {len(sundays)} days")
         logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
-        logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
         logger.info(f"  - Total special days: {len(special_days)} days")
+        if len(closed_days) > 0:
+            sun_and_hol_set = set(holidays) | set(sundays)
+            if len(set(closed_days['data']) & sun_and_hol_set) / len(sun_and_hol_set) <= 0.5 :
+                logger.info(f"  - Because less than 50% of sundays and holidays are closed, closed_holidays will be considered normal days, which means: {len(closed_holidays)} days")
+                closed_holidays = closed_holidays[0:0]
+            else :
+                logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
         
         # =================================================================
         # 8. PROCESS WORKER-SPECIFIC data
@@ -551,10 +563,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
             
         
 
-        working_shift_2 = ["M", "T"]
-
-        closed_days = medium_dataframes["df_closed_days"] 
-        
+        working_shift_2 = ["M", "T"]        
 
         logger.info("[OK] Data processing completed successfully")
         

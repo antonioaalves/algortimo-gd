@@ -1,16 +1,5 @@
 """This file contains the constraints for the Alcampo shift scheduler."""
 
-def closed_holidays_50_percent(model, workers, sundays, holidays, closed_holidays, closed_days):
-    #sundays.extend([1,6])
-    #holidays.append(121)
-    #if sun_and_hol_in_closed_days / len(closed_holidays) <= 0.5:
-    import pandas as pd
-    closed_days['data'] = pd.to_datetime(closed_days['data'])
-    closed_days['day_of_year'] = closed_days['data'].dt.dayofyear
-    sun_and_hol_in_closed_days = set(closed_days['day_of_year']) & (set(holidays) | set(sundays))
-    print(sun_and_hol_in_closed_days)
-    exit(0)
-
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
     for w in workers_complete:
