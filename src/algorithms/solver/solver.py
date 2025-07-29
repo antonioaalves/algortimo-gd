@@ -114,7 +114,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 200  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
 
         logger.info("Attempting solve with verified parameters...")
 
@@ -269,12 +269,12 @@ def solve(
         logger.info(f"DataFrame columns: {len(df.columns)} columns")
         
         # Save to Excel
-        try:
-            os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-            df.to_excel(output_filename, index=False)
-            logger.info(f"Schedule saved to: {output_filename}")
-        except Exception as e:
-            logger.warning(f"Could not save to Excel: {str(e)}")
+        #try:
+        #    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+        #    df.to_excel(output_filename, index=False)
+        #    logger.info(f"Schedule saved to: {output_filename}")
+        #except Exception as e:
+        #    logger.warning(f"Could not save to Excel: {str(e)}")
         
         # =================================================================
         # 7. LOG FINAL STATISTICS
