@@ -29,7 +29,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         # =================================================================
         # 1. VALIDATE INPUT data
         # =================================================================
-        required_dataframes = ['df_colaborador', 'df_estimativas', 'df_calendario']
+        required_dataframes = ['df_colaborador', 'df_estimativas', 'df_calendario', 'df_closed_days']
         missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
         
         if missing_dataframes:
@@ -553,6 +553,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
 
         working_shift_2 = ["M", "T"]
 
+        closed_days = medium_dataframes["df_closed_days"] 
+        
 
         logger.info("[OK] Data processing completed successfully")
         
@@ -561,39 +563,40 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         # =================================================================
         return (
             matriz_calendario_gd,    # 0
-            days_of_year,           # 1
-            sundays,                # 2
-            holidays,               # 3
-            special_days,           # 4
-            closed_holidays,        # 5
-            empty_days,             # 6
-            worker_holiday,         # 7
-            missing_days,           # 8
-            working_days,           # 9
-            non_holidays,           # 10
-            start_weekday,          # 11
-            week_to_days,           # 12
-            worker_week_shift,      # 13
-            matriz_colaborador_gd,  # 14
-            workers,                # 15
-            contract_type,          # 16
-            total_l,                # 17
-            total_l_dom,            # 18
-            c2d,                    # 19
-            c3d,                    # 20
-            l_d,                    # 21
-            l_q,                    # 22
-            cxx,                    # 23
-            t_lq,                   # 24
-            tc,                     # 25
-            matriz_estimativas_gd,  # 26
+            days_of_year,            # 1
+            sundays,                 # 2
+            holidays,                # 3
+            special_days,            # 4
+            closed_holidays,         # 5
+            empty_days,              # 6
+            worker_holiday,          # 7
+            missing_days,            # 8
+            working_days,            # 9
+            non_holidays,            # 10
+            start_weekday,           # 11
+            week_to_days,            # 12
+            worker_week_shift,       # 13
+            matriz_colaborador_gd,   # 14
+            workers,                 # 15
+            contract_type,           # 16
+            total_l,                 # 17
+            total_l_dom,             # 18
+            c2d,                     # 19
+            c3d,                     # 20
+            l_d,                     # 21
+            l_q,                     # 22
+            cxx,                     # 23
+            t_lq,                    # 24
+            tc,                      # 25
+            matriz_estimativas_gd,   # 26
             pess_obj,                # 27
-            min_workers,            # 28
-            max_workers,            # 29
+            min_workers,             # 28
+            max_workers,             # 29
             working_shift_2,         # 30
-            workers_complete,       # 31
+            workers_complete,        # 31
             workers_complete_cycle,  # 32
-            free_day_complete_cycle,  # 33
+            free_day_complete_cycle, # 33
+            closed_days,             # 34
         )
         
     except Exception as e:

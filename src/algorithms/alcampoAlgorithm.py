@@ -25,7 +25,7 @@ from src.algorithms.model_alcampo.alcampo_constraints import (
     special_day_shifts, working_day_shifts, complete_cycle_shifts, free_day_next_2c, no_free__days_close, 
     space_LQs, day2_quality_weekend, compensation_days, prio_2_3_workers,
     limits_LDs_week, one_free_day_weekly, maxi_free_days_c3d, maxi_LQ_days_c3d, 
-    assigns_solution_days, day3_quality_weekend
+    assigns_solution_days, day3_quality_weekend, closed_holidays_50_percent
 )
 from src.algorithms.model_alcampo.optimization_alcampos import optimization_prediction
 from src.algorithms.solver.solver import solve
@@ -201,9 +201,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
                     'working_shift_2': processed_data[30],
                     'workers_complete': processed_data[31],
                     'workers_complete_cycle': processed_data[32],
-                    'free_day_complete_cycle': processed_data[33]
+                    'free_day_complete_cycle': processed_data[33],
+                    'closed_days': processed_data[34]
                 }
-
             except IndexError as e:
                 self.logger.error(f"Error unpacking processed data: {e}")
                 raise ValueError(f"Invalid data structure returned from processing function: {e}")
@@ -299,6 +299,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
+            closed_days = adapted_data['closed_days']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -327,11 +328,10 @@ class AlcampoAlgorithm(BaseAlgorithm):
                                  model, shift, days_of_year, workers, shifts, check_shift, 
                                  check_shift_special, working_shift, max_continuous_days, week_to_days,
                                  working_shift_2, contract_type, special_days, total_l, c2d, c3d, working_days,
-                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, worker_holiday,
+                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, holidays, worker_holiday,
                                  missing_days, empty_days, worker_week_shift, start_weekday, sundays,
                                  t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
-                                 free_day_complete_cycle
-)
+                                 free_day_complete_cycle, closed_days)
 
             self.logger.info("Constraints applied for Stage 1")
             
@@ -385,14 +385,16 @@ class AlcampoAlgorithm(BaseAlgorithm):
     def _apply_stage1_constraints(self, model, shift, days_of_year, workers, shifts, check_shift, 
                                  check_shift_special, working_shift, max_continuous_days, week_to_days,
                                  working_shift_2, contract_type, special_days, total_l, c2d, c3d, working_days,
-                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, worker_holiday,
+                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, holidays, worker_holiday,
                                  missing_days, empty_days, worker_week_shift, start_weekday, sundays,
                                  t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
-                                 free_day_complete_cycle):
+                                 free_day_complete_cycle, closed_days):
         """Apply all Stage 1 constraints to the model."""
         
 
         shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
+        closed_holidays_50_percent(model, workers, sundays, holidays, closed_holidays, closed_days)
+
         
         # Constraint to limit working days in a week based on contract type
         week_working_days_constraint(model, shift, week_to_days, workers, working_shift_2, contract_type)

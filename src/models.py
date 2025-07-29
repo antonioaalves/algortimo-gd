@@ -124,7 +124,8 @@ class DescansosDataModel(BaseDataModel):
         self.medium_data: Dict[str, Any] = {
             'df_calendario': None,
             'df_colaborador': None,
-            'df_estimativas': None
+            'df_estimativas': None,
+            'df_closed_days': None
         }
         # Data third stage
         self.rare_data: Dict[str, Any] = {
@@ -2151,6 +2152,7 @@ class DescansosDataModel(BaseDataModel):
 
             if len(df_closed_days) > 0:
                 reshaped_final_3 = insert_closed_days(df_closed_days, reshaped_final_3)
+                self.medium_data["df_closed_days"] = df_closed_days
 
             self.logger.info(f"DEBUG: reshaped_final_3 after insert_closed_days: {reshaped_final_3}")
 
