@@ -22,8 +22,8 @@ config_manager = ConfigurationManager()
 # Initialize logger with configuration first
 setup_logger(
     project_name=config_manager.system.project_name,
-    log_level=config_manager.system.logging.log_level,
-    log_dir=config_manager.system.logging.log_dir,
+    log_level=config_manager.system.logging_config.get('log_level', 'INFO'),
+    log_dir=config_manager.system.logging_config.get('log_dir', 'logs'),
     console_output=True
 )
 
@@ -53,7 +53,7 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             external_call_dict=external_call_dict or {},
             external_raw_connection=external_raw_connection,
             config_manager=config_manager,
-            project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
+            project_name=config_manager.system.project_name
         )
         
         # Initialize a new process
@@ -137,7 +137,7 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
     """
     # Display header
     click.clear()
-    click.echo(click.style(f"=== {PROJECT_NAME} (Batch Mode) ===", fg="green", bold=True))
+    click.echo(click.style(f"=== {config_manager.system.project_name} (Batch Mode) ===", fg="green", bold=True))
     click.echo(click.style(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", fg="green"))
     click.echo()
     
@@ -183,8 +183,8 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
             data_manager, process_manager = create_components(
                 use_db=use_db, 
                 no_tracking=no_tracking, 
-                config=CONFIG, 
-                project_name=PROJECT_NAME
+                config=config_manager, 
+                project_name=config_manager.system.project_name
             )
 
             # Debug logging for process manager (same as main.py)
@@ -212,7 +212,7 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
         
         with data_manager:
             # Get external call data from CONFIG and override with command line arguments
-            external_call_dict = CONFIG.get('external_call_data', {}).copy()
+            external_call_dict = config_manager.parameters.external_call_data
             
             # Override with command line arguments if provided
             if external_args:

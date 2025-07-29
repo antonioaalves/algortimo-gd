@@ -97,7 +97,7 @@ class AlgoritmoGDService(BaseService):
             self.logger.info("Using external database connection for error logging")
             
         #elif CONFIG.get('logging', {}).get('log_errors_db', True):
-        elif config_manager.base_config.get('logging', {}).get('log_errors_db', True):
+        elif config_manager.system.logging_config.get('log_errors_db', True):
             from base_data_project.data_manager.managers.managers import DBDataManager
             if isinstance(data_manager, DBDataManager):
                 try:
@@ -180,9 +180,9 @@ class AlgoritmoGDService(BaseService):
             
             # Load each entity
             self.data = DescansosDataModel(
-                data_container=BaseDataContainer(config=self.config_manager, project_name=self.config_manager.base_config.get('project_name', 'algoritmo_GD')),
-                project_name=self.config_manager.base_config.get('project_name', 'algoritmo_GD'),
-                external_data=self.external_data if self.external_data else {}
+                data_container=BaseDataContainer(config=self.config_manager, project_name=self.config_manager.system.project_name),
+                project_name=self.config_manager.system.project_name,
+                config_manager=self.config_manager
             )
             
             # Declare the messages dataframe

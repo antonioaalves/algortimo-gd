@@ -88,6 +88,9 @@ class DescansosDataModel(BaseDataModel):
             formatted_data: Dictionary containing final results
                 - df_final: Final output DataFrame
         """
+
+        self.config_manager = config_manager
+        
         super().__init__(data_container=data_container, project_name=project_name)
         self.auxiliary_data = {
             'messages_df': pd.DataFrame(), # df containing messages to set process errors
@@ -140,7 +143,7 @@ class DescansosDataModel(BaseDataModel):
             'stage2_schedule': None,
         }
         # External call data coming from the product
-        self.external_call_data = self.config_manager.parameter_config.get('external_call_data', {})
+        self.external_call_data = self.config_manager.parameters.external_call_data
         
         self.logger.info("DescansosDataModel initialized")
     
