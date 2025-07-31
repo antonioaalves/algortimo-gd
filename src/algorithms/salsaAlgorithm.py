@@ -361,7 +361,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+            #salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
                         
             self.logger.info("All SALSA constraints applied")
             
@@ -384,7 +384,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             
-    # Capture solver statistics if available
+            # Capture solver statistics if available
             if hasattr(model, 'solver_stats'):
                 self.solver_status = model.solver_stats.get('status', 'OPTIMAL')
                 self.solving_time_seconds = model.solver_stats.get('solving_time_seconds')

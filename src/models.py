@@ -2869,7 +2869,7 @@ class DescansosDataModel(BaseDataModel):
             matrizA = matrizA_og[[
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
-                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao'
+                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao'
             ]].copy()
             
             # Rename columns to match R output
@@ -3704,6 +3704,8 @@ class DescansosDataModel(BaseDataModel):
                 final_df['date'] = pd.to_datetime(final_df['date'])
                 #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
                 final_df = final_df[final_df['date'] >= final_df['data_admissao']].copy()
+
+            # TODO: Do the same for dates beyond the data_demissao 
             
             filtered_rows = len(final_df)
             self.logger.info(f"Filtered {initial_rows - filtered_rows} rows (from {initial_rows} to {filtered_rows}) based on admission dates")

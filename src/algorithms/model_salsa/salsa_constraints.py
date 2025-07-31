@@ -1,5 +1,6 @@
+from base_data_project.log_config import get_logger
 
-
+logger = get_logger('algoritmo_GD')
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
@@ -18,6 +19,8 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
             total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift)
             max_days = contract_type.get(w, 0)
             model.Add(total_shifts <= max_days)
+ 
+ 
 
 def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, maxi):
     #limits maximum continuous working days
