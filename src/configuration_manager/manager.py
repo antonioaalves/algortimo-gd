@@ -5,7 +5,7 @@ This module provides the primary ConfigurationManager class that coordinates
 the loading and initialization of all configuration components.
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from base_data_project.log_config import get_logger
 
 from .system_config import SystemConfig
@@ -62,7 +62,7 @@ class ConfigurationManager:
         
         # Phase 2: Load other configs with proper project name for logging
         project_name = self.system.project_name
-        
+        self.logger = get_logger(project_name)
         # Load database config only if needed
         self.database: Optional[DatabaseConfig] = None
         if self.system.use_db:
@@ -70,6 +70,9 @@ class ConfigurationManager:
                 environment=self.system.environment,
                 project_name=project_name
             )
+            self.logger.info("Database config loaded successfully")
+            self.logger.info(f"Database config: {self.database}")
+            self.logger.info(f"Database config: {self.database.get_connection_url()}")
         
         # Load paths config (behavior depends on use_db setting)
         self.paths = PathsConfig(
@@ -101,6 +104,27 @@ class ConfigurationManager:
             str: The project name from system configuration
         """
         return self.system.project_name
+    
+    def get_base_data_project_config(self) -> Dict[str, Any]:
+        """
+        Create a dictionary-style config for base_data_project compatibility.
+        
+        This method transforms our clean object-based configuration into the
+        dictionary format expected by base_data_project components.
+        
+        Returns:
+            Dict[str, Any]: Dictionary config compatible with base_data_project
+        """
+        return {
+            'stages': self.stages.stages['stages'],  # Extract just the stages, not the wrapper
+            'system': {
+                'use_db': self.system.use_db,
+                'project_version': self.system.project_version,
+                'project_name': self.system.project_name,
+                'environment': self.system.environment,
+                'project_root_dir': self.system.project_root_dir
+            }
+        }
     
     @property
     def is_database_enabled(self) -> bool:

@@ -56,6 +56,7 @@ class SystemConfig:
         self.environment: str = self._config_data["environment"]
         self.use_db: bool = self._config_data["use_db"]
         self.project_root_dir: str = self._config_data["project_root_dir"]
+        self.project_version: str = self._config_data["project_version"]
         
         # Initialize logger with actual project name
         self.logger = get_logger(self.project_name)

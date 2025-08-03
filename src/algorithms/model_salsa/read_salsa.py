@@ -17,7 +17,7 @@ def get_config_manager():
     return _config_manager
 
 # Set up logger
-logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
+logger = get_logger(get_config_manager().system.project_name)
 
 def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ...]:
     """
@@ -346,7 +346,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                     week_to_days_salsa[week_number] = []
                 
                 if day_of_year not in week_to_days_salsa[week_number]:
-                    week_to_days_salsa[week_number] = []
+                    week_to_days_salsa[week_number].append(day_of_year)
                 # Add the day to its corresponding week (avoid duplicates)
                 if day_of_year not in week_to_days[week_number] and day_of_year in non_holidays:
                     week_to_days[week_number].append(day_of_year)

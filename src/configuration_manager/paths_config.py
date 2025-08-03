@@ -124,6 +124,9 @@ class PathsConfig:
             with open("src/settings/sql_filepaths.json", "r") as file:
                 sql_config = json.load(file)
             
+            # Extract hierarchy for SQL files
+            self.sql_hierarchy = sql_config.get("hierarchy", ["data", "Queries", "sql"])
+            
             # Extract different types of SQL paths
             self.sql_processing_paths = sql_config.get("sql_processing_paths", {})
             self.sql_auxiliary_paths = sql_config.get("sql_auxiliary_paths", {})
@@ -142,24 +145,25 @@ class PathsConfig:
     
     def _build_sql_file_paths(self) -> None:
         """
-        Build full file paths for SQL files based on project root directory.
+        Build full file paths for SQL files based on project root directory and hierarchy.
+        Uses the hierarchy from JSON config (e.g., ["data", "Queries", "sql"]) to construct paths.
         """
         # Build full paths for processing SQL files
-        for entity, relative_path in self.sql_processing_paths.items():
-            if relative_path:
-                full_path = os.path.join(self.project_root_dir, relative_path)
+        for entity, filename in self.sql_processing_paths.items():
+            if filename:
+                full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
                 self.sql_processing_paths[entity] = full_path
         
         # Build full paths for auxiliary SQL files
-        for entity, relative_path in self.sql_auxiliary_paths.items():
-            if relative_path:
-                full_path = os.path.join(self.project_root_dir, relative_path)
+        for entity, filename in self.sql_auxiliary_paths.items():
+            if filename:
+                full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
                 self.sql_auxiliary_paths[entity] = full_path
         
         # Build full paths for raw SQL files
-        for entity, relative_path in self.sql_raw_paths.items():
-            if relative_path:
-                full_path = os.path.join(self.project_root_dir, relative_path)
+        for entity, filename in self.sql_raw_paths.items():
+            if filename:
+                full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
                 self.sql_raw_paths[entity] = full_path
     
     def _validate_sql_paths(self) -> None:

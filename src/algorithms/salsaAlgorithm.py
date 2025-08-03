@@ -44,6 +44,7 @@ from src.helpers import (_create_empty_results, _calculate_comprehensive_stats,
 
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
+root_dir = get_config_manager().system.project_root_dir
 
 class SalsaAlgorithm(BaseAlgorithm):
     """
@@ -375,7 +376,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+            #salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
                         
             self.logger.info("All SALSA constraints applied")
             
@@ -393,7 +394,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Solving SALSA model")
             
             schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, 
-                              output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
+                              output_filename=os.path.join(root_dir, 'data', 'output', 
                                                          f'salsa_schedule_{self.process_id}.xlsx'))
             
             self.final_schedule = pd.DataFrame(schedule_df).copy()
@@ -542,7 +543,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 'constraint_validation': constraint_validation,
                 'quality_metrics': quality_metrics,
                 'validation': _validate_solution(algorithm_results),
-                'export_info': _create_export_info(self.process_id, ROOT_DIR),
+                'export_info': _create_export_info(self.process_id, root_dir),
                 'summary': {
                     'status': 'completed',
                     'message': f'Successfully scheduled {stats["workers"]["total_workers"]} workers over {stats["time_coverage"]["total_days"]} days using SALSA algorithm',

@@ -1539,7 +1539,6 @@ def bulk_insert_with_query(data_manager: DBDataManager,
             fk_processo=123  # Additional parameter
         )
     """
-    logger = get_logger(PROJECT_NAME)
     
     # Validate inputs
     if not hasattr(data_manager, 'session') or data_manager.session is None:
