@@ -1,6 +1,6 @@
 [Config]
-user = EDUARDO_DIREITO
-pwd = 52CV3cP[z8s}
-url = 10.175.23.29
-port = 1526
-service_name = stardard_pdb1.database.backbone.oraclevcn.com
+user = MIGUEL_TEIXEIRA
+pwd = 9=^5mW7MDVJn
+url = 10.175.28.20
+port = 1525
+service_name = WFM_ALCAMPO_TST01.private.database.oraclevcn.com

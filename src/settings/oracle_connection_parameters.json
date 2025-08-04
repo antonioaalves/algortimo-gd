@@ -17,10 +17,10 @@
     },
     "alcampo_tst": {
         "host": "10.175.28.20",
-        "port": 1525,
+        "port": 1523,
         "service_name": "WFM_ALCAMPO_TST01.private.database.oraclevcn.com",
-        "username": "ANTONIO_ALVES",
-        "password": "4dB>(fUU77P?/",
+        "username": "MIGUEL_TEIXEIRA",
+        "password": "9=^5mW7MDVJn",
         "schema": "wfm"
     },
     "alcampo_prd": {
