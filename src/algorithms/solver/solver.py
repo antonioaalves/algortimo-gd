@@ -28,7 +28,7 @@ def solve(
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = True,
-    log_callback: Optional[Callable] = None,
+    log_callback: Optional[Callable] = print,
     output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx')
 ) -> pd.DataFrame:
     """
@@ -114,9 +114,14 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 200  # Short timeout for testing
+        solver.parameters.log_search_progress = log_search_progress
 
         logger.info("Attempting solve with verified parameters...")
+        if log_callback is None:
+            log_calback = lambda x: logger.info(f"Solver progress: {x}")
+        solver.log_callback =log_callback
+
 
         # Simple timeout test without fancy threading
         import time

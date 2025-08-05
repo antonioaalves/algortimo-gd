@@ -326,7 +326,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             
             for _, row in unique_calendar_dates.iterrows():
                 day_of_year = row['data'].dayofyear
-                week_number = row['ww']
+                week_number = row['ww']  # Use WW column for week number
                 
                 # Initialize the week list if it doesn't exist
                 if week_number not in week_to_days:
@@ -335,14 +335,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                 if week_number not in week_to_days_salsa:
                     week_to_days_salsa[week_number] = []
                 
+                if day_of_year not in week_to_days_salsa[week_number]:
+                    week_to_days_salsa[week_number].append(day_of_year)
                 # Add the day to its corresponding week (avoid duplicates)
                 if day_of_year not in week_to_days[week_number] and day_of_year in non_holidays:
                     week_to_days[week_number].append(day_of_year)
-                
-                # Add to salsa mapping (all days, not just non_holidays)
-                if day_of_year not in week_to_days_salsa[week_number]:
-                    week_to_days_salsa[week_number].append(day_of_year)
-
+            
+            # Sort days within each week to ensure chronological order
             for week in week_to_days:
                 week_to_days[week].sort()
             

@@ -74,11 +74,8 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         
         # Execute the query - handle both cx_Oracle and SQLAlchemy connections
         if connection is None:
-            logger.info("No database connection available. Creating new connection...")
-            connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
-            if connection is None:
-                logger.error("ERROR: Failed to create database connection after retry")
-                return 0
+            logger.error("ERROR: No database connection available")
+            return 0
             
         if hasattr(connection, 'cursor') and callable(getattr(connection, 'cursor')):
             # Direct cx_Oracle connection
@@ -1507,70 +1504,70 @@ def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def bulk_insert_with_query(data_manager: DBDataManager, 
-                          data: pd.DataFrame, 
-                          query_file: str, 
+def bulk_insert_with_query(data_manager: DBDataManager,
+                          data: pd.DataFrame,
+                          query_file: str,
                           **kwargs) -> bool:
     """
     Execute bulk insert using a parameterized query file with connection handling.
     """
     logger = get_logger(PROJECT_NAME)
-    
+   
     # Validate inputs
     if not hasattr(data_manager, 'session') or data_manager.session is None:
         logger.error("No database session available")
         return False
-    
+   
     if not os.path.exists(query_file):
         logger.error(f"Query file not found: {query_file}")
         return False
-    
+   
     if data.empty:
         logger.warning("Empty DataFrame provided, no records to insert")
         return True
-
+ 
     # Simple retry loop for connection issues
     max_retries = 2
-    
+   
     for attempt in range(max_retries + 1):
         try:
             from sqlalchemy import text
-            
+           
             # If this is a retry attempt, recreate the session completely
             if attempt > 0:
                 logger.info(f"Recreating session for retry attempt {attempt + 1}")
                 try:
                     # Close the old session
                     data_manager.session.close()
-                    
+                   
                     # Create a completely new session
                     from sqlalchemy.orm import sessionmaker
                     Session = sessionmaker(bind=data_manager.engine)
                     data_manager.session = Session()
-                    
+                   
                     # Test the new session
                     data_manager.session.execute(text("SELECT 1 FROM DUAL")).fetchone()
                     logger.info("New session created and tested successfully")
-                    
+                   
                 except Exception as recreate_error:
                     logger.error(f"Failed to recreate session: {recreate_error}")
                     if attempt == max_retries:
                         return False
                     continue
-            
+           
             # Read the insert query
             with open(query_file, 'r', encoding='utf-8') as f:
                 insert_query = f.read().strip()
-            
+           
             if not insert_query:
                 logger.error(f"Query file is empty: {query_file}")
                 return False
-            
+           
             logger.info(f"Executing bulk insert of {len(data)} rows (attempt {attempt + 1})")
-            
+           
             # Convert DataFrame to list of dictionaries for parameter binding
             records = data.to_dict('records')
-            
+           
             # Execute the insert for each record
             for i, record in enumerate(records):
                 try:
@@ -1578,62 +1575,61 @@ def bulk_insert_with_query(data_manager: DBDataManager,
                     params = {**kwargs, **record}
                     # Remove pathOS from params if it exists (it's for connection handling only)
                     params.pop('pathOS', None)
-                    
+                   
                     data_manager.session.execute(text(insert_query), params)
-                    
+                   
                     # Log progress for large datasets
                     if (i + 1) % 1000 == 0:
                         logger.info(f"Processed {i + 1}/{len(records)} records")
-                        
+                       
                 except Exception as record_error:
                     logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
                     logger.debug(f"Failed record data: {record}")
                     raise
-            
+           
             # Commit all inserts
             data_manager.session.commit()
-            
+           
             logger.info(f"Successfully inserted {len(records)} records")
             return True
-            
+           
         except Exception as e:
             error_str = str(e).lower()
-            
+           
             # Check if this is a connection-related error
             connection_errors = [
-                'not connected', 'dpi-1010', 'connection', 'timeout', 'closed', 
+                'not connected', 'dpi-1010', 'connection', 'timeout', 'closed',
                 'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
             ]
-            
+           
             is_connection_error = any(err_keyword in error_str for err_keyword in connection_errors)
-            
+           
             if is_connection_error and attempt < max_retries:
                 logger.warning(f"Connection error detected (attempt {attempt + 1}): {e}")
-                
+               
                 # Rollback current transaction
                 try:
                     data_manager.session.rollback()
                 except Exception as rollback_error:
                     logger.debug(f"Rollback failed (expected): {rollback_error}")
-                
+               
                 logger.info(f"Will retry with new session (attempt {attempt + 2})")
                 continue
             else:
                 # Not a connection error or max retries reached
                 logger.error(f"Bulk insert failed: {e}")
-                
+               
                 # Rollback on error
                 try:
                     data_manager.session.rollback()
                 except:
                     pass
-                
+               
                 return False
-    
+   
     # Should not reach here
     logger.error(f"Bulk insert failed after {max_retries + 1} attempts")
     return False
-
     
 def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
     """Create empty results structure when no data is available."""
