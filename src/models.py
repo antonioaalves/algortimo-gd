@@ -3705,7 +3705,15 @@ class DescansosDataModel(BaseDataModel):
                 #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
                 final_df = final_df[final_df['date'] >= final_df['data_admissao']].copy()
 
-            # TODO: Do the same for dates beyond the data_demissao 
+            # Filter per employee: each row's date must be < that employee's demission date 
+            if 'data' in final_df.columns:
+                final_df['data'] = pd.to_datetime(final_df['data'])
+                final_df = final_df[final_df['data'] <= final_df['data_demissao']].copy()
+                #self.logger.info(f"DEBUG: data: {final_df['data']}, type: {type(final_df['data'])}")
+            elif 'date' in final_df.columns:
+                final_df['date'] = pd.to_datetime(final_df['date'])
+                #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
+                final_df = final_df[final_df['date'] <= final_df['data_demissao']].copy
             
             filtered_rows = len(final_df)
             self.logger.info(f"Filtered {initial_rows - filtered_rows} rows (from {initial_rows} to {filtered_rows}) based on admission dates")
