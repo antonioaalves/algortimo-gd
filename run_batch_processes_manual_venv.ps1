@@ -13,11 +13,10 @@ Write-Host ""
 # =============================================================================
 
 # List of process IDs to run
-$ProcessIds = @(227, 230, 256, 278, 301, 364, 573, 586, 599, 612, 625, 650, 663, 676, 689, 702, 715, 728, 741, 754, 767, 780, 793, 806, 819, 832, 845, 858, 871, 884, 897, 910, 923, 936, 949, 962, 975, 988, 1001, 1014, 1027, 1040, 1053, 1066, 1079, 1092, 1105, 1118, 1131, 1144, 1157, 1170, 1183, 1196, 1209, 1222, 1235, 1248, 1261, 1274, 1287, 1300, 1313, 1326, 1339, 1352, 1365, 1378, 1391, 1404, 1417, 1430)
-
+$ProcessIds = @(249370, 249373, 249343)
 # Common configuration (modify as needed)
 $UseDb = $true                      # Set to $false for CSV mode
-$Algorithm = "salsa_algorithm"      # Algorithm to use
+$Algorithm = "scr   scri    scri    "      # Algorithm to use
 $ScriptPath = "batch_process.py"    # Python script to run
 
 # =============================================================================
@@ -82,7 +81,7 @@ for ($i = 0; $i -lt $ProcessIds.Count; $i++) {
     $Command += " --api-proc-id 999"
     $Command += " --wfm-proc-id $ProcessId"
     $Command += " --wfm-user BATCH_USER"
-    $Command += " --start-date 2025-07-01"
+    $Command += " --start-date 2025-01-01"
     $Command += " --end-date 2025-12-31"
     
     Write-Host "Running: $Command" -ForegroundColor Cyan

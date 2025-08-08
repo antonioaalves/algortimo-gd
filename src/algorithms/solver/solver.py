@@ -24,7 +24,7 @@ def solve(
     special_days: List[int], 
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
-    max_time_seconds: int = 13,
+    max_time_seconds: int = 130,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = True,
@@ -116,7 +116,7 @@ def solve(
         #using max cores for multi threading 
         available_cores = os.cpu_count()
         solver.parameters.num_search_workers = max(1, available_cores)
-        solver.parameters.max_time_in_seconds = max_time_seconds  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 100  # Short timeout for testing
         solver.parameters.log_search_progress = log_search_progress
 
         testing = True

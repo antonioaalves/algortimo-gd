@@ -1,11 +1,12 @@
+from base_data_project.log_config import get_logger
 
-
+logger = get_logger('algoritmo_GD')
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
     for w in workers_complete:
         for d in days_of_year:
-           model.add_exactly_one(shift[(w, d, s)] for s in shifts)
+           model.add_exactly_one(shift[(w, d, s)] for (w, d, s) in shifts)
 
 def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type):
     # Define working shifts
@@ -294,7 +295,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         # Final constraint: LQ can only be assigned if this day could be part of a quality weekend
                         model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
 
-def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year):
+def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, non_working_days):
     # For each worker, constrain L on Saturday if L on Sunday
 
     for w in workers:
@@ -315,13 +316,30 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                     if saturday_l_key in shift and sunday_l_key in shift:
                         saturday_l = shift[saturday_l_key]
                         sunday_l = shift[sunday_l_key]
-                        print(f"DEBUG: Adding constraint for Worker {w}, Saturday {day}, Sunday {sunday_day}")
-
-                        
+                        #logger.debug(f"DEBUG: Adding constraint for Worker {w}, Saturday {day}, Sunday {sunday_day}")
                         # If Sunday has L, then Saturday can't have L
-                        # This translates to: sunday_l == 1 → saturday_l == 0
-                        # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
+        monday = -1
+        consecutive = 0
+        for day2 in non_working_days[w]:
+            if monday > -1:
+                if day2 == monday + 1:
+                    monday += 1
+                    consecutive += 1
+                else:
+                    consecutive = 0
+                    monday = -1
+            if (day2 + start_weekday - 2) % 7 == 0: #monday
+                monday = day2
+                consecutive = 0
+            if consecutive == 4 and day2 + 1 in working_days[w] :
+                if monday + 2 in working_days[w]:
+                    model.Add(shift[w, monday + 1, 'L'] + shift[w, monday + 1, 'LQ'] +shift[w, monday + 2, 'L'] + shift[w, monday + 2, 'LQ'] == 2)
+                    model.Add(shift[w, monday + 1, 'LQ'] + shift[w, monday + 2, 'LQ'] <= 1)
+                    logger.info(f"Worker {w}: 5 consecutive 'A' during week days, adding 2 'L's in weekend {monday + 1}")
+
+            #print(f"{w} : day {day2}")
+    #exit(0)
             
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days):

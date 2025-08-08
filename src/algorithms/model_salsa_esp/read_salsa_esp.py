@@ -532,7 +532,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any
                             (matriz_calendario_gd['colaborador'] == w)
                         ]
                         
-                        logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
+                        #logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
 
                         # Check for morning shifts ('M') for the current worker
                         if not shift_entries[shift_entries['tipo_turno'] == "M"].empty:

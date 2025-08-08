@@ -202,6 +202,8 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
                     # 'week_cut': processed_data[34]
+                    'first_registered_day': processed_data[34],
+                    'last_registered_day': processed_data[35],
                 }
 
             except IndexError as e:
@@ -305,6 +307,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_sundays_plus_c2d = settings["free_sundays_plus_c2d"]
             missing_days_afect_free_days = settings["missing_days_afect_free_days"]
             
+            # extract worker contract start and end
+            first_day = adapted_data["first_registered_day"]
+            last_day = adapted_data["last_registered_day"]
+
             # =================================================================
             # CREATE MODEL AND DECISION VARIABLES
             # =================================================================
@@ -315,7 +321,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             logger.info(f"workers_complete: {workers_complete}")
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers_complete, shifts)
+            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -359,9 +365,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, 
                                   sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
-            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year)
+            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+            #salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
                         
             self.logger.info("All SALSA constraints applied")
             
@@ -568,26 +574,8 @@ class SalsaAlgorithm(BaseAlgorithm):
         results = self.execute_algorithm(adapted_data)
         
         # Step 3: Format results
-        if (1 == 2):
-            i = 0
-            times = []
-            while (i < 1000):
-                start = time.time()
-                formatted_results = self.format_results(results)
-                print(f"\n\n\n-----------------------------------------\n\n\n{formatted_results}\n\n\n-----------------------------------------\n\n\n")
-
-                end = time.time()
-                times.append(end - start)
-                i += 1
-            print(f"Average execution time: {sum(times)/len(times):.4f} seconds")
-        else :
-            start = time.time()
-            formatted_results = self.format_results(results)
-            print(f"\n\n\n-----------------------------------------\n\n\n{formatted_results}\n\n\n-----------------------------------------\n\n\n")
-
-            end = time.time()
-            print(f"Execution time: {end - start:.4f} seconds")
-        exit(0)
+        formatted_results = self.format_results(results)
+        print(f"\n\n\n-----------------------------------------\n\n\n{formatted_results}\n\n\n-----------------------------------------\n\n\n")
         self.logger.info("Full SALSA algorithm pipeline completed successfully")
 
         return formatted_results
