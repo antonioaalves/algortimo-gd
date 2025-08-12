@@ -62,7 +62,7 @@ class SalsaAlgorithm(BaseAlgorithm):
         """
         # Default parameters for the SALSA algorithm
         default_parameters = {
-            "max_continuous_working_days": 5,
+            "max_continuous_working_days": 6,
             "shifts": ["M", "T", "L", "LQ", "F", "A", "V"],
             "check_shifts": ['M', 'T', 'L', 'LQ'],
             "working_shifts": ["M", "T"],
@@ -321,7 +321,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             logger.info(f"workers_complete: {workers_complete}")
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day)
+            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -340,7 +340,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
             # Maximum free days constraint
-            maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
+            #maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
 
             logger.info(f"workers: {workers}, c2d: {c2d}")
             LQ_attribution(model, shift, workers, working_days, c2d)
@@ -367,7 +367,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            #salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
                         
             self.logger.info("All SALSA constraints applied")
             
