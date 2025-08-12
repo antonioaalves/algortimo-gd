@@ -17,11 +17,11 @@ from src.config import PROJECT_NAME, ROOT_DIR
 # Import shift scheduler components
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
-    shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    maximum_free_days, LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
+    free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
+    LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
     assign_week_shift, working_day_shifts,
     salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
-    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint
+    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint, first_day_not_free, free_days_special_days
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -62,7 +62,7 @@ class SalsaAlgorithm(BaseAlgorithm):
         """
         # Default parameters for the SALSA algorithm
         default_parameters = {
-            "max_continuous_working_days": 5,
+            "max_continuous_working_days": 6,
             "shifts": ["M", "T", "L", "LQ", "F", "A", "V"],
             "check_shifts": ['M', 'T', 'L', 'LQ'],
             "working_shifts": ["M", "T"],
@@ -201,6 +201,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'workers_complete_cycle': processed_data[31],  # Adjusted for SALSA
                     'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
+                    'first_registered_day': processed_data[34],
                     # 'week_cut': processed_data[34]
                 }
 
@@ -291,6 +292,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
+            first_registered_day = adapted_data['first_registered_day']
             # week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
@@ -333,8 +335,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Maximum continuous working days constraint
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
-            # Maximum free days constraint
-            maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
 
             logger.info(f"workers: {workers}, c2d: {c2d}")
             LQ_attribution(model, shift, workers, working_days, c2d)
@@ -361,7 +361,11 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            #salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+
+            first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift)
+
+            free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
                         
             self.logger.info("All SALSA constraints applied")
             
@@ -371,7 +375,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
             
             salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days)
+                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d)
             
             # =================================================================
             # SOLVE THE MODEL
