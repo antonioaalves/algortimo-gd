@@ -36,8 +36,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             model.Add(neg_diff >= 0)  # Ensure neg_diff is non-negative
             
             # Add both positive and negative deviations to the objective function
-            objective_terms.append(100 * pos_diff)
-            objective_terms.append(100 * neg_diff)
+            objective_terms.append(1000 * pos_diff)
+            objective_terms.append(1000 * neg_diff)
 
     # 2. NEW: Reward consecutive free days
     consecutive_free_day_bonus = []
