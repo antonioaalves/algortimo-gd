@@ -469,19 +469,19 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
         # =================================================================
         logger.info("Adjusting worker parameters based on last registered days")
-
+        proportion = {}
         for w in workers:
             if (last_registered_day[w] > 0 and last_registered_day[w] < 364):
-                proportion = (last_registered_day[w]- days_of_year[0])  / 364
-                logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion {proportion:.2f}")
-                total_l[w] = int(round(proportion * total_l[w]))
-                total_l_dom[w] = int(round(proportion * total_l_dom[w]))
-                c2d[w] = int(math.floor(proportion * c2d[w]))
-                c3d[w] = int(math.floor(proportion * c3d[w]))
-                l_d[w] = int(round(proportion * l_d[w]))
-                l_q[w] = int(round(proportion * l_q[w]))
-                cxx[w] = int(round(proportion * cxx[w]))
-                t_lq[w] = int(round(proportion * t_lq[w]))
+                proportion[w] = (last_registered_day[w]- days_of_year[0])  / 364
+                logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion {proportion[w]:.2f}")
+                total_l[w] = int(round(proportion[w] * total_l[w]))
+                total_l_dom[w] = int(round(proportion[w] * total_l_dom[w]))
+                c2d[w] = int(math.floor(proportion[w] * c2d[w]))
+                c3d[w] = int(math.floor(proportion[w] * c3d[w]))
+                l_d[w] = int(round(proportion[w] * l_d[w]))
+                l_q[w] = int(round(proportion[w] * l_q[w]))
+                cxx[w] = int(round(proportion[w] * cxx[w]))
+                t_lq[w] = int(round(proportion[w] * t_lq[w]))
                 
                 logger.info(f"Worker {w} parameters adjusted for last registered day {last_registered_day[w]}: "
                             f"Total L: {total_l[w]}, "
@@ -553,7 +553,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             logger.info(f"  - max_workers: {len(max_workers)} entries")
         else:
             logger.warning("No estimativas data found, using default values for pess_obj, min_workers, max_workers, and working_shift_2")
-               
+
+
 
 
 
@@ -645,6 +646,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             free_day_complete_cycle,  # 33
             week_to_days_salsa,  # 34x
             first_registered_day,
+            proportion,
             # week_cut
         )
         
