@@ -383,7 +383,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Solving SALSA model")
             
             schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, 
-                              output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
+                              "normal", output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
                                                          f'salsa_schedule_{self.process_id}.xlsx'))
             
             self.final_schedule = pd.DataFrame(schedule_df).copy()

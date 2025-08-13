@@ -25,6 +25,7 @@ def solve(
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
     max_time_seconds: int = 120,
+    mode = "normal",
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = True,
@@ -114,10 +115,29 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 300  # Short timeout for testing
         solver.parameters.log_search_progress = log_search_progress
         solver.parameters.use_phase_saving = use_phase_saving
 
+        # Quick decisions
+        if mode == "quick":
+            solver.parameters.relative_gap_limit = 0.10 
+            solver.parameters.absolute_gap_limit = 2000
+            solver.parameters.max_time_in_seconds = 30.0
+
+        # Batch processing
+        elif mode == "normal":
+            solver.parameters.relative_gap_limit = 0.02
+            solver.parameters.absolute_gap_limit = 100
+            solver.parameters.max_time_in_seconds = 300.0
+
+        # Overnight optimization
+        elif mode == "overnight":
+            solver.parameters.relative_gap_limit = 0.0005
+            solver.parameters.absolute_gap_limit = 10
+            solver.parameters.max_time_in_seconds = 28800.0
+        else:
+            solver.parameters.max_time_in_seconds = 300  # Short timeout for testing
+        #solver.parameters.max_time_in_seconds = 300  # Short timeout for testing
         # Add performance optimizations
         solver.parameters.cp_model_presolve = True
         # solver.parameters.interleave_search = True
