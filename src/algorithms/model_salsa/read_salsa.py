@@ -435,7 +435,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
-                total_l_dom[w] = int(worker_row.get('l_dom', 0))
+                total_l_dom[w] = int(worker_row.get('l_dom_salsa', 0))
                 c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
@@ -492,9 +492,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                             f"L_Q: {l_q[w]}, "
                             f"CXX: {cxx[w]}, "
                             f"T_LQ: {t_lq[w]}, ")
-                
 
-
+        '''
+        #i dont understand what this is doing
         for w in workers:
             worker_special_days = [d for d in special_days if d in working_days[w]]
             if contract_type[w] == 6:
@@ -509,6 +509,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             elif contract_type[w] in [4,5]:
                 total_l[w] = total_l[w]        
             logger.info(f"Worker {w} L_D adjusted: {l_d[w]} based on contract type {contract_type[w]}")        
+        '''
 
         logger.info("Worker parameters adjusted based on first and last registered days")
 
@@ -643,6 +644,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             workers_complete_cycle,  # 32
             free_day_complete_cycle,  # 33
             week_to_days_salsa,  # 34x
+            first_registered_day,
             # week_cut
         )
         

@@ -1581,6 +1581,7 @@ class DescansosDataModel(BaseDataModel):
                 matriz_festivos['data'] = pd.to_datetime(matriz_festivos['data'])
                 non_sunday_festivos = matriz_festivos[matriz_festivos['data'].dt.weekday != 6]  # Sunday is 6 in pandas
                 nr_festivos = len(non_sunday_festivos['data'].unique())
+                self.logger.info(f"nr_festivos: {nr_festivos}")
             
             # Create day sequence from start_date to end of year
             start_dt = pd.to_datetime(start_date)
@@ -1701,7 +1702,7 @@ class DescansosDataModel(BaseDataModel):
             contrato_zeros = bool((matriz_ma['tipo_contrato'] == 0).any())
             contrato_nulls = bool(matriz_ma['tipo_contrato'].isna().any())
             if contrato_zeros or contrato_nulls:
-                self.logger.error("contrato=0 or null - columna TIPO_CONTRATO mal parametrizada")
+                self.logger.error("contrato=0 or null - TIPO_CONTRATO column not valid")
                 return False
             
             # Calculate numFerDom and ferFechados
@@ -1710,6 +1711,7 @@ class DescansosDataModel(BaseDataModel):
             
             # Calculate closed holidays (tipo == 3 and not Sunday)
             if len(matriz_festivos) > 0:
+                self.logger.info(f"matriz_festivos: {matriz_festivos}")
                 closed_festivos = matriz_festivos[
                     (matriz_festivos['tipo'] == 3) & 
                     (matriz_festivos['data'].dt.weekday != 6)  # Not Sunday
@@ -1734,21 +1736,25 @@ class DescansosDataModel(BaseDataModel):
                     continue
                     
                 cc = cc.iloc[0:1].copy()  # Take first row if multiple
+                self.logger.info(f"DEBUG: length cc: {len(cc)}")
                 
                 start_dt = pd.to_datetime(start_date)
                 end_dt = pd.to_datetime(end_date)
+                div = 1
                 
                 # Adjust for admission date
                 if pd.notna(cc['data_admissao'].iloc[0]) and start_dt < cc['data_admissao'].iloc[0]:
                     days_from_admission = (end_dt - cc['data_admissao'].iloc[0]).days + 1
                     total_days = (end_dt - start_dt).days + 1
                     div = days_from_admission / total_days
-                    
+                    self.logger.info(f"DEBUG: days_from_admission: {days_from_admission}, total_days: {total_days}, div: {div}")
+                    self.logger.info(f"DEBUG before: cc['dyf_max_t']: {cc['dyf_max_t']}, cc['lq']: {cc['lq']}, cc['c2d']: {cc['c2d']}, cc['c3d']: {cc['c3d']}")
                     cc['dyf_max_t'] = np.ceil(cc['dyf_max_t'] * div)
                     cc['lq'] = np.ceil(cc['lq'] * div)
                     cc['c2d'] = np.ceil(cc['c2d'] * div)
                     cc['c3d'] = np.ceil(cc['c3d'] * div)
-
+                    self.logger.info(f"DEBUG after: cc['dyf_max_t']: {cc['dyf_max_t']}, cc['lq']: {cc['lq']}, cc['c2d']: {cc['c2d']}, cc['c3d']: {cc['c3d']}")
+                    
                     if (cc['c3d'] + cc['c2d']).iloc[0] > cc['lq'].iloc[0]:
                         cc['lq'] = cc['c2d'].iloc[0] + cc['c3d'].iloc[0] + cc['c3d'].iloc[0]
                         self.logger.error(f"Empleado {cc['matricula'].iloc[0]} sin suficiente LQ para fines de semana de calidad. Recalculated l_total: {cc['l_total'].iloc[0]}")
@@ -1766,6 +1772,8 @@ class DescansosDataModel(BaseDataModel):
                     cc['lq_og'] = cc['lq'].copy()
                     cc['lq'] = cc['lq'] - (cc['c2d'] + cc['c3d'])
                     cc['l_total'] = num_fer_dom + cc['lq'] + cc['c2d'] + cc['c3d']
+                    cc['l_dom_salsa'] = num_sundays * div - cc['dyf_max_t']
+                    self.logger.info(f"colaborador: {cc['matricula'].iloc[0]}, l_dom_salsa: {cc['l_dom_salsa'].iloc[0]}")
                     
                     if cc['lq'].iloc[0] < 0:
                         cc['c3d'] = cc['c3d'] + cc['lq']
@@ -1781,6 +1789,8 @@ class DescansosDataModel(BaseDataModel):
                     cc['lq_og'] = 0
                     cc['lq'] = 0
                     cc['l_total'] = num_sundays * (7 - tipo_contrato)
+                    cc['l_dom_salsa'] = num_sundays * div - cc['dyf_max_t']
+                    self.logger.info(f"colaborador: {cc['matricula'].iloc[0]}, l_dom_salsa: {cc['l_dom_salsa'].iloc[0]}")
                 
                 elif tipo_contrato in [3, 2] and convenio == convenio_bd:
                     if len(matriz_festivos) > 0:
@@ -2869,7 +2879,8 @@ class DescansosDataModel(BaseDataModel):
             matrizA = matrizA_og[[
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
-                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao'
+                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao',
+                'l_dom_salsa' # TODO: Remove this in next big release
             ]].copy()
             
             # Rename columns to match R output
@@ -3172,7 +3183,7 @@ class DescansosDataModel(BaseDataModel):
                     #self.logger.info(f"DEBUG: colab {colab} ciclo {ciclo} dyf_max_t {dyf_max_t}")
                     # Reset all columns from position 9 onwards to 0
                     #cols_to_reset = mmA.columns[8:]  # Assuming position 9 is index 8
-                    cols_to_reset = ['l_total', 'l_dom', 'l_d', 'l_q', 'l_qs', 'c2d', 'c3d', 'cxx','descansos_atrb', 'dyf_max_t', 'lq_og', 'vz', 'l_res']
+                    cols_to_reset = ['l_total', 'l_dom', 'l_d', 'l_q', 'l_qs', 'c2d', 'c3d', 'cxx','descansos_atrb', 'dyf_max_t', 'lq_og', 'vz', 'l_res', 'l_dom_salsa'] # TODO: Remove this in next big release
                     mmA.loc[:, cols_to_reset] = 0
                     self.logger.info(f"DEBUG: cols_to_reset: {cols_to_reset}")
                     
