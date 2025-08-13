@@ -46,11 +46,11 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 2628,#253762,# 249468,
+        'current_process_id': 2637,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 2628,
+        'wfm_proc_id': 2637,
         'wfm_user': 'WFM',
-        'start_date': '2025-01-01',
+        'start_date': '2025-01-1',
         'end_date': '2025-12-31',
         'wfm_proc_colab': None, 
     }, # TODO: create the default values to run locally
@@ -79,7 +79,7 @@ CONFIG = {
         'maxRetries': 3,
         'sleepTime': 1000,
         'test_param_scheduling_threshold': 0.75,
-        'GD_algorithmName': 'alcampo_algorithm',
+        #'GD_algorithmName': '',
         'GD_consideraFestivos': 1,
         'GD_convenioBD': 'ALCAMPO',
     },

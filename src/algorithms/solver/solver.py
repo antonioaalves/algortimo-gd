@@ -28,7 +28,7 @@ def solve(
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = True,
-    log_callback: Optional[Callable] = None,
+    log_callback: Optional[Callable] = print,
     output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx')
 ) -> pd.DataFrame:
     """
@@ -114,9 +114,23 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 300  # Short timeout for testing
+        solver.parameters.log_search_progress = log_search_progress
+        solver.parameters.use_phase_saving = use_phase_saving
+
+        # Add performance optimizations
+        solver.parameters.cp_model_presolve = True
+        # solver.parameters.interleave_search = True
+        # solver.parameters.search_branching = cp_model.AUTOMATIC_SEARCH 
+        solver.parameters.cp_model_probing_level = 3
+        solver.parameters.symmetry_level = 4
+        solver.parameters.linearization_level = 2
 
         logger.info("Attempting solve with verified parameters...")
+        if log_callback is None:
+            log_calback = lambda x: logger.info(f"Solver progress: {x}")
+        solver.log_callback =log_callback
+
 
         # Simple timeout test without fancy threading
         import time
@@ -269,12 +283,12 @@ def solve(
         logger.info(f"DataFrame columns: {len(df.columns)} columns")
         
         # Save to Excel
-        #try:
-        #    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-        #    df.to_excel(output_filename, index=False)
-        #    logger.info(f"Schedule saved to: {output_filename}")
-        #except Exception as e:
-        #    logger.warning(f"Could not save to Excel: {str(e)}")
+        try:
+            os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+            df.to_excel(output_filename, index=False)
+            logger.info(f"Schedule saved to: {output_filename}")
+        except Exception as e:
+            logger.warning(f"Could not save to Excel: {str(e)}")
         
         # =================================================================
         # 7. LOG FINAL STATISTICS

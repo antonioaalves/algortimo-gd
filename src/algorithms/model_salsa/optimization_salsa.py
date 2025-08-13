@@ -1,4 +1,4 @@
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -36,8 +36,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             model.Add(neg_diff >= 0)  # Ensure neg_diff is non-negative
             
             # Add both positive and negative deviations to the objective function
-            objective_terms.append(30 * pos_diff)
-            objective_terms.append(30 * neg_diff)
+            objective_terms.append(100 * pos_diff)
+            objective_terms.append(100 * neg_diff)
 
     # 2. NEW: Reward consecutive free days
     consecutive_free_day_bonus = []
@@ -120,48 +120,159 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 # Add penalty to the objective function
                 objective_terms.append(MIN_WORKER_PENALTY * shortfall)
 
-    # Balance free days (L shifts) and quality weekends (LQ shifts) across all workers
-    worker_balance_penalties = []
 
-    # 5. Calculate the total L and LQ shifts for each worker
-    L_counts = {}
-    LQ_counts = {}
-    for w in workers:
-        # Sum all L shifts for this worker
-        L_counts[w] = sum(shift.get((w, d, "L"), 0) for d in working_days[w])
+
+       # 5.1 Balance sundays free days 
+        SUNDAY_BALANCE_PENALTY = 1  # Weight for Sunday balance penalty
+        sunday_balance_penalties = []
         
-        # Sum all LQ shifts for this worker
-        LQ_counts[w] = sum(shift.get((w, d, "LQ"), 0) for d in working_days[w])
+        
+        for w in workers:
+            worker_sundays = [d for d in sundays if d in working_days[w]]
+            
+            if len(worker_sundays) <= 1:
+                continue  # Skip if worker has 0 or 1 Sunday (no balancing needed)
+            
+            # Create variables for Sunday free days (L shifts)
+            sunday_free_vars = []
+            for sunday in worker_sundays:
+                sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
+                
+                # Link to actual L shift assignment
+                model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) >= 1).OnlyEnforceIf(sunday_free)
+                model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
 
-    # Create penalties for imbalances between workers
-    # For each pair of workers
-    for w1 in workers:
-        for w2 in workers:
-            if w1 < w2:  # Avoid counting each pair twice
-                # Calculate and penalize differences in L shifts (free days)
-                L_diff = model.NewIntVar(-len(days_of_year), len(days_of_year), f"L_diff_{w1}_{w2}")
-                L_abs_diff = model.NewIntVar(0, len(days_of_year), f"L_abs_diff_{w1}_{w2}")
-                
-                # Set L shift difference constraint
-                model.Add(L_diff == L_counts[w1] - L_counts[w2])
-                model.AddAbsEquality(L_abs_diff, L_diff)
-                
-                # Calculate and penalize differences in LQ shifts (part of quality weekends)
-                LQ_diff = model.NewIntVar(-len(days_of_year), len(days_of_year), f"LQ_diff_{w1}_{w2}")
-                LQ_abs_diff = model.NewIntVar(0, len(days_of_year), f"LQ_abs_diff_{w1}_{w2}")
-                
-                # Set LQ shift difference constraint
-                model.Add(LQ_diff == LQ_counts[w1] - LQ_counts[w2])
-                model.AddAbsEquality(LQ_abs_diff, LQ_diff)
-                
-                # Add higher weight to LQ differences to prioritize balancing quality weekends
-                worker_balance_penalties.append(15 * L_abs_diff)  # Free days balance weight
-                worker_balance_penalties.append(25 * LQ_abs_diff)  # Quality weekends balance weight (higher priority)
+                sunday_free_vars.append(sunday_free)
+            
+            # Calculate target spacing between Sunday free days
+            total_sunday_free = len(sunday_free_vars)
+            
+            # For even distribution, we want to minimize variance in spacing
+            # We'll divide the year into segments and try to have roughly equal distribution
+            num_segments = min(5, total_sunday_free)  # Use 5 segments or fewer if not enough Sundays
 
-    
+            if num_segments > 1:
+                segment_size = total_sunday_free // num_segments
 
-    # Add all balance penalties to the objective function
-    objective_terms.extend(worker_balance_penalties)
+                for segment in range(num_segments):
+                    start_idx = segment * segment_size
+                    end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else total_sunday_free
+                    
+                    segment_sundays = sunday_free_vars[start_idx:end_idx]
+                    
+                    if len(segment_sundays) > 0:
+                        # Create variables for deviation from ideal distribution
+                        segment_free_count = sum(segment_sundays)
+                        
+                        # Handle remainder when total doesn't divide evenly
+                        base_ideal = total_sunday_free // num_segments
+                        remainder = total_sunday_free % num_segments
+                        # First 'remainder' segments get one extra
+                        ideal_count = base_ideal + (1 if segment < remainder else 0)
+                        
+                        # Maximum possible deviation bounds
+                        max_over = len(segment_sundays)  # All Sundays in segment could be free
+                        max_under = ideal_count  # Could have 0 instead of ideal_count
+                        
+                        # Create penalty variables for over/under allocation
+                        over_penalty = model.NewIntVar(0, max_over, f"sunday_over_{w}_{segment}")
+                        under_penalty = model.NewIntVar(0, max_under, f"sunday_under_{w}_{segment}")
+                        
+                        # Correctly calculate deviations (handling negative cases)
+                        model.Add(over_penalty >= segment_free_count - ideal_count)
+                        model.Add(over_penalty >= 0)  # Ensure non-negative
+                        
+                        model.Add(under_penalty >= ideal_count - segment_free_count)
+                        model.Add(under_penalty >= 0)  # Ensure non-negative
+                        
+                        sunday_balance_penalties.append(SUNDAY_BALANCE_PENALTY * over_penalty)
+                        sunday_balance_penalties.append(SUNDAY_BALANCE_PENALTY * under_penalty)
+        
+        objective_terms.extend(sunday_balance_penalties)
+
+
+
+        # 5.2 Balance c2d free days
+        C2D_BALANCE_PENALTY = 8  # Weight for c2d balance penalty
+        c2d_balance_penalties = []
+
+        
+        for w in workers:
+            # Find all potential quality weekends (Saturday-Sunday pairs)
+            quality_weekend_vars = []
+            weekend_dates = []
+            
+            for sunday in sundays:
+                saturday = sunday - 1
+                
+                # Check if both Saturday and Sunday are in worker's schedule
+                if saturday in working_days[w] and sunday in working_days[w]:
+                    # Create boolean for this quality weekend
+                    quality_weekend = model.NewBoolVar(f"quality_weekend_{w}_{sunday}")
+                    
+                    # Quality weekend is True if LQ on Saturday AND L on Sunday
+                    has_lq_saturday = model.NewBoolVar(f"has_lq_sat_{w}_{saturday}")
+                    has_l_sunday = model.NewBoolVar(f"has_l_sun_{w}_{sunday}")
+                    
+                    # Link to actual shift assignments
+                    model.Add(shift.get((w, saturday, "LQ"), 0) >= 1).OnlyEnforceIf(has_lq_saturday)
+                    model.Add(shift.get((w, saturday, "LQ"), 0) == 0).OnlyEnforceIf(has_lq_saturday.Not())
+                    
+                    model.Add(shift.get((w, sunday, "L"), 0) >= 1).OnlyEnforceIf(has_l_sunday)
+                    model.Add(shift.get((w, sunday, "L"), 0) == 0).OnlyEnforceIf(has_l_sunday.Not())
+                    
+                    # Quality weekend requires both conditions
+                    model.AddBoolAnd([has_lq_saturday, has_l_sunday]).OnlyEnforceIf(quality_weekend)
+                    model.AddBoolOr([has_lq_saturday.Not(), has_l_sunday.Not()]).OnlyEnforceIf(quality_weekend.Not())
+                    
+                    quality_weekend_vars.append(quality_weekend)
+                    weekend_dates.append(sunday)
+            
+            if len(quality_weekend_vars) <= 1:
+                continue  # Skip if worker has 0 or 1 potential quality weekend
+            
+            # Divide the year into segments and try to distribute quality weekends evenly
+            num_segments = min(5, len(quality_weekend_vars))  # Use 5 segments or fewer if not enough weekends
+
+            if num_segments > 1:
+                segment_size = len(quality_weekend_vars) // num_segments
+                
+                for segment in range(num_segments):
+                    start_idx = segment * segment_size
+                    end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else len(quality_weekend_vars)
+                    
+                    segment_weekends = quality_weekend_vars[start_idx:end_idx]
+                    
+                    if len(segment_weekends) > 0:
+                        segment_count = sum(segment_weekends)
+
+                        max_possible_quality = c2d.get(w,0)  # from your business logic
+                        base_ideal = max_possible_quality // num_segments
+                        remainder = max_possible_quality % num_segments
+                        ideal_count = base_ideal + (1 if segment < remainder else 0)
+                        
+                        # Maximum possible deviation bounds
+                        max_over = len(segment_weekends)  # All weekends in segment could be quality
+                        max_under = ideal_count  # Could have 0 instead of ideal_count
+                        
+                        # Create penalty variables for deviation from ideal distribution
+                        over_penalty = model.NewIntVar(0, max_over, f"c2d_over_{w}_{segment}")
+                        under_penalty = model.NewIntVar(0, max_under, f"c2d_under_{w}_{segment}")
+                        
+                        # Correctly calculate deviations (handling negative cases)
+                        model.Add(over_penalty >= segment_count - ideal_count)
+                        model.Add(over_penalty >= 0)  # Ensure non-negative
+                        
+                        model.Add(under_penalty >= ideal_count - segment_count)
+                        model.Add(under_penalty >= 0)  # Ensure non-negative
+                        
+                        c2d_balance_penalties.append(C2D_BALANCE_PENALTY * over_penalty)
+                        c2d_balance_penalties.append(C2D_BALANCE_PENALTY * under_penalty)
+        
+
+
+
+    objective_terms.extend(c2d_balance_penalties)
 
     # 6. Penalize inconsistent shift types within a week for each worker
     for w in workers:
