@@ -407,7 +407,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # ALTERNATIVE STRATEGY 2: Simpler pairwise balance approach
     # This strategy directly compares workers pairwise with proportional adjustments
-    """ 
+
    # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
     SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 50
     sunday_balance_across_workers_penalties = []
@@ -481,7 +481,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
 
     # Add to objective
-    objective_terms.extend(sunday_balance_across_workers_penalties) """
+    objective_terms.extend(sunday_balance_across_workers_penalties)
+    
 
     # STRATEGY 3: Variance minimization approach (most sophisticated)
     # This minimizes the variance of scaled Sunday free days across workers
