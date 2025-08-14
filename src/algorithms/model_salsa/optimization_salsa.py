@@ -196,7 +196,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         C2D_BALANCE_PENALTY = 8  # Weight for c2d balance penalty
         c2d_balance_penalties = []
 
-        
+        quality_weekend_2_dict = {}
+
         for w in workers:
             # Find all potential quality weekends (Saturday-Sunday pairs)
             quality_weekend_vars = []
@@ -224,6 +225,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     # Quality weekend requires both conditions
                     model.AddBoolAnd([has_lq_saturday, has_l_sunday]).OnlyEnforceIf(quality_weekend)
                     model.AddBoolOr([has_lq_saturday.Not(), has_l_sunday.Not()]).OnlyEnforceIf(quality_weekend.Not())
+
+                    quality_weekend_2_dict[(w, sunday)] = quality_weekend
                     
                     quality_weekend_vars.append(quality_weekend)
                     weekend_dates.append(sunday)
@@ -404,7 +407,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # ALTERNATIVE STRATEGY 2: Simpler pairwise balance approach
     # This strategy directly compares workers pairwise with proportional adjustments
-
+    """ 
    # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
     SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 50
     sunday_balance_across_workers_penalties = []
@@ -478,7 +481,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
 
     # Add to objective
-    objective_terms.extend(sunday_balance_across_workers_penalties)
+    objective_terms.extend(sunday_balance_across_workers_penalties) """
 
     # STRATEGY 3: Variance minimization approach (most sophisticated)
     # This minimizes the variance of scaled Sunday free days across workers
@@ -529,7 +532,106 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_pos)
     #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_neg)
 
+    
+    
+    
+    
+    
+    
+    
+    
+    ####################################################################################### ##########################################################################
     # # Add to objective
     # objective_terms.extend(sunday_balance_across_workers_penalties)
+    #7 Equilibrium between quality weekends and sundays per worker
+
+    #7.1 count sundays worked, if worker w worked on sunday u, sunday_work = 1, else if he didn´t  sunday_work=0
+    sunday_work = {}
+    sunday_off = {}
+    elegible_sundays = {w: [] for w in workers}
+
+    for w in workers:
+        for u in sundays:
+            sw = model.NewBoolVar(f"sunday_work_{w}_{u}")
+            lits = [shift[(w, u, s)] for s in working_shift if (w, u, s) in shift]
+            if lits:
+                model.Add(sum(lits) >= 1).OnlyEnforceIf(sw)
+                model.Add(sum(lits) == 0).OnlyEnforceIf(sw.Not())
+                elegible_sundays[w].append(u)
+
+            else:
+                model.Add(sw == 0)
+            sunday_work[w, u] = sw
+
+            so = model.NewBoolVar(f"sunday_off_{w}_{u}")
+            if lits:
+                model.Add(sw + so ==1) 
+            else:
+                model.Add(so==0)
+            sunday_off[w,u] = so
+
+            
+
+    #7,2 Totals 
+    
+    Q = {}   #Number of quality weekends, perguntars está definido em algum lugar
+    O = {}   #Number of Sundays Off in Total
+
+    maxU = max((len(elegible_sundays[w]) for w in workers), default=0)
+
+    for w in workers:
+        Q[w] = model.NewIntVar(0, len(elegible_sundays[w]), f"Q_{w}")    # nº de fins-de-semana de qualidade
+        O[w] = model.NewIntVar(0, len(elegible_sundays[w]), f"O_{w}")    # nº de domingos trabalhados
+
+        Q[w] == sum(quality_weekend_2_dict[(w,u)] for u in elegible_sundays[w] if (w,u) in quality_weekend_2_dict)
+     
+        model.Add(O[w] == sum(sunday_off[w, u] for u in elegible_sundays[w]))
+
+
+    #7.3
+
+
+    # C2D (Q) Fds Qualdidea
+    Qmin = model.NewIntVar(0, maxU, "Qmin")
+    Qmax = model.NewIntVar(0, maxU, "Qmax")
+
+    for w in workers:
+        model.Add(Qmin <= Q[w])
+        model.Add(Q[w] <= Qmax)
+    """         
+    # “iguais se possível, senão diferem no máx. 1”
+    model.Add(Qmax - Qmin <= 1)
+    objective_terms.append(10 * (Qmax - Qmin))
+     """
+    
+    #soft
+    gapQ = model.NewIntVar(0, maxU, "gapQ")
+    model.Add(gapQ == Qmax - Qmin)
+
+
+    # Domingos de folga (O)
+    Omin = model.NewIntVar(0, maxU, "Omin")
+    Omax = model.NewIntVar(0, maxU, "Omax")
+
+    for w in workers:
+        model.Add(Omin <= O[w])
+        model.Add(O[w] <= Omax)
+    """     
+    model.Add(Omax - Omin <= 1)
+    objective_terms.append(10 * (Omax - Omin))
+    """
+    gapO = model.NewIntVar(0, maxU, "gapO")
+    model.Add(gapO == Omax - Omin)
+
+    # weights
+    W_gapQ = 10 
+    W_gapO = 10 
+     
+    objective_terms.append(W_gapQ * gapQ)
+    objective_terms.append(W_gapO * gapO)
+
+     
+
+
 
     model.Minimize(sum(objective_terms))

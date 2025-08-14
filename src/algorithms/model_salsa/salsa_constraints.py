@@ -39,7 +39,7 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
 def LQ_attribution(model, shift, workers, working_days, c2d):
     # #constraint for maximum of LD days in a year
     for w in workers:
-        model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if (w, d, "LQ") in shift) == c2d.get(w, 0))
+        model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if (w, d, "LQ") in shift) >= c2d.get(w, 0))
 
 def closed_holiday_attribution(model, shift, workers_complete, closed_holidays):
     #assigns free day in holidays
@@ -181,7 +181,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         quality_2weekend_vars.append(quality_weekend_2)
                 
                 # Constraint: The worker should have at least c2d quality weekends
-                model.Add(sum(quality_2weekend_vars) == c2d.get(w, 0))
+                model.Add(sum(quality_2weekend_vars) >= c2d.get(w, 0))
                 
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker

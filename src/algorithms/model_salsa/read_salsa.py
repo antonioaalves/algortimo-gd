@@ -552,8 +552,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             logger.info(f"  - min_workers: {len(min_workers)} entries")
             logger.info(f"  - max_workers: {len(max_workers)} entries")
         else:
-            logger.warning("No estimativas data found, using default values for pess_obj, min_workers, max_workers, and working_shift_2")
-               
+            logger.warning("No estimativas data found, using default values for pess_obj, min_workers, max_workers, and working_shift_2")               
 
 
 
