@@ -58,7 +58,8 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         # Only call ensure_connection for direct cx_Oracle connections
         # SQLAlchemy connections manage their own lifecycle
         if hasattr(connection, 'ping') and callable(getattr(connection, 'ping')):
-            connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+            connection_path = os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection")
+            connection = ensure_connection(connection, connection_path)
             logger.info(f"DEBUG: ensured cx_Oracle connection")
         else:
             logger.info(f"DEBUG: using SQLAlchemy connection as-is")
@@ -118,7 +119,7 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         return 1
         
     except Exception as e:
-        logger.info(f"Error in set_process_errors: {e}")
+        logger.error(f"Error in set_process_errors: {e}", exc_info=True)
         return 0
 
 def replace_placeholders(template, values_dict):
