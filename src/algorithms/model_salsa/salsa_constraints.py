@@ -6,7 +6,12 @@ def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
     for w in workers_complete:
         for d in days_of_year:
-           model.add_exactly_one(shift[(w, d, s)] for s in shifts)
+            total_shifts = []
+            for s in shifts:
+                if (w, d, s) in shift:
+                    total_shifts.append(shift[(w, d, s)])
+            if (total_shifts):
+                model.add_exactly_one(total_shifts)
 
 def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type):
     # Define working shifts
@@ -16,7 +21,7 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
         for week in week_to_days.keys():
             days_in_week = week_to_days[week]
             # Sum shifts across days and shift types
-            total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift)
+            total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift if (w, d, s) in shift)
             max_days = contract_type.get(w, 0)
             model.Add(total_shifts <= max_days)
 
@@ -53,6 +58,7 @@ def closed_holiday_attribution(model, shift, workers_complete, closed_holidays):
 def holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle):
     # Assigns worker holidays, missing days and empty days in holidays
     for w in workers_complete:
+        '''
         for d in worker_holiday[w]:
 
             if (w, d, "A") in shift:
@@ -66,6 +72,7 @@ def holiday_missing_day_attribution(model, shift, workers_complete, worker_holid
                 model.Add(shift[(w, d, "V")] == 1)
             else:
                 print(f"Missing shift for worker {w}, day {d}, shift A")
+        '''
 
         for d in empty_days[w]:
 
@@ -89,22 +96,34 @@ def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_
                 for day in week_to_days[week]:
                     if day in working_days[w]:
                         # Morning shift constraint: worker can only be assigned to M if available for M
-                        model.Add(shift[(w, day, "M")] <= worker_week_shift[(w, week, 'M')])
+                        if ((w, day, "M") in shift):
+                            model.Add(shift[(w, day, "M")] <= worker_week_shift[(w, week, 'M')])
                         
                         # Afternoon shift constraint: worker can only be assigned to T if available for T
-                        model.Add(shift[(w, day, "T")] <= worker_week_shift[(w, week, 'T')])
+                        if ((w, day, "T") in shift):
+                            model.Add(shift[(w, day, "T")] <= worker_week_shift[(w, week, 'T')])
 
 def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
 # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
   #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
     for w in workers:
         for d in working_days[w]:
-            model.add_exactly_one(shift[(w, d, s)] for s in check_shift if (w, d, s) in shift)
+            total_shifts = []
+            for s in check_shift:
+                if (w, d, s) in shift:
+                    total_shifts.append(shift[(w, d, s)])
+            if total_shifts:
+                model.add_exactly_one(total_shifts)
 
     for w in workers_complete_cycle:
         for d in working_days[w]:
             # Ensure that the worker can only have M, T, L, LQ, LD and F in working days
-            model.add_exactly_one(shift[(w, d, s)] for s in working_shift if (w, d, s) in shift)
+            total_shifts = []
+            for s in working_shift:
+                if (w, d, s) in shift:
+                    total_shifts.append(shift[(w, d, s)])
+            if total_shifts:
+                model.add_exactly_one(total_shifts)
 
 def salsa_2_consecutive_free_days(model, shift, workers, working_days):
     for w in workers: 

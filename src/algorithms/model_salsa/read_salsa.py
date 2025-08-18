@@ -229,6 +229,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         first_registered_day = {}
         working_days = {}
         free_day_complete_cycle = {}
+        fixed_days_off = {}
         
         # Process each worker
         for w in workers_complete:
@@ -276,6 +277,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays)))
             missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
             free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
+            fixed_days_off[w] = missing_days[w]
 
             working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w])
 
@@ -582,7 +584,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                             (matriz_calendario_gd['colaborador'] == w)
                         ]
                         
-                        logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
+                        #logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
 
                         # Check for morning shifts ('M') for the current worker
                         if not shift_entries[shift_entries['tipo_turno'] == "M"].empty:
@@ -594,7 +596,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                             # Assign afternoon shift to the worker for that week
                             worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
                     
-                        logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
+                        #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
                 
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
@@ -611,40 +613,42 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         # =================================================================
         return (
             matriz_calendario_gd,    # 0x
-            days_of_year,           # 1x
-            sundays,                # 2x
-            holidays,               # 3x
-            special_days,           # 4x
-            closed_holidays,        # 5x
-            empty_days,             # 6x
-            worker_holiday,         # 7x
-            missing_days,           # 8x
-            working_days,           # 9x
-            non_holidays,           # 10x
-            start_weekday,          # 11x
-            week_to_days,           # 12x
-            worker_week_shift,      # 13x
-            matriz_colaborador_gd,  # 14x
-            workers,                # 15x
-            contract_type,          # 16x
-            total_l,                # 17x
-            total_l_dom,            # 18x
-            c2d,                    # 19x
-            c3d,                    # 20x
-            l_d,                    # 21x
-            l_q,                    # 22x
-            cxx,                    # 23x
-            t_lq,                   # 24x                   # 25
-            matriz_estimativas_gd,  # 26x
-            pess_obj,                # 27x
-            min_workers,            # 28x
-            max_workers,            # 29x
-            working_shift_2,         # 30
-            workers_complete,       # 31
-            workers_complete_cycle,  # 32
-            free_day_complete_cycle,  # 33
-            week_to_days_salsa,  # 34x
-            first_registered_day,
+            days_of_year,            # 1x
+            sundays,                 # 2x
+            holidays,                # 3x
+            special_days,            # 4x
+            closed_holidays,         # 5x
+            empty_days,              # 6x
+            worker_holiday,          # 7x
+            missing_days,            # 8x
+            working_days,            # 9x
+            non_holidays,            # 10x
+            start_weekday,           # 11x
+            week_to_days,            # 12x
+            worker_week_shift,       # 13x
+            matriz_colaborador_gd,   # 14x
+            workers,                 # 15x
+            contract_type,           # 16x
+            total_l,                 # 17x
+            total_l_dom,             # 18x
+            c2d,                     # 19x
+            c3d,                     # 20x
+            l_d,                     # 21x
+            l_q,                     # 22x
+            cxx,                     # 23x
+            t_lq,                    # 24x
+            matriz_estimativas_gd,   # 25x
+            pess_obj,                # 26x
+            min_workers,             # 27x
+            max_workers,             # 28x
+            working_shift_2,         # 29x
+            workers_complete,        # 30x
+            workers_complete_cycle,  # 31x
+            free_day_complete_cycle, # 32x
+            week_to_days_salsa,      # 33x
+            first_registered_day,    # 34x
+            last_registered_day,     # 35x
+            fixed_days_off,          # 36x
             # week_cut
         )
         

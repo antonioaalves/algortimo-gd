@@ -202,6 +202,8 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
                     'first_registered_day': processed_data[34],
+                    'last_registered_day': processed_data[35],
+                    'fixed_days_off': processed_data[36],
                     # 'week_cut': processed_data[34]
                 }
 
@@ -292,7 +294,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
-            first_registered_day = adapted_data['first_registered_day']
+            first_day = adapted_data['first_registered_day']
+            last_day = adapted_data['last_registered_day']
+            fixed_days_off = adapted_data['fixed_days_off']
             # week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
@@ -317,7 +321,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             logger.info(f"workers_complete: {workers_complete}")
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers_complete, shifts)
+            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -363,7 +367,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
 
-            first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift)
+            first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
                         
