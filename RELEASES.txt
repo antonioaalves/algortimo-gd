@@ -1,0 +1,58 @@
+# Release notes (changelog approach - keepachangelog.com):
+
+All notable changes to this project will be documented in this file.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- New feature X
+
+### Changed
+
+- Modified behavior of Y
+
+### Fixed
+
+- Bug fix for Z
+
+
+## [1.1] - (planned to release)
+
+### Added
+
+- (STRSOL-849) Integração do configuration manager:
+ 	- Agora a configuração passa a ser feita através de um conjunto de ficheiros na pasta src\settings\;
+ 	- Foram criados 6 componentes:
+ 		- System config: configurações do sistema como nome do projeto, versão, ambiente, project_root_dir;
+ 		- Stages config: igual ao seu correspondente no método anterior;
+ 		- paths_config: validação da existência de pastas fundamentais e construção de paths absolutas;
+ 		- parameters: algum parâmetro que o developer possa querer forçar;
+ 		- database: acessos aos ambientes necessários. Devem ser definidos de acordo com os nomes usados nas configs de sistema;
+
+- (STRSOL-850) Integração das funções set_process_errors e bulk_insert_with_query nas componentes da framework
+
+- (STRSOL-852) Garantir que o processo não morre se o resultado do solver for infeasable/unknown
+
+- (STRSOL-855) Reestruturação do orquestrador e suas funções para garantir consistência na arquitetura
+
+- () Reestruturação da componente algoritmos:
+ 	- Adaptação dos nomes de restrições e variáveis para que melhor se relacionem com a realidade;
+ 	- Mapeamento das restrições para ser possível configurá-las;
+ 	- Configuração de restrições;
+ 	- Alteração da estrutura que melhor se adeque à realidade;
+
+### Fixed
+
+
+## [1.0.2] - 05/08/2025
+
+### Added:
+
+- (STRSOL-848) Definida uma nova regra para aplicar folgas em semanas com 5 ausências (comportamento esperado pelo cliente). Trata-se de um workaround, propõe-se revisão do conceito;
+
+### Fixed:
+
+- (STRSOL-848) Corrigido um bug na criação da variável week_to_days_salsa, na função read_salsa (read_salsa.py) na componente do algoritmo Salsa. Este bug não criava o dicionário com listas vazias, e não era introduzida a restrição week_working_days_constraint
