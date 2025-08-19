@@ -166,7 +166,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Import the SALSA data processing function
             from src.algorithms.model_salsa.read_salsa import read_data_salsa
             
-            processed_data = read_data_salsa(medium_dataframes)
+            processed_data = read_data_salsa(medium_dataframes, algorithm_treatment_params)
+            
             
             # =================================================================
             # 4. UNPACK AND VALIDATE PROCESSED DATA
@@ -210,6 +211,9 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
                     'first_registered_day': processed_data[34],
+                    'admissao_proporcional': processed_data[35],
+                    'data_admissao': processed_data[36],
+                    'data_demissao': processed_data[37]
                     # 'week_cut': processed_data[34]
                 }
 
@@ -301,6 +305,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
             first_registered_day = adapted_data['first_registered_day']
+            admissao_proporcional = adapted_data['admissao_proporcional']
+            data_admissao = adapted_data['data_admissao']
+            data_demissao = adapted_data['data_demissao']
             # week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
@@ -369,7 +376,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao)
 
             first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift)
 
