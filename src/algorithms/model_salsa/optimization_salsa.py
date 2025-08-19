@@ -533,7 +533,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_pos)
     #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_neg)
 
-    """ 
+    
     # 7B Balancing number of LQ (quality weekends) across workers (pairwise)
     # Business rule: a weekend counts as LQ iff Saturday has shift "LQ" AND Sunday has shift "L".
     LQ_BALANCE_ACROSS_WORKERS_PENALTY = 50
@@ -620,7 +620,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 lq_balance_across_workers_penalties.append(weight * diff_neg)
 
     # Add to objective
-    objective_terms.extend(lq_balance_across_workers_penalties)     """
+    objective_terms.extend(lq_balance_across_workers_penalties)     
 
     model.Minimize(sum(objective_terms))
 
