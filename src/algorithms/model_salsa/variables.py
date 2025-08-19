@@ -8,10 +8,9 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
     shifts2.remove('V')
     shifts2.remove('F')
     for w in workers:
+        blocked_days = set(absences[w]) | set(missing_days[w]) | set(empty_days[w]) | set(closed_holidays) | set(fixed_days_off[w])
         for d in days_of_year:
-            if d >= first_day[w] and d <= last_day[w] and d not in absences[w] \
-                and d not in missing_days[w] and d not in empty_days[w] and d not in closed_holidays \
-                and d not in fixed_days_off[w]:
+            if first_day[w] <= d <= last_day[w] and d not in blocked_days:
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
         for d in absences[w]:
