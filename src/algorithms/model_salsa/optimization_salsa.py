@@ -1,4 +1,4 @@
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, saturdays):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -196,7 +196,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         C2D_BALANCE_PENALTY = 8  # Weight for c2d balance penalty
         c2d_balance_penalties = []
 
-        
+        quality_weekend_2_dict = {}
+
         for w in workers:
             # Find all potential quality weekends (Saturday-Sunday pairs)
             quality_weekend_vars = []
@@ -224,6 +225,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     # Quality weekend requires both conditions
                     model.AddBoolAnd([has_lq_saturday, has_l_sunday]).OnlyEnforceIf(quality_weekend)
                     model.AddBoolOr([has_lq_saturday.Not(), has_l_sunday.Not()]).OnlyEnforceIf(quality_weekend.Not())
+
+                    quality_weekend_2_dict[(w, sunday)] = quality_weekend
                     
                     quality_weekend_vars.append(quality_weekend)
                     weekend_dates.append(sunday)
@@ -310,4 +313,319 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 # Add penalty to the objective function
                 objective_terms.append(INCONSISTENT_SHIFT_PENALTY * inconsistent_shifts)
 
-    model.Minimize(sum(objective_terms))
+   # 7 Balancing number of sundays free days across the workers (CORRECTED STRATEGY)
+    # SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 50
+    # sunday_balance_across_workers_penalties = []
+
+    # # Create constraint variables for each worker's total Sunday free days
+    # sunday_free_worker_vars = {}
+    # workers_with_sundays = []
+
+    # # SCALE_FACTOR for converting float proportions to integers
+    # # SCALE_FACTOR = 1000
+
+    # for w in workers:
+    #     worker_sundays = [d for d in sundays if d in working_days[w]]
+        
+    #     if len(worker_sundays) == 0:
+    #         continue  # Skip workers with no Sundays
+        
+    #     workers_with_sundays.append(w)
+        
+    #     # Create variables for Sunday free days
+    #     sunday_free_vars = []
+    #     for sunday in worker_sundays:
+    #         sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
+            
+    #         # Link to actual L or F shift assignment
+    #         model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) >= 1).OnlyEnforceIf(sunday_free)
+    #         model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
+            
+    #         sunday_free_vars.append(sunday_free)
+        
+    #     # Create constraint variable for total Sunday free days
+    #     total_sunday_free_var = model.NewIntVar(0, len(worker_sundays), f"total_sunday_free_{w}")
+    #     model.Add(total_sunday_free_var == sum(sunday_free_vars))
+        
+    #     sunday_free_worker_vars[w] = total_sunday_free_var
+
+    # if len(workers_with_sundays) > 1:
+    #     # STRATEGY 1: Create a shared pool of total Sunday free days and distribute proportionally
+        
+    #     # Calculate total actual Sunday free days across all workers (constraint variable)
+    #     max_total_possible = sum(len([d for d in sundays if d in working_days[w]]) for w in workers_with_sundays)
+    #     total_sunday_free_all = model.NewIntVar(0, max_total_possible, "total_sunday_free_all")
+    #     model.Add(total_sunday_free_all == sum(sunday_free_worker_vars[w] for w in workers_with_sundays))
+        
+    #     # Create scaled variables for each worker and calculate expected distribution
+    #     for w in workers_with_sundays:
+    #         reverse_proportion = 1.0 / proportion.get(w, 1.0)
+    #         #reverse_proportion_scaled = int(reverse_proportion * SCALE_FACTOR)
+            
+    #         # Maximum possible Sunday free days for this worker
+    #         max_worker_sundays = len([d for d in sundays if d in working_days[w]])
+    #         #max_scaled_value = max_worker_sundays * reverse_proportion_scaled
+            
+    #         # Create scaled variable: scaled_sunday_free = sunday_free_worker_vars[w] * reverse_proportion
+    #         scaled_sunday_free_var = model.NewIntVar(0, max_worker_sundays, f"max_sunday_free_{w}")
+    #         model.Add(scaled_sunday_free_var == int(sunday_free_worker_vars[w] * reverse_proportion))
+
+    #         # Calculate total scaled allocation across all workers
+    #         if w == workers_with_sundays[0]:  # Initialize on first worker
+    #             total_scaled_allocation = model.NewIntVar(0, sum(max_worker_sundays for w in workers_with_sundays), "total_allocation")
+    #             model.Add(total_scaled_allocation == sum(
+    #                 int(sunday_free_worker_vars[worker] * 1 / proportion.get(worker, 1.0))
+    #                 for worker in workers_with_sundays
+    #             ))
+            
+    #         # Expected value for this worker = total_scaled_allocation / num_workers
+    #         expected_scaled_var = model.NewIntVar(0, max_worker_sundays, f"expected_scaled_{w}")
+            
+    #         # Use constraint-based division: expected_scaled_var * num_workers ≈ total_scaled_allocation
+    #         num_workers = len(workers_with_sundays)
+    #         #tolerance = SCALE_FACTOR  # Allow some tolerance in division
+            
+            
+    #         model.Add(expected_scaled_var * num_workers * reverse_proportion >= total_scaled_allocation )
+    #         model.Add(expected_scaled_var * num_workers * reverse_proportion <= total_scaled_allocation )
+            
+    #         # Calculate deviations from expected value
+    #         max_deviation = max_scaled_value
+    #         over_target = model.NewIntVar(0, max_deviation, f"sunday_over_target_{w}")
+    #         under_target = model.NewIntVar(0, max_deviation, f"sunday_under_target_{w}")
+            
+    #         # Deviation calculation: |scaled_sunday_free_var - expected_scaled_var|
+    #         model.Add(over_target >= scaled_sunday_free_var - expected_scaled_var)
+    #         model.Add(over_target >= 0)
+            
+    #         model.Add(under_target >= expected_scaled_var - scaled_sunday_free_var)
+    #         model.Add(under_target >= 0)
+            
+    #         # Add penalties
+    #         sunday_balance_across_workers_penalties.append(SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY * over_target)
+    #         sunday_balance_across_workers_penalties.append(SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY * under_target)
+
+    # ALTERNATIVE STRATEGY 2: Simpler pairwise balance approach
+    # This strategy directly compares workers pairwise with proportional adjustments
+    
+    # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
+    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 50
+    sunday_balance_across_workers_penalties = []
+
+    # Create constraint variables for each worker's total Sunday free days
+    sunday_free_worker_vars = {}
+    workers_with_sundays = [] 
+
+    for w in workers:
+        worker_sundays = [d for d in sundays if d in working_days[w]]
+        
+        if len(worker_sundays) == 0:
+            continue  # Skip workers with no Sundays
+        
+        workers_with_sundays.append(w)
+        
+        # Create variables for Sunday free days
+        sunday_free_vars = []
+        for sunday in worker_sundays:
+            sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
+            
+            # Link to actual L or F shift assignment
+            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) >= 1).OnlyEnforceIf(sunday_free)
+            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
+            
+            sunday_free_vars.append(sunday_free)
+        
+        # Create constraint variable for total Sunday free days
+        total_sunday_free_var = model.NewIntVar(0, len(worker_sundays), f"total_sunday_free_{w}")
+        model.Add(total_sunday_free_var == sum(sunday_free_vars))
+        
+        sunday_free_worker_vars[w] = total_sunday_free_var
+
+    # STRATEGY: Pairwise proportional balance (simplest and most reliable)
+    if len(workers_with_sundays) > 1:
+        # For each pair of workers, ensure proportional fairness
+        for i, w1 in enumerate(workers_with_sundays):
+            for w2 in workers_with_sundays[i+1:]:
+                prop1 = proportion.get(w1, 1.0)
+                prop2 = proportion.get(w2, 1.0)
+                
+                if prop1 > 0 and prop2 > 0:
+                    # Calculate proportion ratio as integers (multiply by 100 for precision)
+                    prop1_int = int(prop1 * 100)
+                    prop2_int = int(prop2 * 100)
+                    
+                    # Calculate maximum possible difference
+                    max_sundays_w1 = len([d for d in sundays if d in working_days[w1]])
+                    max_sundays_w2 = len([d for d in sundays if d in working_days[w2]])
+                    max_diff = max(max_sundays_w1 * prop2_int, max_sundays_w2 * prop1_int)
+                    
+                    # Create variables for proportional difference
+                    proportional_diff_pos = model.NewIntVar(0, max_diff, f"prop_diff_pos_{w1}_{w2}")
+                    proportional_diff_neg = model.NewIntVar(0, max_diff, f"prop_diff_neg_{w1}_{w2}")
+                    
+                    # Proportional balance constraint:
+                    # sunday_free_worker_vars[w1] / prop1 should ≈ sunday_free_worker_vars[w2] / prop2
+                    # Rearranged: sunday_free_worker_vars[w1] * prop2_int should ≈ sunday_free_worker_vars[w2] * prop1_int
+                    
+                    model.Add(proportional_diff_pos >= 
+                            sunday_free_worker_vars[w1] * prop2_int - sunday_free_worker_vars[w2] * prop1_int)
+                    model.Add(proportional_diff_pos >= 0)
+                    
+                    model.Add(proportional_diff_neg >= 
+                            sunday_free_worker_vars[w2] * prop1_int - sunday_free_worker_vars[w1] * prop2_int)
+                    model.Add(proportional_diff_neg >= 0)
+                    
+                    # Add penalties for proportional imbalance
+                    weight = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 2  # Distribute penalty across pairs
+                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos)
+                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
+
+    # Add to objective
+    objective_terms.extend(sunday_balance_across_workers_penalties)  
+ 
+
+    # STRATEGY 3: Variance minimization approach (most sophisticated)
+    # This minimizes the variance of scaled Sunday free days across workers
+
+    # if len(workers_with_sundays) > 2:  # Only useful with 3+ workers
+    #     # Calculate mean scaled Sunday free days
+    #     total_workers = len(workers_with_sundays)
+        
+    #     # For each worker, calculate their scaled value and deviation from mean
+    #     scaled_worker_vars = {}
+    #     for w in workers_with_sundays:
+    #         reverse_proportion = 1.0 / proportion.get(w, 1.0)
+    #         reverse_proportion_scaled = int(reverse_proportion * SCALE_FACTOR)
+            
+    #         max_worker_sundays = len([d for d in sundays if d in working_days[w]])
+    #         max_scaled_value = max_worker_sundays * reverse_proportion_scaled
+            
+    #         scaled_worker_vars[w] = model.NewIntVar(0, max_scaled_value, f"scaled_worker_{w}")
+    #         model.Add(scaled_worker_vars[w] == sunday_free_worker_vars[w] * reverse_proportion_scaled)
+        
+    #     # Create mean variable
+    #     total_scaled = sum(scaled_worker_vars.values())
+    #     max_total_scaled = sum(len([d for d in sundays if d in working_days[w]]) * int(SCALE_FACTOR / proportion.get(w, 1.0)) 
+    #                         for w in workers_with_sundays)
+        
+    #     mean_scaled = model.NewIntVar(0, max_total_scaled // total_workers + 1, "mean_scaled")
+        
+    #     # mean_scaled * total_workers ≈ total_scaled (within tolerance)
+    #     tolerance = SCALE_FACTOR
+    #     model.Add(mean_scaled * total_workers >= total_scaled - tolerance)
+    #     model.Add(mean_scaled * total_workers <= total_scaled + tolerance)
+        
+    #     # Minimize squared deviations from mean
+    #     for w in workers_with_sundays:
+    #         max_deviation = max(scaled_worker_vars[w].proto.domain[1], mean_scaled.proto.domain[1])
+            
+    #         deviation_pos = model.NewIntVar(0, max_deviation, f"deviation_pos_{w}")
+    #         deviation_neg = model.NewIntVar(0, max_deviation, f"deviation_neg_{w}")
+            
+    #         model.Add(deviation_pos >= scaled_worker_vars[w] - mean_scaled)
+    #         model.Add(deviation_pos >= 0)
+            
+    #         model.Add(deviation_neg >= mean_scaled - scaled_worker_vars[w])
+    #         model.Add(deviation_neg >= 0)
+            
+    #         # Add squared penalty (approximate with linear penalty weighted by deviation)
+    #         variance_penalty = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 5
+    #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_pos)
+    #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_neg)
+
+
+    # 7B Balancing number of LQ (quality weekends) across workers (pairwise)
+    # Business rule: a weekend counts as LQ iff Saturday has shift "LQ" AND Sunday has shift "L".
+    LQ_BALANCE_ACROSS_WORKERS_PENALTY = 50
+    lq_balance_across_workers_penalties = []
+
+    lq_free_worker_vars = {}
+    workers_with_lq = []
+
+    for w in workers:
+        # Only consider weekends where the worker is actually exposed:
+        # both Saturday and the following Sunday exist in their working_days.
+        eligible_saturdays = [s for s in saturdays if (s in working_days[w] and (s + 1) in working_days[w])]
+        if not eligible_saturdays:
+            continue
+
+        workers_with_lq.append(w)
+        lq_free_vars = []
+
+        for s in eligible_saturdays:
+            d = s + 1  # following Sunday
+
+            # --- Saturday LQ flag ---
+            # Use the existing shift var if available; otherwise create a dummy Bool forced to 0.
+            if (w, s, "LQ") in shift:
+                lq_sat = shift[(w, s, "LQ")]
+            else:
+                lq_sat = model.NewBoolVar(f"lq_sat_{w}_{s}")
+                model.Add(lq_sat == 0)  
+
+            # --- Sunday must be  "L" ---
+            if (w, d, "L") in shift:
+                sun_is_L = shift[(w, d, "L")]
+            else:
+                sun_is_L = model.NewBoolVar(f"sun_is_L_{w}_{d}")
+
+                model.Add(sun_is_L == 0)  
+            
+            if (w, d, "F") in shift:
+                sun_is_F = shift[(w, d, "F")]
+            else:
+                sun_is_F = model.NewBoolVar(f"sun_is_F_{w}_{d}")
+                model.Add(sun_is_F == 0)
+
+            # --- Weekend LQ indicator (AND of Saturday LQ and Sunday L) ---
+            
+            lq_weekend = model.NewBoolVar(f"lq_weekend_{w}_{s}_{d}")
+            model.AddMultiplicationEquality(lq_weekend, [lq_sat, sun_is_L])
+
+            lq_free_vars.append(lq_weekend)
+
+        # Total LQ weekends per worker (bounded by the number of eligible weekends)
+        total_lq_free_var = model.NewIntVar(0, len(lq_free_vars), f"total_lq_free_{w}")
+        model.Add(total_lq_free_var == sum(lq_free_vars))
+        lq_free_worker_vars[w] = total_lq_free_var
+
+    if len(workers_with_lq) > 1:
+        for i, w1 in enumerate(workers_with_lq):
+            for w2 in workers_with_lq[i+1:]:
+                # Keep your existing 'proportion' for consistency.
+                # If you compute a specific LQ exposure (prop_lq), you can swap it here.
+                prop1 = proportion.get(w1, 1.0)
+                prop2 = proportion.get(w2, 1.0)
+                if prop1 <= 0 or prop2 <= 0:
+                    continue
+
+                # Integer scaling avoids division and floating-point issues
+                prop1_int = int(prop1 * 100)
+                prop2_int = int(prop2 * 100)
+
+                max_w1 = len([s for s in saturdays if (s in working_days[w1] and (s + 1) in working_days[w1])])
+                max_w2 = len([s for s in saturdays if (s in working_days[w2] and (s + 1) in working_days[w2])])
+                max_diff = max(max_w1 * prop2_int, max_w2 * prop1_int)
+
+                diff_pos = model.NewIntVar(0, max_diff, f"lq_prop_diff_pos_{w1}_{w2}")
+                diff_neg = model.NewIntVar(0, max_diff, f"lq_prop_diff_neg_{w1}_{w2}")
+
+                # Normalize without division by comparing: c1*prop2 ≈ c2*prop1
+                # Compare normalized counts without divisions: c1*prop2 ≈ c2*prop1
+                model.Add(diff_pos >= lq_free_worker_vars[w1] * prop2_int - lq_free_worker_vars[w2] * prop1_int)
+                model.Add(diff_neg >= lq_free_worker_vars[w2] * prop1_int - lq_free_worker_vars[w1] * prop2_int)
+
+                weight = LQ_BALANCE_ACROSS_WORKERS_PENALTY // 2
+                lq_balance_across_workers_penalties.append(weight * diff_pos)
+                lq_balance_across_workers_penalties.append(weight * diff_neg)
+
+    # Add to objective
+    objective_terms.extend(lq_balance_across_workers_penalties) 
+
+
+
+    
+    
+    
+    
+   

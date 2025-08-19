@@ -202,6 +202,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
                     'first_registered_day': processed_data[34],
+                    'proportion': processed_data[35],
                     # 'week_cut': processed_data[34]
                 }
 
@@ -293,6 +294,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
             first_registered_day = adapted_data['first_registered_day']
+            proportion = adapted_data['proportion']
             # week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
@@ -375,7 +377,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
             
             salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d)
+                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion)
             
             # =================================================================
             # SOLVE THE MODEL
