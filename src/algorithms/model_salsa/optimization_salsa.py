@@ -1,4 +1,4 @@
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, saturdays, prop_sunday,  prop_lq):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, saturdays):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -407,7 +407,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # ALTERNATIVE STRATEGY 2: Simpler pairwise balance approach
     # This strategy directly compares workers pairwise with proportional adjustments
-    """ """ 
+    
     # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
     SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 50
     sunday_balance_across_workers_penalties = []
@@ -533,21 +533,18 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_pos)
     #         sunday_balance_across_workers_penalties.append(variance_penalty * deviation_neg)
 
-    
-    # 7B Balancing number of LQ (quality weekends) across workers (pairwise via existing "LQ" shift)
+
+    # 7B Balancing number of LQ (quality weekends) across workers (pairwise)
+    # Business rule: a weekend counts as LQ iff Saturday has shift "LQ" AND Sunday has shift "L".
     LQ_BALANCE_ACROSS_WORKERS_PENALTY = 50
     lq_balance_across_workers_penalties = []
-
-    
-    
-    # - `shift[(w, day, "LQ")]` exists when the "LQ" shift is modeled for that (worker, day)
 
     lq_free_worker_vars = {}
     workers_with_lq = []
 
     for w in workers:
-        # Consider only weekends where the worker is actually "exposed":
-        # i.e., both Saturday and Sunday are in their working_days universe.
+        # Only consider weekends where the worker is actually exposed:
+        # both Saturday and the following Sunday exist in their working_days.
         eligible_saturdays = [s for s in saturdays if (s in working_days[w] and (s + 1) in working_days[w])]
         if not eligible_saturdays:
             continue
@@ -556,55 +553,56 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         lq_free_vars = []
 
         for s in eligible_saturdays:
-            d = s + 1  # the following Sunday
+            d = s + 1  # following Sunday
 
-            # Indicator: does the worker have "LQ" on Saturday?
-            lq_sat = model.NewBoolVar(f"lq_sat_{w}_{s}")
+            # --- Saturday LQ flag ---
+            # Use the existing shift var if available; otherwise create a dummy Bool forced to 0.
             if (w, s, "LQ") in shift:
-                # Link the boolean to the actual LQ assignment variable for that day
-                model.Add(shift[(w, s, "LQ")] >= 1).OnlyEnforceIf(lq_sat)
-                model.Add(shift[(w, s, "LQ")] == 0).OnlyEnforceIf(lq_sat.Not())
+                lq_sat = shift[(w, s, "LQ")]
             else:
-                # If the LQ shift is not modeled for that Saturday, force 0
-                model.Add(lq_sat == 0)
+                lq_sat = model.NewBoolVar(f"lq_sat_{w}_{s}")
+                model.Add(lq_sat == 0)  
 
-            # Indicator: does the worker have "LQ" on Sunday?
-            lq_sun = model.NewBoolVar(f"lq_sun_{w}_{d}")
-            if (w, d, "LQ") in shift:
-                model.Add(shift[(w, d, "LQ")] >= 1).OnlyEnforceIf(lq_sun)
-                model.Add(shift[(w, d, "LQ")] == 0).OnlyEnforceIf(lq_sun.Not())
+            # --- Sunday must be  "L" ---
+            if (w, d, "L") in shift:
+                sun_is_L = shift[(w, d, "L")]
             else:
-                model.Add(lq_sun == 0)
+                sun_is_L = model.NewBoolVar(f"sun_is_L_{w}_{d}")
 
-            # Weekend LQ = 1 iff both Saturday and Sunday are LQ.
-            # Multiplication equality between Booleans is the exact logical AND in CP-SAT.
-            lq_weekend = model.NewBoolVar(f"lq_free_{w}_{s}_{d}")
-            model.AddMultiplicationEquality(lq_weekend, [lq_sat, lq_sun])
-
+                model.Add(sun_is_L == 0)  
             
+            if (w, d, "F") in shift:
+                sun_is_F = shift[(w, d, "F")]
+            else:
+                sun_is_F = model.NewBoolVar(f"sun_is_F_{w}_{d}")
+                model.Add(sun_is_F == 0)
+
+            # --- Weekend LQ indicator (AND of Saturday LQ and Sunday L) ---
+            
+            lq_weekend = model.NewBoolVar(f"lq_weekend_{w}_{s}_{d}")
+            model.AddMultiplicationEquality(lq_weekend, [lq_sat, sun_is_L])
+
             lq_free_vars.append(lq_weekend)
 
-        # Total LQ per worker with a physical upper bound
+        # Total LQ weekends per worker (bounded by the number of eligible weekends)
         total_lq_free_var = model.NewIntVar(0, len(lq_free_vars), f"total_lq_free_{w}")
         model.Add(total_lq_free_var == sum(lq_free_vars))
         lq_free_worker_vars[w] = total_lq_free_var
 
-    # Pairwise proportional fairness 
     if len(workers_with_lq) > 1:
         for i, w1 in enumerate(workers_with_lq):
             for w2 in workers_with_lq[i+1:]:
-                
-                #   prop1 = prop_lq.get(w1, 1.0); prop2 = prop_lq.get(w2, 1.0)
+                # Keep your existing 'proportion' for consistency.
+                # If you compute a specific LQ exposure (prop_lq), you can swap it here.
                 prop1 = proportion.get(w1, 1.0)
                 prop2 = proportion.get(w2, 1.0)
                 if prop1 <= 0 or prop2 <= 0:
                     continue
 
-                # integer scaling avoids division and floating-point issues
+                # Integer scaling avoids division and floating-point issues
                 prop1_int = int(prop1 * 100)
                 prop2_int = int(prop2 * 100)
 
-                # Conservative finite bounds for the absolute-difference variables
                 max_w1 = len([s for s in saturdays if (s in working_days[w1] and (s + 1) in working_days[w1])])
                 max_w2 = len([s for s in saturdays if (s in working_days[w2] and (s + 1) in working_days[w2])])
                 max_diff = max(max_w1 * prop2_int, max_w2 * prop1_int)
@@ -613,16 +611,17 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 diff_neg = model.NewIntVar(0, max_diff, f"lq_prop_diff_neg_{w1}_{w2}")
 
                 # Normalize without division by comparing: c1*prop2 ≈ c2*prop1
+                # Compare normalized counts without divisions: c1*prop2 ≈ c2*prop1
                 model.Add(diff_pos >= lq_free_worker_vars[w1] * prop2_int - lq_free_worker_vars[w2] * prop1_int)
                 model.Add(diff_neg >= lq_free_worker_vars[w2] * prop1_int - lq_free_worker_vars[w1] * prop2_int)
 
-                # Distribute the penalty across pairs 
                 weight = LQ_BALANCE_ACROSS_WORKERS_PENALTY // 2
                 lq_balance_across_workers_penalties.append(weight * diff_pos)
                 lq_balance_across_workers_penalties.append(weight * diff_neg)
 
     # Add to objective
-    objective_terms.extend(lq_balance_across_workers_penalties)
+    objective_terms.extend(lq_balance_across_workers_penalties) 
+
 
 
     
