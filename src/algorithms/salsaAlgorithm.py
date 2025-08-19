@@ -133,7 +133,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             # 2. VALIDATE REQUIRED DATAFRAMES
             # =================================================================
-            # required_dataframes = ['matrizA_bk', 'matrizB_bk', 'matriz2_bk']
+            # required_dataframes = ['df_calendario', 'df_estimativas', 'df_colaborador']
             # missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
             
             # if missing_dataframes:
