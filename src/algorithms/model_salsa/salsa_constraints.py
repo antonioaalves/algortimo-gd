@@ -378,6 +378,8 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 elif required_free_days == 1:
                     if (actual_days_in_week > 3):
                         model.Add(free_shift_sum == required_free_days)
+                else:
+                    model.Add(free_shift_sum <= required_free_days)
 
 #-----------------------------------------------------------------------------------------------
 def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift):
