@@ -541,10 +541,12 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     lq_free_worker_vars = {}
     workers_with_lq = []
+    saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
 
     for w in workers:
         # Only consider weekends where the worker is actually exposed:
         # both Saturday and the following Sunday exist in their working_days.
+
         eligible_saturdays = [s for s in saturdays if (s in working_days[w] and (s + 1) in working_days[w])]
         if not eligible_saturdays:
             continue

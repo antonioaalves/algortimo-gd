@@ -381,11 +381,11 @@ class SalsaAlgorithm(BaseAlgorithm):
                 ########
            
              
-            saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
+            
 
           
             salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, saturdays) 
+                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion) 
             
             # ===============
             # ==================================================
