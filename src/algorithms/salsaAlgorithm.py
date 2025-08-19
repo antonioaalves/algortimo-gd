@@ -296,6 +296,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             first_registered_day = adapted_data['first_registered_day']
             proportion = adapted_data['proportion']
             # week_cut = adapted_data['week_cut']
+            #week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -376,10 +377,18 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
             
+
+                ########
+           
+             
+            saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
+
+          
             salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion)
+                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, saturdays) 
             
-            # =================================================================
+            # ===============
+            # ==================================================
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")

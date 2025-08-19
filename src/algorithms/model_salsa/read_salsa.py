@@ -644,6 +644,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             free_day_complete_cycle,  # 33
             week_to_days_salsa,  # 34x
             first_registered_day,
+            proportion,
             # week_cut
         )
         
