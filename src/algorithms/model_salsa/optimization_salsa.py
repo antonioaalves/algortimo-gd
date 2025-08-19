@@ -539,7 +539,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     lq_balance_across_workers_penalties = []
 
     
-    # - `saturdays` is a list of Saturday day-ids (and Sunday is s+1)
+    
     # - `shift[(w, day, "LQ")]` exists when the "LQ" shift is modeled for that (worker, day)
 
     lq_free_worker_vars = {}
