@@ -1,2 +1,1 @@
-select defaultcharvalue from wfm.core_parameter_cfg
-where name = 'admissao_proporcional'
+SELECT S_PCK_CORE_PARAMETER.GETCHARATTR('ADMISSAO_PROPORCIONAL') FROM DUAL
