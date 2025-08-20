@@ -1,5 +1,10 @@
 #----------------------------------------DECISION VARIABLES----------------------------------------
 
+def add_var(model, shift, w, days, code):
+    for d in days:
+        shift[(w, d, code)] = model.NewBoolVar(f"{w}_Day{d}_{code}")
+        model.Add(shift[(w, d, code)] == 1)
+
 def decision_variables(model, days_of_year, workers, shifts, first_day, last_day, absences, missing_days, empty_days, closed_holidays, fixed_days_off):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
@@ -7,24 +12,26 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
     shifts2.remove('A')
     shifts2.remove('V')
     shifts2.remove('F')
+
+    closed_set = set(closed_holidays)
     for w in workers:
-        blocked_days = set(absences[w]) | set(missing_days[w]) | set(empty_days[w]) | set(closed_holidays) | set(fixed_days_off[w])
-        for d in days_of_year:
-            if first_day[w] <= d <= last_day[w] and d not in blocked_days:
+
+        missing_set = set(missing_days[w])
+        absence_set = set(absences[w])
+        empty_days_set = set(empty_days[w])
+        fixed_days_set = set(fixed_days_off[w])
+
+        blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set
+
+        for d in range(first_day[w], last_day[w] + 1):
+            if d not in blocked_days:
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
-        for d in absences[w]:
-            shift[(w, d, 'A')] = model.NewBoolVar(f"{w}_Day{d}_A")
-            model.Add(shift[(w, d, 'A')] == 1)
-        for d in missing_days[w]:
-            shift[(w, d, 'V')] = model.NewBoolVar(f"{w}_Day{d}_V")
-            model.Add(shift[(w, d, 'V')] == 1)
-        for d in closed_holidays:
-            shift[(w, d, 'F')] = model.NewBoolVar(f"{w}_Day{d}_F")
-            model.Add(shift[(w, d, "F")] == 1)
-        #for d in fixed_days_off[w]:
-        #    shift[(w, d, 'L')] = model.NewBoolVar(f"{w}_Day{d}_L")
-        #    model.Add(shift[(w, d, "L")] == 1)
+
+        add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set, 'V')
+        add_var(model, shift, w, absence_set - closed_set - fixed_days_set, 'A')
+        add_var(model, shift, w, fixed_days_set - closed_set, 'L')
+        add_var(model, shift, w, closed_set, 'F')
 
     #52332 vs 31555 vs 25489
     return shift
