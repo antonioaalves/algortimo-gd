@@ -32,11 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  		- parameters: algum parâmetro que o developer possa querer forçar;
  		- database: acessos aos ambientes necessários. Devem ser definidos de acordo com os nomes usados nas configs de sistema;
 
-- (STRSOL-850) Integração das funções set_process_errors e bulk_insert_with_query nas componentes da framework
+- (STRSOL-850) Integração das funções set_process_errors e bulk_insert_with_query nas componentes da framework;
 
-- (STRSOL-852) Garantir que o processo não morre se o resultado do solver for infeasable/unknown
+- (STRSOL-852) Garantir que o processo não morre se o resultado do solver for infeasable/unknown;
 
-- (STRSOL-855) Reestruturação do orquestrador e suas funções para garantir consistência na arquitetura
+- (STRSOL-855) Reestruturação do orquestrador e suas funções para garantir consistência na arquitetura;
 
 - () Reestruturação da componente algoritmos:
  	- Adaptação dos nomes de restrições e variáveis para que melhor se relacionem com a realidade;
@@ -47,12 +47,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 
+## [1.0.4] - 20/08/2025
+
+### Added: 
+
+### Fixed:
+
+- (STRSOL-847) Resultado inserido na BD é filtrado também pela data de demissão de cada colaborador;
+
+- (STRSOL-897) Conexão à BD "morta" por inserts muito longos é reconectada. Antes esta lógica só tinha sido desenvolvida para todos os outros casos;
+
+- (STRSOL-873) Revisto: Alterado comportamento para casos de semanas de trabalho menores que 7 dias (ex: ausências). Agora também se garante um máximo de 2 folgas para essas semanas;
+
+- (STRSOL-892) [Sem comentários ainda]
+
+## [1.0.3] - 13/08/2025
+
+### Added:
+
+- (STRSOL-872) Variável  ‘default_parameters = {"max_continuous_working_days"}’ estava hardcoded para 5, alteração para 6 resolveu o problema;
+
+- (STRSOL-873) A regra de atribuição de folgas foi alterada para ter de dar 2 folgas (previamente eram 2 ou mais) numa semana. Neste momento a atribuição de folgas a semanas com menos de 7 dias é feito através de um processo de arredondamento normal.
+
+- (STRSOL-874) Criado um novo campo temporário com o tratamento desejado para o número de domingos a folgar pelo colaborador ao longo do período de geração, com proporcionais, "l_dom_salsa"; Criada a restrição que o algoritmo usa para garantir este número de folgas;
+
+- (STRSOL-875) Foi adicionada uma regra que não permite a colaboradores que entrem a meio do ano terem um folga no seu primeiro dia. Contudo, permite a atribuição de folgas no primeiro dia (ex: se forem gerados horários de julho a setembro, pode ser atríbuida uma folga no dia 1 de julho);
+
+- (STRSOL-878) Gerar para matriculas com menos de oito dígitos: sem desenvolvimentos, apenas testado com sucesso;
+
+### Fixed:
+
+- (STRSOL-872) Colaboradores podem agora ter 6 dias seguidos sem folga;
+
+- (STRSOL-873) Colaboradores têm duas folgas por semana;
+
+- (STRSOL-874) Colaboradores com o número certo de folgas aplicadas ao Domingo
+
+- (STRSOL-875) Colaboradores sem folga no dia de admissão;
+
+
 ## [1.0.2] - 05/08/2025
 
 ### Added:
 
 - (STRSOL-848) Definida uma nova regra para aplicar folgas em semanas com 5 ausências (comportamento esperado pelo cliente). Trata-se de um workaround, propõe-se revisão do conceito;
 
+- (STRSOL- ) Criada lógica de fallback para tentar criar uma nova conexão caso a primeira tentativa falhe;
+
+
 ### Fixed:
 
-- (STRSOL-848) Corrigido um bug na criação da variável week_to_days_salsa, na função read_salsa (read_salsa.py) na componente do algoritmo Salsa. Este bug não criava o dicionário com listas vazias, e não era introduzida a restrição week_working_days_constraint
+- (STRSOL-848) Corrigido um bug na criação da variável week_to_days_salsa, na função read_salsa (read_salsa.py) na componente do algoritmo Salsa. Este bug não criava o dicionário com listas vazias, e não era introduzida a restrição week_working_days_constraint;
+
+- (STRSOL- ) Bug: funções bulk_insert_with_query e set_process_errors não tentavam reconectar à base de dados caso a ligação morre-se por excesso de tempo do ciclo de alocação de folgas (solver)
+
+- Bug: Soma duplicada da 
