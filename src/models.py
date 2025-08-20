@@ -3688,7 +3688,7 @@ class DescansosDataModel(BaseDataModel):
             final_df = self.rare_data['df_results'].copy()
             df_colaborador = self.medium_data['df_colaborador'].copy()
             self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
-            df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao']]
+            df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao', 'data_demissao']]
 
             self.logger.info(f"Adding wfm_proc_id to final_df")
             final_df['wfm_proc_id'] = self.external_call_data.get("current_process_id", "")
@@ -3705,6 +3705,10 @@ class DescansosDataModel(BaseDataModel):
             # Convert data_admissao to datetime if not already
             #self.logger.info(f"DEBUG: data_admissao: {final_df['data_admissao']}, type: {type(final_df['data_admissao'])}")
             final_df['data_admissao'] = pd.to_datetime(final_df['data_admissao'], format='%Y-%m-%d')
+            
+            # Handle data_demissao: replace "0" or non-date values with NaT before conversion
+            final_df['data_demissao'] = final_df['data_demissao'].replace(['0', 0], pd.NaT)
+            final_df['data_demissao'] = pd.to_datetime(final_df['data_demissao'], format='%Y-%m-%d', errors='coerce')
             #self.logger.info(f"DEBUG: data_admissao: {final_df['data_admissao']}, type: {type(final_df['data_admissao'])}")
             # Filter per employee: each row's date must be > that employee's admission date
             if 'data' in final_df.columns:
@@ -3716,15 +3720,17 @@ class DescansosDataModel(BaseDataModel):
                 #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
                 final_df = final_df[final_df['date'] >= final_df['data_admissao']].copy()
 
-            # Filter per employee: each row's date must be < that employee's demission date 
+            # Filter per employee: each row's date must be < that employee's demission date (only if demission date exists)
             if 'data' in final_df.columns:
                 final_df['data'] = pd.to_datetime(final_df['data'])
-                final_df = final_df[final_df['data'] <= final_df['data_demissao']].copy()
+                # Only filter if data_demissao is not NaT (employee has been terminated)
+                final_df = final_df[(final_df['data_demissao'].isna()) | (final_df['data'] <= final_df['data_demissao'])].copy()
                 #self.logger.info(f"DEBUG: data: {final_df['data']}, type: {type(final_df['data'])}")
             elif 'date' in final_df.columns:
                 final_df['date'] = pd.to_datetime(final_df['date'])
                 #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
-                final_df = final_df[final_df['date'] <= final_df['data_demissao']].copy
+                # Only filter if data_demissao is not NaT (employee has been terminated)
+                final_df = final_df[(final_df['data_demissao'].isna()) | (final_df['date'] <= final_df['data_demissao'])].copy()
             
             filtered_rows = len(final_df)
             self.logger.info(f"Filtered {initial_rows - filtered_rows} rows (from {initial_rows} to {filtered_rows}) based on admission dates")

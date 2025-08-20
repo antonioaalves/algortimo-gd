@@ -623,10 +623,4 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     # Add to objective
     objective_terms.extend(lq_balance_across_workers_penalties) 
 
-
-
-    
-    
-    
-    
-   
+    model.Minimize(sum(objective_terms))
