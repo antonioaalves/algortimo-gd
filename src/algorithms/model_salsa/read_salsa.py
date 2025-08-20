@@ -464,6 +464,56 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                 workers.pop(workers.index(w))  # Remove worker with contract error
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
+                # =================================================================
+        # 10.1B. OPERATIONAL ROLES (manager / keyholder / normal)
+        # =================================================================
+        logger.info("Deriving operational roles (manager/keyholder/normal)")
+
+        from typing import Dict, List
+
+        role_by_worker: Dict[int, str] = {}
+        managers: List[int] = []
+        keyholders: List[int] = []
+
+        # Colunas possíveis para papel; usaremos a que existir (para testes podes criar 'role')
+        possible_role_cols = ["role", "papel", "funcao", "cargo", "perfil", "categoria"]  # já em lower()
+        role_col = next((c for c in possible_role_cols if c in matriz_colaborador_gd.columns), None)
+
+        # Função para normalizar valores para rótulos canónicos
+        def canonical_role(raw: str) -> str:
+            r = (raw or "").strip().lower()
+            if r in {"manager", "gestor", "gerente", "store_manager", "team_lead", "chefe"}:
+                return "manager"
+            if r in {"keyholder", "chave", "supervisor", "encarregado"}:
+                return "keyholder"
+            return "normal"
+
+        # Nota: usamos workers_complete (mesmo universo das decision vars)
+        for w in workers_complete:
+            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
+
+            if row.empty:
+                role = "normal"
+            else:
+                if role_col:
+                    role = canonical_role(str(row.iloc[0][role_col]))
+                else:
+                    # Fallback: procura flags binárias se existirem (opcional nos teus dados)
+                    is_mgr = "is_manager" in row.columns and bool(row.iloc[0].get("is_manager", False))
+                    is_kh  = "is_keyholder" in row.columns and bool(row.iloc[0].get("is_keyholder", False))
+                    role = "manager" if is_mgr else ("keyholder" if is_kh else "normal")
+
+            role_by_worker[w] = role
+            if role == "manager":
+                managers.append(w)
+            elif role == "keyholder":
+                keyholders.append(w)
+
+        logger.info(
+            f"Roles derived: managers={len(managers)}, keyholders={len(keyholders)}, "
+            f"normals={len(workers_complete) - len(managers) - len(keyholders)}"
+        )
+
 
         # =================================================================
         # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
@@ -642,9 +692,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             workers_complete,       # 31
             workers_complete_cycle,  # 32
             free_day_complete_cycle,  # 33
-            week_to_days_salsa,  # 34x
-            first_registered_day,
-            proportion
+            week_to_days_salsa,     # 34x
+            first_registered_day,   # 35x
+            proportion,             # 36x
+            role_by_worker,        # 37x
+            managers,               # 38x
+            keyholders,             # 39x
             # week_cut
         )
         
