@@ -492,3 +492,9 @@ def salsa_week_cut_contraint(model, shift, workers, week_to_days_salsa, week_cut
                     for d in week_to_days_salsa[max(week_to_days_salsa.keys())]
                 )
                 model.Add(free_days_last_week >= round(last_week_ratio * 2))
+
+#--------------------------------------------------------------------------------------------------------------------------------------
+#Salsa constraints ensuring L mutually exclusive with other shifts
+
+
+

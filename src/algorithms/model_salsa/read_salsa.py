@@ -124,7 +124,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         )
         
         logger.info(f"L_Q calculated. Range: {matriz_colaborador_gd['l_q'].min():.2f} to {matriz_colaborador_gd['l_q'].max():.2f}")
-        
+             
         # =================================================================
         # 4. PROCESS CALENDARIO data
         # =================================================================
@@ -583,6 +583,72 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
 
+
+
+        # =================================================================
+
+       
+
+        # Criar/forçar coluna 'level' e atribuir papéis
+        matriz_colaborador_gd['level'] = 'normal'
+        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'] == 80000509, 'level'] = "manager"
+        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'] == 80000509, 'level'] = "manager"
+
+       
+
+
+
+        # =================================================================
+        # 10.1B. OPERATIONAL ROLES (manager / keyholder / normal)
+        # =================================================================
+        logger.info("Deriving operational roles (manager/keyholder/normal)")
+
+        from typing import Dict, List
+
+        role_by_worker: Dict[int, str] = {}
+        managers: List[int] = []
+        keyholders: List[int] = []
+
+        # Colunas possíveis para papel; usaremos a que existir (para testes podes criar 'role')
+        possible_role_cols = ["role", "papel", "funcao", "cargo", "perfil", "categoria", "level"]  # já em lower()
+        role_col = next((c for c in possible_role_cols if c in matriz_colaborador_gd.columns), None)
+
+        # Função para normalizar valores para rótulos canónicos
+        def canonical_role(raw: str) -> str:
+            r = (raw or "").strip().lower()
+            if r in {"manager", "gestor", "gerente", "store_manager", "team_lead", "chefe"}:
+                return "manager"
+            if r in {"keyholder", "chave", "supervisor", "encarregado"}:
+                return "keyholder"
+            return "normal"
+
+        # Nota: usamos workers_complete (mesmo universo das decision vars)
+        for w in workers_complete:
+            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
+
+            if row.empty:
+                role = "normal"
+            else:
+                if role_col:
+                    role = canonical_role(str(row.iloc[0][role_col]))
+                else:
+                    # Fallback: procura flags binárias se existirem (opcional nos teus dados)
+                    is_mgr = "is_manager" in row.columns and bool(row.iloc[0].get("is_manager", False))
+                    is_kh  = "is_keyholder" in row.columns and bool(row.iloc[0].get("is_keyholder", False))
+                    role = "manager" if is_mgr else ("keyholder" if is_kh else "normal")
+
+            role_by_worker[w] = role
+            if role == "manager":
+                managers.append(w)
+            elif role == "keyholder":
+                keyholders.append(w)
+
+        logger.info(
+            f"Roles derived: managers={len(managers)}, keyholders={len(keyholders)}, "
+            f"normals={len(workers_complete) - len(managers) - len(keyholders)}"
+        )
+
+
         # =================================================================
         # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
         # =================================================================
@@ -731,45 +797,48 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         return (
             matriz_calendario_gd,    # 0x
-            days_of_year,            # 1x
-            sundays,                 # 2x
-            holidays,                # 3x
-            special_days,            # 4x
-            closed_holidays,         # 5x
-            empty_days,              # 6x
-            worker_holiday,          # 7x
-            missing_days,            # 8x
-            working_days,            # 9x
-            non_holidays,            # 10x
-            start_weekday,           # 11x
-            week_to_days,            # 12x
-            worker_week_shift,       # 13x
-            matriz_colaborador_gd,   # 14x
-            workers,                 # 15x
-            contract_type,           # 16x
-            total_l,                 # 17x
-            total_l_dom,             # 18x
-            c2d,                     # 19x
-            c3d,                     # 20x
-            l_d,                     # 21x
-            l_q,                     # 22x
-            cxx,                     # 23x
-            t_lq,                    # 24x
-            matriz_estimativas_gd,   # 25x
-            pess_obj,                # 26x
-            min_workers,             # 27x
-            max_workers,             # 28x
-            working_shift_2,         # 29x
-            workers_complete,        # 30x
-            workers_complete_cycle,  # 31x
-            free_day_complete_cycle, # 32x
-            week_to_days_salsa,      # 33x
-            first_registered_day,    # 34x
-            admissao_proporcional,
+            days_of_year,           # 1x
+            sundays,                # 2x
+            holidays,               # 3x
+            special_days,           # 4x
+            closed_holidays,        # 5x
+            empty_days,             # 6x
+            worker_holiday,         # 7x
+            missing_days,           # 8x
+            working_days,           # 9x
+            non_holidays,           # 10x
+            start_weekday,          # 11x
+            week_to_days,           # 12x
+            worker_week_shift,      # 13x
+            matriz_colaborador_gd,  # 14x
+            workers,                # 15x
+            contract_type,          # 16x
+            total_l,                # 17x
+            total_l_dom,            # 18x
+            c2d,                    # 19x
+            c3d,                    # 20x
+            l_d,                    # 21x
+            l_q,                    # 22x
+            cxx,                    # 23x
+            t_lq,                   # 24x                   # 25
+            matriz_estimativas_gd,  # 26x
+            pess_obj,                # 27x
+            min_workers,            # 28x
+            max_workers,            # 29x
+            working_shift_2,         # 30
+            workers_complete,       # 31
+            workers_complete_cycle,  # 32
+            free_day_complete_cycle,  # 33
+            week_to_days_salsa,     # 34x
+            first_registered_day,
+            admissao_proporcional,   # 35x
+            role_by_worker,        # 37x
+            managers,               # 38x
+            keyholders,             # 39x
             data_admissao,
-            data_demissao
-            last_registered_day,     # 35x
-            fixed_days_off,          # 36x
+            data_demissao,
+            last_registered_day,
+            fixed_days_off,             # 36x
             # week_cut
         )
         

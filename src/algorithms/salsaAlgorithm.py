@@ -21,8 +21,8 @@ from src.algorithms.model_salsa.salsa_constraints import (
     LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
     assign_week_shift, working_day_shifts,
     salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
-    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint, first_day_not_free, free_days_special_days
-)
+    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint, first_day_not_free, free_days_special_days)
+
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
 
@@ -212,10 +212,13 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
                     'first_registered_day': processed_data[34],
                     'admissao_proporcional': processed_data[35],
-                    'data_admissao': processed_data[36],
-                    'data_demissao': processed_data[37]
-                    'last_registered_day': processed_data[38],
-                    'fixed_days_off': processed_data[39],
+                    'role_by_worker': processed_data[36],  # New role mapping
+                    'managers': processed_data[37],  # New managers list
+                    'keyholders': processed_data[38],  # New keyholders list
+                    'data_admissao': processed_data[39],
+                    'data_demissao': processed_data[40]
+                    'last_registered_day': processed_data[41],
+                    'fixed_days_off': processed_data[42],
                     # 'week_cut': processed_data[34]
                 }
 
@@ -312,6 +315,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             data_demissao = adapted_data['data_demissao']
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
+            role_by_worker = adapted_data['role_by_worker']
+            managers = adapted_data['managers']
+            keyholders = adapted_data['keyholders']
             # week_cut = adapted_data['week_cut']
 
             # Extract algorithm parameters
@@ -385,6 +391,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
+
+            
                         
             self.logger.info("All SALSA constraints applied")
             
@@ -394,7 +402,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
             
             salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion)
+                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, role_by_worker)
             
             # =================================================================
             # SOLVE THE MODEL
