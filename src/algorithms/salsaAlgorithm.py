@@ -363,7 +363,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, 
                                   sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
-            #salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
+            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
             salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
 

@@ -351,11 +351,9 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                 consecutive = 0
             if consecutive == 4 and day2 + 1 in working_days[w] :
                 if monday + 2 in working_days[w]:
-                    model.Add(shift[w, monday + 1, 'L'] + shift[w, monday + 1, 'LQ'] +shift[w, monday + 2, 'L'] + shift[w, monday + 2, 'LQ'] == 2)
+                    model.Add(shift[w, monday + 1, 'L'] + shift[w, monday + 1, 'LQ'] + shift[w, monday + 2, 'L'] + shift[w, monday + 2, 'LQ'] == 2)
                     model.Add(shift[w, monday + 1, 'LQ'] + shift[w, monday + 2, 'LQ'] <= 1)
                     logger.info(f"Worker {w}: 5 consecutive 'A' during week days, adding 2 'L's in weekend {monday + 1}")
-
-            #print(f"{w} : day {day2}")
 
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days):

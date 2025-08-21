@@ -247,7 +247,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
             worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
             w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
-            worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]
+            worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
 
             empty_days[w] = worker_empty
@@ -267,8 +267,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             else:
                 last_registered_day[w] = 0
 
-            logger.info(f"Worker {w} data processed: first registered day: {first_registered_day[w]}, last registered day: {last_registered_day[w]}")  
-            
+            logger.info(f"Worker {w} data processed: first registered day: {first_registered_day[w]}, last registered day: {last_registered_day[w]}") 
+        #fixed_days_off[80001366] = [3, 13, 15, 211] 
 
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)
@@ -277,12 +277,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                 missing_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in missing_days[w]])
             
             empty_days[w] = sorted(list(set(empty_days[w]) - set(closed_holidays)))
-            worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays)))
+            worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]))) #Assumindo dados corretos, nao é preciso subtrair fixed days off
             missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
             free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
             fixed_days_off[w] = sorted(list(set(fixed_days_off[w]) - set(closed_holidays)))
 
-            working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w]) - set(fixed_days_off[w])
+            working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w])
 
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
