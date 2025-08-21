@@ -850,9 +850,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             week_to_days_salsa,     # 34x
             first_registered_day,
             admissao_proporcional,   # 35x
-            role_by_worker,        # 37x
-            managers,               # 38x
-            keyholders,             # 39x
+            #role_by_worker,        # 37x
+            #managers,               # 38x
+            #keyholders,             # 39x
             data_admissao,
             data_demissao,
             last_registered_day,
