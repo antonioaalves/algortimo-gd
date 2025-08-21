@@ -93,19 +93,27 @@ class SalsaAlgorithm(BaseAlgorithm):
         # Add any algorithm-specific initialization
         self.logger.info(f"Initialized {self.algo_name} with parameters: {self.parameters}")
 
-    def adapt_data(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+    def adapt_data(self, data: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Adapt input data for the SALSA shift scheduling algorithm.
         
         Args:
             data: Dictionary containing DataFrames:
                 - Should contain medium_dataframes with calendar, estimates, and collaborator data
+            algorithm_treatment_params: Dictionary containing algorithm treatment parameters
                 
         Returns:
             Dictionary containing processed data elements for the algorithm
         """
         try:
             self.logger.info("Starting data adaptation for SALSA algorithm")
+            
+            # Handle treatment parameters - use empty dict if None
+            if algorithm_treatment_params is None:
+                algorithm_treatment_params = {}
+                self.logger.debug("No algorithm treatment parameters provided, using empty dict")
+            else:
+                self.logger.info(f"Using algorithm treatment parameters: {list(algorithm_treatment_params.keys())}")
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE
@@ -158,7 +166,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Import the SALSA data processing function
             from src.algorithms.model_salsa.read_salsa import read_data_salsa
             
-            processed_data = read_data_salsa(medium_dataframes)
+            processed_data = read_data_salsa(medium_dataframes, algorithm_treatment_params)
+            
             
             # =================================================================
             # 4. UNPACK AND VALIDATE PROCESSED DATA
@@ -202,8 +211,11 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
                     'first_registered_day': processed_data[34],
-                    'last_registered_day': processed_data[35],
-                    'fixed_days_off': processed_data[36],
+                    'admissao_proporcional': processed_data[35],
+                    'data_admissao': processed_data[36],
+                    'data_demissao': processed_data[37]
+                    'last_registered_day': processed_data[38],
+                    'fixed_days_off': processed_data[39],
                     # 'week_cut': processed_data[34]
                 }
 
@@ -295,6 +307,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
             first_day = adapted_data['first_registered_day']
+            admissao_proporcional = adapted_data['admissao_proporcional']
+            data_admissao = adapted_data['data_admissao']
+            data_demissao = adapted_data['data_demissao']
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
             # week_cut = adapted_data['week_cut']
@@ -365,7 +380,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days)
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao)
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
@@ -557,27 +572,3 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.error(f"Error in enhanced SALSA results formatting: {e}", exc_info=True)
             raise
 
-    def run(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
-        """
-        Run the complete SALSA algorithm pipeline: adapt_data -> execute_algorithm -> format_results.
-        
-        Args:
-            data: Input data dictionary containing DataFrames
-            
-        Returns:
-            Formatted results dictionary
-        """
-        self.logger.info("Running full SALSA algorithm pipeline")
-        
-        # Step 1: Adapt data
-        adapted_data = self.adapt_data(data)
-        
-        # Step 2: Execute algorithm
-        results = self.execute_algorithm(adapted_data)
-        
-        # Step 3: Format results
-        formatted_results = self.format_results(results)
-        
-        self.logger.info("Full SALSA algorithm pipeline completed successfully")
-
-        return formatted_results

@@ -88,6 +88,7 @@ class DescansosDataModel(BaseDataModel):
                 - df_final: Final output DataFrame
         """
         super().__init__(data_container=data_container, project_name=project_name)
+        # Static data, doesn't change during the process run but are essential for data model treatments - See data lifecycle to understand what this data is
         self.auxiliary_data = {
             'messages_df': pd.DataFrame(), # df containing messages to set process errors
             'final': None, # TODO: change the name
@@ -114,31 +115,36 @@ class DescansosDataModel(BaseDataModel):
             'start_date2': None, # start date 2
             'end_date2': None # end date 2
         }
-        # Data first stage
+        
+        # Algorithm treatment params - data to be sent to the algorithm for treatment purposes
+        self.algorithm_treatment_params = {
+            'admissao_proporcional': None,
+        }
+        # Data first stage - See data lifecycle to understand what this data is
         self.raw_data: Dict[str, Any] = {
             'df_calendario': None,
             'df_colaborador': None,
             'df_estimativas': None
         }
-        # Data second stage
+        # Data second stage - See data lifecycle to understand what this data is
         self.medium_data: Dict[str, Any] = {
             'df_calendario': None,
             'df_colaborador': None,
             'df_estimativas': None
         }
-        # Data third stage
+        # Data third stage - See data lifecycle to understand what this data is
         self.rare_data: Dict[str, Any] = {
             'df_results': None,
             'stage1_schedule': None,
             'stage2_schedule': None,
         }
-        # Data final stage
+        # Data final stage - See data lifecycle to understand what this data is
         self.formatted_data: Dict[str, Any] = {
             'df_final': None,  # Final output DataFrame
             'stage1_schedule': None,
             'stage2_schedule': None,
         }
-        # External call data coming from the product
+        # External call data coming from the product - See data lifecycle to understand what this data is
         self.external_call_data = external_data
         
         self.logger.info("DescansosDataModel initialized")
@@ -306,11 +312,33 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error loading parameters: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            # Load algorithm treatment params
+            try:
+                self.logger.info(f"Loading algorithm treatment params from data manager")
+                query_path = entities_dict['parameters_cfg']
+                parameters_cfg = data_manager.load_data('parameters_cfg', query_file=query_path)
+                self.logger.info(f"parameters_cfg shape (rows {parameters_cfg.shape[0]}, columns {parameters_cfg.shape[1]}): {parameters_cfg.columns.tolist()}")
+                
+                # Need to check if parameters_cfg is empty, because it might well be
+                if parameters_cfg.empty:
+                    self.logger.error(f"parameters_cfg is empty")
+                    return False, "errSubproc", "parameters_cfg is empty"
+                # Store the value to then validate it
+                parameters_cfg = str(parameters_cfg["WFM.S_PCK_CORE_PARAMETER.GETCHARATTR('ADMISSAO_PROPORCIONAL')"].iloc[0]).lower()
+                self.logger.info(f"parameters_cfg: {parameters_cfg}")
+            except Exception as e:
+                self.logger.error(f"Error loading algorithm treatment params: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            if parameters_cfg not in ['floor', 'ceil']:
+                self.logger.error(f"admissao_proporcional is not a valid value: {parameters_cfg}")
+                return False, "errSubproc", "admissao_proporcional is not a valid value"
+
             # Copy the dataframes into the apropriate dict
             try:
                 self.logger.info(f"Copying dataframes into the apropriate dict")
                 # Copy the dataframes into the apropriate dict
-                # TODO: should we ensure unit, secao e posto are only one value?
+                # AUX DATA
                 self.auxiliary_data['valid_emp'] = valid_emp.copy()
                 self.auxiliary_data['params_lq'] = params_lq.copy()
                 self.auxiliary_data['params_df'] = params_df.copy()
@@ -324,7 +352,12 @@ class DescansosDataModel(BaseDataModel):
                 self.auxiliary_data['end_date2'] = end_date2
                 self.auxiliary_data['colabs_id_list'] = colabs_id_list
                 self.auxiliary_data['messages_df'] = messages_df
-                self.logger.info(f"DEBUGGING: Stored messages_df in auxiliary_data with {len(messages_df)} rows")
+                
+                # ALGORITHM TREATMENT PARAMS
+                # TODO: remove comment from query line
+                self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
+                #self.algorithm_treatment_params['admissao_proporcional'] = 'floor'
+                self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
@@ -3653,7 +3686,7 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info(f"Running algorithm {algorithm_name}")
-                results = algorithm.run(self.medium_data)
+                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=self.algorithm_treatment_params)
 
                 if not results:
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")

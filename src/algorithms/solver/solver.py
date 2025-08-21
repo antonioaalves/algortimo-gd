@@ -114,7 +114,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 300  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 120  # Short timeout for testing
         solver.parameters.log_search_progress = log_search_progress
         solver.parameters.use_phase_saving = use_phase_saving
 

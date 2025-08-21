@@ -111,6 +111,7 @@ CONFIG = {
         'df_festivos':  os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_festivos.sql'),
         'df_closed_days': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_closed_days.sql'),
         'params_df': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAlgoParameters.sql'),
+        'parameters_cfg': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetParametersCFG.sql'),
     },
 
     'available_entities_aux': {

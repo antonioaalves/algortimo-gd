@@ -95,19 +95,25 @@ class AlcampoAlgorithm(BaseAlgorithm):
 
 
 
-    def adapt_data(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+    def adapt_data(self, data: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Adapt input data for the shift scheduling algorithm.
         
         Args:
             data: Dictionary containing DataFrames:
                 - Should contain medium_dataframes with 'matrizA_bk', 'matrizB_bk', 'matriz2_bk'
+            algorithm_treatment_params: Optional dictionary containing algorithm-specific
+                                      data treatment parameters (ignored by AlcampoAlgorithm)
                 
         Returns:
             Dictionary containing processed data elements for the algorithm
         """
         try:
             self.logger.info("Starting data adaptation for Alcampo algorithm")
+            
+            # AlcampoAlgorithm doesn't use treatment parameters, but accepts them for interface consistency
+            if algorithm_treatment_params:
+                self.logger.debug(f"AlcampoAlgorithm received treatment parameters but ignores them: {list(algorithm_treatment_params.keys())}")
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE
@@ -575,27 +581,3 @@ class AlcampoAlgorithm(BaseAlgorithm):
             self.logger.error(f"Error in results formatting: {e}", exc_info=True)
             raise
 
-    def run(self, data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
-        """
-        Run the complete algorithm pipeline: adapt_data -> execute_algorithm -> format_results.
-        
-        Args:
-            data: Input data dictionary containing DataFrames
-            
-        Returns:
-            Formatted results dictionary
-        """
-        self.logger.info("Running full Alcampo algorithm pipeline")
-        
-        # Step 1: Adapt data
-        adapted_data = self.adapt_data(data)
-        
-        # Step 2: Execute algorithm
-        results = self.execute_algorithm(adapted_data)
-        
-        # Step 3: Format results
-        formatted_results = self.format_results(results)
-        
-        self.logger.info("Full algorithm pipeline completed successfully")
-
-        return formatted_results
