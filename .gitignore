@@ -180,6 +180,9 @@ data/csvs/*
 /logs/
 *.log
 
+# Secundary scripts
+secundary-scripts/
+
 # Output and processing results
 output/
 results/
