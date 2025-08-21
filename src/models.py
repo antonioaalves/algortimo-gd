@@ -22,7 +22,7 @@ from src.helpers import (
     add_trads_code, assign_90_cycles, load_pre_ger_scheds, get_limit_mt,
     count_dates_per_year, load_wfm_scheds, func_turnos, adjusted_isoweek,
     custom_round, calcular_folgas2, calcular_folgas3, insert_holidays_absences, insert_closed_days,
-    get_param_for_posto, convert_types_out, bulk_insert_with_query
+    get_param_for_posto, convert_types_out, bulk_insert_with_query, insert_dayoffs_override
 )
 from src.load_csv_functions.load_valid_emp import load_valid_emp_csv
 from src.algorithms.factory import AlgorithmFactory
@@ -861,6 +861,24 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error loading ausencias_ferias: {e}", exc_info=True)
                 df_ausencias_ferias = pd.DataFrame()
 
+            # DF_CORE_PRO_EMP_HORARIO_DET - pre folgas do ciclo
+            try:
+                self.logger.info("Loading df_core_pro_emp_horario_det from data manager")
+                query_path = CONFIG.get('available_entities_aux', {}).get('df_core_pro_emp_horario_det', '')
+                if query_path:
+                    df_core_pro_emp_horario_det = data_manager.load_data(
+                        'df_core_pro_emp_horario_det', 
+                        query_file=query_path, 
+                        process_id=process_id, 
+                        start_date=start_date, 
+                        end_date=end_date
+                    )
+                    self.logger.info(f"df_core_pro_emp_horario_det shape (rows {df_core_pro_emp_horario_det.shape[0]}, columns {df_core_pro_emp_horario_det.shape[1]}): {df_core_pro_emp_horario_det.columns.tolist()}")
+                    self.logger.info(f"DEBUG: df_core_pro_emp_horario_det: {df_core_pro_emp_horario_det}")
+            except Exception as e:
+                self.logger.error(f"Error loading df_core_pro_emp_horario_det: {e}", exc_info=True)
+                df_core_pro_emp_horario_det = pd.DataFrame()
+
             try:
                 self.logger.info("Loading df_ciclos_90 from data manager")
                 # Ciclos de 90
@@ -918,6 +936,7 @@ class DescansosDataModel(BaseDataModel):
                 self.auxiliary_data['df_calendario_passado'] = reshaped_final_3.copy()
                 self.auxiliary_data['emp_pre_ger'] = emp_pre_ger
                 self.auxiliary_data['df_count'] = df_count.copy()
+                self.auxiliary_data['df_core_pro_emp_horario_det'] = df_core_pro_emp_horario_det.copy()
                 self.raw_data['df_calendario'] = df_calendario.copy()
 
                 # TODO: remove this
@@ -1932,11 +1951,12 @@ class DescansosDataModel(BaseDataModel):
                 df_closed_days = self.auxiliary_data['df_closed_days'].copy()
                 df_ausencias_ferias = self.auxiliary_data['df_ausencias_ferias'].copy()
                 df_days_off = self.auxiliary_data['df_days_off'].copy()
+                df_core_pro_emp_horario_det = self.auxiliary_data['df_core_pro_emp_horario_det'].copy()
                 start_date2 = self.auxiliary_data['start_date2']
                 end_date2 = self.auxiliary_data['end_date2']
                 current_year = pd.to_datetime(end_date2, format="%Y-%m-%d").year
                 
-                self.logger.info(f"DataFrames loaded - matriz_ma: {matriz_ma.shape}, df_ciclos_90: {df_ciclos_90.shape}, df_festivos: {df_festivos.shape}, df_closed_days: {df_closed_days.shape}, df_ausencias_ferias: {df_ausencias_ferias.shape}, df_days_off: {df_days_off.shape}")
+                self.logger.info(f"DataFrames loaded - matriz_ma: {matriz_ma.shape}, df_ciclos_90: {df_ciclos_90.shape}, df_festivos: {df_festivos.shape}, df_closed_days: {df_closed_days.shape}, df_ausencias_ferias: {df_ausencias_ferias.shape}, df_days_off: {df_days_off.shape}, df_core_pro_emp_horario_det: {df_core_pro_emp_horario_det.shape}")
                 self.logger.info(f"Date parameters - start_date2: {start_date2}, end_date2: {end_date2}, current_year: {current_year}")
             except KeyError as e:
                 self.logger.error(f"Missing required DataFrame in calendario_transformations: {e}", exc_info=True)
@@ -1962,6 +1982,20 @@ class DescansosDataModel(BaseDataModel):
                 else:
                     #self.logger.error("DEBUG: Neither 'emp' nor 'matricula' found")
                     return False
+
+            # Treat df_core_pro_emp_horario_det
+            try:
+                self.logger.info("Treating df_core_pro_emp_horario_det")
+                # TODO: add fk_colaborador
+                df_colaboradores = matriz_ma[['matricula', 'fk_colaborador']].dropna(subset=['fk_colaborador'])
+                df_colaboradores.columns = ['matricula', 'fk_colaborador']
+                df_core_pro_emp_horario_det = df_core_pro_emp_horario_det.merge(df_colaboradores, left_on='employee_id', right_on='fk_colaborador', how='left')
+                self.logger.info(f"DEBUG: df_core_pro_emp_horario_det={df_core_pro_emp_horario_det}")
+
+
+            except Exception as e:
+                self.logger.error(f"Error treating df_core_pro_emp_horario_det: {e}", exc_info=True)
+                return False
             
             all_colab_pad = matriz_ma['emp'].tolist()
             self.logger.info(f"all_colab_pad length={len(all_colab_pad)}")
@@ -2129,7 +2163,7 @@ class DescansosDataModel(BaseDataModel):
             df_festivos_filtered = df_festivos[mask].copy()
             df_festivos_filtered['data'] = pd.Series(df_festivos_filtered['data']).apply(lambda x: x.replace(year=current_year))
 
-            ause_colab = ausencias_total[ausencias_total['matricula'] == '0156020']
+            #ause_colab = ausencias_total[ausencias_total['matricula'] == '0156020']
             #self.logger.info(f"DEBUG: ause_colab {ause_colab}")
             reshaped_final_3 = insert_holidays_absences(all_colab_pad, ausencias_total, reshaped_final_3)
 
@@ -2156,23 +2190,29 @@ class DescansosDataModel(BaseDataModel):
                 reshaped_final_3 = pd.concat([upper_bind, new_row, lower_bind], ignore_index=True)
                 reshaped_final_3.columns = range(len(reshaped_final_3.columns))
 
-            self.logger.info(f"DEBUG: reshaped_final_3 after insert_feriados: {reshaped_final_3}")
+            #self.logger.info(f"DEBUG: reshaped_final_3 after insert_feriados: {reshaped_final_3}")
             #reshaped_final_3.to_csv(os.path.join('data', 'output', 'reshaped_final_3_feriados.csv'), index=False, encoding='utf-8')
 
             if len(df_closed_days) > 0:
                 reshaped_final_3 = insert_closed_days(df_closed_days, reshaped_final_3)
 
-            self.logger.info(f"DEBUG: reshaped_final_3 after insert_closed_days: {reshaped_final_3}")
+            #self.logger.info(f"DEBUG: reshaped_final_3 after insert_closed_days: {reshaped_final_3}")
 
             if len(df_tipo_contrato) > 0 and len(df_tipo_contrato.columns) > 0:
                 # TODO: check this not in pre_ger logic
                 reshaped_final_3 = assign_empty_days(df_tipo_contrato, reshaped_final_3, all_colab_pad, df_festivos_filtered)
 
-            self.logger.info(f"DEBUG: reshaped_final_3 after assign_empty_days: {reshaped_final_3}")
+            #self.logger.info(f"DEBUG: reshaped_final_3 after assign_empty_days: {reshaped_final_3}")
 
             reshaped_final_3 = insert_holidays_absences(all_colab_pad, ausencias_total, reshaped_final_3)
 
-            self.logger.info(f"DEBUG: reshaped_final_3 after insert_holidays_absences: {reshaped_final_3}")
+            #self.logger.info(f"DEBUG: reshaped_final_3 after insert_holidays_absences: {reshaped_final_3}")
+
+            # Apply day-off overrides for cases where absences conflict with scheduled day-offs
+            self.logger.info("Applying day-off overrides for conflicting absences")
+            reshaped_final_3 = insert_dayoffs_override(df_core_pro_emp_horario_det, reshaped_final_3)
+
+            #self.logger.info(f"DEBUG: reshaped_final_3 after insert_dayoffs_override: {reshaped_final_3}")
 
             if len(reshaped_final_3) > 0:
                 
@@ -2182,7 +2222,7 @@ class DescansosDataModel(BaseDataModel):
                 if len(df_days_off_filtered) > 0:
                     reshaped_final_3 = assign_days_off(reshaped_final_3, df_days_off_filtered)
             
-            self.logger.info(f"Final matrix={reshaped_final_3}")
+            #self.logger.info(f"Final matrix={reshaped_final_3}")
             
             # Simple validation
             if reshaped_final_3.iloc[0, 0] != 'Dia':
