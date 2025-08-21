@@ -318,9 +318,21 @@ class DescansosDataModel(BaseDataModel):
                 query_path = entities_dict['parameters_cfg']
                 parameters_cfg = data_manager.load_data('parameters_cfg', query_file=query_path)
                 self.logger.info(f"parameters_cfg shape (rows {parameters_cfg.shape[0]}, columns {parameters_cfg.shape[1]}): {parameters_cfg.columns.tolist()}")
+                
+                # Need to check if parameters_cfg is empty, because it might well be
+                if parameters_cfg.empty:
+                    self.logger.error(f"parameters_cfg is empty")
+                    return False, "errSubproc", "parameters_cfg is empty"
+                # Store the value to then validate it
+                parameters_cfg = str(parameters_cfg["WFM.S_PCK_CORE_PARAMETER.GETCHARATTR('ADMISSAO_PROPORCIONAL')"].iloc[0]).lower()
+                self.logger.info(f"parameters_cfg: {parameters_cfg}")
             except Exception as e:
                 self.logger.error(f"Error loading algorithm treatment params: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
+
+            if parameters_cfg not in ['floor', 'ceil']:
+                self.logger.error(f"admissao_proporcional is not a valid value: {parameters_cfg}")
+                return False, "errSubproc", "admissao_proporcional is not a valid value"
 
             # Copy the dataframes into the apropriate dict
             try:
@@ -343,8 +355,9 @@ class DescansosDataModel(BaseDataModel):
                 
                 # ALGORITHM TREATMENT PARAMS
                 # TODO: remove comment from query line
-                #self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg['admissao_proporcional'].iloc[0]
-                self.algorithm_treatment_params['admissao_proporcional'] = 'floor'
+                self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
+                #self.algorithm_treatment_params['admissao_proporcional'] = 'floor'
+                self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
