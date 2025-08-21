@@ -369,8 +369,8 @@ def insert_dayoffs_override(df_core_pro_emp_horario_det: pd.DataFrame,
             if len(col_indices) >= 2:
                 # Current behavior: Override EVERY F found in df_core_pro_emp_horario_det
                 # regardless of what's currently in the matrix
-                reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "F"
-                reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "F"
+                reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "L"
+                reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "L"
                 
                 # Previous logic (commented for potential future use):
                 # Only override if there's already an absence (V, A, or other non-shift values)
