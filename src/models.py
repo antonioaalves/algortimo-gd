@@ -218,7 +218,7 @@ class DescansosDataModel(BaseDataModel):
                 # Save important this important info to be able to use it on querys
                 unit_id = valid_emp['fk_unidade'].unique()[0]  # Get first (and only) unique value
                 secao_id = valid_emp['fk_secao'].unique()[0]   # Get first (and only) unique value
-                posto_id_list = valid_emp['fk_perfil'].unique().tolist()  # Get list of unique values
+                posto_id_list = valid_emp['fk_tipo_posto'].unique().tolist()  # Get list of unique values
                 self.logger.info(f"unit_id: {unit_id}, secao_id: {secao_id}, posto_id_list: {posto_id_list} stored in variables")
 
                 if len(valid_emp['fk_unidade'].unique()) > 1 or len(valid_emp['fk_secao'].unique()) > 1:
@@ -438,7 +438,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info(f"Loading colaborador info from data_model. Creating colabs_id_list")
                 valid_emp = self.auxiliary_data['valid_emp'].copy()
-                valid_emp = valid_emp[valid_emp['fk_perfil'] == posto_id]
+                valid_emp = valid_emp[valid_emp['fk_tipo_posto'] == posto_id]
+                # TODO: check if this is need since it also is loaded in load_process_data
                 colabs_id_list = valid_emp['fk_colaborador'].tolist()
                 self.logger.info(f"Loaded information from valid_emp into colabs_id_list: {colabs_id_list}")
             except Exception as e:
@@ -1583,6 +1584,7 @@ class DescansosDataModel(BaseDataModel):
                 matriz_ma = self.raw_data['df_colaborador'].copy()
                 params_lq = self.auxiliary_data['params_lq'].copy()
                 matriz_festivos = self.auxiliary_data['df_festivos'].copy()
+                valid_emp = self.auxiliary_data['valid_emp'].copy()
                 
                 self.logger.info(f"DataFrames loaded - matriz_ma: {matriz_ma.shape}, params_lq: {params_lq.shape}, matriz_festivos: {matriz_festivos.shape}")
             except KeyError as e:
@@ -1737,6 +1739,10 @@ class DescansosDataModel(BaseDataModel):
             matriz_ma = pd.merge(matriz_ma, params_contrato, 
                             left_on=['min_dia_trab', 'max_dia_trab'], 
                             right_on=['min', 'max'], how='left')
+
+            # Merge with valid_emp to get PRIORIDADE_FOLGAS
+            matriz_ma = pd.merge(matriz_ma, valid_emp[['fk_colaborador', 'prioridade_folgas']], on='fk_colaborador', how='left')
+            self.logger.info(f"DEBUG:matriz_ma: {matriz_ma}")
             
             # Fill missing values (except date columns)
             date_columns = ['data_admissao', 'data_demissao']

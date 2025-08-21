@@ -1,0 +1,1 @@
+select * FROM TABLE(wfm.S_PROCESSO.GET_PROCESS_VALID_EMPLOYEES_V2({process_id}))
