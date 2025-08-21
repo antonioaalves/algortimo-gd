@@ -18,7 +18,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] for w in workers)
+            assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
             
             # Create variables to represent the positive and negative deviations from the target
             pos_diff = model.NewIntVar(0, len(workers), f"pos_diff_{d}_{s}")
@@ -88,7 +88,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             for s in working_shift:
                 if pessObj.get((d, s), 0) > 0:  # Only penalize when pessObj exists
                     # Calculate the number of assigned workers for this day and shift
-                    assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                    assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
                     
                     # Create a boolean variable to indicate if there are no workers
                     no_workers = model.NewBoolVar(f"no_workers_{d}_{s}")
@@ -107,7 +107,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
