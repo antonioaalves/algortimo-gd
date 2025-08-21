@@ -629,7 +629,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
    
     # Weights (tune as needed)
-    PEN_MGR_KH_SAME_OFF = 100   # medium-high
+    PEN_MGR_KH_SAME_OFF = 100   # medium-high #trocar pesos
     PEN_KH_OVERLAP      = 40    # medium-low
 
     # A day-off is any of these labels
@@ -670,7 +670,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     for d in days_of_year:
         if d in closed:
             continue
-
+        
+        # mgr - managers / kh - keyholders
         mgr_off_lits = []
         kh_off_lits  = []
 

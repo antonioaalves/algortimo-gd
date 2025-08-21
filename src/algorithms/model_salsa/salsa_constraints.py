@@ -438,35 +438,4 @@ def salsa_week_cut_contraint(model, shift, workers, week_to_days_salsa, week_cut
 #Salsa constraints ensuring L mutually exclusive with other shifts
 
 
-def ensure_keyholder_coverage(model, shift, days_of_year, working_shift, workers_complete, working_days, closed_holidays, role_by_worker):
-    """
-    Hard constraint: em cada dia aberto e turno (M/T), tem de existir ≥1 pessoa
-    com papel 'manager' OU 'keyholder' escalada. (Manager cobre keyholder.)
 
-    WHY: garante sempre alguém com chave em serviço.
-    """
-    closed = set(closed_holidays)
-      
-
-    for d in days_of_year:
-        if d in closed:
-            continue  # loja fechada -> não exigimos cobertura
-
-        for s in working_shift:
-            cands = []
-            for w in workers_complete:
-                if role_by_worker.get(w) in ("manager", "keyholder"):
-                    # só usamos a variável se existir e se o dia for "exposto" para w
-                    if d in working_days.get(w, []):
-                        var = shift.get((w, d, s), None)
-                        if var is not None:
-                            cands.append(var)
-
-            if cands:
-                model.Add(sum(cands) >= 1)
-            else:
-                # Sem candidatos viáveis para (d,s) -> alerta; evita crash do modelo.
-                # Se isto acontecer, provavelmente faltam variáveis/inputs.
-                # Mantemos o modelo viável, mas regista-se aviso.
-                # (Podes trocar por uma Add(...) a um slack com penalização, se quiseres.)
-                pass

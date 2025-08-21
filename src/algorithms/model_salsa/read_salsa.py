@@ -111,7 +111,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         )
         
         logger.info(f"L_Q calculated. Range: {matriz_colaborador_gd['l_q'].min():.2f} to {matriz_colaborador_gd['l_q'].max():.2f}")
-        
+             
         # =================================================================
         # 4. PROCESS CALENDARIO data
         # =================================================================
@@ -397,6 +397,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.info(f"  - Number of weeks: {len(week_to_days)}")
         logger.info(f"  - Working days: {len(working_days)} days")
         
+
+
+
+
         # =================================================================
         # 10.1. EXTRACT WORKER CONTRACT INFORMATION
         # =================================================================
@@ -464,7 +468,23 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                 workers.pop(workers.index(w))  # Remove worker with contract error
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
-                # =================================================================
+
+
+
+        # =================================================================
+
+       
+
+        # Criar/forçar coluna 'level' e atribuir papéis
+        matriz_colaborador_gd['level'] = 'normal'
+        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'] == 80000509, 'level'] = "manager"
+        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'] == 80000509, 'level'] = "manager"
+
+       
+
+
+
+        # =================================================================
         # 10.1B. OPERATIONAL ROLES (manager / keyholder / normal)
         # =================================================================
         logger.info("Deriving operational roles (manager/keyholder/normal)")
@@ -476,7 +496,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         keyholders: List[int] = []
 
         # Colunas possíveis para papel; usaremos a que existir (para testes podes criar 'role')
-        possible_role_cols = ["role", "papel", "funcao", "cargo", "perfil", "categoria"]  # já em lower()
+        possible_role_cols = ["role", "papel", "funcao", "cargo", "perfil", "categoria", "level"]  # já em lower()
         role_col = next((c for c in possible_role_cols if c in matriz_colaborador_gd.columns), None)
 
         # Função para normalizar valores para rótulos canónicos
