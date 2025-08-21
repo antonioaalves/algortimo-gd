@@ -6,6 +6,8 @@ import logging
 from base_data_project.log_config import get_logger
 from src.config import PROJECT_NAME
 
+
+
 # Set up logger
 logger = get_logger(PROJECT_NAME)
 
@@ -468,19 +470,35 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                 workers.pop(workers.index(w))  # Remove worker with contract error
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
+        
+        
+        """ 
+        # --- adicionar coluna 'level' na matriz_colaborador_cd ---
 
+        # normalizar nomes de colunas
+        matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
 
+        # garantir que 'matricula' é numérica
+        matricula_series = pd.to_numeric(matriz_colaborador_gd['matricula'], errors='coerce')
+        matriz_colaborador_gd['matricula'] = matricula_series.astype('Int64')
 
-        # =================================================================
+        # IDs a marcar
+        manager_ids   = {7919, 80001331} #7656 , 5851
+        keyholder_ids = {80000509, 80000937, 80001237} #,  80000686}
 
-       
-
-        # Criar/forçar coluna 'level' e atribuir papéis
+        # cria/força a coluna com default 'normal'
         matriz_colaborador_gd['level'] = 'normal'
-        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'] == 80000509, 'level'] = "manager"
-        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'] == 80000509, 'level'] = "manager"
 
-       
+        # atribui papéis
+        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'].isin(manager_ids),   'level'] = 'manager'
+        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'].isin(keyholder_ids), 'level'] = 'keyholder'
+
+        # opcional: inspecionar distribuição
+        print(matriz_colaborador_gd['level'].value_counts(dropna=False))
+        print(matriz_colaborador_gd.loc[matriz_colaborador_gd['level'] != 'normal', ['matricula', 'level']])
+
+
+           
 
 
 
@@ -502,13 +520,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         # Função para normalizar valores para rótulos canónicos
         def canonical_role(raw: str) -> str:
             r = (raw or "").strip().lower()
-            if r in {"manager", "gestor", "gerente", "store_manager", "team_lead", "chefe"}:
+            if r in {"manager"}:
                 return "manager"
-            if r in {"keyholder", "chave", "supervisor", "encarregado"}:
+            if r in {"keyholder"}:
                 return "keyholder"
             return "normal"
 
-        # Nota: usamos workers_complete (mesmo universo das decision vars)
+
         for w in workers_complete:
             row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
 
@@ -532,8 +550,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.info(
             f"Roles derived: managers={len(managers)}, keyholders={len(keyholders)}, "
             f"normals={len(workers_complete) - len(managers) - len(keyholders)}"
-        )
-
+        ) """
+        
 
         # =================================================================
         # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
