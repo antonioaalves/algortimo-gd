@@ -21,7 +21,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
     LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
     assign_week_shift, working_day_shifts,
     salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
-    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint, first_day_not_free, free_days_special_days
+    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve

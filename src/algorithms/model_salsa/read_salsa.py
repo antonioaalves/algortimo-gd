@@ -122,9 +122,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             matriz_colaborador_gd["l_res"] - 
             matriz_colaborador_gd["l_res2"]
         )
-        
-        logger.info(f"L_Q calculated. Range: {matriz_colaborador_gd['l_q'].min():.2f} to {matriz_colaborador_gd['l_q'].max():.2f}")
-        
+                
         # =================================================================
         # 4. PROCESS CALENDARIO data
         # =================================================================
@@ -141,7 +139,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         try:
             matriz_calendario_gd['data'] = pd.to_datetime(matriz_calendario_gd['data'])
             matriz_estimativas_gd['data'] = pd.to_datetime(matriz_estimativas_gd['data'])
-            logger.info(f"Date range: {matriz_calendario_gd['data'].min()} to {matriz_calendario_gd['data'].max()}")
         except Exception as e:
             raise ValueError(f"Error converting data column to datetime: {e}")
         
@@ -363,27 +360,24 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             else:
                 last_registered_day[w] = 0
 
-            logger.info(f"Worker {w} data processed: first registered day: {first_registered_day[w]}, last registered day: {last_registered_day[w]}")
-
 
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)
             if first_registered_day[w] > 0 or last_registered_day[w] > 0:  # Ensure worker was registered at some point
-                logger.info(f"Processing worker {w} with first_registered_day: {first_registered_day[w]}, last_registered_day: {last_registered_day[w]}")
                 missing_days[w].extend([d for d in range( 1, first_registered_day[w]) if d not in missing_days[w]])
                 missing_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in missing_days[w]])
             
 
             empty_days[w] = sorted(list(set(empty_days[w]) - set(closed_holidays)))
-            logger.info(f"Worker {w} empty days after removing closed holidays: {empty_days[w]}")
+            #logger.info(f"Worker {w} empty days after removing closed holidays: {empty_days[w]}")
             worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays)))
-            logger.info(f"Worker {w} holiday days after removing closed holidays: {worker_holiday[w]}")
+            #logger.info(f"Worker {w} holiday days after removing closed holidays: {worker_holiday[w]}")
             missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
-            logger.info(f"Worker {w} missing days after removing closed holidays: {missing_days[w]}")
+            #logger.info(f"Worker {w} missing days after removing closed holidays: {missing_days[w]}")
             free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
 
             working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w])
-            logger.info(f"Worker {w} working days after processing: {working_days[w]}")
+            #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
 
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
@@ -402,8 +396,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         # Calculate week information
         unique_dates = sorted(matriz_calendario_gd['data'].unique())
-
-        # Around line 297-317, replace the existing week_to_days calculation with:
 
         if unique_dates:
             # Get start weekday from the first date in the calendar data (not estimativas)
@@ -454,37 +446,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             for week in week_to_days_salsa:
                 week_to_days_salsa[week].sort()
 
-            # if len(week_to_days_salsa[1]) <= 7:
-            #     week_cut = True
-            # else:
-            #     week_cut = False
-
-             # Determine week_cut based on whether we have complete first/last weeks
-            # week_cut = False
-            
-            # # Check if we have a complete dataset (starts from day 1 and goes to end of year)
-            # min_day = min(days_of_year) if days_of_year else 1
-            # max_day = max(days_of_year) if days_of_year else 365
-            
-            # # Only enable week_cut if:
-            # # 1. Data starts from day 1 (or very early in the year)
-            # # 2. Data goes until end of year (or very late in the year)
-            # # 3. We have exactly 52 weeks OR we have week 1 with 7 days OR last week is week 52
-            # if (min_day <= 7 and max_day >= 358):  # Allow some flexibility for year boundaries
-            #     # Check if first week has complete days (7 days) or if we have standard 52-week structure
-            #     first_week_days = len(week_to_days_salsa.get(1, []))
-            #     last_week_number = max(week_to_days_salsa.keys()) if week_to_days_salsa else 0
-                
-            #     # Week cut is True if:
-            #     # - First week has Lless than 7 days (partial week at start), OR
-            #     # - Last week is week 52 (standard year structure)
-            #     if first_week_days < 7 or last_week_number == 52:
-            #         week_cut = True
-            #         logger.info(f"Week cut enabled: first_week_days={first_week_days}, last_week={last_week_number}")
-            #     else:
-            #         logger.info(f"Week cut disabled: non-standard week structure (first_week_days={first_week_days}, last_week={last_week_number})")
-            # else:
-            #     logger.info(f"Week cut disabled: data doesn't span full year (days {min_day} to {max_day})")
 
                         
             logger.info(f"Week to days mapping created using calendar data:")
@@ -585,8 +546,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         logger.info(f"workers: {workers}")
         for w in workers:
-            logger.info(f"first registered day for worker {w}: {first_registered_day[w]}")
-            logger.info(f"last registered day for worker {w}: {last_registered_day[w]}")
+            logger.info(f"Adjusting parameters for worker {w} with first registered day {first_registered_day[w]} and last registered day {last_registered_day[w]}")
             if (last_registered_day[w] > 0 and last_registered_day[w] < 364):
                 proportion = (last_registered_day[w]- first_registered_day[w])  / (days_of_year[-1] - first_registered_day[w])
                 logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion {proportion:.2f}")
@@ -698,7 +658,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             (matriz_calendario_gd['colaborador'] == w)
                         ]
                         
-                        logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
+                        #logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
 
                         # Check for morning shifts ('M') for the current worker
                         if not shift_entries[shift_entries['tipo_turno'] == "M"].empty:
@@ -710,7 +670,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             # Assign afternoon shift to the worker for that week
                             worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
                     
-                        logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
+                        #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
                 
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")

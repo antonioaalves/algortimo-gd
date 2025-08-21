@@ -1,3 +1,4 @@
+from matplotlib import testing
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,6 +13,7 @@ from src.config import PROJECT_NAME
 from src.config import ROOT_DIR
 import os
 import psutil
+from src.algorithms.solver.solver_callback import SolutionCallback
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -24,11 +26,11 @@ def solve(
     special_days: List[int], 
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
-    max_time_seconds: int = 120,
+    max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
-    log_search_progress: bool = True,
-    log_callback: Optional[Callable] = print,
+    log_search_progress: bool = 0,
+    log_callback: Optional[Callable[[str], None]] = None,
     output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx')
 ) -> pd.DataFrame:
     """
@@ -94,12 +96,6 @@ def solve(
             raise ValueError(error_msg)
         
         logger.info(f"[OK] Input validation passed:")
-        logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
-        logger.info(f"  - Workers: {len(workers)} workers")
-        logger.info(f"  - Special days: {len(special_days)} days")
-        logger.info(f"  - Available shifts: {shifts}")
-        logger.info(f"  - Decision variables: {len(shift)} variables")
-        logger.info(f"  - Max solving time: {max_time_seconds} seconds")
         
         # =================================================================
         # 2. CONFIGURE AND CREATE SOLVER
@@ -114,7 +110,15 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 120  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 1800  # Short timeout for testing
+
+        logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
+        logger.info(f"  - Workers: {len(workers)} workers")
+        logger.info(f"  - Special days: {len(special_days)} days")
+        logger.info(f"  - Available shifts: {shifts}")
+        logger.info(f"  - Decision variables: {len(shift)} variables")
+        logger.info(f"  - Max solving time: {max_time_seconds} seconds")
+
         solver.parameters.log_search_progress = log_search_progress
         solver.parameters.use_phase_saving = use_phase_saving
 
@@ -126,17 +130,22 @@ def solve(
         solver.parameters.symmetry_level = 4
         solver.parameters.linearization_level = 2
 
+        testing = False
+        if testing == True:
+            solver.parameters.random_seed = 42
+
         logger.info("Attempting solve with verified parameters...")
-        if log_callback is None:
-            log_calback = lambda x: logger.info(f"Solver progress: {x}")
-        solver.log_callback =log_callback
+
 
 
         # Simple timeout test without fancy threading
         import time
         solve_start = time.time()
 
-        status = solver.Solve(model)
+        solution_callback = SolutionCallback(logger, shift, workers, days_of_year)
+
+
+        status = solver.Solve(model, solution_callback)
 
         solve_end = time.time()
         actual_duration = solve_end - solve_start
@@ -241,10 +250,6 @@ def solve(
                         l_count += 1
                     elif day_assignment == 'LQ':
                         lq_count += 1
-                    elif day_assignment == 'LD':
-                        ld_count += 1
-                    elif day_assignment == 'TC':
-                        tc_count += 1
                     elif day_assignment in ['M', 'T'] and d in special_days:
                         special_days_count += 1
                 
@@ -252,8 +257,6 @@ def solve(
                 worker_stats[w] = {
                     'L_count': l_count,
                     'LQ_count': lq_count,
-                    'LD_count': ld_count,
-                    'TC_count': tc_count,
                     'special_days_work': special_days_count,
                     'unassigned_days': unassigned_days
                 }
