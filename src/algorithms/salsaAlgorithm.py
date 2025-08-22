@@ -220,6 +220,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'last_registered_day': processed_data[38],
                     'fixed_days_off': processed_data[39],
                     'proportion': processed_data[40],
+                    'fixed_LQs' : processed_data[41],
                     # 'week_cut': processed_data[34]
                 }
 
@@ -316,6 +317,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             data_demissao = adapted_data['data_demissao']
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
+            fixed_LQs = adapted_data['fixed_LQs']
             #role_by_worker = adapted_data['role_by_worker']
             #managers = adapted_data['managers']
             #keyholders = adapted_data['keyholders']
@@ -344,7 +346,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             logger.info(f"workers_complete: {workers_complete}")
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off)
+            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs)
             
             self.logger.info("Decision variables created for SALSA")
             
