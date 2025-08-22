@@ -589,23 +589,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
                         role = "normal"
                     else:
                         s = str(raw).strip().lower()
-                        # tentar primeiro como número
-                        num = pd.to_numeric(s, errors="coerce")
-                        if not pd.isna(num):
-                            if int(num) == 1:
-                                role = "manager"
-                            elif int(num) == 2:
-                                role = "keyholder"
-                            else:
-                                role = "normal"
+                        
+                        # fallback por texto
+                        if s == "manager":
+                            role = "manager"
+                        elif s == "keyholder":
+                            role = "keyholder"
                         else:
-                            # fallback por texto
-                            if s == "manager":
-                                role = "manager"
-                            elif s == "keyholder":
-                                role = "keyholder"
-                            else:
-                                role = "normal"
+                            role = "normal"
 
                 role_by_worker[w] = role
                 if role == "manager":
