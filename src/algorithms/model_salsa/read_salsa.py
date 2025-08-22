@@ -673,20 +673,21 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Adjusting worker parameters based on last registered days")
 
         logger.info(f"workers: {workers}")
+        proportion = {}
         for w in workers:
             logger.info(f"first registered day for worker {w}: {first_registered_day[w]}")
             logger.info(f"last registered day for worker {w}: {last_registered_day[w]}")
             if (last_registered_day[w] > 0 and last_registered_day[w] < 364):
-                proportion = (last_registered_day[w]- first_registered_day[w])  / (days_of_year[-1] - first_registered_day[w])
-                logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion {proportion:.2f}")
-                total_l[w] = int(round(proportion * total_l[w]))
-                total_l_dom[w] = int(round(proportion * total_l_dom[w]))
-                c2d[w] = int(math.floor(proportion * c2d[w]))
-                c3d[w] = int(math.floor(proportion * c3d[w]))
-                l_d[w] = int(round(proportion * l_d[w]))
-                l_q[w] = int(round(proportion * l_q[w]))
-                cxx[w] = int(round(proportion * cxx[w]))
-                t_lq[w] = int(round(proportion * t_lq[w]))
+                proportion[w] = (last_registered_day[w]- first_registered_day[w])  / (days_of_year[-1] - first_registered_day[w])
+                logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion[w] {proportion[w]:.2f}")
+                total_l[w] = int(round(proportion[w] * total_l[w]))
+                total_l_dom[w] = int(round(proportion[w] * total_l_dom[w]))
+                c2d[w] = int(math.floor(proportion[w] * c2d[w]))
+                c3d[w] = int(math.floor(proportion[w] * c3d[w]))
+                l_d[w] = int(round(proportion[w] * l_d[w]))
+                l_q[w] = int(round(proportion[w] * l_q[w]))
+                cxx[w] = int(round(proportion[w] * cxx[w]))
+                t_lq[w] = int(round(proportion[w] * t_lq[w]))
                 
                 logger.info(f"Worker {w} parameters adjusted for last registered day {last_registered_day[w]}: "
                             f"Total L: {total_l[w]}, "
@@ -857,6 +858,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             data_demissao,
             last_registered_day,
             fixed_days_off,             # 36x
+            proportion,
             # week_cut
         )
         

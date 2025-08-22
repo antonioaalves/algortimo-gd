@@ -1,4 +1,4 @@
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, role_by_worker):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion): #role_by_worker):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -627,7 +627,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     #######################################################################################################
     ## STRSOL 879  --- Avoid simultaneous shifts managers and keyholders --  Folgas mutuamente exclusivas
 
-    
+    """ 
     # Weights (tune as needed)
     PEN_MGR_KH_SAME_OFF = 3000   # 
     PEN_KH_OVERLAP      = 5000  # Penalize overlap among keyholders is being used the same value as managers
@@ -731,7 +731,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             model.Add(over1 >= mgr_off_sum - 1)
             model.Add(over1 >= 0)
 
-            objective_terms.append(PEN_KH_OVERLAP * over1)
+            objective_terms.append(PEN_KH_OVERLAP * over1) """
 
 
     """ 

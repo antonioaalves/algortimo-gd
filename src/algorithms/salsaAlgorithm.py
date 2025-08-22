@@ -212,13 +212,14 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
                     'first_registered_day': processed_data[34],
                     'admissao_proporcional': processed_data[35],
-                    'role_by_worker': processed_data[36],  # New role mapping
-                    'managers': processed_data[37],  # New managers list
-                    'keyholders': processed_data[38],  # New keyholders list
-                    'data_admissao': processed_data[39],
-                    'data_demissao': processed_data[40]
-                    'last_registered_day': processed_data[41],
-                    'fixed_days_off': processed_data[42],
+                    #'role_by_worker': processed_data[36],  # New role mapping
+                    #'managers': processed_data[37],  # New managers list
+                    #'keyholders': processed_data[38],  # New keyholders list
+                    'data_admissao': processed_data[36],
+                    'data_demissao': processed_data[37],
+                    'last_registered_day': processed_data[38],
+                    'fixed_days_off': processed_data[39],
+                    'proportion': processed_data[40],
                     # 'week_cut': processed_data[34]
                 }
 
@@ -315,10 +316,11 @@ class SalsaAlgorithm(BaseAlgorithm):
             data_demissao = adapted_data['data_demissao']
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
-            role_by_worker = adapted_data['role_by_worker']
-            managers = adapted_data['managers']
-            keyholders = adapted_data['keyholders']
+            #role_by_worker = adapted_data['role_by_worker']
+            #managers = adapted_data['managers']
+            #keyholders = adapted_data['keyholders']
             # week_cut = adapted_data['week_cut']
+            proportion = adapted_data['proportion']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -402,7 +404,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
             
             salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, role_by_worker)
+                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion) #role_by_worker)
             
             # =================================================================
             # SOLVE THE MODEL
