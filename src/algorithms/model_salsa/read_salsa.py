@@ -472,7 +472,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.info(f"Contract information extracted for {len(workers)} workers")
         
         
-        """ 
+        
         # --- adicionar coluna 'level' na matriz_colaborador_cd ---
 
         # normalizar nomes de colunas
@@ -483,8 +483,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         matriz_colaborador_gd['matricula'] = matricula_series.astype('Int64')
 
         # IDs a marcar
-        manager_ids   = {7919, 80001331} #7656 , 5851
-        keyholder_ids = {80000509, 80000937, 80001237} #,  80000686}
+ 
 
         # cria/força a coluna com default 'normal'
         matriz_colaborador_gd['level'] = 'normal'
@@ -550,8 +549,74 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.info(
             f"Roles derived: managers={len(managers)}, keyholders={len(keyholders)}, "
             f"normals={len(workers_complete) - len(managers) - len(keyholders)}"
-        ) """
+        )
         
+
+        # =================================================================
+        #COPIA ESTA PARTE 
+        #PArte para ler do data set
+        # 10.1B. OPERATIONAL ROLES (manager / keyholder / normal) – ler do dataset
+        # =================================================================
+        logger.info("Deriving operational roles (1=manager, 2=keyholder, empty=normal) a partir dos dados")
+
+        role_by_worker = {}
+        managers = []
+        keyholders = []
+
+        # Escolher a coluna onde vêm os códigos 1/2 (ou texto), por ordem de preferência
+        role_col_data = ["prioridades_folgas"]
+        role_col = next((c for c in role_col_data if c in matriz_colaborador_gd.columns), None)
+
+        if not role_col:
+            logger.warning("Nenhuma coluna de nível encontrada entre %s. " "Todos tratados como 'normal'.", possible_role_cols)
+            
+            for w in workers_complete:
+                role_by_worker[w] = "normal"
+        else:
+            logger.info("Usando coluna de nível: %s", role_col)
+
+            for w in workers_complete:
+                row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
+
+                if row.empty:
+                    role = "normal"
+                else:
+                    raw = row.iloc[0].get(role_col)
+
+                    # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
+                    # 1 → manager ; 2 → keyholder ; vazio/outros → normal
+                    if pd.isna(raw):
+                        role = "normal"
+                    else:
+                        s = str(raw).strip().lower()
+                        # tentar primeiro como número
+                        num = pd.to_numeric(s, errors="coerce")
+                        if not pd.isna(num):
+                            if int(num) == 1:
+                                role = "manager"
+                            elif int(num) == 2:
+                                role = "keyholder"
+                            else:
+                                role = "normal"
+                        else:
+                            # fallback por texto
+                            if s == "manager":
+                                role = "manager"
+                            elif s == "keyholder":
+                                role = "keyholder"
+                            else:
+                                role = "normal"
+
+                role_by_worker[w] = role
+                if role == "manager":
+                    managers.append(w)
+                elif role == "keyholder":
+                    keyholders.append(w)
+
+        logger.info("Roles derived: managers=%d, keyholders=%d, normals=%d", len(managers), len(keyholders), len(workers_complete) - len(managers) - len(keyholders))
+
+        ##Até AQUI
+
 
         # =================================================================
         # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
