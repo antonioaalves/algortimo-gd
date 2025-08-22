@@ -676,42 +676,42 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         role_col_data = ["prioridades_folgas"]
         role_col = next((c for c in role_col_data if c in matriz_colaborador_gd.columns), None)
 
-        if not role_col:
-            logger.warning("Nenhuma coluna de nível encontrada entre %s. " "Todos tratados como 'normal'.", possible_role_cols)
-            
-            for w in workers_complete:
-                role_by_worker[w] = "normal"
-        else:
-            logger.info("Usando coluna de nível: %s", role_col)
+        #if not role_col:
+        #    logger.warning("Nenhuma coluna de nível encontrada entre %s. " "Todos tratados como 'normal'.", possible_role_cols)
+        #    
+        #    for w in workers_complete:
+        #        role_by_worker[w] = "normal"
+        #else:
+        logger.info("Usando coluna de nível: %s", role_col)
 
-            for w in workers_complete:
-                row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
+        for w in workers_complete:
+            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
 
-                if row.empty:
+            if row.empty:
+                role = "normal"
+            else:
+                raw = row.iloc[0].get(role_col)
+
+                # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
+                # 1 → manager ; 2 → keyholder ; vazio/outros → normal
+                if pd.isna(raw):
                     role = "normal"
                 else:
-                    raw = row.iloc[0].get(role_col)
-
-                    # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
-                    # 1 → manager ; 2 → keyholder ; vazio/outros → normal
-                    if pd.isna(raw):
-                        role = "normal"
+                    s = str(raw).strip().lower()
+                    
+                    # fallback por texto
+                    if s == "manager":
+                        role = "manager"
+                    elif s == "keyholder":
+                        role = "keyholder"
                     else:
-                        s = str(raw).strip().lower()
-                        
-                        # fallback por texto
-                        if s == "manager":
-                            role = "manager"
-                        elif s == "keyholder":
-                            role = "keyholder"
-                        else:
-                            role = "normal"
+                        role = "normal"
 
-                role_by_worker[w] = role
-                if role == "manager":
-                    managers.append(w)
-                elif role == "keyholder":
-                    keyholders.append(w)
+            role_by_worker[w] = role
+            if role == "manager":
+                managers.append(w)
+            elif role == "keyholder":
+                keyholders.append(w)
 
         logger.info("Roles derived: managers=%d, keyholders=%d, normals=%d", len(managers), len(keyholders), len(workers_complete) - len(managers) - len(keyholders))
 
@@ -902,7 +902,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             week_to_days_salsa,     # 34x
             first_registered_day,
             admissao_proporcional,   # 35x
-            #role_by_worker,        # 37x
+            role_by_worker,        # 37x
             #managers,               # 38x
             #keyholders,             # 39x
             data_admissao,

@@ -213,15 +213,20 @@ class DescansosDataModel(BaseDataModel):
                 #    'prioridade_folgas': ['manager', 'manager', 'keyholder', 'keyholder', 'keyholder']
                 #})
                 #valid_emp = valid_emp.merge(valid_emp, on='fk_colaborador', how='left')
-                valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].fillna('')
-                valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].apply(lambda x: str(x))
+                valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].fillna(0.0)
+                valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].astype(int)
+                valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].astype(str)
                 
                 # Convert prioridade_folgas values: '1' -> 'manager', '2' -> 'keyholder'
                 valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].replace({
                     '1': 'manager',
-                    '2': 'keyholder'
+                    '2': 'keyholder',
+                    '1.0': 'manager',
+                    '2.0': 'keyholder',
+                    '0': 'normal'
                 })
                 valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].fillna('')
+                self.logger.info(f"valid_emp:\n{valid_emp}")
 
                 self.logger.info(f"valid_emp shape (rows {valid_emp.shape[0]}, columns {valid_emp.shape[1]}): {valid_emp.columns.tolist()}")
             except Exception as e:
