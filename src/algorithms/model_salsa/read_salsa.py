@@ -934,34 +934,30 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_wee
             print(f"caso 1 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
 
             worker_holiday -= {saturday, sunday}
-            fixed_days_off |= {saturday}
-            fixed_LQs.append(sunday)
+            fixed_days_off |= {sunday}
+            fixed_LQs.append(saturday)
 
             print(f"caso 1 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
 
         elif len_remaining < 2:
             print(f"caso 2 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
 
-            if week_remaining[0] != saturday:
-                worker_holiday -= {saturday}
-            elif week_remaining[0] != sunday:
-                worker_holiday -= {sunday}
+            worker_holiday -= {saturday}
+            worker_holiday -= {sunday}
 
-            fixed_days_off |= {saturday}
-            fixed_LQs.append(sunday)
+            fixed_days_off |= {sunday}
+            fixed_LQs.append(saturday)
 
             print(f"caso 2 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
 
         elif len_remaining < 3:
             print(f"caso 3 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
 
-            if week_remaining[0] != saturday and week_remaining[1] != saturday:
-                worker_holiday -= {saturday}
-            if week_remaining[0] != sunday and week_remaining[1] != sunday:
-                worker_holiday -= {sunday}
+            worker_holiday -= {saturday}
+            worker_holiday -= {sunday}
 
-            fixed_days_off |= {saturday}
-            fixed_LQs.append(sunday)
+            fixed_days_off |= {sunday}
+            fixed_LQs.append(saturday)
 
             print(f"caso 3 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
     return worker_holiday, fixed_days_off, fixed_LQs
