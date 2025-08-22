@@ -203,16 +203,16 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.error(f"No instance found for data_manager: {data_manager.__name__}")
 
                 # TODO: Remove this only for testing purposes:
-                valid_emp = valid_emp.rename(columns={
-                    'fk_perfil': 'fk_tipo_posto'
-                    })
-                
-                # Test dataframe for valid_emp with prioridade_folgas
-                test_valid_emp = pd.DataFrame({
-                    'fk_colaborador': [962, 95, 88, 90, 94],
-                    'prioridade_folgas': ['manager', 'manager', 'keyholder', 'keyholder', 'keyholder']
-                })
-                valid_emp = valid_emp.merge(test_valid_emp, on='fk_colaborador', how='left')
+                #valid_emp = valid_emp.rename(columns={
+                #    'fk_perfil': 'fk_tipo_posto'
+                #    })
+                #
+                ## Test dataframe for valid_emp with prioridade_folgas
+                #test_valid_emp = pd.DataFrame({
+                #    'fk_colaborador': [962, 95, 88, 90, 94],
+                #    'prioridade_folgas': ['manager', 'manager', 'keyholder', 'keyholder', 'keyholder']
+                #})
+                #valid_emp = valid_emp.merge(valid_emp, on='fk_colaborador', how='left')
                 valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].fillna('')
 
                 self.logger.info(f"valid_emp shape (rows {valid_emp.shape[0]}, columns {valid_emp.shape[1]}): {valid_emp.columns.tolist()}")

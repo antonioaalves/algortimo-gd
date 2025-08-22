@@ -46,9 +46,9 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 2637,#253762,# 249468,
+        'current_process_id': 2881,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 2637,
+        'wfm_proc_id': 2881,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
@@ -104,7 +104,7 @@ CONFIG = {
     },
     
     'available_entities_processing': {
-        'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'get_process_valid_employess.sql'),
+        'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetValidEmployees_v2.sql'),
         'df_messages': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_algo': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_lq': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_params_LQ.sql'),
