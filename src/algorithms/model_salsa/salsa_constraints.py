@@ -336,6 +336,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                         # This translates to: sunday_l == 1 → saturday_l == 0
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
+        '''
         monday = -1
         consecutive = 0
         for day2 in non_working_days[w]:
@@ -354,6 +355,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                     model.Add(shift[w, monday + 1, 'L'] + shift[w, monday + 1, 'LQ'] + shift[w, monday + 2, 'L'] + shift[w, monday + 2, 'LQ'] == 2)
                     model.Add(shift[w, monday + 1, 'LQ'] + shift[w, monday + 2, 'LQ'] <= 1)
                     logger.info(f"Worker {w}: 5 consecutive 'A' during week days, adding 2 'L's in weekend {monday + 1}")
+        '''
 
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days):

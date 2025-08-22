@@ -217,82 +217,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.info(f"  - Total special days: {len(special_days)} days")
         
         # =================================================================
-        # 8. PROCESS WORKER-SPECIFIC data
-        # =================================================================
-        logger.info("Processing worker-specific data")
-        
-        # Initialize dictionaries for worker-specific information
-        empty_days = {}
-        worker_holiday = {}
-        missing_days = {}
-        last_registered_day = {}
-        first_registered_day = {}
-        working_days = {}
-        free_day_complete_cycle = {}
-        fixed_days_off = {}
-        
-        # Process each worker
-        for w in workers_complete:
-            worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
-            
-            if worker_calendar.empty:
-                logger.warning(f"No calendar data found for worker {w}")
-                empty_days[w] = []
-                worker_holiday[w] = []
-                missing_days[w] = []
-                fixed_days_off[w] = []
-                continue
-            
-            # Find days with specific statuses
-            worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-            worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
-            worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
-            f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
-
-            empty_days[w] = worker_empty
-            missing_days[w] = worker_missing
-            worker_holiday[w] = w_holiday
-            fixed_days_off[w] = worker_fixed_days_off
-            free_day_complete_cycle[w] = f_day_complete_cycle
-            
-        # Track first and last registered days
-            if w in matriz_calendario_gd['colaborador'].values:
-                first_registered_day[w] = worker_calendar['data'].dt.dayofyear.min()
-            else:
-                first_registered_day[w] = 0
-
-            if w in matriz_calendario_gd['colaborador'].values:
-                last_registered_day[w] = worker_calendar['data'].dt.dayofyear.max()
-            else:
-                last_registered_day[w] = 0
-
-            logger.info(f"Worker {w} data processed: first registered day: {first_registered_day[w]}, last registered day: {last_registered_day[w]}") 
-        #fixed_days_off[80001366] = [3, 13, 15, 211] 
-
-        for w in workers_complete:
-            # Mark all remaining days after last_registered_day as 'A' (absent)
-            if first_registered_day[w] > 0 or last_registered_day[w] > 0:  # Ensure worker was registered at some point
-                missing_days[w].extend([d for d in range( 1, first_registered_day[w]) if d not in missing_days[w]])
-                missing_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in missing_days[w]])
-            
-            empty_days[w] = sorted(list(set(empty_days[w]) - set(closed_holidays)))
-            worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]))) #Assumindo dados corretos, nao é preciso subtrair fixed days off
-            missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
-            free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
-            fixed_days_off[w] = sorted(list(set(fixed_days_off[w]) - set(closed_holidays)))
-
-            working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w])
-
-            if not working_days[w]:
-                logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-
-
-
-        logger.info(f"Worker-specific data processed for {len(workers)} workers")
-        
-        # =================================================================
-        # 9. CALCULATE ADDITIONAL PARAMETERS
+        # 8. CALCULATE ADDITIONAL PARAMETERS
         # =================================================================
         logger.info("Calculating additional parameters")
         
@@ -400,7 +325,85 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.info(f"Week calculation:")
         logger.info(f"  - Start weekday: {start_weekday}")
         logger.info(f"  - Number of weeks: {len(week_to_days)}")
-        logger.info(f"  - Working days: {len(working_days)} days")
+        #logger.info(f"  - Working days: {len(working_days)} days")
+
+        # =================================================================
+        # 9. PROCESS WORKER-SPECIFIC data
+        # =================================================================
+        logger.info("Processing worker-specific data")
+        
+        # Initialize dictionaries for worker-specific information
+        empty_days = {}
+        worker_holiday = {}
+        missing_days = {}
+        last_registered_day = {}
+        first_registered_day = {}
+        working_days = {}
+        free_day_complete_cycle = {}
+        fixed_days_off = {}
+        fixed_LQs = {}
+        
+        # Process each worker
+        for w in workers_complete:
+            worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
+            
+            if worker_calendar.empty:
+                logger.warning(f"No calendar data found for worker {w}")
+                empty_days[w] = []
+                worker_holiday[w] = []
+                missing_days[w] = []
+                fixed_days_off[w] = []
+                fixed_LQs[w] = []
+                continue
+            
+            # Find days with specific statuses
+            worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
+            worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
+            w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
+            worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
+            f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
+
+            empty_days[w] = worker_empty
+            missing_days[w] = worker_missing
+            worker_holiday[w] = w_holiday
+            fixed_days_off[w] = worker_fixed_days_off
+            free_day_complete_cycle[w] = f_day_complete_cycle
+            
+        # Track first and last registered days
+            if w in matriz_calendario_gd['colaborador'].values:
+                first_registered_day[w] = worker_calendar['data'].dt.dayofyear.min()
+            else:
+                first_registered_day[w] = 0
+
+            if w in matriz_calendario_gd['colaborador'].values:
+                last_registered_day[w] = worker_calendar['data'].dt.dayofyear.max()
+            else:
+                last_registered_day[w] = 0
+
+            logger.info(f"Worker {w} data processed: first registered day: {first_registered_day[w]}, last registered day: {last_registered_day[w]}") 
+        #fixed_days_off[80001366] = [3, 13, 15, 211] 
+
+        for w in workers_complete:
+            # Mark all remaining days after last_registered_day as 'A' (absent)
+            if first_registered_day[w] > 0 or last_registered_day[w] > 0:  # Ensure worker was registered at some point
+                missing_days[w].extend([d for d in range( 1, first_registered_day[w]) if d not in missing_days[w]])
+                missing_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in missing_days[w]])
+            
+            empty_days[w] = sorted(list(set(empty_days[w]) - set(closed_holidays)))
+            #worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]))) #Assumindo dados corretos, nao é preciso subtrair fixed days off
+            worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday)
+            missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
+            free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
+            fixed_days_off[w] = sorted(list(set(fixed_days_off[w]) - set(closed_holidays)))
+
+            working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w]) - set(fixed_LQs[w])
+
+            if not working_days[w]:
+                logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
+
+
+        logger.info(f"Worker-specific data processed for {len(workers)} workers")
+        
         
         # =================================================================
         # 10.1. EXTRACT WORKER CONTRACT INFORMATION
@@ -652,6 +655,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             first_registered_day,    # 34x
             last_registered_day,     # 35x
             fixed_days_off,          # 36x
+            fixed_LQs,          # 36x
             # week_cut
         )
         
@@ -659,4 +663,50 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.error(f"Error in read_data_salsa: {e}", exc_info=True)
         raise
 
+#def data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa):
+def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_weekday):
+    fixed_LQs = []
+    for week, days in week_to_days_salsa.items():
+        if (len(days) <= 6):
+            continue
 
+        week_remaining = sorted(set(days) - worker_holiday)
+        len_remaining = len(week_remaining)
+        saturday = days[5]
+        sunday = days[6]
+
+        if len_remaining < 1:
+            print(f"caso 1 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
+
+            worker_holiday -= {saturday, sunday}
+            fixed_days_off |= {saturday}
+            fixed_LQs.append(sunday)
+
+            print(f"caso 1 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
+
+        elif len_remaining < 2:
+            print(f"caso 2 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
+
+            if week_remaining[0] != saturday:
+                worker_holiday -= {saturday}
+            elif week_remaining[0] != sunday:
+                worker_holiday -= {sunday}
+
+            fixed_days_off |= {saturday}
+            fixed_LQs.append(sunday)
+
+            print(f"caso 2 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
+
+        elif len_remaining < 3:
+            print(f"caso 3 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
+
+            if week_remaining[0] != saturday and week_remaining[1] != saturday:
+                worker_holiday -= {saturday}
+            if week_remaining[0] != sunday and week_remaining[1] != sunday:
+                worker_holiday -= {sunday}
+
+            fixed_days_off |= {saturday}
+            fixed_LQs.append(sunday)
+
+            print(f"caso 3 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
+    return worker_holiday, fixed_days_off, fixed_LQs
