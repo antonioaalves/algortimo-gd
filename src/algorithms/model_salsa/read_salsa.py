@@ -662,87 +662,59 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
-        
-        
-        """ 
-        # --- adicionar coluna 'level' na matriz_colaborador_cd ---
-
-        # normalizar nomes de colunas
-        matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
-
-        # garantir que 'matricula' é numérica
-        matricula_series = pd.to_numeric(matriz_colaborador_gd['matricula'], errors='coerce')
-        matriz_colaborador_gd['matricula'] = matricula_series.astype('Int64')
-
-        # IDs a marcar
-        manager_ids   = {7919, 80001331} #7656 , 5851
-        keyholder_ids = {80000509, 80000937, 80001237} #,  80000686}
-
-        # cria/força a coluna com default 'normal'
-        matriz_colaborador_gd['level'] = 'normal'
-
-        # atribui papéis
-        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'].isin(manager_ids),   'level'] = 'manager'
-        matriz_colaborador_gd.loc[matriz_colaborador_gd['matricula'].isin(keyholder_ids), 'level'] = 'keyholder'
-
-        # opcional: inspecionar distribuição
-        print(matriz_colaborador_gd['level'].value_counts(dropna=False))
-        print(matriz_colaborador_gd.loc[matriz_colaborador_gd['level'] != 'normal', ['matricula', 'level']])
-
-
-           
-
-
 
         # =================================================================
         # 10.1B. OPERATIONAL ROLES (manager / keyholder / normal)
         # =================================================================
-        logger.info("Deriving operational roles (manager/keyholder/normal)")
+        logger.info("Deriving operational roles (1=manager, 2=keyholder, empty=normal) a partir dos dados")
 
-        from typing import Dict, List
+        role_by_worker = {}
+        managers = []
+        keyholders = []
 
-        role_by_worker: Dict[int, str] = {}
-        managers: List[int] = []
-        keyholders: List[int] = []
+        # Escolher a coluna onde vêm os códigos 1/2 (ou texto), por ordem de preferência
+        role_col_data = ["prioridades_folgas"]
+        role_col = next((c for c in role_col_data if c in matriz_colaborador_gd.columns), None)
 
-        # Colunas possíveis para papel; usaremos a que existir (para testes podes criar 'role')
-        possible_role_cols = ["role", "papel", "funcao", "cargo", "perfil", "categoria", "level"]  # já em lower()
-        role_col = next((c for c in possible_role_cols if c in matriz_colaborador_gd.columns), None)
+        if not role_col:
+            logger.warning("Nenhuma coluna de nível encontrada entre %s. " "Todos tratados como 'normal'.", possible_role_cols)
+            
+            for w in workers_complete:
+                role_by_worker[w] = "normal"
+        else:
+            logger.info("Usando coluna de nível: %s", role_col)
 
-        # Função para normalizar valores para rótulos canónicos
-        def canonical_role(raw: str) -> str:
-            r = (raw or "").strip().lower()
-            if r in {"manager"}:
-                return "manager"
-            if r in {"keyholder"}:
-                return "keyholder"
-            return "normal"
+            for w in workers_complete:
+                row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
 
-
-        for w in workers_complete:
-            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
-
-            if row.empty:
-                role = "normal"
-            else:
-                if role_col:
-                    role = canonical_role(str(row.iloc[0][role_col]))
+                if row.empty:
+                    role = "normal"
                 else:
-                    # Fallback: procura flags binárias se existirem (opcional nos teus dados)
-                    is_mgr = "is_manager" in row.columns and bool(row.iloc[0].get("is_manager", False))
-                    is_kh  = "is_keyholder" in row.columns and bool(row.iloc[0].get("is_keyholder", False))
-                    role = "manager" if is_mgr else ("keyholder" if is_kh else "normal")
+                    raw = row.iloc[0].get(role_col)
 
-            role_by_worker[w] = role
-            if role == "manager":
-                managers.append(w)
-            elif role == "keyholder":
-                keyholders.append(w)
+                    # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
+                    # 1 → manager ; 2 → keyholder ; vazio/outros → normal
+                    if pd.isna(raw):
+                        role = "normal"
+                    else:
+                        s = str(raw).strip().lower()
+                        
+                        # fallback por texto
+                        if s == "manager":
+                            role = "manager"
+                        elif s == "keyholder":
+                            role = "keyholder"
+                        else:
+                            role = "normal"
 
-        logger.info(
-            f"Roles derived: managers={len(managers)}, keyholders={len(keyholders)}, "
-            f"normals={len(workers_complete) - len(managers) - len(keyholders)}"
-        ) """
+                role_by_worker[w] = role
+                if role == "manager":
+                    managers.append(w)
+                elif role == "keyholder":
+                    keyholders.append(w)
+
+        logger.info("Roles derived: managers=%d, keyholders=%d, normals=%d", len(managers), len(keyholders), len(workers_complete) - len(managers) - len(keyholders))
+
         
 
         # =================================================================
@@ -777,7 +749,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             f"CXX: {cxx[w]}, "
                             f"T_LQ: {t_lq[w]}, ")
 
-        '''
+
+        """
         #i dont understand what this is doing
         for w in workers:
             worker_special_days = [d for d in special_days if d in working_days[w]]
@@ -793,7 +766,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             elif contract_type[w] in [4,5]:
                 total_l[w] = total_l[w]        
             logger.info(f"Worker {w} L_D adjusted: {l_d[w]} based on contract type {contract_type[w]}")        
-        '''
+        """
 
         logger.info("Worker parameters adjusted based on first and last registered days")
 
