@@ -1,4 +1,4 @@
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, role_by_worker): #role_by_worker):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -18,7 +18,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] for w in workers)
+            assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
             
             # Create variables to represent the positive and negative deviations from the target
             pos_diff = model.NewIntVar(0, len(workers), f"pos_diff_{d}_{s}")
@@ -88,7 +88,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             for s in working_shift:
                 if pessObj.get((d, s), 0) > 0:  # Only penalize when pessObj exists
                     # Calculate the number of assigned workers for this day and shift
-                    assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                    assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
                     
                     # Create a boolean variable to indicate if there are no workers
                     no_workers = model.NewBoolVar(f"no_workers_{d}_{s}")
@@ -107,7 +107,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
@@ -622,5 +622,182 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # Add to objective
     objective_terms.extend(lq_balance_across_workers_penalties) 
+
+
+    #######################################################################################################
+    ## STRSOL 879  --- Avoid simultaneous shifts managers and keyholders --  Folgas mutuamente exclusivas
+
+    
+    # Weights (tune as needed)
+    PEN_MGR_KH_SAME_OFF = 3000   # 
+    PEN_KH_OVERLAP      = 5000  # Penalize overlap among keyholders is being used the same value as managers
+
+    # A day-off is any of these labels
+    OFF_LABELS = ("L", "LQ")
+
+    closed = set(closed_holidays)
+
+    def bool_or(model, lits, name):
+        #Returns BoolVar = OR(lits). If lits is empty, returns a fixed 0 BoolVar.
+        if not lits:
+            v = model.NewBoolVar(name)
+            model.Add(v == 0)
+            return v
+        v = model.NewBoolVar(name)
+        model.Add(v <= sum(lits))
+        for lit in lits:
+            model.Add(v >= lit)
+        return v
+
+    def is_off_var(model, shift, w, d, name):
+        #Returns BoolVar=1 if worker w is off on day d (any of OFF_LABELS).
+        lits = []
+        for lab in OFF_LABELS:
+            v = shift.get((w, d, lab), None)
+            if v is not None:
+                lits.append(v)
+        if not lits:
+            v = model.NewBoolVar(name)
+            model.Add(v == 0)
+            return v
+        v = model.NewBoolVar(name)
+        model.Add(v <= sum(lits))
+        for lit in lits:
+            model.Add(v >= lit)
+        return v
+
+    # 1) Penalize if a manager and (at least one) keyholder are off on the same day
+    for d in days_of_year:
+        if d in closed:
+            continue
+        
+        # mgr - managers / kh - keyholders
+        mgr_off_lits = []
+        kh_off_lits  = []
+
+        for w in workers:
+            if d not in working_days.get(w, []):
+                continue  # not exposed
+            role = role_by_worker.get(w, "normal")
+            off_w_d = is_off_var(model, shift, w, d, f"off_{w}_{d}")
+            if role == "manager":
+                mgr_off_lits.append(off_w_d)
+            elif role == "keyholder":
+                kh_off_lits.append(off_w_d)
+
+        mgr_off_any = bool_or(model, mgr_off_lits, f"mgr_off_any_{d}")
+        kh_off_any  = bool_or(model, kh_off_lits,  f"kh_off_any_{d}")
+
+        both_off = model.NewBoolVar(f"mgr_kh_both_off_{d}")
+        model.AddMultiplicationEquality(both_off, [mgr_off_any, kh_off_any])
+
+        objective_terms.append(PEN_MGR_KH_SAME_OFF * both_off)
+
+    # 2) Penalize overlap among keyholders (>1 keyholder off on the same day)
+    for d in days_of_year:
+        if d in closed:
+            continue
+
+        kh_off_list = []
+        for w in workers:
+            if role_by_worker.get(w, "normal") == "keyholder" and d in working_days.get(w, []):
+                kh_off_list.append(is_off_var(model, shift, w, d, f"kh_off_{w}_{d}"))
+
+        if kh_off_list:
+            kh_off_sum = model.NewIntVar(0, len(kh_off_list), f"kh_off_sum_{d}")
+            model.Add(kh_off_sum == sum(kh_off_list))
+
+            over1 = model.NewIntVar(0, len(kh_off_list), f"kh_over1_{d}")
+            model.Add(over1 >= kh_off_sum - 1)
+            model.Add(over1 >= 0)
+
+            objective_terms.append(PEN_KH_OVERLAP * over1)
+
+    # 3) Penalize overlap among managers (>1 manager off on the same day)
+    for d in days_of_year:
+        if d in closed:
+            continue
+
+        mgr_off_list = []
+        for w in workers:
+            if role_by_worker.get(w, "normal") == "manager" and d in working_days.get(w, []):
+                mgr_off_list.append(is_off_var(model, shift, w, d, f"mgr_off_{w}_{d}"))
+
+        if mgr_off_list:
+            mgr_off_sum = model.NewIntVar(0, len(mgr_off_list), f"mgr_off_sum_{d}")
+            model.Add(mgr_off_sum == sum(mgr_off_list))
+
+            over1 = model.NewIntVar(0, len(mgr_off_list), f"mgr_over1_{d}")
+            model.Add(over1 >= mgr_off_sum - 1)
+            model.Add(over1 >= 0)
+
+            objective_terms.append(PEN_KH_OVERLAP * over1)
+
+
+
+    # Pesos
+    PEN_MGR_KH_SAME_OFF = 3000
+    PEN_KH_OVERLAP      = 5000
+    PEN_MGR_OVERLAP     = 5000  # se quiseres manter penalização de managers
+
+    # OFF_LABELS consideradas como “folga”
+    OFF_LABELS = ("L", "LQ")
+    closed = set(closed_holidays)
+
+    # Pré-listas (assume que já tens role_by_worker)
+    managers   = [w for w in workers if role_by_worker.get(w, "normal") == "manager"]
+    keyholders = [w for w in workers if role_by_worker.get(w, "normal") == "keyholder"]
+
+    for d in days_of_year:
+        if d in closed:
+            continue
+
+        # Somas lineares (0/1) de “folga” por grupo (não criamos BoolVar por worker)
+        def off_sum(group):
+            # soma direta L + LQ; com exactly-one por (w,d), isto é 0/1 por worker
+            return sum(
+                sum(shift.get((w, d, lab), 0) for lab in OFF_LABELS)
+                for w in group
+                if d in working_days.get(w, [])
+            )
+
+        mgr_sum = off_sum(managers)
+        kh_sum  = off_sum(keyholders)
+
+        # --- a) Manager & Keyholder off no mesmo dia (penaliza se ambos >= 1)
+        mgr_any = model.NewBoolVar(f"mgr_any_{d}")
+        kh_any  = model.NewBoolVar(f"kh_any_{d}")
+
+        model.Add(mgr_sum >= 1).OnlyEnforceIf(mgr_any)
+        model.Add(mgr_sum == 0).OnlyEnforceIf(mgr_any.Not())
+
+        model.Add(kh_sum >= 1).OnlyEnforceIf(kh_any)
+        model.Add(kh_sum == 0).OnlyEnforceIf(kh_any.Not())
+
+        both_off = model.NewBoolVar(f"mgr_kh_both_off_{d}")
+        # AND(mgr_any, kh_any)
+        model.AddBoolAnd([mgr_any, kh_any]).OnlyEnforceIf(both_off)
+        model.AddBoolOr([mgr_any.Not(), kh_any.Not()]).OnlyEnforceIf(both_off.Not())
+
+        objective_terms.append(PEN_MGR_KH_SAME_OFF * both_off)
+
+        # --- b) Overlap entre keyholders (>= 2 off no mesmo dia)
+        if PEN_KH_OVERLAP > 0:
+            kh_overlap = model.NewBoolVar(f"kh_overlap_{d}")
+            model.Add(kh_sum >= 2).OnlyEnforceIf(kh_overlap)
+            model.Add(kh_sum <= 1).OnlyEnforceIf(kh_overlap.Not())
+            objective_terms.append(PEN_KH_OVERLAP * kh_overlap)
+
+        # --- c) Overlap entre managers (>= 2 off no mesmo dia) [opcional]
+        if PEN_MGR_OVERLAP > 0 and managers:
+            mgr_overlap = model.NewBoolVar(f"mgr_overlap_{d}")
+            model.Add(mgr_sum >= 2).OnlyEnforceIf(mgr_overlap)
+            model.Add(mgr_sum <= 1).OnlyEnforceIf(mgr_overlap.Not())
+            objective_terms.append(PEN_MGR_OVERLAP * mgr_overlap) 
+
+
+        
+
+
 
     model.Minimize(sum(objective_terms))

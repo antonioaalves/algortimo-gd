@@ -117,6 +117,26 @@ class AlgoritmoGDService(BaseService):
         if self.external_raw_connection:
             self.raw_connection = self.external_raw_connection
             return
+        
+        # Check if current connection is valid before creating new one
+        if self.raw_connection:
+            try:
+                # Test connection based on type (same logic as helpers.py)
+                if hasattr(self.raw_connection, 'ping') and callable(getattr(self.raw_connection, 'ping')):
+                    # Direct cx_Oracle connection - use ping
+                    self.raw_connection.ping()
+                    self.logger.debug("Existing cx_Oracle connection is valid, reusing it")
+                    return
+                elif hasattr(self.raw_connection, 'connection'):
+                    # SQLAlchemy raw connection - test with simple query
+                    with self.raw_connection.connection.cursor() as cursor:
+                        cursor.execute("SELECT 1 FROM DUAL")
+                        cursor.fetchone()
+                    self.logger.debug("Existing SQLAlchemy connection is valid, reusing it")
+                    return
+            except Exception as e:
+                self.logger.debug(f"Existing connection failed test: {e}, will create new one")
+                self.raw_connection = None
             
         # Get fresh connection from data_manager's engine
         if hasattr(self.data_manager, 'engine'):
@@ -859,6 +879,7 @@ class AlgoritmoGDService(BaseService):
                 if not valid_load_colaborador_info:
                     # Set process error for colaborador loading failure
                     if self.raw_connection and not messages_df.empty:
+                        self._refresh_raw_connection()
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=ROOT_DIR,
@@ -892,6 +913,7 @@ class AlgoritmoGDService(BaseService):
                 if not valid_colaborador_info_data:
                     # Set process error for colaborador validation failure
                     if self.raw_connection and not messages_df.empty:
+                        self._refresh_raw_connection()
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=ROOT_DIR,

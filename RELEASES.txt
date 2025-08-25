@@ -47,9 +47,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 
+## [1.0.6] - 25/08/2025
+
+### Added:
+
+### Fixed:
+
+- (Hotfix) Corrigido bug que introduzia folgas (LQ) a mais;
+
+
+## [1.0.5] - 22/08/2025
+
+### Added:
+
+- (STRSOL-879) Alteração da query que traz o df valid_emp para trazer a informação de prioridade, passa a vir considerado no df_colaborador; [falta parte correspondente ao algoritmo]
+
+- (STRSOL-876) Considera uma nova entidade ao modelo de dados, e passa a existir um dicionário algorithm_treatment_params passado ao algoritmo; [falta parte correspondente ao algoritmo]
+
+- (STRSOL-877) Foi alterada a forma de criação das variáveis do solver, privilegiando a não criação daquelas que se sabe à partida que não serão utilizadas; No caso de ausências, dias livres, férias e, sobretudo, destas folgas mistas, estas são transmitidas ao solver como condições fixas, sendo a solução construída em torno delas; O algoritmo já consegue receber algumas folgas pré-definidas e gerar as restantes;
+
+- (STRSOL-912) [jira sem comentários] 
+
+### Fixed:
+
+- (STRSOL-911) Corrige a lógica de reconexão à base de dados para ambos os conectores;
+
+- (STRSOL-909) Para funções workaround do orquestrador, aponta para o ficheiro de acessos correto;
+
+
 ## [1.0.4] - 20/08/2025
 
 ### Added: 
+
+- (STRSOL-892) Foi implementado (1) um cálculo de proporcionalidade (para cada colaborador calculámos uma proporção temporal que reflete quanto do período de planeamento esteve realmente ativo - do primeiro dia registado até ao último, face ao período total) e (2) otimizações com restrições soft para penalizar divergências, para garantir uma equidade “proporcional” tanto nos Domingos como nos LQ (contamos, por colaborador, os Domingos de folga  e os LQ. Em seguida, comparamos pares de colaboradores e aplicamos penalizações suaves sempre que existam diferenças ajustadas pelas proporções de exposição do ponto 1. Na prática, o modelo é empurrado a reduzir divergências nos totais de Domingos e de LQ entre os colaboradores);
 
 ### Fixed:
 
@@ -59,7 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - (STRSOL-873) Revisto: Alterado comportamento para casos de semanas de trabalho menores que 7 dias (ex: ausências). Agora também se garante um máximo de 2 folgas para essas semanas;
 
-- (STRSOL-892) [Sem comentários ainda]
 
 ## [1.0.3] - 13/08/2025
 

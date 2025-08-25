@@ -104,13 +104,14 @@ CONFIG = {
     },
     
     'available_entities_processing': {
-        'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'get_process_valid_employess.sql'),
+        'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetValidEmployees_v2.sql'),
         'df_messages': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_algo': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_lq': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_params_LQ.sql'),
         'df_festivos':  os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_festivos.sql'),
         'df_closed_days': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_closed_days.sql'),
         'params_df': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAlgoParameters.sql'),
+        'parameters_cfg': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetParametersCFG.sql'),
     },
 
     'available_entities_aux': {
@@ -123,7 +124,8 @@ CONFIG = {
         'df_orcamento': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscOrcamento.sql'),
         'df_calendario_passado': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreSchedule.sql'),
         'df_granularidade': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscEstimado.sql'),
-        'df_days_off': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetDaysOff.sql')
+        'df_days_off': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetDaysOff.sql'),
+        'df_core_pro_emp_horario_det': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreProEmpHorarioDet.sql')
     },
 
     'available_entities_raw': {

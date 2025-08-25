@@ -301,6 +301,98 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
         logger.error(f"Error in insert_holidays_absences: {str(e)}")
         return reshaped_final_3
 
+def insert_dayoffs_override(df_core_pro_emp_horario_det: pd.DataFrame, 
+                           reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
+    """
+    Override schedule matrix with day-offs from df_core_pro_emp_horario_det.
+    Applies 'F' for EVERY day-off found in df_core_pro_emp_horario_det, regardless of 
+    what's currently in the matrix for that employee and day.
+    
+    Args:
+        df_core_pro_emp_horario_det: DataFrame with day-off data (columns: employee_id, schedule_day, tipo_dia)
+        reshaped_final_3: Schedule matrix DataFrame
+        
+    Returns:
+        Updated schedule matrix with day-offs applied for all matching employee/day combinations
+    """
+    try:
+        logger.info(f"Starting insert_dayoffs_override with df_core_pro_emp_horario_det shape: {df_core_pro_emp_horario_det.shape}")
+        
+        if df_core_pro_emp_horario_det.empty:
+            logger.info("df_core_pro_emp_horario_det is empty, returning unchanged matrix")
+            return reshaped_final_3
+            
+        # Filter for day-offs only (tipo_dia = 'F')
+        df_core_dayoffs = df_core_pro_emp_horario_det[
+            df_core_pro_emp_horario_det['tipo_dia'] == 'F'
+        ].copy()
+        
+        logger.info(f"Filtered day-offs: {len(df_core_dayoffs)} records")
+        
+        if df_core_dayoffs.empty:
+            logger.info("No day-off records found, returning unchanged matrix")
+            return reshaped_final_3
+            
+        # Convert schedule_day to string format (YYYY-MM-DD)
+        df_core_dayoffs['schedule_day_str'] = pd.to_datetime(df_core_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
+        
+        logger.info(f"Processing {len(df_core_dayoffs)} day-off records")
+        
+        # Process each day-off record
+        for _, dayoff_row in df_core_dayoffs.iterrows():
+            employee_id = str(dayoff_row['employee_id'])
+            matricula = str(dayoff_row['matricula']) if 'matricula' in dayoff_row else None
+            schedule_day = dayoff_row['schedule_day_str']
+            
+            # Find employee row index in reshaped_final_3 - use matricula for matching
+            # since reshaped_final_3 uses matricula values, not fk_colaborador
+            employee_row_idx = None
+            search_value = matricula if matricula else employee_id
+            
+            for row_idx, row_data in reshaped_final_3.iterrows():
+                # Check if matricula exists as exact value in this row
+                if search_value in row_data.values:
+                    employee_row_idx = row_idx
+                    break
+            
+            if employee_row_idx is None:
+                logger.warning(f"Employee {employee_id} (matricula: {matricula}) not found in schedule matrix")
+                continue
+                
+            # Find column indices for this date - use exact value matching
+            col_indices = []
+            for col_idx, col_data in reshaped_final_3.items():
+                # Check if schedule_day exists as exact value in this column
+                if schedule_day in col_data.values:
+                    col_indices.append(col_idx)
+            
+            if len(col_indices) >= 2:
+                # Current behavior: Override EVERY F found in df_core_pro_emp_horario_det
+                # regardless of what's currently in the matrix
+                reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "L"
+                reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "L"
+                
+                # Previous logic (commented for potential future use):
+                # Only override if there's already an absence (V, A, or other non-shift values)
+                # Exclude normal shift values like M, T, MT, etc. and empty values like '-'
+                #absence_indicators = ['V', 'A', 'F']  # Common absence types
+                #
+                #if (current_morning in absence_indicators or current_afternoon in absence_indicators):
+                #    logger.info(f"Overriding absence with day-off (F) for employee {employee_id} (matricula: {matricula}) on {schedule_day}")
+                #    # Override with day-off (F) for both morning and afternoon shifts
+                #    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "F"
+                #    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "F"
+                #else:
+                #    logger.info(f"No absence found to override for employee {employee_id} (matricula: {matricula}) on {schedule_day} (current: {current_morning}, {current_afternoon})")
+            
+        
+        logger.info("Completed insert_dayoffs_override processing")
+        return reshaped_final_3
+        
+    except Exception as e:
+        logger.error(f"Error in insert_dayoffs_override: {str(e)}", exc_info=True)
+        return reshaped_final_3
+
 def create_m0_0t(reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
     """
     Convert R create_M0_0T function to Python.
