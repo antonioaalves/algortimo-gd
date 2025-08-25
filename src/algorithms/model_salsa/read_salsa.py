@@ -391,19 +391,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
             
             empty_days[w] = sorted(list(set(empty_days[w]) - set(closed_holidays)))
             #worker_holiday[w] = sorted(list(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]))) #Assumindo dados corretos, nao é preciso subtrair fixed days off
-            worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday)
+            worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa)
             missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
             free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
             fixed_days_off[w] = sorted(list(set(fixed_days_off[w]) - set(closed_holidays)))
 
-            working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) - set(free_day_complete_cycle[w]) - set(fixed_LQs[w])
-
+            working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays)
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-
-
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
-        
         
         # =================================================================
         # 10.1. EXTRACT WORKER CONTRACT INFORMATION
@@ -663,8 +659,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ..
         logger.error(f"Error in read_data_salsa: {e}", exc_info=True)
         raise
 
-#def data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa):
-def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_weekday):
+def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa):
     fixed_LQs = []
     for week, days in week_to_days_salsa.items():
         if (len(days) <= 6):
@@ -675,38 +670,10 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_wee
         saturday = days[5]
         sunday = days[6]
 
-        if len_remaining < 1:
-            print(f"caso 1 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
+        if len_remaining < 3:
 
             worker_holiday -= {saturday, sunday}
-            fixed_days_off |= {saturday}
-            fixed_LQs.append(sunday)
+            fixed_days_off |= {sunday}
+            fixed_LQs.append(saturday)
 
-            print(f"caso 1 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
-
-        elif len_remaining < 2:
-            print(f"caso 2 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
-
-            if week_remaining[0] != saturday:
-                worker_holiday -= {saturday}
-            elif week_remaining[0] != sunday:
-                worker_holiday -= {sunday}
-
-            fixed_days_off |= {saturday}
-            fixed_LQs.append(sunday)
-
-            print(f"caso 2 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
-
-        elif len_remaining < 3:
-            print(f"caso 3 antes: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
-
-            if week_remaining[0] != saturday and week_remaining[1] != saturday:
-                worker_holiday -= {saturday}
-            if week_remaining[0] != sunday and week_remaining[1] != sunday:
-                worker_holiday -= {sunday}
-
-            fixed_days_off |= {saturday}
-            fixed_LQs.append(sunday)
-
-            print(f"caso 3 depois: {week_remaining}, {saturday}, {sunday} \n\t\t{len(worker_holiday)}\n\t\t{len(fixed_days_off)}")
     return worker_holiday, fixed_days_off, fixed_LQs

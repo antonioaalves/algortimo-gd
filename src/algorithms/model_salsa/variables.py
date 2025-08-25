@@ -32,8 +32,8 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set, 'V')
         add_var(model, shift, w, absence_set - closed_set - fixed_days_set - fixed_LQs_set, 'A')
         add_var(model, shift, w, fixed_days_set - closed_set - fixed_LQs_set, 'L')
+        print(w, fixed_days_set, fixed_LQs_set - closed_set)
         add_var(model, shift, w, fixed_LQs_set - closed_set, 'LQ')
         add_var(model, shift, w, closed_set, 'F')
-
     #52332 vs 31555 vs 25489
     return shift

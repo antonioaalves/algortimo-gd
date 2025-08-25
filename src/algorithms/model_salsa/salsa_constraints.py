@@ -166,7 +166,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days):
                 ])
 
 
-def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays):
+def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays, fixed_LQs):
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
     print(f"workers: {workers}, c2d: {c2d}")
     for w in workers:
@@ -336,26 +336,6 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                         # This translates to: sunday_l == 1 → saturday_l == 0
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
-        '''
-        monday = -1
-        consecutive = 0
-        for day2 in non_working_days[w]:
-            if monday > -1:
-                if day2 == monday + 1:
-                    monday += 1
-                    consecutive += 1
-                else:
-                    consecutive = 0
-                    monday = -1
-            if (day2 + start_weekday - 2) % 7 == 0: #monday
-                monday = day2
-                consecutive = 0
-            if consecutive == 4 and day2 + 1 in working_days[w] :
-                if monday + 2 in working_days[w]:
-                    model.Add(shift[w, monday + 1, 'L'] + shift[w, monday + 1, 'LQ'] + shift[w, monday + 2, 'L'] + shift[w, monday + 2, 'LQ'] == 2)
-                    model.Add(shift[w, monday + 1, 'LQ'] + shift[w, monday + 2, 'LQ'] <= 1)
-                    logger.info(f"Worker {w}: 5 consecutive 'A' during week days, adding 2 'L's in weekend {monday + 1}")
-        '''
 
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days):
@@ -397,6 +377,8 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 elif required_free_days == 1:
                     if (actual_days_in_week > 3):
                         model.Add(free_shift_sum == required_free_days)
+                else:
+                    model.Add(free_shift_sum <= required_free_days)
 
 #-----------------------------------------------------------------------------------------------
 def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift):
