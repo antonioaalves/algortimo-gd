@@ -11,7 +11,6 @@ def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
 
 def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type):
     # Define working shifts
-    working_shift = ["M", "T"]
     # Add constraint to limit working days in a week to contract type
     for w in workers:
         for week in week_to_days.keys():
@@ -24,11 +23,11 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
 def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, maxi):
     #limits maximum continuous working days
     for w in workers:
-        for d in range(1, max(days_of_year) - maxi + 1):  # Start from the first day and check each possible 10-day window
-            # Sum all working shifts over a sliding window of 11 consecutive days
+        for d in range(1, max(days_of_year) - maxi + 1):  # Start from the first day and check each possible 7-day window
+            # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
             consecutive_days = sum(
                 shift[(w, d + i, s)] 
-                for i in range(maxi + 1)  # Check 11 consecutive days
+                for i in range(maxi + 1)  # Check contract_maximum + 1 consecutive days
                 for s in working_shift
                 if (w, d + i, s) in shift  # Make sure the day exists in our model
             )
@@ -204,18 +203,14 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                             has_sunday_L = model.NewBoolVar(f"next_day_L_{w}_{d+1}")
                             model.Add(shift.get((w, d + 1, "L"), 0) >= 1).OnlyEnforceIf(has_sunday_L)
                             model.Add(shift.get((w, d + 1, "L"), 0) == 0).OnlyEnforceIf(has_sunday_L.Not())
-                            
-                            eligible_conditions.append(has_sunday_L)
-                        
-                        # If no eligible conditions were found, this day can't be part of a quality weekend
-                        if eligible_conditions:
-                            model.AddBoolAnd(eligible_conditions).OnlyEnforceIf(could_be_quality_weekend)
-                            model.AddBoolOr([cond.Not() for cond in eligible_conditions]).OnlyEnforceIf(could_be_quality_weekend.Not())
+
+                        if has_sunday_L: 
+                            model.AddBoolAnd(has_sunday_L).OnlyEnforceIf(could_be_quality_weekend)
+                            model.AddBoolOr(has_sunday_L.Not()).OnlyEnforceIf(could_be_quality_weekend.Not())
                         else:
                             model.Add(could_be_quality_weekend == 0)
-                        
-                        # Final constraint: LQ can only be assigned if this day could be part of a quality weekend
-                        model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
+
+        
             else:
                 # First, identify all potential 2-day quality weekends (Saturday + Sunday)
                 for d in days_of_year:
