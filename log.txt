@@ -33,3 +33,6 @@
 29072025 12:11:36 ERROR CONNECTING TO DATABASE: ORA-12170: TNS:Connect timeout occurred
 29072025 12:20:11 ERROR CONNECTING TO DATABASE: ORA-12170: TNS:Connect timeout occurred
 29072025 12:20:32 ERROR CONNECTING TO DATABASE: ORA-12170: TNS:Connect timeout occurred
+21082025 12:12:51 ERROR CONNECTING TO DATABASE: Configuration file not found at C:\Users\joao.soares\Documents\GitHub\algortimo-gd\Connection\acessos.txt
+21082025 12:56:59 ERROR CONNECTING TO DATABASE: Configuration file not found at C:\Users\joao.soares\Documents\GitHub\algortimo-gd\Connection\acessos.txt
+21082025 15:04:19 ERROR CONNECTING TO DATABASE: Configuration file not found at C:\Users\joao.soares\Documents\GitHub\algortimo-gd\Connection\acessos.txt
