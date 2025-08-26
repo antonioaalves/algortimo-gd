@@ -3708,7 +3708,26 @@ class DescansosDataModel(BaseDataModel):
                 if not self.medium_data:
                     self.logger.error("medium_data is empty or not available for algorithm execution")
                     return False
-                    
+
+                if self.medium_data.get('df_colaborador', pd.DataFrame()).empty:
+                    self.logger.error("df_colaborador is empty")
+                    return False
+                if len(self.medium_data.get('df_colaborador', pd.DataFrame())) == 0:
+                    self.logger.error("df_colaborador has 0 rows")
+                    return False
+                if self.medium_data.get('df_calendario', pd.DataFrame()).empty:
+                    self.logger.error("df_calendario is empty")
+                    return False
+                if len(self.medium_data.get('df_calendario', pd.DataFrame())) == 0:
+                    self.logger.error("df_calendario has 0 rows")
+                    return False
+                if self.medium_data.get('df_estimativas', pd.DataFrame()).empty:
+                    self.logger.error("df_estimativas is empty")
+                    return False
+                if len(self.medium_data.get('df_estimativas', pd.DataFrame())) == 0:
+                    self.logger.error("df_estimativas has 0 rows")
+                    return False
+
                 required_keys = ['df_colaborador', 'df_calendario', 'df_estimativas']
                 missing_keys = [key for key in required_keys if key not in self.medium_data]
                 if missing_keys:
