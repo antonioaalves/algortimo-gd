@@ -202,17 +202,12 @@ class DescansosDataModel(BaseDataModel):
                 else:
                     self.logger.error(f"No instance found for data_manager: {data_manager.__name__}")
 
-                # TODO: Remove this only for testing purposes:
-                #valid_emp = valid_emp.rename(columns={
-                #    'fk_perfil': 'fk_tipo_posto'
-                #    })
-                #
-                ## Test dataframe for valid_emp with prioridade_folgas
-                #test_valid_emp = pd.DataFrame({
-                #    'fk_colaborador': [962, 95, 88, 90, 94],
-                #    'prioridade_folgas': ['manager', 'manager', 'keyholder', 'keyholder', 'keyholder']
-                #})
-                #valid_emp = valid_emp.merge(valid_emp, on='fk_colaborador', how='left')
+
+                if valid_emp.empty:
+                    self.logger.error("valid_emp is empty")
+                    # TODO: Add set process errors
+                    return False, "errNoColab", "valid_emp is empty"
+                    
                 valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].fillna(0.0)
                 valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].astype(int)
                 valid_emp['prioridade_folgas'] = valid_emp['prioridade_folgas'].astype(str)
@@ -233,10 +228,6 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error loading valid_emp: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            if valid_emp.empty:
-                self.logger.error("valid_emp is empty")
-                # TODO: Add set process errors
-                return False, "errNoColab", "valid_emp is empty"
 
             # Load important info into memory
             try:
@@ -247,7 +238,7 @@ class DescansosDataModel(BaseDataModel):
                 posto_id_list = valid_emp['fk_tipo_posto'].unique().tolist()  # Get list of unique values
                 self.logger.info(f"unit_id: {unit_id}, secao_id: {secao_id}, posto_id_list: {posto_id_list} stored in variables")
 
-                if len(valid_emp['fk_unidade'].unique()) > 1 or len(valid_emp['fk_secao'].unique()) > 1:
+                if len(valid_emp['fk_unidade'].unique()) > 1 or len(valid_emp['fk_secao'].unique()) > 1 or len(valid_emp['fk_tipo_posto'].unique()) == 0:
                     self.logger.error("More than one fk_secao or fk_unidade associated with the process.")
                     raise ValueError
 
