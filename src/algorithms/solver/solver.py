@@ -31,7 +31,8 @@ def solve(
     use_phase_saving: bool = True,
     log_search_progress: bool = 0,
     log_callback: Optional[Callable[[str], None]] = None,
-    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx')
+    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx'),
+    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None  # Add this parameter
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
@@ -110,7 +111,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 350  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 120  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -168,6 +169,8 @@ def solve(
         logger.info(f"  - Number of conflicts: {solver.NumConflicts()}")
         logger.info(f"  - Wall time: {solver.WallTime():.2f} seconds")
 
+
+
         # =================================================================
         # 4. VALIDATE SOLUTION STATUS
         # =================================================================
@@ -185,6 +188,22 @@ def solve(
             raise RuntimeError(error_msg)
         
         logger.info(f"[OK] Solution found! Status: {solver.status_name(status)}")
+
+
+        # =================================================================
+        # NEW: PRINT COULD_BE_QUALITY_WEEKEND VALUES
+        # =================================================================
+        if debug_vars:
+            logger.info("Printing could_be_quality_weekend values:")
+            for var_name, var in debug_vars.items():
+                if "could_be_quality_weekend" in var_name:
+                    try:
+                        var_value = solver.Value(var)
+                        logger.info(f"  {var_name} = {var_value}")
+                    except Exception as e:
+                        logger.warning(f"  Could not get value for {var_name}: {e}")
+        else:
+            logger.info("No debug variables provided for could_be_quality_weekend")
         
         # =================================================================
         # 5. PROCESS SOLUTION AND CREATE SCHEDULE
