@@ -350,7 +350,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
 
-def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao):
+def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -372,7 +372,9 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             if not week_work_days:
                 continue
             
+            week_work_days_set = set(week_work_days)
 
+            fixed_days_week = week_work_days_set.intersection(set(fixed_days_off[w]))
             
             # Check if admissao or demissao day falls within this week
             is_admissao_week = (worker_admissao > 0 and worker_admissao in days)
@@ -383,6 +385,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 # Calculate proportional requirement based on actual days in the week
                 # Standard week has 7 days and requires 2 free days
                 # Proportion: (actual_days / 7) * 2
+
                 actual_days_in_week = len(week_work_days)  # Total days in this week
                 proportion = actual_days_in_week / 7.0
                 proportion_days = proportion * 2
@@ -413,6 +416,8 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
                            f"Required Free Days = {required_free_days}")
 
+            if required_free_days < len(fixed_days_week):
+                required_free_days = len(fixed_days_week)
 
             # Only add constraint if we require at least 1 free day
             if required_free_days >= 0:
@@ -430,11 +435,12 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                         model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 1:
                     if (len(week_work_days) >= 1):
+                        logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
                         model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 0:
                     model.Add(free_shift_sum == 0)
-                else:
-                    model.Add(free_shift_sum <= required_free_days)
+                # else:
+                #     model.Add(free_shift_sum <= required_free_days)
 
 #-----------------------------------------------------------------------------------------------
 def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift):
