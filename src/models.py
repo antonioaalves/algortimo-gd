@@ -549,7 +549,7 @@ class DescansosDataModel(BaseDataModel):
             if posto_id == 0:
                 self.logger.error(f"posto_id provided is invalid: {posto_id}")
                 return False
-            if start_date == '' or end_date == '':
+            if start_date == '' or start_date == None or end_date == '' or end_date == None:
                 self.logger.error(f"start_date or end_date provided are empty. start: {start_date}, end_date: {end_date}")
                 return False
 
@@ -752,7 +752,7 @@ class DescansosDataModel(BaseDataModel):
             self.logger.info(f"Starting load_calendario_info method.")
             
             # Validate input parameters
-            if posto_id == 0:
+            if posto_id == 0 or posto_id == None:
                 self.logger.error("posto_id is 0, returning False. Check load_calendario_info call method.")
                 return False
         
