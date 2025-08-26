@@ -2393,9 +2393,10 @@ class DescansosDataModel(BaseDataModel):
                 matriz2_og = self.raw_data['df_calendario'].copy()
                 matrizB_og = self.raw_data['df_estimativas'].copy() 
                 matrizA_og = self.raw_data['df_colaborador'].copy()
+                algorithm_name = self.auxiliary_data['GD_algorithmName']
 
                 #DEBUG - TODO: remove
-                matrizB_og.to_csv(os.path.join('data', 'output', f'df_estimativas_debug_inicializa-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
+                #matrizB_og.to_csv(os.path.join('data', 'output', f'df_estimativas_debug_inicializa-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
 
                 self.logger.info(f"Matrices loaded - matriz2_og (columns: {matriz2_og.shape[0]}, rows: {matriz2_og.shape[1]}), matrizB_og ( columns: {matrizB_og.shape[0]}, rows: {matrizB_og.shape[1]}), matrizA_og ( columns: {matrizA_og.shape[0]}, rows: {matrizA_og.shape[1]})")
             except KeyError as e:
@@ -2406,15 +2407,27 @@ class DescansosDataModel(BaseDataModel):
                 return False
 
             try:
-                self.logger.info("Debugging matrizB_og (df_estimativas)")
-                # Debug: Check matrizB_og (df_estimativas)
-                self.logger.info("=== Debug matrizB_og (df_estimativas) ===")
-                self.logger.info(f"Shape: {matrizB_og.shape}")
-                self.logger.info(f"Columns: {matrizB_og.columns.tolist()}")
-                self.logger.info(f"First few rows:\n{matrizB_og.head()}")
-                self.logger.info("=====================================")
+                self.logger.info(f"Validating dataframe structures")
+                if matriz2_og.empty:
+                    self.logger.error("matriz2_og is empty")
+                    return False
+                if len(matriz2_og) == 0:
+                    self.logger.error("matriz_2_og has 0 rows")
+                    return False
+                if matrizB_og.empty:
+                    self.logger.error("matrizB_og is empty")
+                    return False
+                if len(matrizB_og) == 0:
+                    self.logger.error("matrizB_og has 0 rows")
+                    return False
+                if matrizA_og.empty:
+                    self.logger.error("matrizA_og is empty")
+                    return False
+                if len(matrizA_og) == 0:
+                    self.logger.error("matrizA_og has 0 rows")
+                    return False
             except Exception as e:
-                self.logger.error(f"Error during matrizB_og debugging: {e}", exc_info=True)
+                self.logger.error(f"Error validating dataframe structures: {e}", exc_info=True)
                 return False
 
             try:
@@ -2461,7 +2474,7 @@ class DescansosDataModel(BaseDataModel):
             matrizB_ini.loc[matrizB_ini['data'].isin(special_dates), 'min_turno'] = matrizB_ini['max_turno']
             mask_friday = (matrizB_ini['data'].isin(friday_dates)) & (matrizB_ini['turno'] == 'M')
             matrizB_ini.loc[mask_friday, 'min_turno'] = matrizB_ini.loc[mask_friday, 'max_turno']
-            self.logger.info(f"DEBUG: matrizB_ini before matriz2: {matrizB_ini}")
+            #self.logger.info(f"DEBUG: matrizB_ini before matriz2: {matrizB_ini}")
             
             #CRIAR MATRIZ_2--------------------------------------------------
             
@@ -3321,7 +3334,7 @@ class DescansosDataModel(BaseDataModel):
             for col in existing_cols:
                 self.logger.info(f"DEBUG: {col} before reset: {matrizA_bk[col].tolist()}")
             
-            if self.auxiliary_data['GD_algorithmName'] == 'salsa_algorithm':
+            if algorithm_name == 'salsa_algorithm':
                 self.logger.info("DEBUG: Condition met - applying salsa_algorithm zeros")
                 if 'l_res' in matrizA_bk.columns:
                     matrizA_bk.loc[:, 'l_res'] = 0
@@ -3335,7 +3348,7 @@ class DescansosDataModel(BaseDataModel):
                 else:
                     self.logger.warning("DEBUG: Column 'l_d' not found in matrizA_bk")
             else:
-                self.logger.info(f"DEBUG: Condition NOT met - algorithm is {self.auxiliary_data['GD_algorithmName']}, not salsa_algorithm")
+                self.logger.info(f"DEBUG: Condition NOT met - algorithm is {algorithm_name}, not salsa_algorithm")
                 
             # Log after values
             for col in existing_cols:
