@@ -847,34 +847,55 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_wee
     for week, days in week_to_days_salsa.items():
         if (len(days) <= 6):
             continue
-
-        week_remaining = sorted(set(days) - worker_holiday)
         
-        len_remaining = len(week_remaining)
-        len_remaining_with_holidays = len(set(week_remaining) - closed_holidays)
+        days_set = set(days)
 
-        saturday = days[5]
-        sunday = days[6]
-        friday = days[4]
+        holiday_days_in_week = days_set.intersection(worker_holiday)
 
-        if len_remaining < 3 and  len_remaining == len_remaining_with_holidays:
+        if len(list(holiday_days_in_week)) >= 5:
+            atributing_days = list(sorted(days_set - closed_holidays))
 
-            worker_holiday -= {saturday, sunday}
-            fixed_days_off |= {sunday}
-            fixed_LQs.append(saturday)
+            l1 = atributing_days[-1]
+            l2 = atributing_days[-2]
 
-        elif len_remaining < 3 and  len_remaining != len_remaining_with_holidays:
 
-            worker_holiday -= {saturday, sunday}
-            if sunday in closed_holidays:
-                fixed_days_off |= {saturday}
-            elif saturday in closed_holidays:
-                fixed_days_off |= {sunday}
+            if l1 == days[6] and l2 == days[5]:
+                worker_holiday -= {l2, l1}
+                fixed_days_off |= {l1}
+                fixed_LQs.append(l2)
 
-            if week_remaining:
-                fixed_days_off |=  {week_remaining[-1]}
             else:
-                worker_holiday -= {friday}
-                fixed_days_off |= {friday}
+                worker_holiday -= {l2,l1}
+                fixed_days_off |= {l2,l1}
+
+
+            # week_remaining = sorted(set(days) - worker_holiday)
+            
+            # len_remaining = len(week_remaining)
+            # len_remaining_with_holidays = len(set(week_remaining) - closed_holidays)
+
+            # saturday = days[5]
+            # sunday = days[6]
+            # friday = days[4]
+
+            # if len_remaining < 3 and  len_remaining == len_remaining_with_holidays:
+
+            #     worker_holiday -= {saturday, sunday}
+            #     fixed_days_off |= {sunday}
+            #     fixed_LQs.append(saturday)
+
+            # elif len_remaining < 3 and  len_remaining != len_remaining_with_holidays:
+
+            #     worker_holiday -= {saturday, sunday}
+            #     if sunday in closed_holidays:
+            #         fixed_days_off |= {saturday}
+            #     elif saturday in closed_holidays:
+            #         fixed_days_off |= {sunday}
+
+            #     if week_remaining:
+            #         fixed_days_off |=  {week_remaining[-1]}
+            #     else:
+            #         worker_holiday -= {friday}
+            #         fixed_days_off |= {friday}
 
     return worker_holiday, fixed_days_off, fixed_LQs
