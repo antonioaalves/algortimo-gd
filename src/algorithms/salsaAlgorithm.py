@@ -21,8 +21,8 @@ from src.algorithms.model_salsa.salsa_constraints import (
     LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
     assign_week_shift, working_day_shifts,
     salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
-    salsa_saturday_L_constraint, salsa_2_free_days_week, salsa_week_cut_contraint, first_day_not_free, free_days_special_days)
-
+    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days
+)
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
 
@@ -364,16 +364,12 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Maximum continuous working days constraint
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
-
-            logger.info(f"workers: {workers}, c2d: {c2d}")
             LQ_attribution(model, shift, workers, working_days, c2d)
             
             # Closed holiday attribution constraint
             closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
 
-            logger.info(f"worker_holiday: {worker_holiday}, missing_days: {missing_days}, empty_days: {empty_days}, free_day_complete_cycle: {free_day_complete_cycle}, workers_complete: {workers_complete}")
-            holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
-            
+            holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)            
             
             # Worker week shift assignments
             assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
@@ -384,7 +380,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SALSA specific constraints
             salsa_2_consecutive_free_days(model, shift, workers, working_days)
             
-            self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, 
                                   sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
