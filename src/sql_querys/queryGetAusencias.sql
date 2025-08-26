@@ -5,4 +5,5 @@ where  1=1
 -- and {condition} 
 and MATRICULA IN ({colabs_id})
 and ea.data_exclusao is null
+AND TIPO_AUSENCIA not in ('AP')
 --QUERY PARA EXCEÇÕES DE QUANTIDADE (excecoesQuantidade.txt)
