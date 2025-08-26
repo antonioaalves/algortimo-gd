@@ -3719,7 +3719,7 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.error(f"Algorithm {algorithm_name} failed to run. Status: {results.get('summary', {}).get('status')}")
                     return False
 
-                self.logger.info(f"DEBUG: results: {results}")
+                #self.logger.info(f"DEBUG: results: {results}")
 
                     
                 self.logger.info(f"Algorithm {algorithm_name} executed successfully with status: {results.get('status')}")
@@ -3738,7 +3738,7 @@ class DescansosDataModel(BaseDataModel):
                     return False
 
                 self.rare_data['df_results'] = results.get('core_results', {}).get('formatted_schedule', pd.DataFrame())
-                self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
+                #self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
                 self.rare_data['df_results'].to_csv(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
                     
                 results_df = self.rare_data.get('df_results', {})
@@ -3786,16 +3786,30 @@ class DescansosDataModel(BaseDataModel):
             self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
             df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao', 'data_demissao']]
 
+            # Adding validation to fall gracefully
+            if final_df.empty:
+                self.logger.error("final_df is empty")
+                return False
+            if final_df.columns.empty:
+                self.logger.error("final_df has no columns")
+                return False
+            if len(final_df) == 0:
+                self.logger.error("final_df has 0 rows")
+                return False
+            if df_colaborador.empty:
+                self.logger.error("df_colaborador is empty")
+                return False
+
             self.logger.info(f"Adding wfm_proc_id to final_df")
             final_df['wfm_proc_id'] = self.external_call_data.get("current_process_id", "")
-            self.logger.info(f"DEBUG: final_df: {final_df}")
+            #self.logger.info(f"DEBUG: final_df: {final_df}")
 
             self.logger.info("Merging with df_colaborador")
             # Convert matricula to int for matching (remove leading zeros)
             df_colaborador['matricula_int'] = df_colaborador['matricula'].astype(str).str.lstrip('0').astype(int)
-            self.logger.info(f"DEBUG: df_colaborador matricula_int: {df_colaborador['matricula_int'].tolist()}")
+            #self.logger.info(f"DEBUG: df_colaborador matricula_int: {df_colaborador['matricula_int'].tolist()}")
             final_df = pd.merge(final_df, df_colaborador, left_on='colaborador', right_on='matricula_int', how='left')
-            self.logger.info(f"DEBUG: final_df: {final_df}")
+            #self.logger.info(f"DEBUG: final_df: {final_df}")
             self.logger.info("Filtering dates greater than each employee's admission date")
             initial_rows = len(final_df)
             # Convert data_admissao to datetime if not already
@@ -3831,19 +3845,19 @@ class DescansosDataModel(BaseDataModel):
             filtered_rows = len(final_df)
             self.logger.info(f"Filtered {initial_rows - filtered_rows} rows (from {initial_rows} to {filtered_rows}) based on admission dates")
 
-            self.logger.info(f"DEBUG: final_df: {final_df}")
+            #self.logger.info(f"DEBUG: final_df: {final_df}")
 
             self.logger.info("Converting types out")
             final_df = convert_types_out(pd.DataFrame(final_df))
-            self.logger.info(f"DEBUG: final_df:\n {final_df}")
+            #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             final_df = final_df.drop(columns=['matricula_int', 'horario', 'fk_colaborador', 'data_admissao', 'matricula_int', 'colaborador'])
             final_df = final_df.rename(columns={'matricula': 'colaborador'})
             final_df['colaborador'] = final_df['colaborador'].astype(str)
             final_df.to_csv(os.path.join('data', 'output', f'df_insert_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
             #self.formatted_data['stage1_schedule'].to_csv(os.path.join('data', 'output', f'stage1_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
             #self.formatted_data['stage2_schedule'].to_csv(os.path.join('data', 'output', f'stage2_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
-            self.logger.info("format_results completed successfully")
-            self.logger.info(f"DEBUG: final_df:\n {final_df}")
+            self.logger.info("format_results completed successfully. Storing final_df in formatted_data.")
+            #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             self.formatted_data['df_final'] = final_df.copy()
             return True            
         except Exception as e:
@@ -3868,6 +3882,17 @@ class DescansosDataModel(BaseDataModel):
         try:
             self.logger.info("Entered insert_results method.")
             final_df = self.formatted_data['df_final'].copy()
+
+            # Adding validation to fall gracefully
+            if final_df.empty:
+                self.logger.error("final_df is empty")
+                return False
+            if final_df.columns.empty:
+                self.logger.error("final_df has no columns")
+                return False
+            if len(final_df) == 0:
+                self.logger.error("final_df has 0 rows")
+                return False
 
             try:
                 self.logger.info(f"Changing column names to match insert_results query")
