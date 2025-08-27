@@ -2988,7 +2988,7 @@ class DescansosDataModel(BaseDataModel):
             matrizA = matrizA_og[[
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
-                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao',
+                'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao', 'prioridade_folgas',
                 'l_dom_salsa' # TODO: Remove this in next big release
             ]].copy()
             
