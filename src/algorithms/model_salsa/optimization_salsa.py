@@ -1,4 +1,10 @@
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, proportion, role_by_worker): #role_by_worker):
+from base_data_project.log_config import get_logger
+from src.config import PROJECT_NAME
+
+logger = get_logger(PROJECT_NAME)
+
+
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker): #role_by_worker):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -446,9 +452,16 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         # For each pair of workers, ensure proportional fairness
         for i, w1 in enumerate(workers_with_sundays):
             for w2 in workers_with_sundays[i+1:]:
-                prop1 = proportion.get(w1, 1.0)
-                prop2 = proportion.get(w2, 1.0)
-                
+                if last_day.get(w1, 0) == 0 :
+                    last_day[w1] = days_of_year[-1]
+                if last_day.get(w2, 0) == 0 :
+                    last_day[w2] = days_of_year[-1]
+                prop1 = (last_day.get(w1, 0) - first_day.get(w1, 0) + 1) / len(days_of_year)
+                prop1 = max(0.0, min(1.0, prop1))
+                prop2 = (last_day.get(w2, 0) - first_day.get(w2, 0) + 1) / len(days_of_year)
+                prop2 = max(0.0, min(1.0, prop2))
+                #logger.info(f"Worker {w1} proportion: {prop1}, first day: {first_day.get(w1, 0)}, last day: {last_day.get(w1, 0)}, Worker {w2} proportion: {prop2}, first day: {first_day.get(w2, 0)}, last day: {last_day.get(w2, 0)}")
+
                 if prop1 > 0 and prop2 > 0:
                     # Calculate proportion ratio as integers (multiply by 100 for precision)
                     prop1_int = int(prop1 * 100)
@@ -595,8 +608,14 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             for w2 in workers_with_lq[i+1:]:
                 # Keep your existing 'proportion' for consistency.
                 # If you compute a specific LQ exposure (prop_lq), you can swap it here.
-                prop1 = proportion.get(w1, 1.0)
-                prop2 = proportion.get(w2, 1.0)
+                if last_day.get(w1, 0) == 0 :
+                    last_day[w1] = days_of_year[-1]
+                if last_day.get(w2, 0) == 0 :
+                    last_day[w2] = days_of_year[-1]
+                prop1 = (last_day.get(w1, 0) - first_day.get(w1, 0) + 1) / len(days_of_year)
+                prop1 = max(0.0, min(1.0, prop1))
+                prop2 = (last_day.get(w2, 0) - first_day.get(w2, 0) + 1) / len(days_of_year)
+                prop2 = max(0.0, min(1.0, prop2))
                 if prop1 <= 0 or prop2 <= 0:
                     continue
 
