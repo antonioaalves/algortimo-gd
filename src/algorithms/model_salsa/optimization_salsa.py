@@ -755,9 +755,9 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
 
     # Pesos
-    PEN_MGR_KH_SAME_OFF = 3000
-    PEN_KH_OVERLAP      = 5000
-    PEN_MGR_OVERLAP     = 5000  # se quiseres manter penalização de managers
+    PEN_MGR_KH_SAME_OFF = 30000
+    PEN_KH_OVERLAP      = 50000
+    PEN_MGR_OVERLAP     = 50000  # se quiseres manter penalização de managers
 
     # OFF_LABELS consideradas como “folga”
     OFF_LABELS = ("L", "LQ")
