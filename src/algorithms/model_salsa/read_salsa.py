@@ -607,7 +607,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         keyholders = []
 
         # Escolher a coluna onde vêm os códigos 1/2 (ou texto), por ordem de preferência
-        role_col_data = ["prioridades_folgas"]
+        role_col_data = ["prioridade_folgas"]
         role_col = next((c for c in role_col_data if c in matriz_colaborador_gd.columns), None)
 
         #if not role_col:

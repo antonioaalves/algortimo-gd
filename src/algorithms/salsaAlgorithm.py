@@ -420,10 +420,11 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SET UP OPTIMIZATION OBJECTIVE
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
-            
-            salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, 
-                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker) #role_by_worker)
-            
+
+            salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
+                                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
+                                             first_day, last_day, role_by_worker)  # role_by_worker)
+
             # =================================================================
             # SOLVE THE MODEL
             # =================================================================
