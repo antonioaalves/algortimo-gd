@@ -207,7 +207,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Identifying special days")
         
         # Define shifts and special days
-        shifts = ["M", "T", "L","LQ", "F", "V","LD", "A"]
+        shifts = ["M", "T", "L","LQ", "F", "V","LD", "A", "-"]
         
         sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['data'].dt.dayofyear.unique().tolist())
 
@@ -353,6 +353,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
 
+            worker_present_days = set(worker_calendar['data'].dt.dayofyear.tolist())
+            # Days where worker should potentially appear but doesn't
+            days_not_in_calendar = set(days_of_year) - worker_present_days
+        
+            # Add these missing days to empty_days
+            worker_empty.extend(list(days_not_in_calendar))
+
+
             empty_days[w] = worker_empty
             missing_days[w] = worker_missing
             worker_holiday[w] = w_holiday
@@ -445,7 +453,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 logger.info(f"Worker {w} last registered day: {last_registered_day[w]}")
             else:
                 last_registered_day[w] = 0
-
+        
 
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)

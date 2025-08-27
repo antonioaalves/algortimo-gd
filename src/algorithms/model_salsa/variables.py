@@ -22,6 +22,7 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
     shifts2.remove('A')
     shifts2.remove('V')
     shifts2.remove('F')
+    shifts2.remove('-')
  
     closed_set = set(closed_holidays)
     for w in workers:
@@ -47,10 +48,11 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
 
-        add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set, 'V', start_weekday)
-        add_var(model, shift, w, absence_set - closed_set - fixed_days_set - fixed_LQs_set, 'A', start_weekday)
-        add_var(model, shift, w, fixed_days_set - closed_set - fixed_LQs_set, 'L', start_weekday)
-        add_var(model, shift, w, fixed_LQs_set - closed_set, 'LQ', start_weekday)
-        add_var(model, shift, w, closed_set, 'F', start_weekday)
+        add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'V', start_weekday)
+        add_var(model, shift, w, absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'A', start_weekday)
+        add_var(model, shift, w, fixed_days_set - closed_set - fixed_LQs_set - empty_days_set, 'L', start_weekday)
+        add_var(model, shift, w, fixed_LQs_set - closed_set - empty_days_set, 'LQ', start_weekday)
+        add_var(model, shift, w, closed_set - empty_days_set, 'F', start_weekday)
+        add_var(model, shift, w, empty_days_set, '-', start_weekday)
     #52332 vs 31555 vs 25489
     return shift

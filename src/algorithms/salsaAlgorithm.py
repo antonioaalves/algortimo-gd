@@ -63,7 +63,7 @@ class SalsaAlgorithm(BaseAlgorithm):
         # Default parameters for the SALSA algorithm
         default_parameters = {
             "max_continuous_working_days": 6,
-            "shifts": ["M", "T", "L", "LQ", "F", "A", "V"],
+            "shifts": ["M", "T", "L", "LQ", "F", "A", "V", "-"],
             "check_shifts": ['M', 'T', 'L', 'LQ'],
             "working_shifts": ["M", "T"],
             "settings":{
