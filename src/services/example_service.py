@@ -21,8 +21,9 @@ from base_data_project.log_config import get_logger
 
 # Import project-specific components
 from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
-from src.models import DescansosDataModel
+from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
+from src.data_models.factory import DataModelFactory
 from src.helpers import set_process_errors
 from src.orquestrador_functions.Logs.message_loader import set_messages
 
@@ -209,12 +210,13 @@ class AlgoritmoGDService(BaseService):
                     "Starting data loading raw"
                 )
             
+            data_model_name = 'default_data_model'
+
             # Load each entity
-            self.data = DescansosDataModel(
-                data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
-                    project_name=PROJECT_NAME,
-                    external_data=self.external_data if self.external_data else {}
-                )
+            self.data = DataModelFactory.create_data_model(
+                decision=data_model_name,
+                external_data=self.external_data if self.external_data else {}
+            )
             
             # Declare the messages dataframe
             messages_df = self.data.auxiliary_data.get('messages_df', pd.DataFrame())
