@@ -1765,58 +1765,56 @@ def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_
 
 def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: str, end_date: str, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Calculate comprehensive statistics from algorithm results in wide format."""
+    if algorithm_results.empty:
+        logger.error(f"Error calculating comprehensive stats: No schedule data available")
+        return {}
+    shift_distribution = {}
+    unassigned_slots = 0
+    total_assignments = 0
+    total_workers = 0
+    day_columns = []
+    all_shifts = []
+    worker_list = []
+    working_days_covered = 0
+    special_days_covered = 0
     try:
         # Basic counts
-        total_workers = len(algorithm_results) if not algorithm_results.empty else 0
+        total_workers = len(algorithm_results)
         
         # Get day columns (all columns except 'Worker')
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
-        total_days = len(day_columns)
-        
+        for col in algorithm_results.columns:
+            if col != 'Worker' and col.startswith('Day'):
+                day_columns.append(col)
+                # Get all shift values from the wide format
+                all_shifts.extend(algorithm_results[col].dropna().astype(str).tolist())
+            elif 'Worker' == col:
+                # Worker statistics
+                worker_list = algorithm_results['Worker'].astype(str).tolist()
+        # Shift distribution - flatten all shift values
+        # Count shift types
+        shift_series = pd.Series(all_shifts)
+        shift_distribution = shift_series.value_counts().to_dict()
+        total_assignments = len(all_shifts)
+        unassigned_slots = shift_distribution.get('N', 0) + shift_distribution.get('ERROR', 0) + shift_distribution.get('-', 0)
+
         # Calculate date range
         if start_date and end_date:
-            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
-            total_days = len(date_range)
-        
-        # Shift distribution - flatten all shift values
-        shift_distribution = {}
-        unassigned_slots = 0
-        total_assignments = 0
-        
-        if not algorithm_results.empty and day_columns:
-            # Get all shift values from the wide format
-            all_shifts = []
-            for col in day_columns:
-                all_shifts.extend(algorithm_results[col].dropna().astype(str).tolist())
-            
-            # Count shift types
-            shift_series = pd.Series(all_shifts)
-            shift_distribution = shift_series.value_counts().to_dict()
-            total_assignments = len(all_shifts)
-            unassigned_slots = shift_distribution.get('N', 0) + shift_distribution.get('ERROR', 0) + shift_distribution.get('-', 0)
-        
-        # Worker statistics
-        workers_scheduled = total_workers
-        worker_list = algorithm_results['Worker'].astype(str).tolist() if 'Worker' in algorithm_results.columns else []
+            total_days = len(pd.date_range(start=start_date, end=end_date, freq='D'))
+        else:
+            total_days = len(day_columns)
         
         # Time coverage
-        scheduled_days = total_days
         coverage_percentage = 100.0 if total_days > 0 else 0
         
-        # Working days and special days coverage
-        working_days_covered = 0
-        special_days_covered = 0
-        
+        # Working days and special days coverage    
         if data_processed:
-            working_days = data_processed.get('working_days', [])
-            special_days = data_processed.get('special_days', [])
-            working_days_covered = len(working_days)
-            special_days_covered = len(special_days)
+            working_days_covered = len(data_processed.get('working_days', []))
+            special_days_covered = len(data_processed.get('special_days', []))
         
         return {
             'workers': {
                 'total_workers': total_workers,
-                'workers_scheduled': workers_scheduled,
+                'workers_scheduled': total_workers,
                 'worker_list': worker_list
             },
             'shifts': {
@@ -1836,26 +1834,38 @@ def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: 
         logger.error(f"Error calculating comprehensive stats: {e}")
         return {}
 
-def _validate_constraints(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
+def _validate_constraints(algorithm_results: pd.DataFrame, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Validate constraint satisfaction from wide format."""
+    #print(f"\n\n\n\n\t\t\t\t\033[1mVALIDAÇÃO\033[0m\n\n\n\n{data_processed["week_to_days"]}\n\n\n\n\n\n")
+
+    overall_satisfaction = 100
     try:
         constraint_validation = {
-            'working_days': {
-                'violations': [],
-                'satisfied': True,
-                'details': 'All workers have proper working day assignments'
+            'working_days' :
+            {
+                'violations' : [],
+                'satisfied' : True,
+                'details' : 'All workers have proper working day assignments'
             },
-            'continuous_working_days': {
-                'violations': [],
-                'max_continuous_exceeded': [],
-                'satisfied': True
+            'continuous_working_days' :
+            {
+                'violations' : [],
+                'max_continuous_exceeded' : [],
+                'satisfied' : True
             },
-            'salsa_specific': {
-                'consecutive_free_days': {'satisfied': True, 'violations': []},
-                'quality_weekends': {'satisfied': True, 'violations': []},
-                'saturday_L_constraint': {'satisfied': True, 'violations': []}
+            'salsa_specific' :
+            {
+                'consecutive_free_days' : {'satisfied' : True, 'violations' : []},
+                'quality_weekends' : {'satisfied' : True, 'violations' : []},
+                'saturday_L_constraint' : {'satisfied' : True, 'violations' : []}
             },
-            'overall_satisfaction': 100
+            'workers_per_store' :
+            {
+                'pess_obj_non_complied' : [],
+                'max_per_shift_non_complied' : [],
+                'min_per_shift_non_complied' : [],
+            },
+            'overall_satisfaction' : overall_satisfaction
         }
         
         if algorithm_results.empty:
@@ -1865,19 +1875,44 @@ def _validate_constraints(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
             return constraint_validation
         
         # Get day columns
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
-        
+        day_columns = []
+        i = 0
+        #TODO: investigar melhor se os index i estao corretos para data_processed[].get((i, 'M'), 0)
+        for col in algorithm_results.columns:
+            if col != 'Worker' and col.startswith('Day'):
+                day_columns.append(col)
+                m_counts = (algorithm_results[col] == 'M').sum()
+                t_counts = (algorithm_results[col] == 'T').sum()
+                if m_counts < data_processed['min_workers'].get((i, 'M'), 0) or t_counts < data_processed['min_workers'].get((i, 'T'), 0):
+                    #constraint_validation['workers_per_store']['min_per_shift_non_complied'].append(f"Minimum workers not allocated on day {i + 1}")
+                    constraint_validation['workers_per_store']['min_per_shift_non_complied'].append(f"day{i + 1}")
+                    overall_satisfaction -= 0.5
+                if m_counts > data_processed['max_workers'].get((i, 'M'), 0) or t_counts > data_processed['max_workers'].get((i, 'T'), 0):
+                    #constraint_validation['workers_per_store']['max_per_shift_non_complied'].append(f"Over maximum workers allocated on day {i + 1}")
+                    constraint_validation['workers_per_store']['max_per_shift_non_complied'].append(f"day{i + 1}")
+                    overall_satisfaction -= 0.25
+                #pessOBJ is almost never hit so not evaluating it for now
+                '''
+                elif m_counts != data_processed['pess_obj'].get((i, 'M'), 0) or t_counts != data_processed['pess_obj'].get((i, 'T'), 0):
+                    constraint_validation['workers_per_store']['pess_obj_non_complied'].append(f"Different amount of workers than the objective allocated on day {i + 1}")
+                '''
+                i += 1
         # Check for continuous working days violations
         continuous_violations = []
+        weekend_violations = []
         max_continuous_work = 5  # Assume max 5 consecutive working days
         
         for idx, row in algorithm_results.iterrows():
             worker = row['Worker']
-            worker_shifts = [str(row[col]) for col in day_columns if pd.notna(row[col])]
+            worker_shifts = row.loc[day_columns].dropna().astype(str).tolist()
             
             consecutive_work = 0
             max_consecutive = 0
             
+            # Check for quality weekends (LQ should be followed by proper rest)
+            if  worker_shifts.count('LQ') == 0:
+                weekend_violations.append(f"Worker {worker}: No quality weekends assigned")
+
             for shift in worker_shifts:
                 if shift in ['M', 'T']:  # Working shifts
                     consecutive_work += 1
@@ -1891,75 +1926,78 @@ def _validate_constraints(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
         if continuous_violations:
             constraint_validation['continuous_working_days']['satisfied'] = False
             constraint_validation['continuous_working_days']['violations'] = continuous_violations
-            constraint_validation['overall_satisfaction'] -= 20
-        
-        # Check SALSA-specific constraints
-        weekend_violations = []
-        for idx, row in algorithm_results.iterrows():
-            worker = row['Worker']
-            worker_shifts = [str(row[col]) for col in day_columns if pd.notna(row[col])]
-            
-            # Check for quality weekends (LQ should be followed by proper rest)
-            lq_count = worker_shifts.count('LQ')
-            if lq_count == 0:
-                weekend_violations.append(f"Worker {worker}: No quality weekends assigned")
+            overall_satisfaction -= 20            
         
         if weekend_violations:
             constraint_validation['salsa_specific']['quality_weekends']['satisfied'] = False
             constraint_validation['salsa_specific']['quality_weekends']['violations'] = weekend_violations
-            constraint_validation['overall_satisfaction'] -= 10
+            overall_satisfaction -= 10
         
+        constraint_validation['overall_satisfaction'] = max(overall_satisfaction, 0)
+
         return constraint_validation
+    
     except Exception as e:
         logger.error(f"Error validating constraints: {e}")
         return {}
     
-def _calculate_quality_metrics(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
+def _calculate_quality_metrics(algorithm_results: pd.DataFrame, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Calculate quality metrics for the solution from wide format."""
     try:
-        # Calculate basic metrics
-        total_workers = len(algorithm_results) if not algorithm_results.empty else 0
-        
-        # Get day columns
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
-
-        
-        # SALSA-specific metrics
+        day_columns = []
         two_day_quality_weekends = 0
         consecutive_free_days_achieved = 0
         saturday_L_assignments = 0
-        
-        if not algorithm_results.empty and day_columns:
-            # Count LQ (two-day quality weekends)
-            for col in day_columns:
+        shift_inconsistences = []
+        for col in algorithm_results.columns:
+            if col != 'Worker' and col.startswith('Day'):
+                day_columns.append(col)
+                # Count LQ (two-day quality weekends)
                 two_day_quality_weekends += (algorithm_results[col] == 'LQ').sum()
-            
-            # Count L assignments (including Saturday L)
-            for col in day_columns:
+                # Count L assignments (including Saturday L)
                 saturday_L_assignments += (algorithm_results[col] == 'L').sum()
+
+        days_to_week = {day: week for week, days in data_processed['week_to_days'].items() for day in days}
+        # Count consecutive free days (simplified - count sequences of L, LQ, F)
+        # and shift inconsistances (working T and M in the same week)
+        for idx, row in algorithm_results.iterrows():
+            worker = row['Worker']
+            worker_shifts = row.loc[day_columns].dropna().astype(str).tolist()
+            i = 1
+            consecutive_count = 0
+            max_consecutive = 0
+            current_week = 0
+            t_counter = 0
+            m_counter = 0
+            for shift in worker_shifts:
+                if days_to_week.get(i) != current_week:
+                    if m_counter > 0 and t_counter > 0:
+                        shift_inconsistences.append(f"Worker {worker} with inconsistant shift")
+                    current_week = days_to_week.get(i)
+                    t_counter = 0
+                    m_counter = 0
+                else:
+                    if shift in ['M']:
+                        m_counter += 1
+                    elif shift in ['T']:
+                        t_counter += 1
+                if shift in ['L', 'LQ', 'F', 'LD']:
+                    consecutive_count += 1
+                    max_consecutive = max(max_consecutive, consecutive_count)
+                else:
+                    consecutive_count = 0
+                i += 1
             
-            # Count consecutive free days (simplified - count sequences of L, LQ, F)
-            for idx, row in algorithm_results.iterrows():
-                worker_shifts = [str(row[col]) for col in day_columns if pd.notna(row[col])]
-                consecutive_count = 0
-                max_consecutive = 0
-                
-                for shift in worker_shifts:
-                    if shift in ['L', 'LQ']:
-                        consecutive_count += 1
-                        max_consecutive = max(max_consecutive, consecutive_count)
-                    else:
-                        consecutive_count = 0
-                
-                if max_consecutive >= 2:
-                    consecutive_free_days_achieved += 1
+            if max_consecutive >= 2:
+                consecutive_free_days_achieved += 1
         
         
         return {
-            'salsa_specific_metrics': {
+            'worker_satisfaction': {
                 'two_day_quality_weekends': two_day_quality_weekends,
                 'consecutive_free_days_achieved': consecutive_free_days_achieved,
-                'saturday_L_assignments': saturday_L_assignments
+                'saturday_L_assignments': saturday_L_assignments,
+                'shift_inconsistence': shift_inconsistences
             }
         }
     except Exception as e:

@@ -3,6 +3,7 @@
 import logging
 from typing import Dict, Any, Optional, List, Union
 import pandas as pd
+from pandas import json_normalize
 from datetime import datetime, timedelta
 from ortools.sat.python import cp_model
 import os
@@ -428,10 +429,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, 
-                              output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
-                                                         f'salsa_schedule_{self.process_id}.xlsx'))
+            self.output_filename = os.path.join(ROOT_DIR, 'data', 'output', 
+                                                         f'salsa_schedule_{self.process_id}.xlsx')
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts)
             
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             
@@ -547,10 +547,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             stats = _calculate_comprehensive_stats(algorithm_results, self.start_date, self.end_date, self.data_processed)
             
             # Validate constraints
-            constraint_validation = _validate_constraints(algorithm_results)
+            constraint_validation = _validate_constraints(algorithm_results, self.data_processed)
             
             # Calculate quality metrics
-            quality_metrics = _calculate_quality_metrics(algorithm_results)
+            quality_metrics = _calculate_quality_metrics(algorithm_results, self.data_processed)
             
             # Format schedule for different outputs
             formatted_schedules = _format_schedules(algorithm_results, self.start_date, self.end_date)
@@ -590,9 +590,39 @@ class SalsaAlgorithm(BaseAlgorithm):
                     }
                 }
             }
+            extra_info = {}
 
-            #logger.info(f"DEBUG: formatted schedule: {formatted_results['core_results']['formatted_schedule'].shape}")
+           # Table 1: your schedule
+            schedule_df = algorithm_results.copy()
             
+            # Table 2: extra info
+            extra_info = {}
+            
+            # key_metrics
+            extra_info.update({
+                "total_assignments": stats['shifts']['total_assignments'],
+                "coverage_percentage": stats['time_coverage']['coverage_percentage'],
+                "constraint_satisfaction": constraint_validation.get('overall_satisfaction', 100)
+            })
+            
+            # constraint_validation
+            for k, v in constraint_validation.items():
+                extra_info[f"constraint_validation.{k}"] = v
+            
+            # quality_metrics
+            for k, v in quality_metrics.items():
+                extra_info[f"quality_metrics.{k}"] = v
+            
+            extra_info_df = pd.DataFrame([extra_info])
+            # Save to Excel
+            try:
+                os.makedirs(os.path.dirname(self.output_filename), exist_ok=True)
+                combined_results.to_excel(self.output_filename, index=False)
+                logger.info(f"Schedule saved to: {self.output_filename}")
+            except Exception as e:
+                logger.warning(f"Could not save to Excel: {str(e)}")
+                #logger.info(f"DEBUG: formatted schedule: {formatted_results['core_results']['formatted_schedule'].shape}")
+
             self.logger.info("Enhanced SALSA results formatted successfully")
             return formatted_results
             

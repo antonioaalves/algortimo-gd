@@ -26,12 +26,11 @@ def solve(
     special_days: List[int], 
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
-    max_time_seconds: int = 600,
+    max_time_seconds: int = 100,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = 0,
     log_callback: Optional[Callable[[str], None]] = None,
-    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx'),
     debug_vars: Optional[Dict[str, cp_model.IntVar]] = None  # Add this parameter
 ) -> pd.DataFrame:
     """
@@ -111,7 +110,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 100  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -295,7 +294,7 @@ def solve(
         logger.info(f"Successfully processed {processed_workers} workers")
         
         # =================================================================
-        # 6. CREATE DATAFRAME AND SAVE TO EXCEL
+        # 6. CREATE DATAFRAME
         # =================================================================
         logger.info("Creating DataFrame and saving to Excel")
         
@@ -305,14 +304,6 @@ def solve(
         
         logger.info(f"DataFrame created with shape: {df.shape}")
         logger.info(f"DataFrame columns: {len(df.columns)} columns")
-        
-        # Save to Excel
-        try:
-            os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-            df.to_excel(output_filename, index=False)
-            logger.info(f"Schedule saved to: {output_filename}")
-        except Exception as e:
-            logger.warning(f"Could not save to Excel: {str(e)}")
         
         # =================================================================
         # 7. LOG FINAL STATISTICS
