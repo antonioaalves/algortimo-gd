@@ -3090,38 +3090,80 @@ class DescansosDataModel(BaseDataModel):
                 contract_info = pd.DataFrame(matrizA[pd.Series(matrizA['tipo_contrato']).isin([2, 3])][['matricula', 'tipo_contrato']])
                 matriz2_3d = matriz2_3d.merge(contract_info, left_on='COLABORADOR', right_on='matricula', how='left')
                 
-                # Filter out unwanted HORARIO types and group by week/employee
-                matriz2_3d = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                # Keep ALL calendar entries (don't filter matriz2_3d)
+                self.logger.info(f"DEBUG: matriz2_3d before processing shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts:\n{matriz2_3d['HORARIO'].value_counts()}")
                 
-                # Count work days per week per employee (divide by 2 for morning/afternoon)
-                week_counts = (pd.DataFrame(matriz2_3d)
+                # But count only work days for NL2D/NL3D assignment
+                work_days_only = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                self.logger.info(f"DEBUG: work_days_only shape: {work_days_only.shape}")
+
+                week_counts = (pd.DataFrame(work_days_only)
                              .groupby(['COLABORADOR', 'WW'])
                              .agg(count=('COLABORADOR', 'size'))
                              .reset_index())
                 week_counts['count'] = week_counts['count'] / 2
-                
-                # Merge back with matriz2_3d
-                matriz2_3d = matriz2_3d.merge(week_counts, on=['COLABORADOR', 'WW'], how='left')
-                
-                # Update HORARIO based on count and contract type
+                self.logger.info(f"DEBUG: week_counts shape: {week_counts.shape}")
+                self.logger.info(f"DEBUG: week_counts sample:\n{week_counts.head(10)}")
+
+                # Apply NL2D/NL3D only to work days
                 def update_horario_3d(row):
-                    if row['count'] == 3 and row['tipo_contrato'] == 3:
-                        return 'NL3D'
-                    elif row['count'] == 2 and row['tipo_contrato'] == 2:
-                        return 'NL2D'
-                    else:
-                        return row['HORARIO']
-                
+                    # Only change work days, leave rest days unchanged
+                    if row['HORARIO'] in ['-', 'V', 'F']:
+                        return row['HORARIO']  # Keep rest days as-is
+                    
+                    # Get work day count for this employee/week
+                    emp_week_count = week_counts[
+                        (week_counts['COLABORADOR'] == row['COLABORADOR']) & 
+                        (week_counts['WW'] == row['WW'])
+                    ]
+                    
+                    if not emp_week_count.empty:
+                        count = emp_week_count['count'].iloc[0]
+                        if count == 3 and row['tipo_contrato'] == 3:
+                            return 'NL3D'
+                        elif count == 2 and row['tipo_contrato'] == 2:
+                            return 'NL2D'
+                    
+                    return row['HORARIO']
+
                 matriz2_3d['HORARIO'] = matriz2_3d.apply(update_horario_3d, axis=1)
+                
+                self.logger.info(f"DEBUG: matriz2_3d after HORARIO update shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts after update:\n{matriz2_3d['HORARIO'].value_counts()}")
+                
+                # Log sample of NL2D/NL3D assignments
+                nl_assignments = matriz2_3d[matriz2_3d['HORARIO'].isin(['NL2D', 'NL3D'])]
+                if not nl_assignments.empty:
+                    self.logger.info(f"DEBUG: NL2D/NL3D assignments count: {len(nl_assignments)}")
+                    self.logger.info(f"DEBUG: NL2D/NL3D sample:\n{nl_assignments[['COLABORADOR', 'DATA', 'HORARIO', 'tipo_contrato']].head(10)}")
+                else:
+                    self.logger.warning("DEBUG: No NL2D/NL3D assignments were made")
                 
                 # Remove unnecessary columns
                 matriz2_3d = matriz2_3d.drop(['count', 'tipo_contrato_y'], axis=1, errors='ignore')
                 
                 # Merge back with main matriz2
+                self.logger.info(f"DEBUG: Before merge - main matriz2 shape: {matriz2.shape}")
+                self.logger.info(f"DEBUG: Before merge - matriz2_3d final shape: {matriz2_3d.shape}")
+                
                 # First remove the employees that were processed
+                matriz2_before_removal = matriz2.shape[0]
                 matriz2 = matriz2[~matriz2['COLABORADOR'].isin(contract_23_employees)].copy()
+                self.logger.info(f"DEBUG: After removing contract 2/3 employees: {matriz2_before_removal} -> {matriz2.shape[0]} rows")
+                
                 # Then add back the processed data
                 matriz2 = pd.concat([matriz2, matriz2_3d], ignore_index=True)
+                self.logger.info(f"DEBUG: After concat - final matriz2 shape: {matriz2.shape}")
+                
+                # Verify contract 2/3 employees have complete calendars
+                for emp in contract_23_employees[:3]:  # Check first 3 employees
+                    emp_data = matriz2[matriz2['COLABORADOR'] == emp]
+                    unique_dates = emp_data['DATA'].nunique() if not emp_data.empty else 0
+                    self.logger.info(f"DEBUG: Employee {emp} has {len(emp_data)} calendar entries, {unique_dates} unique dates")
+                    if not emp_data.empty:
+                        horario_counts = emp_data['HORARIO'].value_counts()
+                        self.logger.info(f"DEBUG: Employee {emp} HORARIO distribution: {dict(horario_counts.head(5))}")
             
             # Convert DATA back to string
             matriz2['DATA'] = matriz2['DATA'].astype(str)
