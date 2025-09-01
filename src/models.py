@@ -2501,29 +2501,72 @@ class DescansosDataModel(BaseDataModel):
             matriz2_og.columns = new_columns
             #self.logger.info(f"DEBUG: matriz2_og: {matriz2_og}")
             # Melt the dataframe
+            self.logger.info(f"=== MATRIX MELTING DEBUG START ===")
+            self.logger.info(f"matriz2_og shape before melt: {matriz2_og.shape}")
+            self.logger.info(f"matriz2_og first column unique values: {matriz2_og.iloc[:, 0].unique()}")
+            
+            # Debug specific employees before melt
+            for emp in ['80001012', '80001134', '80000951']:
+                if emp in matriz2_og.iloc[:, 0].values:
+                    emp_row_idx = matriz2_og[matriz2_og.iloc[:, 0] == emp].index[0]
+                    emp_row = matriz2_og.iloc[emp_row_idx]
+                    non_empty_values = emp_row[emp_row != '-'].count()
+                    self.logger.info(f"Employee {emp} before melt: row_idx={emp_row_idx}, non_empty_values={non_empty_values}")
+                    self.logger.info(f"Employee {emp} row sample: {emp_row.iloc[:20].tolist()}")
+            
             matriz2_ini = pd.melt(matriz2_og, id_vars='DIA_TURNO', 
                                 var_name='DATA', value_name='TIPO_TURNO')
             matriz2_ini.columns = ['COLABORADOR', 'DATA', 'TIPO_TURNO']
 
-            #self.logger.info(f"DEBUG: matriz2_ini tail after melt: {matriz2_ini.tail(40)}")
+            self.logger.info(f"matriz2_ini shape after melt: {matriz2_ini.shape}")
+            
+            # Debug specific employees after melt
+            for emp in ['80001012', '80001134', '80000951']:
+                emp_data = matriz2_ini[matriz2_ini['COLABORADOR'] == emp]
+                self.logger.info(f"Employee {emp} after melt: {len(emp_data)} rows")
+                if len(emp_data) > 0:
+                    self.logger.info(f"Employee {emp} sample DATA values: {emp_data['DATA'].head(10).tolist()}")
+                    self.logger.info(f"Employee {emp} sample TIPO_TURNO values: {emp_data['TIPO_TURNO'].head(10).tolist()}")
             
             # Clean DATA column (remove everything after underscore)
             matriz2_ini['DATA'] = matriz2_ini['DATA'].str.replace(r'_.*$', '', regex=True)
             
             # Filter by date range
+            self.logger.info(f"Filtering by date range: {start_date} to {end_date}")
             matriz2_ini['DATA'] = matriz2_ini['DATA'].astype(str)
+            pre_date_filter_count = len(matriz2_ini)
             matriz2_ini = matriz2_ini[
                 (matriz2_ini['DATA'] >= start_date) & 
                 (matriz2_ini['DATA'] <= end_date)
             ]
-            #self.logger.info(f"end date: {end_date}")
-            #self.logger.info(f"DEBUG: matriz2_ini tail after filter by date range: {matriz2_ini.tail(40)}")
+            post_date_filter_count = len(matriz2_ini)
+            self.logger.info(f"Date filter: {pre_date_filter_count} -> {post_date_filter_count} rows")
+            
+            # Debug specific employees after date filter
+            for emp in ['80001012', '80001134', '80000951']:
+                emp_data = matriz2_ini[matriz2_ini['COLABORADOR'] == emp]
+                self.logger.info(f"Employee {emp} after date filter: {len(emp_data)} rows")
             
             # Filter out unwanted rows
             unwanted_colaboradors = ['Dia', 'maxTurno', 'mediaTurno', 'minTurno', 'sdTurno', 'TURNO']
+            self.logger.info(f"Filtering out unwanted colaboradors: {unwanted_colaboradors}")
             matriz2_ini = pd.DataFrame(matriz2_ini)
-            #self.logger.info(f"DEBUG: matriz2_ini last: {matriz2_ini.head(30)}")
+            pre_unwanted_filter_count = len(matriz2_ini)
             matriz2 = pd.DataFrame(matriz2_ini[~matriz2_ini['COLABORADOR'].isin(unwanted_colaboradors)].copy())
+            post_unwanted_filter_count = len(matriz2)
+            self.logger.info(f"Unwanted filter: {pre_unwanted_filter_count} -> {post_unwanted_filter_count} rows")
+            
+            # Final debug for specific employees
+            for emp in ['80001012', '80001134', '80000951']:
+                emp_data = matriz2[matriz2['COLABORADOR'] == emp]
+                self.logger.info(f"Employee {emp} FINAL: {len(emp_data)} rows")
+                if len(emp_data) > 0:
+                    unique_dates = emp_data['DATA'].nunique()
+                    self.logger.info(f"Employee {emp} unique dates: {unique_dates}")
+                    date_range = f"{emp_data['DATA'].min()} to {emp_data['DATA'].max()}"
+                    self.logger.info(f"Employee {emp} date range: {date_range}")
+            
+            self.logger.info(f"=== MATRIX MELTING DEBUG END ===")
             
             # Previously, we had a filter by date range, but it was not working as expected. it since moved to before melt function
 
@@ -3626,6 +3669,21 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"func_inicializa medium_data df_colaborador shape: {colaborador_data.shape if colaborador_data is not None else 'None'}")
                 self.logger.info(f"func_inicializa medium_data df_calendario shape: {calendario_data.shape if calendario_data is not None else 'None'}")
                 self.logger.info(f"func_inicializa medium_data df_estimativas shape: {estimativas_data.shape if estimativas_data is not None else 'None'}")
+                
+                # Debug final matriz2_bk before saving
+                self.logger.info(f"=== FINAL MATRIZ2_BK DEBUG ===")
+                self.logger.info(f"matriz2_bk shape: {matriz2_bk.shape}")
+                for emp in ['80001012', '80001134', '80000951']:
+                    emp_data = matriz2_bk[matriz2_bk['COLABORADOR'] == emp]
+                    self.logger.info(f"Employee {emp} in final matriz2_bk: {len(emp_data)} rows")
+                    if len(emp_data) > 0:
+                        unique_dates = emp_data['DATA'].nunique()
+                        self.logger.info(f"Employee {emp} final unique dates: {unique_dates}")
+                        date_range = f"{emp_data['DATA'].min()} to {emp_data['DATA'].max()}"
+                        self.logger.info(f"Employee {emp} final date range: {date_range}")
+                        # Sample some rows
+                        sample_rows = emp_data.head(5)[['COLABORADOR', 'DATA', 'TIPO_TURNO', 'HORARIO']].to_dict('records')
+                        self.logger.info(f"Employee {emp} sample rows: {sample_rows}")
                 
                 # Save CSV files for debugging
                 try:
