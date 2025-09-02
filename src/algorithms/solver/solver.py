@@ -23,9 +23,11 @@ def solve(
     model: cp_model.CpModel, 
     days_of_year: List[int], 
     workers: List[int], 
-    special_days: List[int], 
+    special_days: List[int],    
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
+    contract_type: Dict[int, int],
+    week_to_days: Dict[int, List[int]],
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
@@ -274,23 +276,62 @@ def solve(
                     elif day_assignment in ['M', 'T'] and d in special_days:
                         special_days_count += 1
                 
-                # Store statistics for this worker
+             
+
+                    # After processing all days for this worker, apply contract type 4 rule
+                if contract_type.get(w) == 4:  # Assuming you have access to contract_type dict
+                        # Group days by week and count L/LQ shifts
+                    worker_assignments = worker_row[1:]  # Skip worker ID
+                        
+                        # Create week-to-days mapping for this worker's assignments
+                    day_to_week = {}
+                    for week, week_days in week_to_days.items():  # Assuming you have access to week_to_days
+                        logger.info(f"Worker {w}: Week {week} has days {week_days}")
+                        for day_idx, day in enumerate(sorted(days_of_year)):
+                            if day in week_days:
+                                day_to_week[day_idx] = week
+                        
+                    # Count L/LQ shifts per week and convert first L to V if needed
+                    week_l_lq_count = {}
+                    for day_idx, assignment in enumerate(worker_assignments):
+                        day = sorted(days_of_year)[day_idx]
+                        week = day_to_week.get(day_idx)
+                            
+                        if week is not None:
+                            if week not in week_l_lq_count:
+                                week_l_lq_count[week] = {'count': 0, 'l_indices': []}
+                                
+                            if assignment in ['L', 'LQ']:
+                                week_l_lq_count[week]['count'] += 1
+                                if assignment == 'L':
+                                    week_l_lq_count[week]['l_indices'].append(day_idx)
+                        
+                    # Apply the rule: if more than 2 L/LQ in a week, convert first L to V
+                    for week, data in week_l_lq_count.items():
+                        if data['count'] > 2 and data['l_indices']:
+                            # Convert the first L in this week to V
+                            first_l_idx = data['l_indices'][0]
+                            worker_row[first_l_idx + 1] = 'V'  # +1 because worker_row[0] is worker ID
+                            logger.info(f"Worker {w} (contract type 4): Converted L to V on day {sorted(days_of_year)[first_l_idx]} in week {week}")
+
+
+                     # Store statistics for this worker
                 worker_stats[w] = {
-                    'L_count': l_count,
-                    'LQ_count': lq_count,
-                    'special_days_work': special_days_count,
-                    'unassigned_days': unassigned_days
-                }
-                
+                        'L_count': l_count,
+                        'LQ_count': lq_count,
+                        'special_days_work': special_days_count,
+                        'unassigned_days': unassigned_days
+                    }
+                                    
                 table_data.append(worker_row)
                 processed_workers += 1
-                
+                                    
                 logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
-                           f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
-                
+                    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
+                                    
             except Exception as e:
                 logger.error(f"Error processing worker {w}: {str(e)}")
-                continue
+                continue                  
         
         logger.info(f"Successfully processed {processed_workers} workers")
         

@@ -356,9 +356,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_present_days = set(worker_calendar['data'].dt.dayofyear.tolist())
             # Days where worker should potentially appear but doesn't
             days_not_in_calendar = set(days_of_year) - worker_present_days
-        
+            logger.info(f" ERROR Worker {w} days not in calendar data: {sorted(list(days_not_in_calendar))}")
             # Add these missing days to empty_days
-            worker_empty.extend(list(days_not_in_calendar))
+            # worker_empty.extend(list(days_not_in_calendar))
 
 
             empty_days[w] = worker_empty

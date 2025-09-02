@@ -406,7 +406,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off)
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, contract_type)
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
@@ -431,6 +431,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Solving SALSA model")
             
             schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, 
+                              contract_type=contract_type, week_to_days=week_to_days,
                               output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
                                                          f'salsa_schedule_{self.process_id}.xlsx'))
             
