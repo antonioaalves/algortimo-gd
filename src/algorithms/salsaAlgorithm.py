@@ -336,14 +336,14 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_sundays_plus_c2d = settings["free_sundays_plus_c2d"]
             missing_days_afect_free_days = settings["missing_days_afect_free_days"]
 
-            #   # === TEST: remover totalmente um worker problemático ===
-            # DROP_W = 80001744
-            # logger.warning(f"[TEST] Dropping worker {DROP_W} for feasibility test")
+            # === TEST: remover totalmente um worker problemático ===
+            # DROP_WORKERS = [ 80001244, 1940, 2599, 80000907, 222, 111]  # Add more worker IDs as needed
+            # logger.warning(f"[TEST] Dropping workers {DROP_WORKERS} for feasibility test")
 
             # # 1) listas de workers
-            # workers = [w for w in workers if w != DROP_W]
-            # workers_complete = [w for w in workers_complete if w != DROP_W]
-            # workers_complete_cycle = [w for w in workers_complete_cycle if w != DROP_W]
+            # workers = [w for w in workers if w not in DROP_WORKERS]
+            # workers_complete = [w for w in workers_complete if w not in DROP_WORKERS]
+            # workers_complete_cycle = [w for w in workers_complete_cycle if w not in DROP_WORKERS]
 
             # # 2) dicionários por worker
             # for dct in [
@@ -352,10 +352,12 @@ class SalsaAlgorithm(BaseAlgorithm):
             #     first_day, last_day, total_l, total_l_dom, fixed_days_off, fixed_LQs, role_by_worker
             # ]:
             #     if isinstance(dct, dict):
-            #         dct.pop(DROP_W, None)
+            #         for worker_id in DROP_WORKERS:
+            #             dct.pop(worker_id, None)
 
-            # # 3) mapas (w, week, ...) → limpar chaves desse worker
-            # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] != DROP_W}
+            # # 3) mapas (w, week, ...) → limpar chaves desses workers
+            # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] not in DROP_WORKERS}
+
             
             # =================================================================
             # CREATE MODEL AND DECISION VARIABLES
@@ -406,7 +408,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, contract_type)
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type)
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
