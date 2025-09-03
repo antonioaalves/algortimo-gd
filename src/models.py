@@ -930,6 +930,13 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error loading df_core_pro_emp_horario_det: {e}", exc_info=True)
                 df_core_pro_emp_horario_det = pd.DataFrame()
 
+            # TODO: Validate if df_core_pro_emp_horario_det is empty here, shoould be in another places
+            if df_core_pro_emp_horario_det.empty:
+                self.logger.info("df_core_pro_emp_horario_det is empty, creating with default columns")
+                df_core_pro_emp_horario_det = pd.DataFrame(
+                    columns=['employee_id', 'schedule_day', 'tipo_dia']
+                )
+
             try:
                 self.logger.info("Loading df_ciclos_90 from data manager")
                 # Ciclos de 90
