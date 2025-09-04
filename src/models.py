@@ -833,10 +833,10 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Treating colabs_passado str")
                 self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
-                if len(colabs_passado) == 0:
-                    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
-                    return False
-                elif len(colabs_passado) == 1:
+                #if len(colabs_passado) == 0:
+                #    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
+                #    return False
+                if len(colabs_passado) == 1:
                     self.logger.info(f"colabs_passado has only one value: {colabs_passado[0]}")
                     colabs_str = str(colabs_passado[0])
                 elif len(colabs_passado) > 1:
