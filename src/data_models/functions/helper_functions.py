@@ -212,7 +212,6 @@ def get_value_from_row(row):
         return row['datevalue']
     return None
 
-
 def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> Tuple[pd.DataFrame, List[str], pd.DataFrame]:
     """
     Convert R load_WFM_scheds function to Python - simplified version.
@@ -345,3 +344,50 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
     except Exception as e:
         logger.error(f"Error in load_pre_ger_scheds: {str(e)}")
         return pd.DataFrame(), []
+
+
+def treat_valid_emp(df_valid_emp: pd.DataFrame) -> pd.DataFrame:
+    """
+    Treat valid_emp dataframe.
+    """
+    try:
+        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].fillna(0.0)
+        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].astype(int)
+        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].astype(str)
+        
+        # Convert prioridade_folgas values: '1' -> 'manager', '2' -> 'keyholder'
+        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].replace({
+            '1': 'manager',
+            '2': 'keyholder',
+            '1.0': 'manager',
+            '2.0': 'keyholder',
+            '0': 'normal'
+        })
+        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].fillna('')
+        logger.info(f"valid_emp:\n{df_valid_emp}")
+        return df_valid_emp
+    except Exception as e:
+        logger.error(f"Error in helper function treat_valid_emp: {str(e)}")
+        return pd.DataFrame()
+
+def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp, end_date2: pd.Timestamp) -> Tuple[pd.DataFrame, str]:
+    """
+    Treat df_closed_days dataframe.
+    """
+    try:
+
+        logger.info(f"Treating df_closed_days")
+        if len(df_closed_days) > 0:
+            logger.info(f"df_closed_days has more than 0 rows")
+            df_closed_days = (df_closed_days
+                    .assign(data=pd.to_datetime(df_closed_days['data'].dt.strftime('%Y-%m-%d')))
+                    .query('(data >= @start_date2 and data <= @end_date2) or data < "2000-12-31"')
+                    .assign(data=lambda x: x['data'].apply(lambda d: d.replace(year=start_date2.year)))
+                    [['data']]
+                    .drop_duplicates())
+        return df_closed_days, ""
+
+
+    except Exception as e:
+        logger.error(f"Error in helper function treat_df_closed_days: {str(e)}", exc_info=True)
+        return pd.DataFrame(), str(e)
