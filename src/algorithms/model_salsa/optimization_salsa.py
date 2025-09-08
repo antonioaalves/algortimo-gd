@@ -493,9 +493,92 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos)
                     sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
 
-    # Add to objective
-    objective_terms.extend(sunday_balance_across_workers_penalties)  
- 
+    # ===================== SUNDAYS FAIRNESS (no-lits) =====================
+
+    # 1) Sundays ordenados
+    sundays_sorted = sorted(sundays)
+
+    # 2) Bool canónica: SUNFREE[(w,d)] = 1 se domingo d é L ou F para w (sem OR explícito)
+    SUNFREE = {}
+    for w in workers:
+        workset = set(working_days.get(w, []))
+        for d in sundays_sorted:
+            v = model.NewBoolVar(f"sunfree_canon_{w}_{d}")
+            if d not in workset:
+                model.Add(v == 0)
+            else:
+                L = shift.get((w, d, "L"), None)
+                F = shift.get((w, d, "F"), None)
+                if L is None and F is None:
+                    model.Add(v == 0)
+                elif F is None:
+                    model.Add(v == L)
+                elif L is None:
+                    model.Add(v == F)
+                else:
+                    # v = (L OR F) via desigualdades lineares
+                    model.Add(v >= L)
+                    model.Add(v >= F)
+                    model.Add(v <= L + F)
+            SUNFREE[(w, d)] = v
+
+    # 3) Cumulativos por worker e prefixo de domingos
+    CUM = {}  # CUM[(w,j)] = somatório até ao j-ésimo domingo (incl.)
+    for w in workers:
+        prev = None
+        for j, d in enumerate(sundays_sorted):
+            c = model.NewIntVar(0, j + 1, f"cum_{w}_{j}")
+            if prev is None:
+                model.Add(c == SUNFREE[(w, d)])
+            else:
+                model.Add(c == prev + SUNFREE[(w, d)])
+            CUM[(w, j)] = c
+            prev = c
+
+    # 4) Exposição: nº de domingos elegíveis por worker até j (constante)
+    exp_count = {w: [] for w in workers}
+    for w in workers:
+        elig = set(working_days.get(w, []))
+        cnt = 0
+        for j, d in enumerate(sundays_sorted):
+            if d in elig:
+                cnt += 1
+            exp_count[w].append(cnt)
+
+    # 5) Fairness por prefixo com alvo comum
+    #    Para cada prefixo j: | CUM[w,j]*sumE[j] - TOT[j]*E[w,j] |
+    ALPHA = 300  # peso da fairness por prefixo
+
+    # sumE[j] = soma das exposições até j
+    sumE = []
+    for j in range(len(sundays_sorted)):
+        sumE.append(sum(exp_count[w][j] for w in workers))
+
+    for j in range(len(sundays_sorted)):
+        S = max(1, sumE[j])  # evitar 0
+        # TOT_j = total de folgas de domingo (todos os workers) até j
+        TOT_j = model.NewIntVar(0, (j + 1) * len(workers), f"tot_sunfree_pref_{j}")
+        model.Add(TOT_j == sum(CUM[(w, j)] for w in workers))
+
+        ub = (j + 1) * S  # bound
+        for w in workers:
+            e = exp_count[w][j]
+            if S == 0 and e == 0:
+                continue
+            diff_lin = model.NewIntVar(-ub, ub, f"fdiff_lin_{w}_{j}")
+            diff_abs = model.NewIntVar(0,  ub, f"fdiff_abs_{w}_{j}")
+            model.Add(diff_lin == CUM[(w, j)] * S - TOT_j * e)
+            model.AddAbsEquality(diff_abs, diff_lin)
+            objective_terms.append(ALPHA * diff_abs)
+
+    # =================== END SUNDAYS FAIRNESS (no-lits) ===================
+
+
+
+
+
+    
+
 
     # STRATEGY 3: Variance minimization approach (most sophisticated)
     # This minimizes the variance of scaled Sunday free days across workers
@@ -641,6 +724,9 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # Add to objective
     objective_terms.extend(lq_balance_across_workers_penalties) 
+
+
+
 
 
     #######################################################################################################
