@@ -222,6 +222,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'proportion': processed_data[41],
                     'fixed_LQs' : processed_data[42],
                     # 'week_cut': processed_data[34]
+                    'work_day_hours': processed_data[43],
                 }
 
             except IndexError as e:
@@ -323,6 +324,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             #keyholders = adapted_data['keyholders']
             # week_cut = adapted_data['week_cut']
             proportion = adapted_data['proportion']
+            work_day_hours = adapted_data['work_day_hours']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -423,7 +425,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker)  # role_by_worker)
+                                             first_day, last_day, role_by_worker, work_day_hours)  # role_by_worker)
 
             # =================================================================
             # SOLVE THE MODEL

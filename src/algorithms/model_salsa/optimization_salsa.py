@@ -4,7 +4,7 @@ from src.config import PROJECT_NAME
 logger = get_logger(PROJECT_NAME)
 
 
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker): #role_by_worker):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours): #role_by_worker):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -17,28 +17,30 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     HEAVY_PENALTY = 300  # Penalty for days with no workers
     MIN_WORKER_PENALTY = 60  # Penalty for breaking minimum worker requirements
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
-
+    hours_scale = 8
 
 
     # 1. Penalize deviations from pessObj
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
+            assigned_workers = sum(shift[(w, d, s)] * work_day_hours.get((w, d), 8) for w in workers if (w, d, s) in shift)
             
             # Create variables to represent the positive and negative deviations from the target
-            pos_diff = model.NewIntVar(0, len(workers), f"pos_diff_{d}_{s}")
-            neg_diff = model.NewIntVar(0, len(workers), f"neg_diff_{d}_{s}")
+            pos_diff = model.NewIntVar(0, len(workers) * hours_scale, f"pos_diff_{d}_{s}")
+            neg_diff = model.NewIntVar(0, len(workers) * hours_scale, f"neg_diff_{d}_{s}")
             
             # Store the variables in dictionaries
             pos_diff_dict[(d, s)] = pos_diff
             neg_diff_dict[(d, s)] = neg_diff
+
+            target = pessObj.get((d, s), 0)
             
             # Add constraints to ensure that the positive and negative deviations are correctly computed
-            model.Add(pos_diff >= assigned_workers - pessObj.get((d, s), 0))  # If excess, pos_diff > 0
+            model.Add(pos_diff >= assigned_workers - target)  # If excess, pos_diff > 0
             model.Add(pos_diff >= 0)  # Ensure pos_diff is non-negative
             
-            model.Add(neg_diff >= pessObj.get((d, s), 0) - assigned_workers)  # If shortfall, neg_diff > 0
+            model.Add(neg_diff >= target - assigned_workers)  # If shortfall, neg_diff > 0
             model.Add(neg_diff >= 0)  # Ensure neg_diff is non-negative
             
             # Add both positive and negative deviations to the objective function
@@ -113,7 +115,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
+                assigned_workers = sum(shift[(w, d, s)] * work_day_hours.get((w, d), 8) for w in workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
