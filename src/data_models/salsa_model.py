@@ -11,8 +11,21 @@ from base_data_project.data_manager.managers.managers import CSVDataManager, DBD
 from base_data_project.data_manager.managers.base import BaseDataManager
 from base_data_project.log_config import get_logger
 from src.data_models.base import BaseDescansosDataModel
-from src.data_models.functions.helper_functions import count_dates_per_year, get_param_for_posto, load_wfm_scheds, treat_valid_emp, treat_df_closed_days
+from src.data_models.functions.helper_functions import (
+    count_dates_per_year, 
+    get_param_for_posto, 
+    load_wfm_scheds, 
+    treat_valid_emp, 
+    treat_df_closed_days, 
+    create_df_calendario,
+    add_calendario_passado,
+    add_ausencias_ferias,
+    add_folgas_ciclos,
+    add_ciclos_90,
+    add_days_off,
+    )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
+from src.data_models.validations.load_process_data_validations import validate_parameters_cfg, validate_employees_id_list, validate_posto_id_list, validate_posto_id
 from src.config import PROJECT_NAME, ROOT_DIR, CONFIG
 
 # Set up logger
@@ -36,10 +49,10 @@ class SalsaDataModel(BaseDescansosDataModel):
                 - df_estimativas: Workload estimates from database
                 
             auxiliary_data: Dictionary containing processed/intermediate dataframes
-                - messages_df: DataFrame for messages
+                - df_messages: DataFrame for messages
                 - final: Final data (TODO: rename)
                 - num_fer_doms: Number of holidays and Sundays
-                - params_df: Algorithm parameters
+                - df_params: Algorithm parameters
                 - params_lq: LQ parameters
                 - valid_emp: Valid employees filtered for processing
                 - colabs_id_list: List of collaborator IDs
@@ -68,20 +81,23 @@ class SalsaDataModel(BaseDescansosDataModel):
         # Static data, doesn't change during the process run but are essential for data model treatments - See data lifecycle to understand what this data is
         self.auxiliary_data = {
             'df_messages': pd.DataFrame(), # df containing messages to set process errors
-            'final': None, # TODO: change the name
-            'num_fer_doms': 0, # number of feriados and Sundays in the year
-            'params_df': None, # algorithm parameters
-            'algorithm_name': None, # algorithm name - now comes from query
-            'df_params_lq': None, # LQ parameters
             'df_valid_emp': None, # valid employees filtered for processing
-            'employees_id_list': None, # list of collaborator IDs
-            'convenio': None, # convention information
+            'df_params_lq': None, # LQ parameters
+            'df_festivos': None, # holiday information dataframe
+            'df_closed_days': None, # closed days information dataframe
+            'df_params': None, # algorithm parameters
+            'parameters_cfg': None, # parameters configuration
             'unit_id': None, # unit ID
             'secao_id': None, # section ID
             'posto_id_list': None, # list of posto IDs
+            'employees_id_list': None, # list of collaborator IDs
+            'first_year_date': None, # start date 2
+            'last_year_date': None, # end date 2
+            'final': None, # TODO: change the name
+            'num_fer_doms': 0, # number of feriados and Sundays in the year
+            'algorithm_name': None, # algorithm name - now comes from query
+            'convenio': None, # convention information
             'current_posto_id': None, # current posto ID
-            'df_festivos': None, # holiday information dataframe
-            'df_closed_days': None, # closed days information dataframe
             'df_ausencias_ferias': None, # holidays absences information dataframe
             'df_days_off': None, # days off information dataframe
             'df_turnos': None, # shift information dataframe
@@ -89,8 +105,6 @@ class SalsaDataModel(BaseDescansosDataModel):
             'df_day_aloc': None, # day allocation information dataframe
             'emp_pre_ger': None, # pre-generated employee information dataframe
             'df_count': None, # count information dataframe
-            'start_date2': None, # start date 2
-            'end_date2': None # end date 2
         }
         
         # Algorithm treatment params - data to be sent to the algorithm for treatment purposes
@@ -138,23 +152,23 @@ class SalsaDataModel(BaseDescansosDataModel):
             True if successful, False otherwise
         """
         # Load messages df - CRITICAL for set_process_errors to work
-        messages_df = pd.DataFrame()
+        df_messages = pd.DataFrame()
         # This variable is only initialized because of the type checker
         # In the future it should contain the error message to add to the log
         error_message = None
         try:
-            self.logger.info(f"DEBUGGING: Loading messages_df from CSV file")
-            messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
-            messages_df = pd.read_csv(messages_path)
-            self.logger.info(f"DEBUGGING: messages_df loaded successfully with {len(messages_df)} rows")
+            self.logger.info(f"DEBUGGING: Loading df_messages from CSV file")
+            messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'df_messages.csv')
+            df_messages = pd.read_csv(messages_path)
+            self.logger.info(f"DEBUGGING: df_messages loaded successfully with {len(df_messages)} rows")
         except Exception as e:
-            self.logger.error(f"Error loading messages_df: {e}")
-            # Don't return False - continue without messages_df for now
+            self.logger.error(f"Error loading df_messages: {e}")
+            # Don't return False - continue without df_messages for now
             
-        if messages_df.empty:
-            self.logger.warning("DEBUGGING: messages_df is empty - set_process_errors will be skipped")
+        if df_messages.empty:
+            self.logger.warning("DEBUGGING: df_messages is empty - set_process_errors will be skipped")
         else:
-            self.logger.info(f"DEBUGGING: messages_df has {len(messages_df)} rows - set_process_errors will work")
+            self.logger.info(f"DEBUGGING: df_messages has {len(df_messages)} rows - set_process_errors will work")
 
         try:
             self.logger.info("Loading process data from data manager")
@@ -166,13 +180,13 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # Load valid_emp
             try:
-                self.logger.info(f"Loading valid_emp from data manager")
+                self.logger.info(f"Loading df_valid_emp from data manager")
                 if isinstance(data_manager, CSVDataManager):
-                    self.logger.info(f"Loading valid_emp from csv")
+                    self.logger.info(f"Loading df_valid_emp from csv")
                     df_valid_emp = load_valid_emp_csv()
                 elif isinstance(data_manager, DBDataManager):
                     # valid emp info
-                    self.logger.info(f"Loading valid_emp from database")
+                    self.logger.info(f"Loading df_valid_emp from database")
                     query_path = entities_dict['valid_emp']
                     process_id_str = "'" + str(self.external_call_data['current_process_id']) + "'"
                     df_valid_emp = data_manager.load_data('valid_emp', query_file=query_path, process_id=process_id_str)
@@ -180,9 +194,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"No instance found for data_manager: {data_manager.__name__}")
 
                 if df_valid_emp.empty:
-                    self.logger.error("valid_emp is empty")
+                    self.logger.error("df_valid_emp is empty")
                     # TODO: Add set process errors
-                    return False, "errNoColab", "valid_emp is empty"
+                    return False, "errNoColab", "df_valid_emp is empty"
                     
                 df_valid_emp = treat_valid_emp(df_valid_emp)
 
@@ -215,7 +229,14 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading important info into memory(unit_id, secao_id, posto_id_list, employees_id_list, main_year): {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # TODO: semanas_restantes logic to add to auxiliary_data
+            # Validate values
+            if not validate_employees_id_list(employees_id_list):
+                self.logger.error(f"employees_id_list is empty: {employees_id_list}")
+                return False, "errSubproc", "employees_id_list is empty"
+
+            if not validate_posto_id_list(posto_id_list):
+                self.logger.error(f"posto_id_list is empty: {posto_id_list}")
+                return False, "errSubproc", "posto_id_list is empty"
 
             # Load params_lq
             try:
@@ -247,13 +268,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_festivos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # Load start_date2 and end_date2
+            # Load first_year_date and last_year_date
             try:
-                self.logger.info(f"Treating start_date2 and end_date2")
-                start_date2 = pd.to_datetime(f"{main_year}-01-01")
-                end_date2 = pd.to_datetime(f"{main_year}-12-31")
+                self.logger.info(f"Treating first_year_date and last_year_date")
+                first_year_date = pd.to_datetime(f"{main_year}-01-01")
+                last_year_date = pd.to_datetime(f"{main_year}-12-31")
             except Exception as e:
-                self.logger.error(f"Error treating start_date2 and end_date2: {e}", exc_info=True)
+                self.logger.error(f"Error treating first_year_date and last_year_date: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
             # Load closed days information
@@ -267,7 +288,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_closed_days: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            df_closed_days = treat_df_closed_days(df_closed_days, start_date2, end_date2)
+            df_closed_days = treat_df_closed_days(df_closed_days, first_year_date, last_year_date)
 
             if df_closed_days.empty:
                 self.logger.error(f"Error treating df_closed_days: df_closed_days is empty")
@@ -276,11 +297,11 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Load global parameters - Very important!! This could be done with params_lq query most probably
             try:
                 self.logger.info(f"Loading parameters from data manager")
-                query_path = entities_dict['params_df']
+                query_path = entities_dict['df_params']
                 unit_id_str = "'" + str(unit_id) + "'"
-                params_df = data_manager.load_data('params_df', query_file=query_path, unit_id=unit_id_str)
-                self.logger.info(f"params_df shape (rows {params_df.shape[0]}, columns {params_df.shape[1]}): {params_df.columns.tolist()}")
-                #self.logger.info(f"DEBUG: params_df {params_df}")
+                df_params = data_manager.load_data('df_params', query_file=query_path, unit_id=unit_id_str)
+                self.logger.info(f"df_params shape (rows {df_params.shape[0]}, columns {df_params.shape[1]}): {df_params.columns.tolist()}")
+                #self.logger.info(f"DEBUG: df_params {df_params}")
             except Exception as e:
                 self.logger.error(f"Error loading parameters: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -293,7 +314,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"parameters_cfg shape (rows {parameters_cfg.shape[0]}, columns {parameters_cfg.shape[1]}): {parameters_cfg.columns.tolist()}")
                 
                 # Need to check if parameters_cfg is empty, because it might well be
-                if parameters_cfg.empty:
+                if parameters_cfg.empty or len(parameters_cfg) == 0:
                     self.logger.error(f"parameters_cfg is empty")
                     return False, "errSubproc", "parameters_cfg is empty"
                 # Store the value to then validate it
@@ -303,8 +324,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading algorithm treatment params: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            if parameters_cfg not in ['floor', 'ceil']:
-                self.logger.error(f"admissao_proporcional is not a valid value: {parameters_cfg}")
+            if not validate_parameters_cfg(parameters_cfg):
+                self.logger.error(f"admissao_proporcional is not a valid value: {parameters_cfg}.")
                 return False, "errSubproc", "admissao_proporcional is not a valid value"
 
             # Copy the dataframes into the apropriate dict
@@ -312,24 +333,23 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Copying dataframes into the apropriate dict")
                 # Copy the dataframes into the apropriate dict
                 # AUX DATA
+                self.auxiliary_data['df_messages'] = df_messages.copy()
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
-                self.auxiliary_data['params_lq'] = df_params_lq.copy()
-                self.auxiliary_data['params_df'] = params_df.copy()
+                self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
+                self.auxiliary_data['df_params'] = df_params.copy()
                 self.auxiliary_data['df_festivos'] = df_festivos.copy()
                 self.auxiliary_data['df_closed_days'] = df_closed_days.copy()
                 self.auxiliary_data['unit_id'] = unit_id 
                 self.auxiliary_data['secao_id'] = secao_id
                 self.auxiliary_data['posto_id_list'] = posto_id_list
                 self.auxiliary_data['main_year'] = main_year
-                self.auxiliary_data['start_date2'] = start_date2
-                self.auxiliary_data['end_date2'] = end_date2
+                self.auxiliary_data['first_year_date'] = first_year_date
+                self.auxiliary_data['last_year_date'] = last_year_date
                 self.auxiliary_data['employees_id_list'] = employees_id_list
-                self.auxiliary_data['messages_df'] = messages_df
                 
                 # ALGORITHM TREATMENT PARAMS
-                # TODO: remove comment from query line
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
-                #self.algorithm_treatment_params['admissao_proporcional'] = 'floor'
+
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
                 if not self.auxiliary_data:
@@ -371,15 +391,15 @@ class SalsaDataModel(BaseDescansosDataModel):
         try:
             # Treat params
             self.logger.info(f"Treating parameters in load_process_data")
-            params_df = self.auxiliary_data['params_df'].copy()
+            df_params = self.auxiliary_data['df_params'].copy()
             params_names_list = CONFIG.get('parameters_names', [])
             params_defaults = CONFIG.get('parameters_defaults', {})
-            self.logger.info(f"params_df before treatment:\n{params_df}")
+            self.logger.info(f"df_params before treatment:\n{df_params}")
 
             # Get all parameters in one call
             retrieved_params = get_param_for_posto(
-                df=params_df, 
-                posto_id=self.external_call_data['current_process_id'], 
+                df=df_params, 
+                posto_id=self.external_call_data['current_posto_id'], 
                 unit_id=self.auxiliary_data['unit_id'], 
                 secao_id=self.auxiliary_data['secao_id'], 
                 params_names_list=params_names_list
@@ -415,14 +435,10 @@ class SalsaDataModel(BaseDescansosDataModel):
         try:
             self.logger.info(f"Starting load_colaborador_info method.")
 
-            # Get valid_emp and filter by posto_id to get colabs_id_list
+            # Get needed data
             try:
-                self.logger.info(f"Loading colaborador info from data_model. Creating employees_id_list from df_valid_emp")
-                df_valid_emp = self.auxiliary_data['df_valid_emp'].copy()
-                df_valid_emp = df_valid_emp[df_valid_emp['fk_tipo_posto'] == posto_id]
-
                 # Store values in variables
-                employees_id_list = df_valid_emp['fk_colaborador'].tolist()
+                employees_id_list = self.auxiliary_data['employees_id_list']
                 self.logger.info(f"Loaded information from df_valid_emp into employees_id_list: {employees_id_list}")
             except Exception as e:
                 self.logger.error(f"Error loading colaborador info: {e}", exc_info=True)
@@ -431,10 +447,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Create colabs_str to be used in df_colaborador query
             try:
                 self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
-                if len(employees_id_list) == 0:
-                    self.logger.error(f"Error in load_colaborador_info method: employees_id_list provided is empty (invalid): {employees_id_list}")
-                    return False
-                elif len(employees_id_list) == 1:
+                if len(employees_id_list) == 1:
                     self.logger.info(f"employees_id_list has only one value: {employees_id_list[0]}")
                     colabs_str = str(employees_id_list[0])
                 elif len(employees_id_list) > 1:
@@ -457,7 +470,17 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"df_colaborador shape (rows {df_colaborador.shape[0]}, columns {df_colaborador.shape[1]}): {df_colaborador.columns.tolist()}")
                 
             except Exception as e:
-                self.logger.error(f"Error loading df_colaborador info: {e}", exc_info=True)
+                self.logger.error(f"Error loading df_colaborador info from data source: {e}", exc_info=True)
+                return False
+
+            # Get matricula from df_colaborador
+            try:
+                self.logger.info(f"Getting matriculas_list from df_colaborador")
+                matriculas_list = df_colaborador['matricula'].tolist()
+                employee_id_matriculas_map = df_colaborador[['fk_colaborador', 'matricula']].set_index('fk_colaborador').to_dict()['matricula']
+                self.logger.info(f"Loaded information from df_colaborador into matriculas_list: {matriculas_list}")
+            except Exception as e:
+                self.logger.error(f"Error getting matriculas_list from df_colaborador: {e}", exc_info=True)
                 return False
 
             # Create employees_id_90_list from df_colaborador
@@ -482,8 +505,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Saving df_colaborador in raw_data")
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
+                # TODO: Remove this, not used
                 self.auxiliary_data['num_fer_doms'] = 0
                 self.auxiliary_data['employees_id_list'] = employees_id_list
+                self.auxiliary_data['employee_id_matriculas_map'] = employee_id_matriculas_map
+                self.auxiliary_data['matriculas_list'] = matriculas_list
                 self.auxiliary_data['employees_id_90_list'] = employees_id_90_list
                 self.auxiliary_data['past_employee_id_list'] = past_employee_id_list
                 self.logger.info(f"load_colaborador_info completed successfully.")
@@ -537,9 +563,16 @@ class SalsaDataModel(BaseDescansosDataModel):
         """
         try:
             self.logger.info(f"Starting load_estimativas_info method.")
-            
+            # Get current_posto_id from auxiliary_data
+            try:
+                posto_id = self.auxiliary_data['current_posto_id']
+                self.logger.info(f"Loaded information from auxiliary_data into posto_id: {posto_id}")
+            except Exception as e:
+                self.logger.error(f"Error getting posto_id from auxiliary_data: {e}", exc_info=True)
+                return False
+
             # Validate input parameters
-            if posto_id == 0:
+            if not validate_posto_id(posto_id):
                 self.logger.error(f"posto_id provided is invalid: {posto_id}")
                 return False
             if start_date == '' or start_date == None or end_date == '' or end_date == None:
@@ -574,7 +607,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info("Loading df_estrutura_wfm from data manager")
                 # Estrutura wfm information
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_estrutura_wfm', '')
-                if not query_path:
+                if query_path == '':
                     self.logger.warning("df_estrutura_wfm query path not found in config")
                 df_estrutura_wfm = data_manager.load_data('df_estrutura_wfm', query_file=query_path)
                 self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
@@ -586,7 +619,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info("Loading df_feriados from data manager")
                 # feriados information
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_feriados', '')
-                if not query_path:
+                if query_path == '':
                     self.logger.warning("df_feriados query path not found in config")
                 df_feriados = data_manager.load_data('df_feriados', query_file=query_path)
                 self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
@@ -598,7 +631,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info("Loading df_faixa_horario from data manager")
                 # faixa horario information
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_faixa_horario', '')
-                if not query_path:
+                if query_path == '':
                     self.logger.warning("df_faixa_horario query path not found in config")
                 df_faixa_horario = data_manager.load_data('df_faixa_horario', query_file=query_path)
                 self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
@@ -610,7 +643,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info("Loading df_orcamento from data manager")
                 # orcamento information
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_orcamento', '')
-                if not query_path:
+                if query_path == '':
                     self.logger.warning("df_orcamento query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
                 end_date_quoted = "'" + end_date + "'"
@@ -624,7 +657,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info("Loading df_granularidade from data manager")
                 # granularidade information
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_granularidade', '')
-                if not query_path:
+                if query_path == '':
                     self.logger.warning("df_granularidade query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
                 end_date_quoted = "'" + end_date + "'"
@@ -737,7 +770,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             return False, []
 
     
-    def load_calendario_info(self, data_manager: BaseDataManager, process_id: int = 0, posto_id: int = 0, start_date: str = '', end_date: str = '', colabs_passado: List[int] = []):
+    def load_calendario_info(self, data_manager: BaseDataManager, process_id: int = 0, posto_id: int = 0, start_date: str = '', end_date: str = '', past_employee_id_list: List[int] = []):
         """
         Load calendario from data manager and treat the data
         """
@@ -750,95 +783,47 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error("posto_id is 0, returning False. Check load_calendario_info call method.")
                 return False
         
+            # Get needed data
             try:
                 self.logger.info("Loading tipo_contrato info from df_colaborador")
-                # Tipo_contrato info
-                df_colaborador = self.raw_data['df_colaborador'].copy()
-                self.logger.info(f"df_colaborador shape (rows {df_colaborador.shape[0]}, columns {df_colaborador.shape[1]}): {df_colaborador.columns.tolist()}")
-                
-                colaborador_list = df_colaborador['emp'].tolist()
-                self.logger.info(f"Extracted {len(colaborador_list)} collaborators from emp column")
+                matriculas_list = self.auxiliary_data['matriculas_list']
+                employees_id_90_list = self.auxiliary_data['employees_id_90_list']
+                past_employee_id_list = self.auxiliary_data['past_employee_id_list']
+                employee_id_matriculas_map = self.auxiliary_data['employee_id_matriculas_map']
+                # TODO: Consider removing main_year
+                main_year = self.auxiliary_data['main_year']
+                first_date_passado = self.auxiliary_data['first_year_date']
+                last_date_passado = pd.to_datetime(self.auxiliary_data['last_year_date']) + pd.Timedelta(days=7)
+                last_date_passado = last_date_passado.strftime('%Y-%m-%d')
+                self.logger.info(f"Extracted {len(matriculas_list)} collaborators from emp column")
                 #df_tipo_contrato = df_colaborador[['emp', 'tipo_contrato']] # TODO: ensure it is needed
             except Exception as e:
                 self.logger.error(f"Error processing colaborador info: {e}", exc_info=True)
                 return False
 
+            # Treat past_employee_id_list str
             try:
-                self.logger.info("Identifying employees with 90-day cycles")
-                # Get the colab_id for ciclos 90 - FIXED: Added str.upper() and proper column selection
-                colaborador_90_list = df_colaborador[df_colaborador['seq_turno'].str.upper() == 'CICLO']['fk_colaborador'].tolist()
-                self.logger.info(f"Found {len(colaborador_90_list)} employees with 90-day cycles: {colaborador_90_list}")
-            except KeyError as e:
-                self.logger.error(f"Column not found for 90-day cycles: {e}", exc_info=True)
-                self.logger.info(f"Available columns: {df_colaborador.columns.tolist()}")
-                colaborador_90_list = []
-            except Exception as e:
-                self.logger.error(f"Error processing 90-day cycles: {e}", exc_info=True)
-                colaborador_90_list = []
-
-            try:
-                self.logger.info("Initializing empty df_calendario")
-                # Get sql file path, if the cvs is being used, it gets the the path defined on dummy_data_filepaths
-                # calendario information
-                #query_path = CONFIG.get('available_entities_raw', {}).get('df_calendario', '')
-                #df_calendario = data_manager.load_data('df_calendario', custom_query=query_path)
-                df_calendario = pd.DataFrame()
-                self.logger.info("df_calendario initialized as empty DataFrame")
-            except Exception as e:
-                self.logger.error(f"Error initializing df_calendario: {e}", exc_info=True)
-                return False
-
-            try:
-                # Set up calendario passado dates
-                self.logger.info("Setting up calendario passado dates")
-                # Calendario passado - FIXED: Added proper type conversion
-                main_year = str(self.auxiliary_data.get('main_year', ''))
-                if not main_year:
-                    self.logger.warning("main_year not found in auxiliary_data")
-                    main_year = pd.to_datetime(start_date).year
-                
-                first_date_passado = f"{main_year}-01-01"
-                self.logger.info(f"first_date_passado: {first_date_passado}")
-                
-                last_date_passado = pd.to_datetime(self.external_call_data.get('end_date', end_date))
-                last_date_passado = last_date_passado + pd.Timedelta(days=7)
-                last_date_passado = last_date_passado.strftime('%Y-%m-%d')
-                self.logger.info(f"last_date_passado: {last_date_passado}")
-            except Exception as e:
-                self.logger.error(f"Error setting up dates: {e}", exc_info=True)
-                return False
-
-            try:
-                # Filter employees by admission date
-                self.logger.info("Filtering employees by admission date")
-                colabs_passado = self.auxiliary_data['past_employee_id_list']
-            except Exception as e:
-                self.logger.error(f"Error filtering employees by admission date: {e}", exc_info=True)
-                colabs_passado = []
-
-            # Treat colabs_passado str
-            try:
-                self.logger.info("Treating colabs_passado str")
+                self.logger.info("Treating past_employee_id_list str")
                 self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
-                if len(colabs_passado) == 0:
-                    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
-                    return False
-                elif len(colabs_passado) == 1:
-                    self.logger.info(f"colabs_passado has only one value: {colabs_passado[0]}")
-                    colabs_str = str(colabs_passado[0])
-                elif len(colabs_passado) > 1:
+                #if len(past_employee_id_list) == 0:
+                #    self.logger.error(f"Error in load_colaborador_info method: past_employee_id_list provided is empty (invalid): {past_employee_id_list}")
+                #    return False
+                if len(past_employee_id_list) == 1:
+                    self.logger.info(f"past_employee_id_list has only one value: {past_employee_id_list[0]}")
+                    colabs_str = str(past_employee_id_list[0])
+                elif len(past_employee_id_list) > 1:
                     # Fix: Create a proper comma-separated list of numbers without any quotes
-                    self.logger.info(f"colabs_passado has more than one value: {colabs_passado}")
-                    colabs_str = ','.join(str(x) for x in colabs_passado)
+                    self.logger.info(f"past_employee_id_list has more than one value: {past_employee_id_list}")
+                    colabs_str = ','.join(str(x) for x in past_employee_id_list)
                 self.logger.info(f"colabs_str: {colabs_str}")
             except Exception as e:
-                self.logger.error(f"Error treating colabs_passado str: {e}", exc_info=True)
+                self.logger.error(f"Error treating past_employee_id_list str: {e}", exc_info=True)
                 colabs_str = ''
 
             try:
                 # Only query if we have employees and the date range makes sense
                 start_date_dt = pd.to_datetime(start_date)
-                if len(colabs_passado) > 0 and start_date_dt != pd.to_datetime(first_date_passado):
+                if len(past_employee_id_list) > 0 and start_date_dt != pd.to_datetime(first_date_passado):
                     self.logger.info("Loading df_calendario_passado since conditions are met")
                     query_path = CONFIG.get('available_entities_aux', {}).get('df_calendario_passado', '')
                     if not query_path:
@@ -861,32 +846,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_calendario_passado: {e}", exc_info=True)
                 df_calendario_passado = pd.DataFrame()
 
-            try:
-                self.logger.info("Processing historical calendar data")
-                # Process calendar data if available
-                if len(df_calendario_passado) == 0:
-                    self.logger.info(f"No historical calendar data for employees: {colabs_passado}")
-                    reshaped_final_3 = pd.DataFrame()
-                    emp_pre_ger = []
-                    df_count = pd.DataFrame()
-                else:
-                    reshaped_final_3, emp_pre_ger, df_count = load_wfm_scheds(
-                        df_calendario_passado,  # Your DataFrame with historical schedule data
-                        df_calendario_passado['employee_id'].unique().tolist()  # List of employee IDs
-                    )
-                    self.logger.info(f"Successfully processed historical calendar data - reshaped_final_3: {reshaped_final_3.shape}, emp_pre_ger: {len(emp_pre_ger)}, df_count: {df_count.shape}")
-            except Exception as e:
-                self.logger.error(f"Error in load_wfm_scheds: {e}", exc_info=True)
-                reshaped_final_3 = pd.DataFrame()
-                emp_pre_ger = []
-                df_count = pd.DataFrame()
-
+            
             try:
                 self.logger.info("Loading df_ausencias_ferias from data manager")
                 # Ausencias ferias information
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_ausencias_ferias', '')
-                if query_path:
-                    colabs_id="'" + "','".join([str(x) for x in colaborador_list]) + "'"
+                if query_path != '':
+                    colabs_id="'" + "','".join([str(x) for x in matriculas_list]) + "'"
                     df_ausencias_ferias = data_manager.load_data(
                         'df_ausencias_ferias', 
                         query_file=query_path, 
@@ -904,7 +870,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 self.logger.info("Loading df_core_pro_emp_horario_det from data manager")
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_core_pro_emp_horario_det', '')
-                if query_path:
+                if query_path != '':
                     df_core_pro_emp_horario_det = data_manager.load_data(
                         'df_core_pro_emp_horario_det', 
                         query_file=query_path, 
@@ -913,7 +879,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                         end_date=end_date
                     )
                     self.logger.info(f"df_core_pro_emp_horario_det shape (rows {df_core_pro_emp_horario_det.shape[0]}, columns {df_core_pro_emp_horario_det.shape[1]}): {df_core_pro_emp_horario_det.columns.tolist()}")
-                    #self.logger.info(f"DEBUG: df_core_pro_emp_horario_det: {df_core_pro_emp_horario_det}")
             except Exception as e:
                 self.logger.error(f"Error loading df_core_pro_emp_horario_det: {e}", exc_info=True)
                 df_core_pro_emp_horario_det = pd.DataFrame()
@@ -921,16 +886,16 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 self.logger.info("Loading df_ciclos_90 from data manager")
                 # Ciclos de 90
-                if len(colaborador_90_list) > 0:
+                if len(employees_id_90_list) > 0:
                     query_path = CONFIG.get('available_entities_aux', {}).get('df_ciclos_90', '')
-                    if query_path:
+                    if query_path != '':
                         df_ciclos_90 = data_manager.load_data(
                             'df_ciclos_90', 
                             query_file=query_path, 
                             process_id=process_id, 
                             start_date=start_date, 
                             end_date=end_date, 
-                            colab90ciclo=','.join(map(str, colaborador_90_list))
+                            colab90ciclo=','.join(map(str, employees_id_90_list))
                         )
                         self.logger.info(f"df_ciclos_90 shape (rows {df_ciclos_90.shape[0]}, columns {df_ciclos_90.shape[1]}): {df_ciclos_90.columns.tolist()}")
                     else:
@@ -946,8 +911,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 self.logger.info("Loading df_days_off from data manager")
                 query_path = CONFIG.get('available_entities_aux', {}).get('df_days_off', '')
-                if query_path:
-                    colabs_id="'" + "','".join([str(x) for x in colaborador_list]) + "'"
+                if query_path != '':
+                    colabs_id="'" + "','".join([str(x) for x in matriculas_list]) + "'"
                     df_days_off = data_manager.load_data(
                         'df_days_off', 
                         query_file=query_path, 
@@ -972,14 +937,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['df_ausencias_ferias'] = df_ausencias_ferias.copy()
                 self.auxiliary_data['df_days_off'] = df_days_off.copy()
                 self.auxiliary_data['df_ciclos_90'] = df_ciclos_90.copy()
-                self.auxiliary_data['df_calendario_passado'] = reshaped_final_3.copy()
-                self.auxiliary_data['emp_pre_ger'] = emp_pre_ger
-                self.auxiliary_data['df_count'] = df_count.copy()
                 self.auxiliary_data['df_core_pro_emp_horario_det'] = df_core_pro_emp_horario_det.copy()
-                self.raw_data['df_calendario'] = df_calendario.copy()
-
-                # TODO: remove this
-                self.logger.info(f"df_calendario shape: {df_calendario.shape}")
                 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
@@ -1035,4 +993,65 @@ class SalsaDataModel(BaseDescansosDataModel):
             return True, []
         except Exception as e:  
             self.logger.error(f"Error in validate_calendario_info method: {e}", exc_info=True)
-            return False, []  
+            return False, []
+
+    def load_calendario_transformations(self) -> bool:
+        try:
+            self.logger.info("Starting load_calendario_transformations processing")
+            
+            # Load data
+            try:
+                # Lists
+                employees_id_list = self.auxiliary_data['employees_id_list']
+                matriculas_list = self.auxiliary_data['matriculas_list']
+                # Dict
+                employee_id_matriculas_map = self.auxiliary_data['employee_id_matriculas_map']
+                # Strings
+                start_date = self.auxiliary_data['start_date']
+                end_date = self.auxiliary_data['end_date']
+                # Dataframe
+                df_calendario_passado = self.auxiliary_data['df_calendario_passado']
+                df_ausencias_ferias = self.auxiliary_data['df_ausencias_ferias']
+                df_core_pro_emp_horario_det = self.auxiliary_data['df_core_pro_emp_horario_det']
+                df_ciclos_90 = self.auxiliary_data['df_ciclos_90']
+                df_days_off = self.auxiliary_data['df_days_off']
+            except KeyError as e:
+                self.logger.error(f"Missing required DataFrame in load_calendario_transformations: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error loading DataFrame in load_calendario_transformations: {e}", exc_info=True)
+                return False
+
+            try:
+                # TODO: add create_df_calendario logic
+                df_calendario = create_df_calendario(
+                    start_date=start_date, 
+                    end_date=end_date,
+                    employee_id_matriculas_map=employee_id_matriculas_map
+                )
+
+                # TODO: add df_calendario_passado to df_calendario
+                df_calendario = add_calendario_passado(df_calendario, df_calendario_passado)
+
+                # TODO: add df_ausencias_ferias to df_calendario
+                df_calendario = add_ausencias_ferias(df_calendario, df_ausencias_ferias)
+
+                # TODO: add df_core_pro_emp_horario_det to df_calendario
+                df_calendario = add_folgas_ciclos(df_calendario, df_core_pro_emp_horario_det)
+
+                # TODO: add df_ciclos_90 to df_calendario
+                df_calendario = add_ciclos_90(df_calendario, df_ciclos_90)
+
+                # TODO: add df_days_off to df_calendario
+                df_calendario = add_days_off(df_calendario, df_days_off)
+
+                # TODO: define the hieararchy of the application
+        
+                pass
+            except Exception as e:
+                self.logger.error(f"Error in load_calendario_transformations method: {e}", exc_info=True)
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error in load_calendario_transformations method: {e}", exc_info=True)
+            return False

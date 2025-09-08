@@ -27,7 +27,7 @@ class DataModelFactory:
         """Choose an algorithm based on user decisions"""
 
         available_data_models = ['default_data_model', 'salsa_data_model', 'alcampo_data_model']
-
+        # TODO: check this condition
         if not isinstance(decision, str) or decision.lower() not in available_data_models:
             error_msg = f"Unsupported decision for data model creation: {decision}"
             logger.error(error_msg)

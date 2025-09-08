@@ -2,7 +2,7 @@
 
 # Dependencies
 import pandas as pd
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from base_data_project.log_config import get_logger
 
 # Local stuff
@@ -391,3 +391,128 @@ def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp
     except Exception as e:
         logger.error(f"Error in helper function treat_df_closed_days: {str(e)}", exc_info=True)
         return pd.DataFrame(), str(e)
+
+
+def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_map: Dict[str, str]) -> pd.DataFrame:
+    """
+    Create df_calendario dataframe with employee schedules for the specified date range using vectorized operations.
+    
+    Args:
+        start_date: Start date as string (YYYY-MM-DD format)
+        end_date: End date as string (YYYY-MM-DD format)
+        employee_id_matriculas_map: Dictionary mapping employee_ids to matriculas
+        
+    Returns:
+        DataFrame with columns: employee_id, data, tipo_turno, horario, wday, dia_tipo, matricula, data_admissao, data_demissao
+    """
+    try:
+        logger.info(f"Creating df_calendario from {start_date} to {end_date} for {len(employee_id_matriculas_map)} employees")
+        
+        # Convert input strings to date format
+        start_dt = pd.to_datetime(start_date, format='%Y-%m-%d')
+        end_dt = pd.to_datetime(end_date, format='%Y-%m-%d')
+        
+        # Generate sequence of dates
+        date_range = pd.date_range(start=start_dt, end=end_dt, freq='D')
+        
+        # Create employee DataFrame
+        employees_df = pd.DataFrame(list(employee_id_matriculas_map.items()), 
+                                  columns=['employee_id', 'matricula'])
+        
+        # Create dates DataFrame with weekday calculation
+        dates_df = pd.DataFrame({
+            'data': date_range,
+            'wday': date_range.weekday + 1  # Convert to 1-7 (Monday-Sunday)
+        })
+        
+        # Create shifts DataFrame
+        shifts_df = pd.DataFrame({'tipo_turno': ['M', 'T']})
+        
+        # Create cartesian product using cross merge
+        # First: employees × dates
+        emp_dates = employees_df.assign(key=1).merge(dates_df.assign(key=1), on='key').drop('key', axis=1)
+        
+        # Second: (employees × dates) × shifts
+        df_calendario = emp_dates.assign(key=1).merge(shifts_df.assign(key=1), on='key').drop('key', axis=1)
+        
+        # Vectorized operations for final formatting
+        df_calendario['employee_id'] = df_calendario['employee_id'].astype(str)
+        df_calendario['matricula'] = df_calendario['matricula'].astype(str)
+        df_calendario['data'] = df_calendario['data'].dt.strftime('%Y-%m-%d')
+        
+        # Add empty columns
+        df_calendario['horario'] = ''
+        df_calendario['dia_tipo'] = ''
+        df_calendario['data_admissao'] = ''
+        df_calendario['data_demissao'] = ''
+        
+        # Reorder columns
+        column_order = ['employee_id', 'data', 'tipo_turno', 'horario', 'wday', 'dia_tipo', 'matricula', 'data_admissao', 'data_demissao']
+        df_calendario = df_calendario[column_order]
+        
+        # Sort by employee_id, date, and shift type for consistent ordering
+        df_calendario = df_calendario.sort_values(['employee_id', 'data', 'tipo_turno']).reset_index(drop=True)
+        
+        logger.info(f"Created df_calendario with {len(df_calendario)} rows ({len(employee_id_matriculas_map)} employees × {len(date_range)} days × 2 shifts)")
+        
+        return df_calendario
+        
+    except Exception as e:
+        logger.error(f"Error in helper function create_df_calendario: {str(e)}", exc_info=True)
+        return pd.DataFrame()
+
+
+def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add df_calendario_passado to df_calendario.
+    """
+    try:
+        logger.info(f"Adding df_calendario_passado to df_calendario. Not implemented yet.")
+        return df_calendario
+    except Exception as e:
+        logger.error(f"Error in helper function add_calendario_passado: {str(e)}", exc_info=True)
+        return pd.DataFrame()
+
+def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add df_ausencias_ferias to df_calendario.
+    """
+    try:
+        logger.info(f"Adding df_ausencias_ferias to df_calendario. Not implemented yet.")
+        return df_calendario
+    except Exception as e:
+        logger.error(f"Error in helper function add_ausencias_ferias: {str(e)}", exc_info=True)
+        return pd.DataFrame()
+
+def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add df_core_pro_emp_horario_det to df_calendario.
+    """
+    try:
+        logger.info(f"Adding df_core_pro_emp_horario_det to df_calendario. Not implemented yet.")
+        return df_calendario
+    except Exception as e:
+        logger.error(f"Error in helper function add_folgas_ciclos: {str(e)}", exc_info=True)
+        return pd.DataFrame()
+
+def add_ciclos_90(df_calendario: pd.DataFrame, df_ciclos_90: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add df_ciclos_90 to df_calendario.
+    """
+    try:
+        logger.info(f"Adding df_ciclos_90 to df_calendario. Not implemented yet.")
+        return df_calendario
+    except Exception as e:
+        logger.error(f"Error in helper function add_ciclos_90: {str(e)}", exc_info=True)
+        return pd.DataFrame()
+
+def add_days_off(df_calendario: pd.DataFrame, df_days_off: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add df_days_off to df_calendario.
+    """
+    try:
+        logger.info(f"Adding df_days_off to df_calendario. Not implemented yet.")
+        return df_calendario
+    except Exception as e:
+        logger.error(f"Error in helper function add_days_off: {str(e)}", exc_info=True)
+        return pd.DataFrame()
