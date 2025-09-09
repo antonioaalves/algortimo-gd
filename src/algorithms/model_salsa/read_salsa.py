@@ -73,7 +73,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
-        required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno', 'coluna_antonio']
+        required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno', 'carga_diaria']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
         required_estimativas_cols = ['data', 'turno', 'media_turno', 'max_turno', 'min_turno', 'pess_obj', 'sd_turno', 'fk_tipo_posto', 'wday' ]
         required_estimativas_cols = [s.lower() for s in required_estimativas_cols]
@@ -355,7 +355,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
             worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
-            worker_work_day_hours = worker_calendar['coluna_antonio'].tolist()
+            worker_work_day_hours = worker_calendar['carga_diaria'].to_numpy()[::2].astype(int)
             worker_present_days = set(worker_calendar['data'].dt.dayofyear.tolist())
 
             # Days where worker should potentially appear but doesn't
@@ -457,7 +457,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 logger.info(f"Worker {w} last registered day: {last_registered_day[w]}")
             else:
                 last_registered_day[w] = 0
-        
 
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)
@@ -727,7 +726,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
-                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0])) * 8
+                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
                     else:
                         pess_obj[(d, s)] = 0  # or any default value you prefer
                 
@@ -736,8 +735,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == shift_type)]
                     if not day_shift_data.empty:
                                     # Convert floats to integers for OR-Tools compatibility
-                                    min_workers[(d, shift_type)] = int(round(day_shift_data['min_turno'].values[0])) * 8
-                                    max_workers[(d, shift_type)] = int(round(day_shift_data['max_turno'].values[0])) * 8
+                                    min_workers[(d, shift_type)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
+                                    max_workers[(d, shift_type)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
 
             logger.info(f"Processing estimativas data with {len(matriz_estimativas_gd)} records")
             logger.info(f"  - pess_obj: {len(pess_obj)} entries")

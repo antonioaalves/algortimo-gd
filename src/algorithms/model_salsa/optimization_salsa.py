@@ -21,10 +21,11 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
 
     # 1. Penalize deviations from pessObj
+    day_counter = 0
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] * work_day_hours.get((w, d), 8) for w in workers if (w, d, s) in shift)
+            assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w][day_counter] for w in workers if (w, d, s) in shift)
             
             # Create variables to represent the positive and negative deviations from the target
             pos_diff = model.NewIntVar(0, len(workers) * hours_scale, f"pos_diff_{d}_{s}")
@@ -46,6 +47,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             # Add both positive and negative deviations to the objective function
             objective_terms.append(1000 * pos_diff)
             objective_terms.append(1000 * neg_diff)
+        day_counter += 1
+
 
     # 2. NEW: Reward consecutive free days
     consecutive_free_day_bonus = []
@@ -110,12 +113,13 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     objective_terms.append(HEAVY_PENALTY * no_workers)
 
     # 4. Penalize breaking minimum worker requirements
+    day_counter = 0
     for d in days_of_year:
         for s in working_shift:
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] * work_day_hours.get((w, d), 8) for w in workers if (w, d, s) in shift)
+                assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w][day_counter] for w in workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
@@ -127,7 +131,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 
                 # Add penalty to the objective function
                 objective_terms.append(MIN_WORKER_PENALTY * shortfall)
-
+        day_counter += 1
 
 
        # 5.1 Balance sundays free days 
