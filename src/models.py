@@ -2550,29 +2550,72 @@ class DescansosDataModel(BaseDataModel):
             matriz2_og.columns = new_columns
             #self.logger.info(f"DEBUG: matriz2_og: {matriz2_og}")
             # Melt the dataframe
+            self.logger.info(f"=== MATRIX MELTING DEBUG START ===")
+            self.logger.info(f"matriz2_og shape before melt: {matriz2_og.shape}")
+            self.logger.info(f"matriz2_og first column unique values: {matriz2_og.iloc[:, 0].unique()}")
+            
+            # Debug specific employees before melt
+            for emp in ['80001012', '80001134', '80000951']:
+                if emp in matriz2_og.iloc[:, 0].values:
+                    emp_row_idx = matriz2_og[matriz2_og.iloc[:, 0] == emp].index[0]
+                    emp_row = matriz2_og.iloc[emp_row_idx]
+                    non_empty_values = emp_row[emp_row != '-'].count()
+                    self.logger.info(f"Employee {emp} before melt: row_idx={emp_row_idx}, non_empty_values={non_empty_values}")
+                    self.logger.info(f"Employee {emp} row sample: {emp_row.iloc[:20].tolist()}")
+            
             matriz2_ini = pd.melt(matriz2_og, id_vars='DIA_TURNO', 
                                 var_name='DATA', value_name='TIPO_TURNO')
             matriz2_ini.columns = ['COLABORADOR', 'DATA', 'TIPO_TURNO']
 
-            #self.logger.info(f"DEBUG: matriz2_ini tail after melt: {matriz2_ini.tail(40)}")
+            self.logger.info(f"matriz2_ini shape after melt: {matriz2_ini.shape}")
+            
+            # Debug specific employees after melt
+            for emp in ['80001012', '80001134', '80000951']:
+                emp_data = matriz2_ini[matriz2_ini['COLABORADOR'] == emp]
+                self.logger.info(f"Employee {emp} after melt: {len(emp_data)} rows")
+                if len(emp_data) > 0:
+                    self.logger.info(f"Employee {emp} sample DATA values: {emp_data['DATA'].head(10).tolist()}")
+                    self.logger.info(f"Employee {emp} sample TIPO_TURNO values: {emp_data['TIPO_TURNO'].head(10).tolist()}")
             
             # Clean DATA column (remove everything after underscore)
             matriz2_ini['DATA'] = matriz2_ini['DATA'].str.replace(r'_.*$', '', regex=True)
             
             # Filter by date range
+            self.logger.info(f"Filtering by date range: {start_date} to {end_date}")
             matriz2_ini['DATA'] = matriz2_ini['DATA'].astype(str)
+            pre_date_filter_count = len(matriz2_ini)
             matriz2_ini = matriz2_ini[
                 (matriz2_ini['DATA'] >= start_date) & 
                 (matriz2_ini['DATA'] <= end_date)
             ]
-            #self.logger.info(f"end date: {end_date}")
-            #self.logger.info(f"DEBUG: matriz2_ini tail after filter by date range: {matriz2_ini.tail(40)}")
+            post_date_filter_count = len(matriz2_ini)
+            self.logger.info(f"Date filter: {pre_date_filter_count} -> {post_date_filter_count} rows")
+            
+            # Debug specific employees after date filter
+            for emp in ['80001012', '80001134', '80000951']:
+                emp_data = matriz2_ini[matriz2_ini['COLABORADOR'] == emp]
+                self.logger.info(f"Employee {emp} after date filter: {len(emp_data)} rows")
             
             # Filter out unwanted rows
             unwanted_colaboradors = ['Dia', 'maxTurno', 'mediaTurno', 'minTurno', 'sdTurno', 'TURNO']
+            self.logger.info(f"Filtering out unwanted colaboradors: {unwanted_colaboradors}")
             matriz2_ini = pd.DataFrame(matriz2_ini)
-            #self.logger.info(f"DEBUG: matriz2_ini last: {matriz2_ini.head(30)}")
+            pre_unwanted_filter_count = len(matriz2_ini)
             matriz2 = pd.DataFrame(matriz2_ini[~matriz2_ini['COLABORADOR'].isin(unwanted_colaboradors)].copy())
+            post_unwanted_filter_count = len(matriz2)
+            self.logger.info(f"Unwanted filter: {pre_unwanted_filter_count} -> {post_unwanted_filter_count} rows")
+            
+            # Final debug for specific employees
+            for emp in ['80001012', '80001134', '80000951']:
+                emp_data = matriz2[matriz2['COLABORADOR'] == emp]
+                self.logger.info(f"Employee {emp} FINAL: {len(emp_data)} rows")
+                if len(emp_data) > 0:
+                    unique_dates = emp_data['DATA'].nunique()
+                    self.logger.info(f"Employee {emp} unique dates: {unique_dates}")
+                    date_range = f"{emp_data['DATA'].min()} to {emp_data['DATA'].max()}"
+                    self.logger.info(f"Employee {emp} date range: {date_range}")
+            
+            self.logger.info(f"=== MATRIX MELTING DEBUG END ===")
             
             # Previously, we had a filter by date range, but it was not working as expected. it since moved to before melt function
 
@@ -3196,38 +3239,80 @@ class DescansosDataModel(BaseDataModel):
                 contract_info = pd.DataFrame(matrizA[pd.Series(matrizA['tipo_contrato']).isin([2, 3])][['matricula', 'tipo_contrato']])
                 matriz2_3d = matriz2_3d.merge(contract_info, left_on='COLABORADOR', right_on='matricula', how='left')
                 
-                # Filter out unwanted HORARIO types and group by week/employee
-                matriz2_3d = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                # Keep ALL calendar entries (don't filter matriz2_3d)
+                self.logger.info(f"DEBUG: matriz2_3d before processing shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts:\n{matriz2_3d['HORARIO'].value_counts()}")
                 
-                # Count work days per week per employee (divide by 2 for morning/afternoon)
-                week_counts = (pd.DataFrame(matriz2_3d)
+                # But count only work days for NL2D/NL3D assignment
+                work_days_only = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                self.logger.info(f"DEBUG: work_days_only shape: {work_days_only.shape}")
+
+                week_counts = (pd.DataFrame(work_days_only)
                              .groupby(['COLABORADOR', 'WW'])
                              .agg(count=('COLABORADOR', 'size'))
                              .reset_index())
                 week_counts['count'] = week_counts['count'] / 2
-                
-                # Merge back with matriz2_3d
-                matriz2_3d = matriz2_3d.merge(week_counts, on=['COLABORADOR', 'WW'], how='left')
-                
-                # Update HORARIO based on count and contract type
+                self.logger.info(f"DEBUG: week_counts shape: {week_counts.shape}")
+                self.logger.info(f"DEBUG: week_counts sample:\n{week_counts.head(10)}")
+
+                # Apply NL2D/NL3D only to work days
                 def update_horario_3d(row):
-                    if row['count'] == 3 and row['tipo_contrato'] == 3:
-                        return 'NL3D'
-                    elif row['count'] == 2 and row['tipo_contrato'] == 2:
-                        return 'NL2D'
-                    else:
-                        return row['HORARIO']
-                
+                    # Only change work days, leave rest days unchanged
+                    if row['HORARIO'] in ['-', 'V', 'F']:
+                        return row['HORARIO']  # Keep rest days as-is
+                    
+                    # Get work day count for this employee/week
+                    emp_week_count = week_counts[
+                        (week_counts['COLABORADOR'] == row['COLABORADOR']) & 
+                        (week_counts['WW'] == row['WW'])
+                    ]
+                    
+                    if not emp_week_count.empty:
+                        count = emp_week_count['count'].iloc[0]
+                        if count == 3 and row['tipo_contrato'] == 3:
+                            return 'NL3D'
+                        elif count == 2 and row['tipo_contrato'] == 2:
+                            return 'NL2D'
+                    
+                    return row['HORARIO']
+
                 matriz2_3d['HORARIO'] = matriz2_3d.apply(update_horario_3d, axis=1)
+                
+                self.logger.info(f"DEBUG: matriz2_3d after HORARIO update shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts after update:\n{matriz2_3d['HORARIO'].value_counts()}")
+                
+                # Log sample of NL2D/NL3D assignments
+                nl_assignments = matriz2_3d[matriz2_3d['HORARIO'].isin(['NL2D', 'NL3D'])]
+                if not nl_assignments.empty:
+                    self.logger.info(f"DEBUG: NL2D/NL3D assignments count: {len(nl_assignments)}")
+                    self.logger.info(f"DEBUG: NL2D/NL3D sample:\n{nl_assignments[['COLABORADOR', 'DATA', 'HORARIO', 'tipo_contrato']].head(10)}")
+                else:
+                    self.logger.warning("DEBUG: No NL2D/NL3D assignments were made")
                 
                 # Remove unnecessary columns
                 matriz2_3d = matriz2_3d.drop(['count', 'tipo_contrato_y'], axis=1, errors='ignore')
                 
                 # Merge back with main matriz2
+                self.logger.info(f"DEBUG: Before merge - main matriz2 shape: {matriz2.shape}")
+                self.logger.info(f"DEBUG: Before merge - matriz2_3d final shape: {matriz2_3d.shape}")
+                
                 # First remove the employees that were processed
+                matriz2_before_removal = matriz2.shape[0]
                 matriz2 = matriz2[~matriz2['COLABORADOR'].isin(contract_23_employees)].copy()
+                self.logger.info(f"DEBUG: After removing contract 2/3 employees: {matriz2_before_removal} -> {matriz2.shape[0]} rows")
+                
                 # Then add back the processed data
                 matriz2 = pd.concat([matriz2, matriz2_3d], ignore_index=True)
+                self.logger.info(f"DEBUG: After concat - final matriz2 shape: {matriz2.shape}")
+                
+                # Verify contract 2/3 employees have complete calendars
+                for emp in contract_23_employees[:3]:  # Check first 3 employees
+                    emp_data = matriz2[matriz2['COLABORADOR'] == emp]
+                    unique_dates = emp_data['DATA'].nunique() if not emp_data.empty else 0
+                    self.logger.info(f"DEBUG: Employee {emp} has {len(emp_data)} calendar entries, {unique_dates} unique dates")
+                    if not emp_data.empty:
+                        horario_counts = emp_data['HORARIO'].value_counts()
+                        self.logger.info(f"DEBUG: Employee {emp} HORARIO distribution: {dict(horario_counts.head(5))}")
             
             # Convert DATA back to string
             matriz2['DATA'] = matriz2['DATA'].astype(str)
