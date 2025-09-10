@@ -437,6 +437,12 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
         Updated schedule matrix with MT/MTT cycles
     """
     try:
+        logger.info(f"=== CALENDAR CREATION DEBUG START ===")
+        logger.info(f"Initial reshaped_final_3 shape: {reshaped_final_3.shape}")
+        logger.info(f"df_alg_variables_filtered shape: {df_alg_variables_filtered.shape}")
+        logger.info(f"df_alg_variables_filtered columns: {df_alg_variables_filtered.columns.tolist()}")
+        logger.info(f"df_alg_variables_filtered:\n{df_alg_variables_filtered}")
+        
         # Reset column names and row names
         reshaped_final_3.columns = range(reshaped_final_3.shape[1])
         reshaped_final_3.reset_index(drop=True, inplace=True)
@@ -444,16 +450,22 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
         # Select required columns
         df_alg_variables_filtered = df_alg_variables_filtered[['emp', 'seq_turno', 'semana_1']].copy()
         
-        for _, emp_row in df_alg_variables_filtered.iterrows():
+        for idx, emp_row in df_alg_variables_filtered.iterrows():
             emp = emp_row['emp']
             seq_turno = emp_row['seq_turno']
             
+            logger.info(f"--- Processing employee {emp} (row {idx}) ---")
+            logger.info(f"Raw seq_turno value: {seq_turno} (type: {type(seq_turno)})")
+            logger.info(f"pd.isna(seq_turno): {pd.isna(seq_turno)}")
+            logger.info(f"seq_turno is None: {seq_turno is None}")
+            
             # Handle missing seq_turno
             if pd.isna(seq_turno) or seq_turno is None:
-                logger.warning(f"No seq_turno defined for employee: {emp}")
+                logger.warning(f"No seq_turno defined for employee: {emp}, setting to 'T'")
                 seq_turno = "T"
             
             semana1 = emp_row['semana_1']
+            logger.info(f"Employee {emp}: seq_turno='{seq_turno}', semana_1='{semana1}'")
             
             # Calculate days in week (simplified - you may need to adjust)
             if len(reshaped_final_3.columns) > 1:
@@ -462,75 +474,95 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
             else:
                 eachrep = 14
             
-            #logger.info(f"DEBUG: eachrep: {eachrep}")
-            #logger.info(f"DEBUG: seq_turno: {seq_turno}")
-            #logger.info(f"DEBUG: semana1: {semana1}")
+            logger.info(f"Employee {emp}: eachrep={eachrep}, matrix width={reshaped_final_3.shape[1]}")
 
             # Generate shift patterns based on seq_turno and semana1
             if seq_turno == "MT" and semana1 in ["T", "T1"]:
+                logger.info(f"Employee {emp}: Using MT pattern with T/T1 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['M'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 2 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MT" and semana1 in ["M", "M1"]:
+                logger.info(f"Employee {emp}: Using MT pattern with M/M1 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['T'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 2 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MTT" and semana1 in ["M", "M1"]:
+                logger.info(f"Employee {emp}: Using MTT pattern with M/M1 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['T'] * 14 + ['T'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MTT" and semana1 == "T1":
+                logger.info(f"Employee {emp}: Using MTT pattern with T1 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['T'] * 14 + ['M'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MTT" and semana1 == "T2":
+                logger.info(f"Employee {emp}: Using MTT pattern with T2 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['M'] * 14 + ['T'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MMT" and semana1 == "M1":
+                logger.info(f"Employee {emp}: Using MMT pattern with M1 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['M'] * 14 + ['T'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MMT" and semana1 == "M2":
+                logger.info(f"Employee {emp}: Using MMT pattern with M2 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['T'] * 14 + ['M'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MMT" and semana1 in ["T", "T1"]:
+                logger.info(f"Employee {emp}: Using MMT pattern with T/T1 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['M'] * 14 + ['M'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             else:
                 # Default case
+                logger.info(f"Employee {emp}: Using DEFAULT case with seq_turno='{seq_turno}'")
                 new_row = [seq_turno] * reshaped_final_3.shape[1]
                 new_row = [emp] + new_row[1:]
 
-            #logger.info(f"DEBUG: new_row: {new_row}")
+            logger.info(f"Employee {emp}: Created new_row with length {len(new_row)}")
+            logger.info(f"Employee {emp}: new_row first 10 elements: {new_row[:10]}")
+            logger.info(f"Employee {emp}: new_row last 10 elements: {new_row[-10:]}")
 
             
             # Trim to match matrix width
             elements_to_drop = len(new_row) - reshaped_final_3.shape[1]
+            logger.info(f"Employee {emp}: elements_to_drop={elements_to_drop}")
+            
             if elements_to_drop > 0:
+                logger.info(f"Employee {emp}: Trimming {elements_to_drop} elements from new_row")
                 new_row = new_row[:len(new_row) - elements_to_drop]
             elif elements_to_drop < 0:
+                logger.info(f"Employee {emp}: Extending new_row with {abs(elements_to_drop)} '-' elements")
                 new_row.extend(['-'] * abs(elements_to_drop))
+            
+            logger.info(f"Employee {emp}: Final new_row length: {len(new_row)}")
+            logger.info(f"Employee {emp}: Final new_row: {new_row}")
             
             # Add row to matrix
             new_row_df = pd.DataFrame([new_row], columns=reshaped_final_3.columns)
             reshaped_final_3 = pd.concat([reshaped_final_3, new_row_df], ignore_index=True)
-            #logger.info(f"DEBUG: new_row after concat: {new_row}")
-            #logger.info(f"DEBUG: elements_to_drop after concat: {elements_to_drop}")
+            
+            logger.info(f"Employee {emp}: Matrix shape after adding row: {reshaped_final_3.shape}")
         
         # Reset column and row names
         reshaped_final_3.columns = range(reshaped_final_3.shape[1])
         reshaped_final_3.reset_index(drop=True, inplace=True)
+        
+        logger.info(f"=== CALENDAR CREATION DEBUG END ===")
+        logger.info(f"Final reshaped_final_3 shape: {reshaped_final_3.shape}")
+        logger.info(f"Final matrix first column (employee IDs): {reshaped_final_3.iloc[:, 0].tolist()}")
         
         return reshaped_final_3
         
