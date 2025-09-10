@@ -2604,6 +2604,19 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Merging matriz2 with df_contratos")
                 
+                # Log initial state
+                self.logger.info(f"DEBUG: matriz2 shape before contract merge: {matriz2.shape}")
+                self.logger.info(f"DEBUG: df_contratos shape: {df_contratos.shape}")
+                unique_employees_matriz2 = matriz2['COLABORADOR'].nunique()
+                unique_employees_contratos = df_contratos['matricula'].nunique()
+                self.logger.info(f"DEBUG: Unique employees - matriz2: {unique_employees_matriz2}, df_contratos: {unique_employees_contratos}")
+                
+                # Log some specific employees to track
+                matriz2_employees = sorted(matriz2['COLABORADOR'].unique())
+                contratos_employees = sorted(df_contratos['matricula'].unique())
+                self.logger.info(f"DEBUG: matriz2 employees (first 10): {matriz2_employees[:10]}")
+                self.logger.info(f"DEBUG: df_contratos employees: {contratos_employees}")
+                
                 # Ensure DATA column is datetime in df_contratos for merging
                 if 'schedule_day' in df_contratos.columns:
                     df_contratos['DATA'] = pd.to_datetime(df_contratos['schedule_day'])
@@ -2622,6 +2635,25 @@ class DescansosDataModel(BaseDataModel):
                 
                 self.logger.info(f"Successfully merged df_contratos with matriz2. New shape: {matriz2.shape}")
                 self.logger.info(f"Contract columns added: {[col for col in matriz2.columns if col in ['contract_id', 'maximumworkload', 'maximumdaysperweek', 'maximumworkday', 'carga_diaria']]}")
+                
+                # Log contract data coverage after merge
+                rows_with_contract = matriz2['carga_diaria'].notna().sum()
+                total_rows = len(matriz2)
+                missing_contract_rows = total_rows - rows_with_contract
+                coverage_pct = (rows_with_contract / total_rows * 100) if total_rows > 0 else 0
+                self.logger.info(f"DEBUG: Contract merge result - Total rows: {total_rows}, With contract: {rows_with_contract}, Missing: {missing_contract_rows} ({coverage_pct:.1f}% coverage)")
+                
+                # Log employee-level contract coverage
+                employees_with_contract = matriz2[matriz2['carga_diaria'].notna()]['COLABORADOR'].nunique()
+                employees_without_contract = matriz2[matriz2['carga_diaria'].isna()]['COLABORADOR'].nunique()
+                self.logger.info(f"DEBUG: Employee contract coverage - With contract: {employees_with_contract}, Without contract: {employees_without_contract}")
+                
+                # Track specific employees
+                specific_employees = ['3467', '7656', '80001684', 'TIPO_DIA']
+                for emp in specific_employees:
+                    emp_rows = matriz2[matriz2['COLABORADOR'] == emp]
+                    emp_with_contract = emp_rows['carga_diaria'].notna().sum() if len(emp_rows) > 0 else 0
+                    self.logger.info(f"DEBUG: Employee {emp} - Total rows: {len(emp_rows)}, With contract: {emp_with_contract}")
                 
             except Exception as e:
                 self.logger.error(f"Error merging df_contratos with matriz2: {e}", exc_info=True)
@@ -2667,12 +2699,52 @@ class DescansosDataModel(BaseDataModel):
             ])
             
             matriz2 = matriz2.merge(emp_dates, left_on='COLABORADOR', right_on='emp', how='left')
+            
+            # Log data after employee dates merge
+            self.logger.info(f"DEBUG: matriz2 shape after employee dates merge: {matriz2.shape}")
+            if 'carga_diaria' in matriz2.columns:
+                rows_with_contract_after_emp_merge = matriz2['carga_diaria'].notna().sum()
+                self.logger.info(f"DEBUG: Contract data after employee merge - With contract: {rows_with_contract_after_emp_merge}")
+                
+                # Track specific employees after employee merge
+                specific_employees = ['3467', '7656', '80001684', 'TIPO_DIA']
+                for emp in specific_employees:
+                    emp_rows = matriz2[matriz2['COLABORADOR'] == emp]
+                    emp_with_contract = emp_rows['carga_diaria'].notna().sum() if len(emp_rows) > 0 else 0
+                    self.logger.info(f"DEBUG: After emp merge - Employee {emp} - Total rows: {len(emp_rows)}, With contract: {emp_with_contract}")
+            
+            # Log employees with dismissal dates
+            dismissed_employees = matriz2[matriz2['data_demissao'].notna()]['COLABORADOR'].unique()
+            self.logger.info(f"DEBUG: Employees with dismissal dates ({len(dismissed_employees)}): {dismissed_employees}")
             #self.logger.info(f"DEBUG: matriz2 after merge with employee admission/dismissal dates:\n {matriz2.tail(30)}")
             
             # Filter by dismissal date and adjust HORARIO based on admission date
+            self.logger.info(f"DEBUG: matriz2 shape before dismissal date filter: {matriz2.shape}")
             matriz2 = matriz2[
                 matriz2['DATA'] <= matriz2['data_demissao'].fillna(pd.Timestamp('2100-01-01'))
             ]
+            self.logger.info(f"DEBUG: matriz2 shape after dismissal date filter: {matriz2.shape}")
+            
+            # Log contract data after dismissal filter
+            if 'carga_diaria' in matriz2.columns:
+                rows_with_contract_after_filter = matriz2['carga_diaria'].notna().sum()
+                total_rows_after_filter = len(matriz2)
+                missing_contract_after_filter = total_rows_after_filter - rows_with_contract_after_filter
+                coverage_after_filter = (rows_with_contract_after_filter / total_rows_after_filter * 100) if total_rows_after_filter > 0 else 0
+                self.logger.info(f"DEBUG: Contract data after dismissal filter - Total rows: {total_rows_after_filter}, With contract: {rows_with_contract_after_filter}, Missing: {missing_contract_after_filter} ({coverage_after_filter:.1f}% coverage)")
+                
+                # Calculate data loss from dismissal filter
+                if 'rows_with_contract_after_emp_merge' in locals():
+                    contract_rows_lost_in_filter = rows_with_contract_after_emp_merge - rows_with_contract_after_filter
+                    self.logger.info(f"DEBUG: Contract rows lost due to dismissal filter: {contract_rows_lost_in_filter}")
+                
+                # Track specific employees after dismissal filter
+                specific_employees = ['3467', '7656', '80001684', 'TIPO_DIA']
+                for emp in specific_employees:
+                    emp_rows = matriz2[matriz2['COLABORADOR'] == emp]
+                    emp_with_contract = emp_rows['carga_diaria'].notna().sum() if len(emp_rows) > 0 else 0
+                    self.logger.info(f"DEBUG: After dismissal filter - Employee {emp} - Total rows: {len(emp_rows)}, With contract: {emp_with_contract}")
+            
             self.logger.info(f"DEBUG: matriz2 after filter by dismissal date:\n {matriz2.tail(30)}")
             
             # TODO: pass this function to helpers
@@ -3703,6 +3775,28 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"func_inicializa medium_data df_colaborador shape: {colaborador_data.shape if colaborador_data is not None else 'None'}")
                 self.logger.info(f"func_inicializa medium_data df_calendario shape: {calendario_data.shape if calendario_data is not None else 'None'}")
                 self.logger.info(f"func_inicializa medium_data df_estimativas shape: {estimativas_data.shape if estimativas_data is not None else 'None'}")
+                
+                # Log final data before CSV export
+                self.logger.info(f"DEBUG: Final data before CSV export:")
+                self.logger.info(f"DEBUG: matriz2_bk (df_calendario) shape: {matriz2_bk.shape}")
+                if 'carga_diaria' in matriz2_bk.columns:
+                    final_rows_with_contract = matriz2_bk['carga_diaria'].notna().sum()
+                    final_total_rows = len(matriz2_bk)
+                    final_missing_contract = final_total_rows - final_rows_with_contract
+                    final_coverage = (final_rows_with_contract / final_total_rows * 100) if final_total_rows > 0 else 0
+                    self.logger.info(f"DEBUG: Final CSV contract data - Total rows: {final_total_rows}, With contract: {final_rows_with_contract}, Missing: {final_missing_contract} ({final_coverage:.1f}% coverage)")
+                    
+                    # Expected vs actual contract data
+                    expected_contract_rows = 7028 * 2  # 7028 from query × 2 shifts
+                    actual_contract_rows = final_rows_with_contract
+                    self.logger.info(f"DEBUG: Expected contract rows (7028×2): {expected_contract_rows}, Actual: {actual_contract_rows}, Difference: {expected_contract_rows - actual_contract_rows}")
+                    
+                    # Track specific employees in final data
+                    specific_employees = ['3467', '7656', '80001684', 'TIPO_DIA']
+                    for emp in specific_employees:
+                        emp_rows = matriz2_bk[matriz2_bk['COLABORADOR'] == emp]
+                        emp_with_contract = emp_rows['carga_diaria'].notna().sum() if len(emp_rows) > 0 else 0
+                        self.logger.info(f"DEBUG: Final CSV - Employee {emp} - Total rows: {len(emp_rows)}, With contract: {emp_with_contract}")
                 
                 # Save CSV files for debugging
                 try:
