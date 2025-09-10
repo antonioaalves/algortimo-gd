@@ -71,7 +71,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
         # =================================================================
-        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2']
+        required_colaborador_cols = ['matricula', 'C2D', 'data_admissao', 'data_demissao','L_DOM_SALSA']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
         required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
@@ -83,12 +83,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         missing_estima_cols = [col for col in required_estimativas_cols if col not in matriz_estimativas_gd.columns]
 
                 
-        # if missing_colab_cols:
-        #     raise KeyError(f"Missing required columns in matriz_colaborador: {missing_colab_cols}")
-        # if missing_cal_cols:
-        #     raise KeyError(f"Missing required columns in matriz_calendario: {missing_cal_cols}")
-        # if missing_estima_cols:
-        #     raise KeyError(f"Missing required columns in matriz_estimativas: {missing_estima_cols}")
+        if missing_colab_cols:
+            raise KeyError(f"Missing required columns in matriz_colaborador: {missing_colab_cols}")
+        if missing_cal_cols:
+            raise KeyError(f"Missing required columns in matriz_calendario: {missing_cal_cols}")
+        if missing_estima_cols:
+            raise KeyError(f"Missing required columns in matriz_estimativas: {missing_estima_cols}")
         
         logger.info("[OK] All required columns present in DataFrames")
         
@@ -101,7 +101,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Calculating L_Q values for workers")
         
         # Check for missing values in required columns
-        numeric_cols = ['L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'L_RES', 'L_RES2']
+        numeric_cols = ['C2D', 'C3D', 'L_DOM_SALSA']
         numeric_cols = [s.lower() for s in numeric_cols]
 
 
@@ -482,41 +482,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
 
-        # # =================================================================
-        # # 9. PROCESS WORKER-SPECIFIC data
-        # # =================================================================
-       
-        
-        # # Process each worker
-        # for w in workers_complete:
-        #     worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
-            
-        #     if worker_calendar.empty:
-        #         logger.warning(f"No calendar data found for worker {w}")
-        #         empty_days[w] = []
-        #         worker_holiday[w] = []
-        #         missing_days[w] = []
-        #         fixed_days_off[w] = []
-        #         fixed_LQs[w] = []
-        #         continue
-            
-        #     # Find days with specific statuses
-        #     worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-        #     worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-        #     w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
-        #     worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
-        #     f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
 
-        #     empty_days[w] = worker_empty
-        #     missing_days[w] = worker_missing
-        #     worker_holiday[w] = w_holiday
-        #     fixed_days_off[w] = worker_fixed_days_off
-        #     free_day_complete_cycle[w] = f_day_complete_cycle
-            
-
-
-
-#        logger.info(f"Worker-specific data processed for {len(workers)} workers")
         
         
 
@@ -589,9 +555,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-            if total_l[w] <= 0:
-                logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
-                workers.pop(workers.index(w))  # Remove worker with contract error
+            # if total_l[w] <= 0:
+            #     logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
+            #     workers.pop(workers.index(w))  # Remove worker with contract error
 
 
 
@@ -826,7 +792,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             pess_obj,                # 27x
             min_workers,            # 28x
             max_workers,            # 29x
-            working_shift_2,         # 30
+            working_shift_2,        # 30
             workers_complete,       # 31
             workers_complete_cycle,  # 32
             free_day_complete_cycle,  # 33
