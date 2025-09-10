@@ -46,9 +46,9 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 4322,#253762,# 249468,
+        'current_process_id': 4437,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 4322,
+        'wfm_proc_id': 4437,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
@@ -125,7 +125,8 @@ CONFIG = {
         'df_calendario_passado': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreSchedule.sql'),
         'df_granularidade': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscEstimado.sql'),
         'df_days_off': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetDaysOff.sql'),
-        'df_core_pro_emp_horario_det': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreProEmpHorarioDet.sql')
+        'df_core_pro_emp_horario_det': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreProEmpHorarioDet.sql'),
+        'df_contratos': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreProEmpContract.sql')
     },
 
     'available_entities_raw': {
