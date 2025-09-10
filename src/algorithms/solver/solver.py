@@ -26,13 +26,14 @@ def solve(
     special_days: List[int], 
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
+    work_day_hours: Dict[int, List[int]],
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = 0,
     log_callback: Optional[Callable[[str], None]] = None,
     output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx'),
-    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None  # Add this parameter
+    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter,
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
@@ -236,6 +237,9 @@ def solve(
 
         # Loop through each worker
         processed_workers = 0
+        days_of_year_sorted = sorted(days_of_year)
+        time_worked_day_M = [0] * len(days_of_year_sorted)
+        time_worked_day_T = [0] * len(days_of_year_sorted)
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
@@ -249,7 +253,7 @@ def solve(
                 
                 logger.debug(f"Processing worker {w}")
 
-                days_of_year_sorted = sorted(days_of_year)
+                day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -271,8 +275,17 @@ def solve(
                         l_count += 1
                     elif day_assignment == 'LQ':
                         lq_count += 1
-                    elif day_assignment in ['M', 'T'] and d in special_days:
-                        special_days_count += 1
+                    elif day_assignment in ['T']:
+                        if d in special_days:
+                            special_days_count += 1
+                        time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
+                    elif day_assignment in ['M']:
+                        if d in special_days:
+                            special_days_count += 1
+                        time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
+
+
+                    day_counter += 1
                 
                 # Store statistics for this worker
                 worker_stats[w] = {
@@ -309,7 +322,16 @@ def solve(
         # Save to Excel
         try:
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-            df.to_excel(output_filename, index=False)
+            days_of_year_sorted = sorted(days_of_year)
+
+            time_worked_M_row = ["Time_Worked_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
+            time_worked_T_row = ["Time_Worked_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
+
+            # Append rows to DataFrame
+            df2 = df.copy()
+            df2.loc[len(df2)] = time_worked_M_row
+            df2.loc[len(df2)] = time_worked_T_row
+            df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:
             logger.warning(f"Could not save to Excel: {str(e)}")

@@ -1994,6 +1994,7 @@ class DescansosDataModel(BaseDataModel):
                 # Store result in raw_data
                 self.raw_data['df_colaborador'] = matriz_ma_final.copy()
                 self.auxiliary_data['df_contratos'] = df_contratos.copy()
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
                 self.auxiliary_data['num_fer_doms'] = num_fer_dom
                 #self.logger.info(f"DEBUG: matriz_ma_final columns: {matriz_ma_final.columns.tolist()}")
                 #self.logger.info(f"DEBUG: matriz_ma_final dtypes:\n{matriz_ma_final.dtypes}")
