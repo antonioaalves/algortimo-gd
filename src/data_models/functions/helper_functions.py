@@ -2,6 +2,7 @@
 
 # Dependencies
 import pandas as pd
+import datetime as dt
 from typing import List, Tuple, Dict
 from base_data_project.log_config import get_logger
 
@@ -249,9 +250,17 @@ def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> T
 def convert_types_in(df: pd.DataFrame) -> pd.DataFrame:
     """Convert WFM types to TRADS - simple mapping."""
     type_map = {
-        ('T', 'M'): 'M', ('T', 'T'): 'T', ('T', 'H'): 'MoT', ('T', 'P'): 'P',
-        ('F', None): 'L', ('F', 'D'): 'LD', ('F', 'Q'): 'LQ', ('F', 'C'): 'C',
-        ('R', None): 'F', ('N', None): '-', ('T', 'A'): 'V'
+        ('T', 'M'): 'M', 
+        ('T', 'T'): 'T', 
+        ('T', 'H'): 'MoT', 
+        ('T', 'P'): 'P',
+        ('F', None): 'L', 
+        ('F', 'D'): 'LD', 
+        ('F', 'Q'): 'LQ',
+        ('F', 'C'): 'C',
+        ('R', None): 'F', 
+        ('N', None): '-', 
+        ('T', 'A'): 'V',
     }
     
     df['sched_subtype'] = df.apply(
@@ -345,174 +354,176 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
         logger.error(f"Error in load_pre_ger_scheds: {str(e)}")
         return pd.DataFrame(), []
 
-
-def treat_valid_emp(df_valid_emp: pd.DataFrame) -> pd.DataFrame:
+def get_first_and_last_day_passado(start_date_str: str, end_date_str: str, main_year: str, wfm_proc_colab: str) -> Tuple[str, str]:
     """
-    Treat valid_emp dataframe.
-    """
-    try:
-        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].fillna(0.0)
-        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].astype(int)
-        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].astype(str)
-        
-        # Convert prioridade_folgas values: '1' -> 'manager', '2' -> 'keyholder'
-        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].replace({
-            '1': 'manager',
-            '2': 'keyholder',
-            '1.0': 'manager',
-            '2.0': 'keyholder',
-            '0': 'normal'
-        })
-        df_valid_emp['prioridade_folgas'] = df_valid_emp['prioridade_folgas'].fillna('')
-        logger.info(f"valid_emp:\n{df_valid_emp}")
-        return df_valid_emp
-    except Exception as e:
-        logger.error(f"Error in helper function treat_valid_emp: {str(e)}")
-        return pd.DataFrame()
-
-def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp, end_date2: pd.Timestamp) -> Tuple[pd.DataFrame, str]:
-    """
-    Treat df_closed_days dataframe.
-    """
-    try:
-
-        logger.info(f"Treating df_closed_days")
-        if len(df_closed_days) > 0:
-            logger.info(f"df_closed_days has more than 0 rows")
-            df_closed_days = (df_closed_days
-                    .assign(data=pd.to_datetime(df_closed_days['data'].dt.strftime('%Y-%m-%d')))
-                    .query('(data >= @start_date2 and data <= @end_date2) or data < "2000-12-31"')
-                    .assign(data=lambda x: x['data'].apply(lambda d: d.replace(year=start_date2.year)))
-                    [['data']]
-                    .drop_duplicates())
-        return df_closed_days, ""
-
-
-    except Exception as e:
-        logger.error(f"Error in helper function treat_df_closed_days: {str(e)}", exc_info=True)
-        return pd.DataFrame(), str(e)
-
-
-def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_map: Dict[str, str]) -> pd.DataFrame:
-    """
-    Create df_calendario dataframe with employee schedules for the specified date range using vectorized operations.
+    Data treatment logic for past dates according to what the external_call_data params are.
+    The output of this function is going to query the database for past calendars. 
+    Find the rest of the logic on treat_df_calendario_passado helper function.
+    
+    This function implements 8 different business logic cases based on:
+    - Whether start_date equals January 1st of main_year
+    - Whether end_date equals December 31st of main_year
+    - Whether wfm_proc_colab parameter is empty or not
     
     Args:
-        start_date: Start date as string (YYYY-MM-DD format)
-        end_date: End date as string (YYYY-MM-DD format)
-        employee_id_matriculas_map: Dictionary mapping employee_ids to matriculas
+        start_date_str (str): Start date in 'YYYY-MM-DD' format
+        end_date_str (str): End date in 'YYYY-MM-DD' format
+        main_year (str): The main year to compare dates against (YYYY format)
+        wfm_proc_colab (str): WFM process collaborator parameter, empty string or value
         
     Returns:
-        DataFrame with columns: employee_id, data, tipo_turno, horario, wday, dia_tipo, matricula, data_admissao, data_demissao
+        Tuple[str, str]: A tuple containing (first_day_passado, last_day_passado) in 'YYYY-MM-DD' format.
+                        Returns ('', '') if an error occurs.
+                        
+    Business Logic Cases:
+        CASE 1: start=01-01, end=31-12, wfm='' -> (Monday of prev week, day before start)
+        CASE 2: start>01-01, end=31-12, wfm='' -> (01-01, day before start)
+        CASE 3: start=01-01, end<31-12, wfm='' -> (Monday of prev week, day before start)
+        CASE 4: start>01-01, end<31-12, wfm='' -> (01-01, 31-12)
+        CASE 5: start=01-01, end=31-12, wfm!='' -> (Monday of prev week, Sunday of next week)
+        CASE 6: start>01-01, end=31-12, wfm!='' -> (01-01, Sunday of next week)
+        CASE 7: start=01-01, end<31-12, wfm!='' -> (Monday of prev week, Sunday of next week)
+        CASE 8: start>01-01, end<31-12, wfm!='' -> (01-01, 31-12)
+        
+    Raises:
+        Logs error and returns empty strings if date parsing fails or invalid date ranges provided.
     """
     try:
-        logger.info(f"Creating df_calendario from {start_date} to {end_date} for {len(employee_id_matriculas_map)} employees")
-        
-        # Convert input strings to date format
-        start_dt = pd.to_datetime(start_date, format='%Y-%m-%d')
-        end_dt = pd.to_datetime(end_date, format='%Y-%m-%d')
-        
-        # Generate sequence of dates
-        date_range = pd.date_range(start=start_dt, end=end_dt, freq='D')
-        
-        # Create employee DataFrame
-        employees_df = pd.DataFrame(list(employee_id_matriculas_map.items()), 
-                                  columns=['employee_id', 'matricula'])
-        
-        # Create dates DataFrame with weekday calculation
-        dates_df = pd.DataFrame({
-            'data': date_range,
-            'wday': date_range.weekday + 1  # Convert to 1-7 (Monday-Sunday)
-        })
-        
-        # Create shifts DataFrame
-        shifts_df = pd.DataFrame({'tipo_turno': ['M', 'T']})
-        
-        # Create cartesian product using cross merge
-        # First: employees × dates
-        emp_dates = employees_df.assign(key=1).merge(dates_df.assign(key=1), on='key').drop('key', axis=1)
-        
-        # Second: (employees × dates) × shifts
-        df_calendario = emp_dates.assign(key=1).merge(shifts_df.assign(key=1), on='key').drop('key', axis=1)
-        
-        # Vectorized operations for final formatting
-        df_calendario['employee_id'] = df_calendario['employee_id'].astype(str)
-        df_calendario['matricula'] = df_calendario['matricula'].astype(str)
-        df_calendario['data'] = df_calendario['data'].dt.strftime('%Y-%m-%d')
-        
-        # Add empty columns
-        df_calendario['horario'] = ''
-        df_calendario['dia_tipo'] = ''
-        df_calendario['data_admissao'] = ''
-        df_calendario['data_demissao'] = ''
-        
-        # Reorder columns
-        column_order = ['employee_id', 'data', 'tipo_turno', 'horario', 'wday', 'dia_tipo', 'matricula', 'data_admissao', 'data_demissao']
-        df_calendario = df_calendario[column_order]
-        
-        # Sort by employee_id, date, and shift type for consistent ordering
-        df_calendario = df_calendario.sort_values(['employee_id', 'data', 'tipo_turno']).reset_index(drop=True)
-        
-        logger.info(f"Created df_calendario with {len(df_calendario)} rows ({len(employee_id_matriculas_map)} employees × {len(date_range)} days × 2 shifts)")
-        
-        return df_calendario
-        
+        start_date_dt = pd.to_datetime(start_date_str, format='%Y-%m-%d')
+        end_date_dt = pd.to_datetime(end_date_str, format='%Y-%m-%d')
+
+        first_january = pd.to_datetime(f'{main_year}-01-01', format='%Y-%m-%d')
+        last_december = pd.to_datetime(f'{main_year}-12-31', format='%Y-%m-%d')
+
+        # CASO 1: start_date = 01-01 e end_date = 31-12 e wfm_proc_colab = ''
+        if start_date_dt == first_january and end_date_dt == last_december and wfm_proc_colab == '':
+            first_day_passado_str = get_monday_of_previous_week(start_date_str)
+            last_day_passado_str = (start_date_dt - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+
+        # CASO 2: start_date > 01-01 e end_date = 31-12 e wfm_proc_colab = ''
+        elif start_date_dt > first_january and end_date_dt == last_december and wfm_proc_colab == '':
+            first_day_passado_str = first_january.strftime('%Y-%m-%d')
+            last_day_passado_str = (start_date_dt - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+
+        # CASO 3: start_date = 01-01 e end_date < 31-12 e wfm_proc_colab = ''
+        elif start_date_dt == first_january and end_date_dt < last_december and wfm_proc_colab == '':
+            first_day_passado_str = get_monday_of_previous_week(start_date_str)
+            last_day_passado_str = (start_date_dt - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+
+        # CASO 4: start_date > 01-01 e end_date < 31-12 e wfm_proc_colab = ''
+        elif start_date_dt > first_january and end_date_dt < last_december and wfm_proc_colab == '':
+            first_day_passado_str = first_january.strftime('%Y-%m-%d')
+            last_day_passado_str = last_december.strftime('%Y-%m-%d')
+
+        # CASO 5: start_date = 01-01 e end_date = 31-12 e wfm_proc_colab != ''
+        elif start_date_dt == first_january and end_date_dt == last_december and wfm_proc_colab != '':
+            first_day_passado_str = get_monday_of_previous_week(start_date_str)
+            last_day_passado_str = get_sunday_of_next_week(end_date_str)
+
+        # CASO 6: start_date > 01-01 e end_date = 31-12 e wfm_proc_colab != ''
+        elif start_date_dt > first_january and end_date_dt == last_december and wfm_proc_colab != '':
+            first_day_passado_str = first_january.strftime('%Y-%m-%d')
+            last_day_passado_str = get_sunday_of_next_week(end_date_str)
+
+        # CASO 7: start_date = 01-01 e end_date < 31-12 e wfm_proc_colab != ''
+        elif start_date_dt == first_january and end_date_dt < last_december and wfm_proc_colab != '':
+            first_day_passado_str = get_monday_of_previous_week(start_date_str)
+            last_day_passado_str = get_sunday_of_next_week(end_date_str)
+
+        # CASO 8: start_date > 01-01 e end_date < 31-12 e wfm_proc_colab != ''
+        elif start_date_dt > first_january and end_date_dt < last_december and wfm_proc_colab != '':
+            first_day_passado_str = first_january.strftime('%Y-%m-%d')
+            last_day_passado_str = last_december.strftime('%Y-%m-%d')
+
+        # No other cases are predicted
+        else:
+            logger.error(f"start_date {start_date_str} and end_date {end_date_str} are not compatible with the programed logic")
+            return '', ''
+
+        return first_day_passado_str, last_day_passado_str
     except Exception as e:
-        logger.error(f"Error in helper function create_df_calendario: {str(e)}", exc_info=True)
-        return pd.DataFrame()
+        logger.error(f"Error in get_first_and_last_day_passado: {str(e)}")
+        return '', ''
 
-
-def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame) -> pd.DataFrame:
+def get_monday_of_previous_week(date_str: str) -> str:
     """
-    Add df_calendario_passado to df_calendario.
+    Get the Monday of the week before the given date.
+    
+    This function calculates the Monday of the week preceding the week that contains
+    the input date. For example, if the input date is a Wednesday, it will return
+    the Monday of the previous week (not the Monday of the current week).
+    
+    Args:
+        date_str (str): Date in 'YYYY-MM-DD' format
+        
+    Returns:
+        str: Date of the Monday of the previous week in 'YYYY-MM-DD' format.
+             Returns empty string if date parsing fails.
+             
+    Examples:
+        get_monday_of_previous_week('2024-01-08')  # Monday -> '2024-01-01'
+        get_monday_of_previous_week('2024-01-10')  # Wednesday -> '2024-01-01'  
+        get_monday_of_previous_week('2024-01-14')  # Sunday -> '2024-01-01'
+        
+    Algorithm:
+        - Get weekday (0=Monday, 6=Sunday)
+        - Calculate days to subtract: weekday + 7
+        - Subtract from input date to get previous Monday
     """
     try:
-        logger.info(f"Adding df_calendario_passado to df_calendario. Not implemented yet.")
-        return df_calendario
+        date_dt = pd.to_datetime(date_str, format='%Y-%m-%d')
+        
+        # Get the weekday (0=Monday, 6=Sunday)
+        weekday = date_dt.weekday()
+        
+        # Calculate days to subtract to get to the Monday of the previous week
+        # If it's Monday (0), go back 7 days to previous Monday
+        # If it's Tuesday (1), go back 8 days, etc.
+        days_to_subtract = weekday + 7
+        
+        previous_monday = date_dt - dt.timedelta(days=days_to_subtract)
+        return previous_monday.strftime('%Y-%m-%d')
     except Exception as e:
-        logger.error(f"Error in helper function add_calendario_passado: {str(e)}", exc_info=True)
-        return pd.DataFrame()
+        logger.error(f"Error in get_monday_of_previous_week: {str(e)}")
+        return ''
 
-def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.DataFrame) -> pd.DataFrame:
+def get_sunday_of_next_week(date_str: str) -> str:
     """
-    Add df_ausencias_ferias to df_calendario.
+    Get the Sunday of the week after the given date.
+    
+    This function calculates the Sunday of the week following the week that contains
+    the input date. For example, if the input date is a Wednesday, it will return
+    the Sunday of the following week (not the Sunday of the current week).
+    
+    Args:
+        date_str (str): Date in 'YYYY-MM-DD' format
+        
+    Returns:
+        str: Date of the Sunday of the next week in 'YYYY-MM-DD' format.
+             Returns empty string if date parsing fails.
+             
+    Examples:
+        get_sunday_of_next_week('2024-01-01')  # Monday -> '2024-01-07'
+        get_sunday_of_next_week('2024-01-03')  # Wednesday -> '2024-01-07'
+        get_sunday_of_next_week('2024-01-06')  # Saturday -> '2024-01-07'
+        get_sunday_of_next_week('2024-01-07')  # Sunday -> '2024-01-14'
+        
+    Algorithm:
+        - Get weekday (0=Monday, 6=Sunday)
+        - Calculate days to add: (6 - weekday) % 7, with special case for Sunday
+        - If already Sunday, add 7 days to get next Sunday
+        - Add to input date to get next Sunday
     """
     try:
-        logger.info(f"Adding df_ausencias_ferias to df_calendario. Not implemented yet.")
-        return df_calendario
+        date_dt = pd.to_datetime(date_str, format='%Y-%m-%d')
+        weekday = date_dt.weekday()
+        # Calculate days to add to get to next Sunday
+        # Monday=0 needs +6, Tuesday=1 needs +5, ..., Saturday=5 needs +1, Sunday=6 needs +7
+        days_to_add = (6 - weekday) % 7
+        if days_to_add == 0:  # If it's already Sunday, go to next Sunday
+            days_to_add = 7
+        next_sunday = date_dt + dt.timedelta(days=days_to_add)
+        return next_sunday.strftime('%Y-%m-%d')
     except Exception as e:
-        logger.error(f"Error in helper function add_ausencias_ferias: {str(e)}", exc_info=True)
-        return pd.DataFrame()
-
-def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: pd.DataFrame) -> pd.DataFrame:
-    """
-    Add df_core_pro_emp_horario_det to df_calendario.
-    """
-    try:
-        logger.info(f"Adding df_core_pro_emp_horario_det to df_calendario. Not implemented yet.")
-        return df_calendario
-    except Exception as e:
-        logger.error(f"Error in helper function add_folgas_ciclos: {str(e)}", exc_info=True)
-        return pd.DataFrame()
-
-def add_ciclos_90(df_calendario: pd.DataFrame, df_ciclos_90: pd.DataFrame) -> pd.DataFrame:
-    """
-    Add df_ciclos_90 to df_calendario.
-    """
-    try:
-        logger.info(f"Adding df_ciclos_90 to df_calendario. Not implemented yet.")
-        return df_calendario
-    except Exception as e:
-        logger.error(f"Error in helper function add_ciclos_90: {str(e)}", exc_info=True)
-        return pd.DataFrame()
-
-def add_days_off(df_calendario: pd.DataFrame, df_days_off: pd.DataFrame) -> pd.DataFrame:
-    """
-    Add df_days_off to df_calendario.
-    """
-    try:
-        logger.info(f"Adding df_days_off to df_calendario. Not implemented yet.")
-        return df_calendario
-    except Exception as e:
-        logger.error(f"Error in helper function add_days_off: {str(e)}", exc_info=True)
-        return pd.DataFrame()
+        logger.error(f"Error in get_sunday_of_next_week: {str(e)}")
+        return ''
