@@ -27,6 +27,7 @@ def solve(
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
     work_day_hours: Dict[int, List[int]],
+    pessOBJ: Dict[int, int],
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
@@ -238,8 +239,8 @@ def solve(
         # Loop through each worker
         processed_workers = 0
         days_of_year_sorted = sorted(days_of_year)
-        time_worked_day_M = [0] * len(days_of_year_sorted)
-        time_worked_day_T = [0] * len(days_of_year_sorted)
+        time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) for d in days_of_year_sorted]
+        time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
@@ -324,8 +325,8 @@ def solve(
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
             days_of_year_sorted = sorted(days_of_year)
 
-            time_worked_M_row = ["Time_Worked_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
-            time_worked_T_row = ["Time_Worked_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
+            time_worked_M_row = ["Achieved - PessOBJ T"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
+            time_worked_T_row = ["Achieved - PessOBJ M"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
 
             # Append rows to DataFrame
             df2 = df.copy()

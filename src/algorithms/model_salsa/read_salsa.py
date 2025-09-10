@@ -355,14 +355,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
             worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
-            worker_work_day_hours = worker_calendar['carga_diaria'].to_numpy()[::2].astype(int)
+            worker_work_day_hours = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
+            logger.info(f"worker hours {w},\n{worker_work_day_hours}\nlen {len(worker_work_day_hours)}")
             worker_present_days = set(worker_calendar['data'].dt.dayofyear.tolist())
 
             # Days where worker should potentially appear but doesn't
             days_not_in_calendar = set(days_of_year) - worker_present_days
         
             # Add these missing days to empty_days
-            worker_empty.extend(list(days_not_in_calendar))
+            #worker_empty.extend(list(days_not_in_calendar))
 
 
             empty_days[w] = worker_empty
@@ -785,11 +786,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
                     
                         #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
-                
+
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
-            
-        
 
         working_shift_2 = ["M", "T"]
 
