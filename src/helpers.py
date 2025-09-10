@@ -2116,4 +2116,3 @@ def _create_export_info(process_id: int, ROOT_DIR) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error creating export info: {e}")
         return {}
-        

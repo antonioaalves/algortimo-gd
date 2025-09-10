@@ -365,7 +365,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             model = cp_model.CpModel()
             self.model = model
             
-            logger.info(f"workers_complete: {workers_complete}")
             # Create decision variables
             shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, start_weekday)
             
@@ -401,7 +400,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SALSA specific constraints
             salsa_2_consecutive_free_days(model, shift, workers, working_days)
             
-            self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
@@ -421,7 +419,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
 
-            salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
+            debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
                                              first_day, last_day, role_by_worker)  # role_by_worker)
 
@@ -432,8 +430,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, 
                               output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
-                                                         f'salsa_schedule_{self.process_id}.xlsx'))
-            
+                                                         f'salsa_schedule_{self.process_id}.xlsx'),
+                              optimization_details=optimization_details )
+
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             
     # Capture solver statistics if available
