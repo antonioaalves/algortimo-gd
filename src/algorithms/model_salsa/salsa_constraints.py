@@ -350,7 +350,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
 
-def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off):
+def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -375,7 +375,8 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             week_work_days_set = set(week_work_days)
 
             fixed_days_week = week_work_days_set.intersection(set(fixed_days_off[w]))
-            
+            fixed_lqs_week = week_work_days_set.intersection(set(fixed_LQs[w]))
+
             # Check if admissao or demissao day falls within this week
             is_admissao_week = (worker_admissao > 0 and worker_admissao in days)
             is_demissao_week = (worker_demissao > 0 and worker_demissao in days)
@@ -416,8 +417,11 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
                            f"Required Free Days = {required_free_days}")
 
-            if required_free_days < len(fixed_days_week):
-                required_free_days = len(fixed_days_week)
+            if required_free_days < (len(fixed_days_week) + len(fixed_lqs_week)):
+                required_free_days = len(fixed_days_week) + len(fixed_lqs_week)
+                logger.info(f" Worker {w} - Adjusted Required Free Days to {required_free_days} due to fixed days off: {fixed_days_week}")
+
+            # Only add constraint if we require at least 1 free day
 
             # Only add constraint if we require at least 1 free day
             if required_free_days >= 0:
