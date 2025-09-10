@@ -362,7 +362,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             days_not_in_calendar = set(days_of_year) - worker_present_days
         
             # Add these missing days to empty_days
-            worker_empty.extend(list(days_not_in_calendar))
+            #worker_empty.extend(list(days_not_in_calendar))
 
 
             empty_days[w] = worker_empty
