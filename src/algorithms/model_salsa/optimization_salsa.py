@@ -50,11 +50,11 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         },
         'point_7_sunday_balance_across_workers': {
             'variables': [],
-            'penalty_weight': 50
+            'penalty_weight': 5
         },
         'point_7b_lq_balance_across_workers': {
             'variables': [],
-            'penalty_weight': 50
+            'penalty_weight': 5
         },
         'point_8_manager_keyholder_conflicts': {
             'variables': {},
@@ -424,7 +424,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 objective_terms.append(INCONSISTENT_SHIFT_PENALTY * inconsistent_shifts)
 
     # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
-    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 50
+    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5
     sunday_balance_across_workers_penalties = []
 
     # Create constraint variables for each worker's total Sunday free days
@@ -511,8 +511,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     
                     # Add penalties for proportional imbalance
                     weight = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 2  # Distribute penalty across pairs
-                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos//100)
-                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg//100)
+                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos)
+                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
 
     # Add to objective
     objective_terms.extend(sunday_balance_across_workers_penalties)  
@@ -521,7 +521,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # 7B Balancing number of LQ (quality weekends) across workers (pairwise)
     # Business rule: a weekend counts as LQ iff Saturday has shift "LQ" AND Sunday has shift "L".
-    LQ_BALANCE_ACROSS_WORKERS_PENALTY = 50
+    LQ_BALANCE_ACROSS_WORKERS_PENALTY = 5
     lq_balance_across_workers_penalties = []
 
     lq_free_worker_vars = {}

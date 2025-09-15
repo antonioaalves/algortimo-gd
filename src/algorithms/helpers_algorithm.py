@@ -222,7 +222,7 @@ def analyze_optimization_results(solver, optimization_details):
             logger.info(f"Point 7 - Worker1 {var_info['worker1']}, Worker2 {var_info['worker2']}, "
                         f"Worker1 Sunday Free {w1_total}, Worker2 Sunday Free {w2_total}, "
                         f"Prop1 {var_info['prop1']}, Prop2 {var_info['prop2']}, "
-                        f"Proportional Diff Pos {pos_diff_value}, Proportional Diff Neg {neg_diff_value}, Penalty {penalty}")
+                        f"Proportional Diff Pos {pos_diff_value}, Proportional Diff Neg {neg_diff_value}, Penalty {penalty}, Penalty Weight {penalty_weight}")
             point_7_results['total_penalty'] += penalty
     
     results['point_7_sunday_balance_across_workers'] = point_7_results
@@ -260,7 +260,7 @@ def analyze_optimization_results(solver, optimization_details):
             logger.info(f"Point 7B - Worker1 {var_info['worker1']}, Worker2 {var_info['worker2']}, "
                         f"Worker1 LQ Free {w1_total}, Worker2 LQ Free {w2_total}, "
                         f"Prop1 {var_info['prop1']}, Prop2 {var_info['prop2']}, "
-                        f"Diff Pos {pos_diff_value}, Diff Neg {neg_diff_value}, Penalty {penalty}")
+                        f"Diff Pos {pos_diff_value}, Diff Neg {neg_diff_value}, Penalty {penalty}, Penalty Weight {penalty_weight}")
             point_7b_results['total_penalty'] += penalty
     
     results['point_7b_lq_balance_across_workers'] = point_7b_results
