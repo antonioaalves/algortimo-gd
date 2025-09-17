@@ -360,8 +360,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             # # 3) mapas (w, week, ...) → limpar chaves desses workers
             # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] not in DROP_WORKERS}
 
-        
-            contract_type[3919] = 4
             # =================================================================
             # CREATE MODEL AND DECISION VARIABLES
             # =================================================================
