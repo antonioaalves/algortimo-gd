@@ -389,11 +389,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             LQ_attribution(model, shift, workers, working_days, c2d)
             
-            # Closed holiday attribution constraint
-            #closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
 
-            #holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)            
-            
             # Worker week shift assignments
             assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
             
@@ -403,7 +399,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SALSA specific constraints
             salsa_2_consecutive_free_days(model, shift, workers, working_days)
             
-            self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
