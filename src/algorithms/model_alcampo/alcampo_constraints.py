@@ -167,12 +167,6 @@ def complete_cycle_shifts(model, shift, workers_complete_cycle, working_days, wo
             # Check if the worker is assigned to any of the complete cycle shifts
             model.add_exactly_one(shift[(w, d, s)] for s in working_shift_2 if (w, d, s) in shift)
 
-def maxi_workers(model, shift, non_holidays, workers, shifts, max_workers):
-    #Number of workers bewtween maximum and minimum
-    #Minimum might be broken if needed but there will be a huge lack in optimality
-    for d in non_holidays:
-        for s in shifts:
-            model.Add(sum(shift[(w, d, s)] for w in workers) <= max_workers.get((d, s), len(workers)))
 
 def free_day_next_2c(model, shift, workers, working_days,start_weekday, closed_holidays):
     for w in workers:
