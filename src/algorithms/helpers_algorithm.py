@@ -423,6 +423,6 @@ def _convert_free_days(algorithm_results: pd.DataFrame, data_processed: Dict[str
                     algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[-1]}'] = 'FO'
                     algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[-2]}'] = 'FC'
                     for d in free_days[:-2]:
-                        algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{d}'] = 'V'
+                        algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{d}'] = '-'
 
     return algorithm_results
