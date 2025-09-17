@@ -306,7 +306,6 @@ def solve(
         logger.info(f"Processing schedule for {len(workers)} workers across {len(days_of_year)} days")
         # Prepare the data for the DataFrame
         table_data = []  # List to store each worker's data as a row
-        worker_stats = {}  # Dictionary to track L, LQ, LD counts for each worker
 
         # Loop through each worker
         processed_workers = 0
@@ -337,29 +336,13 @@ def solve(
                     worker_row.append(day_assignment)
                     
                     # Count different shift types
-                    if day_assignment == 'L':
-                        l_count += 1
-                    elif day_assignment == 'LQ':
-                        lq_count += 1
-                    elif day_assignment in ['T']:
-                        if d in special_days:
-                            special_days_count += 1
+                    if day_assignment in ['T']:
                         time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
                     elif day_assignment in ['M']:
-                        if d in special_days:
-                            special_days_count += 1
                         time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
 
 
                     day_counter += 1
-                
-                # Store statistics for this worker
-                worker_stats[w] = {
-                    'L_count': l_count,
-                    'LQ_count': lq_count,
-                    'special_days_work': special_days_count,
-                    'unassigned_days': unassigned_days
-                }
                 
                 table_data.append(worker_row)
                 processed_workers += 1
@@ -403,10 +386,6 @@ def solve(
         # =================================================================
         # 7. LOG FINAL STATISTICS
         # =================================================================
-        logger.info("Final worker statistics:")
-        for worker_id, stats in worker_stats.items():
-            logger.info(f"  Worker {worker_id}: {stats}")
-        
         logger.info("[OK] Solver completed successfully")
         return df
         
