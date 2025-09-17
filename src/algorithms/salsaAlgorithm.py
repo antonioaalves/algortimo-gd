@@ -26,7 +26,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
 
-from src.helpers import (_create_empty_results, _calculate_comprehensive_stats, 
+from src.algorithms.helpers_algorithm import (_convert_free_days, _create_empty_results, _calculate_comprehensive_stats, 
                         _validate_constraints, _calculate_quality_metrics, 
                         _format_schedules, _create_metadata, _validate_solution, 
                         _create_export_info)
@@ -528,7 +528,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
 
 # Update the format_results method:
-    def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
+    def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame(), week_to_days_salsa : Dict[int, List[int]] = None) -> Dict[str, Any]:
         """
         Format the SALSA algorithm results for output.
         
@@ -545,6 +545,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             if algorithm_results.empty:
                 logger.warning("No algorithm results available to format")
                 return _create_empty_results(self.algo_name, self.process_id, self.start_date, self.end_date, self.parameters)
+            
 
             # Calculate comprehensive statistics
             stats = _calculate_comprehensive_stats(algorithm_results, self.start_date, self.end_date, self.data_processed)
@@ -554,6 +555,24 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             # Calculate quality metrics
             quality_metrics = _calculate_quality_metrics(algorithm_results)
+
+            # Set pandas options to show more columns
+            # pd.set_option('display.max_columns', None)
+            # pd.set_option('display.width', None)
+            # pd.set_option('display.max_colwidth', None)
+
+
+            # logger.info(f"DEBUG: schedule before convert: {algorithm_results.head(5)}")
+
+            # Convert free days codes in wfm codes FO and FC
+            algorithm_results = _convert_free_days(algorithm_results, self.data_processed)
+
+            # logger.info(f"DEBUG: schedule after convert: {algorithm_results.head(5)}")
+
+
+            pd.reset_option('display.max_columns')
+            pd.reset_option('display.width')
+            pd.reset_option('display.max_colwidth')
             
             # Format schedule for different outputs
             formatted_schedules = _format_schedules(algorithm_results, self.start_date, self.end_date)
