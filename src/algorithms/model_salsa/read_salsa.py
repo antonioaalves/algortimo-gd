@@ -786,11 +786,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
                     
                         #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
-                
+
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
-            
-        
 
         working_shift_2 = ["M", "T"]
 
