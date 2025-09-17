@@ -459,6 +459,10 @@ class DescansosDataModel(BaseDataModel):
                 # TODO: check if this is need since it also is loaded in load_process_data
                 colabs_id_list = valid_emp['fk_colaborador'].tolist()
                 self.logger.info(f"Loaded information from valid_emp into colabs_id_list: {colabs_id_list}")
+
+                start_date = self.external_call_data['start_date']
+                end_date = self.external_call_data['end_date']
+                process_id = self.external_call_data['current_process_id']
             except Exception as e:
                 self.logger.error(f"Error loading colaborador info: {e}", exc_info=True)
                 return False
@@ -479,6 +483,16 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info(f"colabs_str: {colabs_str}, type: {type(colabs_str)}")
             except Exception as e:
                 self.logger.error(f"Error creating colabs_str to be used in query: {e}", exc_info=True)
+                return False
+            
+            try:
+                query_path = CONFIG.get('available_entities_aux', {}).get('df_contratos')
+                df_contratos = data_manager.load_data('df_contratos', query_file=query_path, colabs_id=colabs_str, start_date=start_date, end_date=end_date, process_id=process_id)
+                self.logger.info(f"df_contratos shape (rows {df_contratos.shape[0]}, columns {df_contratos.shape[1]}): {df_contratos.columns.tolist()}")
+                self.logger.info(f"Saving df_contratos in auxiliary_data")
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+            except Exception as e:
+                self.logger.error(f"Error loading df_contratos: {e}", exc_info=True)
                 return False
             
             try:
@@ -833,10 +847,10 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Treating colabs_passado str")
                 self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
-                if len(colabs_passado) == 0:
-                    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
-                    return False
-                elif len(colabs_passado) == 1:
+                #if len(colabs_passado) == 0:
+                #    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
+                #    return False
+                if len(colabs_passado) == 1:
                     self.logger.info(f"colabs_passado has only one value: {colabs_passado[0]}")
                     colabs_str = str(colabs_passado[0])
                 elif len(colabs_passado) > 1:
@@ -929,6 +943,13 @@ class DescansosDataModel(BaseDataModel):
             except Exception as e:
                 self.logger.error(f"Error loading df_core_pro_emp_horario_det: {e}", exc_info=True)
                 df_core_pro_emp_horario_det = pd.DataFrame()
+
+            # TODO: Validate if df_core_pro_emp_horario_det is empty here, shoould be in another places
+            if df_core_pro_emp_horario_det.empty:
+                self.logger.info("df_core_pro_emp_horario_det is empty, creating with default columns")
+                df_core_pro_emp_horario_det = pd.DataFrame(
+                    columns=['employee_id', 'schedule_day', 'tipo_dia']
+                )
 
             try:
                 self.logger.info("Loading df_ciclos_90 from data manager")
@@ -1944,11 +1965,36 @@ class DescansosDataModel(BaseDataModel):
             if len(matriz_ma_final) > 0 and 'l_dom' in matriz_ma_final.columns and (matriz_ma_final['l_dom'] < 0).any():
                 self.logger.error("l_dom < 0 - columna DyF_MAX_T mal parametrizada")
                 return False
+
+            # TREAT df_contratos
+            try:
+                self.logger.info("Treating df_contratos")
+                df_contratos = self.auxiliary_data['df_contratos'].copy()
+                df_contratos['maximumworkload'] = pd.to_timedelta(df_contratos['maximumworkload']).dt.total_seconds() / 3600
+                df_contratos['maximumworkday'] = pd.to_timedelta(df_contratos['maximumworkday']).dt.total_seconds() / 3600
+                df_contratos['maximumdaysperweek'] = pd.to_timedelta(df_contratos['maximumdaysperweek']).dt.total_seconds() / 3600
+                
+                df_contratos['carga_diaria'] = np.where(
+                    np.trunc(df_contratos['maximumworkload']/df_contratos['maximumdaysperweek']) < df_contratos['maximumworkday'],
+                    np.trunc(df_contratos['maximumworkload']/df_contratos['maximumdaysperweek']),
+                    df_contratos['maximumworkday']
+                )
+                df_contratos['carga_diaria'] = np.where(
+                    df_contratos['carga_diaria'] < 0,
+                    0,
+                    df_contratos['carga_diaria']
+                )
+                self.logger.info(f"DEBUG: df_contratos=\n{df_contratos}")
+            except Exception as e:
+                self.logger.error(f"Error treating df_contratos: {e}", exc_info=True)
+                return False
             
             try:
                 self.logger.info("Storing final results")
                 # Store result in raw_data
                 self.raw_data['df_colaborador'] = matriz_ma_final.copy()
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
                 self.auxiliary_data['num_fer_doms'] = num_fer_dom
                 #self.logger.info(f"DEBUG: matriz_ma_final columns: {matriz_ma_final.columns.tolist()}")
                 #self.logger.info(f"DEBUG: matriz_ma_final dtypes:\n{matriz_ma_final.dtypes}")
@@ -2008,6 +2054,7 @@ class DescansosDataModel(BaseDataModel):
                 df_ausencias_ferias = self.auxiliary_data['df_ausencias_ferias'].copy()
                 df_days_off = self.auxiliary_data['df_days_off'].copy()
                 df_core_pro_emp_horario_det = self.auxiliary_data['df_core_pro_emp_horario_det'].copy()
+                df_contratos = self.auxiliary_data['df_contratos'].copy()
                 start_date2 = self.auxiliary_data['start_date2']
                 end_date2 = self.auxiliary_data['end_date2']
                 current_year = pd.to_datetime(end_date2, format="%Y-%m-%d").year
@@ -2039,14 +2086,16 @@ class DescansosDataModel(BaseDataModel):
                     #self.logger.error("DEBUG: Neither 'emp' nor 'matricula' found")
                     return False
 
-            # Treat df_core_pro_emp_horario_det
+            # Treat df_core_pro_emp_horario_det and df_contratos
             try:
                 self.logger.info("Treating df_core_pro_emp_horario_det")
                 # TODO: add fk_colaborador
                 df_colaboradores = matriz_ma[['matricula', 'fk_colaborador']].dropna(subset=['fk_colaborador'])
                 df_colaboradores.columns = ['matricula', 'fk_colaborador']
                 df_core_pro_emp_horario_det = df_core_pro_emp_horario_det.merge(df_colaboradores, left_on='employee_id', right_on='fk_colaborador', how='left')
+                df_contratos = df_contratos.merge(df_colaboradores, left_on='employee_id', right_on='fk_colaborador', how='left')
                 self.logger.info(f"DEBUG: df_core_pro_emp_horario_det={df_core_pro_emp_horario_det}")
+                self.logger.info(f"DEBUG: df_contratos={df_contratos}")
 
 
             except Exception as e:
@@ -2297,7 +2346,8 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info("Storing final results")
                 # Store result
                 self.raw_data['df_calendario'] = reshaped_final_3.copy()
-                
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+
                 if not self.raw_data:
                     self.logger.warning("Data storage verification failed")
                     return False
@@ -2394,6 +2444,7 @@ class DescansosDataModel(BaseDataModel):
                 matrizB_og = self.raw_data['df_estimativas'].copy() 
                 matrizA_og = self.raw_data['df_colaborador'].copy()
                 algorithm_name = self.auxiliary_data['GD_algorithmName']
+                df_contratos = self.auxiliary_data['df_contratos'].copy()
 
                 #DEBUG - TODO: remove
                 #matrizB_og.to_csv(os.path.join('data', 'output', f'df_estimativas_debug_inicializa-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
@@ -2425,6 +2476,12 @@ class DescansosDataModel(BaseDataModel):
                     return False
                 if len(matrizA_og) == 0:
                     self.logger.error("matrizA_og has 0 rows")
+                    return False
+                if df_contratos.empty:
+                    self.logger.error("df_contratos is empty")
+                    return False
+                if len(df_contratos) == 0:
+                    self.logger.error("df_contratos has 0 rows")
                     return False
             except Exception as e:
                 self.logger.error(f"Error validating dataframe structures: {e}", exc_info=True)
@@ -2495,7 +2552,7 @@ class DescansosDataModel(BaseDataModel):
             #self.logger.info(f"DEBUG: matriz2_og: {matriz2_og}")
             # Melt the dataframe
             matriz2_ini = pd.melt(matriz2_og, id_vars='DIA_TURNO', 
-                                var_name='DATA', value_name='TIPO_TURNO')
+                                  var_name='DATA', value_name='TIPO_TURNO')
             matriz2_ini.columns = ['COLABORADOR', 'DATA', 'TIPO_TURNO']
 
             #self.logger.info(f"DEBUG: matriz2_ini tail after melt: {matriz2_ini.tail(40)}")
@@ -2543,6 +2600,34 @@ class DescansosDataModel(BaseDataModel):
             matriz2['ID'] = range(len(matriz2))
             matriz2['WW'] = matriz2['DATA'].apply(adjusted_isoweek)
             matriz2['WD'] = matriz2['DATA'].dt.day_name().str[:3]
+            
+            # Merge with contract information (df_contratos)
+            try:
+                self.logger.info("Merging matriz2 with df_contratos")
+                
+                # Ensure DATA column is datetime in df_contratos for merging
+                if 'schedule_day' in df_contratos.columns:
+                    df_contratos['DATA'] = pd.to_datetime(df_contratos['schedule_day'])
+                    
+                # Merge on employee_id (COLABORADOR) and schedule_day (DATA)
+                # The merge will duplicate contract info for each shift but that's expected
+                matriz2 = matriz2.merge(
+                    df_contratos[['employee_id', 'DATA', 'matricula', 'contract_id', 'carga_diaria']],
+                    left_on=['COLABORADOR', 'DATA'],
+                    right_on=['matricula', 'DATA'],
+                    how='left'
+                )
+                
+                # Drop duplicate DATA column and rename employee_id
+                matriz2 = matriz2.drop(columns=['employee_id', 'matricula', 'matricula_x', 'matricula_y'], errors='ignore')
+                
+                self.logger.info(f"Successfully merged df_contratos with matriz2. New shape: {matriz2.shape}")
+                self.logger.info(f"Contract columns added: {[col for col in matriz2.columns if col in ['contract_id', 'maximumworkload', 'maximumdaysperweek', 'maximumworkday', 'carga_diaria']]}")
+                
+            except Exception as e:
+                self.logger.error(f"Error merging df_contratos with matriz2: {e}", exc_info=True)
+                # Continue without contract data if merge fails
+                self.logger.warning("Continuing without contract data merge")
             
             #self.logger.info(f"DEBUG: matriz2 before assign_dia_tipo: {matriz2}")
             # Calculate DIA_TIPO
@@ -3040,38 +3125,80 @@ class DescansosDataModel(BaseDataModel):
                 contract_info = pd.DataFrame(matrizA[pd.Series(matrizA['tipo_contrato']).isin([2, 3])][['matricula', 'tipo_contrato']])
                 matriz2_3d = matriz2_3d.merge(contract_info, left_on='COLABORADOR', right_on='matricula', how='left')
                 
-                # Filter out unwanted HORARIO types and group by week/employee
-                matriz2_3d = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                # Keep ALL calendar entries (don't filter matriz2_3d)
+                self.logger.info(f"DEBUG: matriz2_3d before processing shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts:\n{matriz2_3d['HORARIO'].value_counts()}")
                 
-                # Count work days per week per employee (divide by 2 for morning/afternoon)
-                week_counts = (pd.DataFrame(matriz2_3d)
+                # But count only work days for NL2D/NL3D assignment
+                work_days_only = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                self.logger.info(f"DEBUG: work_days_only shape: {work_days_only.shape}")
+
+                week_counts = (pd.DataFrame(work_days_only)
                              .groupby(['COLABORADOR', 'WW'])
                              .agg(count=('COLABORADOR', 'size'))
                              .reset_index())
                 week_counts['count'] = week_counts['count'] / 2
-                
-                # Merge back with matriz2_3d
-                matriz2_3d = matriz2_3d.merge(week_counts, on=['COLABORADOR', 'WW'], how='left')
-                
-                # Update HORARIO based on count and contract type
+                self.logger.info(f"DEBUG: week_counts shape: {week_counts.shape}")
+                self.logger.info(f"DEBUG: week_counts sample:\n{week_counts.head(10)}")
+
+                # Apply NL2D/NL3D only to work days
                 def update_horario_3d(row):
-                    if row['count'] == 3 and row['tipo_contrato'] == 3:
-                        return 'NL3D'
-                    elif row['count'] == 2 and row['tipo_contrato'] == 2:
-                        return 'NL2D'
-                    else:
-                        return row['HORARIO']
-                
+                    # Only change work days, leave rest days unchanged
+                    if row['HORARIO'] in ['-', 'V', 'F']:
+                        return row['HORARIO']  # Keep rest days as-is
+                    
+                    # Get work day count for this employee/week
+                    emp_week_count = week_counts[
+                        (week_counts['COLABORADOR'] == row['COLABORADOR']) & 
+                        (week_counts['WW'] == row['WW'])
+                    ]
+                    
+                    if not emp_week_count.empty:
+                        count = emp_week_count['count'].iloc[0]
+                        if count == 3 and row['tipo_contrato'] == 3:
+                            return 'NL3D'
+                        elif count == 2 and row['tipo_contrato'] == 2:
+                            return 'NL2D'
+                    
+                    return row['HORARIO']
+
                 matriz2_3d['HORARIO'] = matriz2_3d.apply(update_horario_3d, axis=1)
+                
+                self.logger.info(f"DEBUG: matriz2_3d after HORARIO update shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts after update:\n{matriz2_3d['HORARIO'].value_counts()}")
+                
+                # Log sample of NL2D/NL3D assignments
+                nl_assignments = matriz2_3d[matriz2_3d['HORARIO'].isin(['NL2D', 'NL3D'])]
+                if not nl_assignments.empty:
+                    self.logger.info(f"DEBUG: NL2D/NL3D assignments count: {len(nl_assignments)}")
+                    self.logger.info(f"DEBUG: NL2D/NL3D sample:\n{nl_assignments[['COLABORADOR', 'DATA', 'HORARIO', 'tipo_contrato']].head(10)}")
+                else:
+                    self.logger.warning("DEBUG: No NL2D/NL3D assignments were made")
                 
                 # Remove unnecessary columns
                 matriz2_3d = matriz2_3d.drop(['count', 'tipo_contrato_y'], axis=1, errors='ignore')
                 
                 # Merge back with main matriz2
+                self.logger.info(f"DEBUG: Before merge - main matriz2 shape: {matriz2.shape}")
+                self.logger.info(f"DEBUG: Before merge - matriz2_3d final shape: {matriz2_3d.shape}")
+                
                 # First remove the employees that were processed
+                matriz2_before_removal = matriz2.shape[0]
                 matriz2 = matriz2[~matriz2['COLABORADOR'].isin(contract_23_employees)].copy()
+                self.logger.info(f"DEBUG: After removing contract 2/3 employees: {matriz2_before_removal} -> {matriz2.shape[0]} rows")
+                
                 # Then add back the processed data
                 matriz2 = pd.concat([matriz2, matriz2_3d], ignore_index=True)
+                self.logger.info(f"DEBUG: After concat - final matriz2 shape: {matriz2.shape}")
+                
+                # Verify contract 2/3 employees have complete calendars
+                for emp in contract_23_employees[:3]:  # Check first 3 employees
+                    emp_data = matriz2[matriz2['COLABORADOR'] == emp]
+                    unique_dates = emp_data['DATA'].nunique() if not emp_data.empty else 0
+                    self.logger.info(f"DEBUG: Employee {emp} has {len(emp_data)} calendar entries, {unique_dates} unique dates")
+                    if not emp_data.empty:
+                        horario_counts = emp_data['HORARIO'].value_counts()
+                        self.logger.info(f"DEBUG: Employee {emp} HORARIO distribution: {dict(horario_counts.head(5))}")
             
             # Convert DATA back to string
             matriz2['DATA'] = matriz2['DATA'].astype(str)

@@ -26,15 +26,14 @@ def solve(
     special_days: List[int],    
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
-    contract_type: Dict[int, int],
-    week_to_days: Dict[int, List[int]],
+    work_day_hours: Dict[int, List[int]],
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = 0,
     log_callback: Optional[Callable[[str], None]] = None,
     output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx'),
-    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None  # Add this parameter
+    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter,
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
@@ -238,6 +237,9 @@ def solve(
 
         # Loop through each worker
         processed_workers = 0
+        days_of_year_sorted = sorted(days_of_year)
+        time_worked_day_M = [0] * len(days_of_year_sorted)
+        time_worked_day_T = [0] * len(days_of_year_sorted)
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
@@ -251,7 +253,7 @@ def solve(
                 
                 logger.debug(f"Processing worker {w}")
 
-                days_of_year_sorted = sorted(days_of_year)
+                day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -273,49 +275,19 @@ def solve(
                         l_count += 1
                     elif day_assignment == 'LQ':
                         lq_count += 1
-                    elif day_assignment in ['M', 'T'] and d in special_days:
-                        special_days_count += 1
+                    elif day_assignment in ['T']:
+                        if d in special_days:
+                            special_days_count += 1
+                        time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
+                    elif day_assignment in ['M']:
+                        if d in special_days:
+                            special_days_count += 1
+                        time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
+
+
+                    day_counter += 1
                 
-             
-
-                    # After processing all days for this worker, apply contract type 4 rule
-                if contract_type.get(w) == 4:  # Assuming you have access to contract_type dict
-                        # Group days by week and count L/LQ shifts
-                    worker_assignments = worker_row[1:]  # Skip worker ID
-                        
-                        # Create week-to-days mapping for this worker's assignments
-                    day_to_week = {}
-                    for week, week_days in week_to_days.items():  # Assuming you have access to week_to_days
-                        logger.info(f"Worker {w}: Week {week} has days {week_days}")
-                        for day_idx, day in enumerate(sorted(days_of_year)):
-                            if day in week_days:
-                                day_to_week[day_idx] = week
-                        
-                    # Count L/LQ shifts per week and convert first L to V if needed
-                    week_l_lq_count = {}
-                    for day_idx, assignment in enumerate(worker_assignments):
-                        day = sorted(days_of_year)[day_idx]
-                        week = day_to_week.get(day_idx)
-                            
-                        if week is not None:
-                            if week not in week_l_lq_count:
-                                week_l_lq_count[week] = {'count': 0, 'l_indices': []}
-                                
-                            if assignment in ['L', 'LQ']:
-                                week_l_lq_count[week]['count'] += 1
-                                if assignment == 'L':
-                                    week_l_lq_count[week]['l_indices'].append(day_idx)
-                        
-                    # Apply the rule: if more than 2 L/LQ in a week, convert first L to V
-                    for week, data in week_l_lq_count.items():
-                        if data['count'] > 2 and data['l_indices']:
-                            # Convert the first L in this week to V
-                            first_l_idx = data['l_indices'][0]
-                            worker_row[first_l_idx + 1] = 'V'  # +1 because worker_row[0] is worker ID
-                            logger.info(f"Worker {w} (contract type 4): Converted L to V on day {sorted(days_of_year)[first_l_idx]} in week {week}")
-
-
-                     # Store statistics for this worker
+                # Store statistics for this worker
                 worker_stats[w] = {
                         'L_count': l_count,
                         'LQ_count': lq_count,
@@ -350,7 +322,16 @@ def solve(
         # Save to Excel
         try:
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-            df.to_excel(output_filename, index=False)
+            days_of_year_sorted = sorted(days_of_year)
+
+            time_worked_M_row = ["Time_Worked_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
+            time_worked_T_row = ["Time_Worked_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
+
+            # Append rows to DataFrame
+            df2 = df.copy()
+            df2.loc[len(df2)] = time_worked_M_row
+            df2.loc[len(df2)] = time_worked_T_row
+            df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:
             logger.warning(f"Could not save to Excel: {str(e)}")
