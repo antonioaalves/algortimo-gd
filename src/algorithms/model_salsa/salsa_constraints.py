@@ -125,11 +125,13 @@ def working_day_shifts(model, shift, workers, working_days, check_shift, workers
             if total_shifts:
                 model.add_exactly_one(total_shifts)
 
-def salsa_2_consecutive_free_days(model, shift, workers, working_days):
+def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type):
     for w in workers: 
         # Get all working days for this worker
         all_work_days = sorted(working_days[w])
-        
+
+        max_continuous_free_days = 7 - contract_type.get(w, 0)
+
         # Create boolean variables for each day indicating if it's a free day (L, F, or LQ)
         free_day_vars = {}
         for d in all_work_days:
@@ -151,18 +153,23 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days):
             free_day_vars[d] = free_day
         
         # For each consecutive triplet of days in the worker's schedule
-        for i in range(len(all_work_days) - 2):
-            day1 = all_work_days[i]
-            day2 = all_work_days[i+1]
-            day3 = all_work_days[i+2]
+        for i in range(len(all_work_days) - max_continuous_free_days):
+            # Get the sequence of consecutive day indices
+            day_sequence = all_work_days[i:i + max_continuous_free_days + 1]
+            
+            # Check if all days in the sequence are actually consecutive (no gaps)
+            is_consecutive = all(
+                day_sequence[j + 1] == day_sequence[j] + 1 
+                for j in range(len(day_sequence) - 1)
+            )
             
             # Only apply constraint if days are actually consecutive
-            if day2 == day1 + 1 and day3 == day2 + 1:
-                # At least one of any three consecutive days must NOT be a free day
+            if is_consecutive:
+                # At least one of the (max_continuous_free_days + 1) consecutive days must NOT be a free day
+                # This prevents having more than max_continuous_free_days consecutive free days
                 model.AddBoolOr([
-                    free_day_vars[day1].Not(), 
-                    free_day_vars[day2].Not(), 
-                    free_day_vars[day3].Not()
+                    free_day_vars[day].Not() 
+                    for day in day_sequence
                 ])
 
 
@@ -350,7 +357,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
 
-def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs):
+def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
