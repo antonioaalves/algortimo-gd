@@ -1,4 +1,14 @@
+from base_data_project.log_config import get_logger
+
+# Import project-specific components
+from src.config import PROJECT_NAME
+
+logger = get_logger(PROJECT_NAME)
+
+
 """This file contains the constraints for the Alcampo shift scheduler."""
+
+
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
@@ -167,18 +177,12 @@ def complete_cycle_shifts(model, shift, workers_complete_cycle, working_days, wo
             # Check if the worker is assigned to any of the complete cycle shifts
             model.add_exactly_one(shift[(w, d, s)] for s in working_shift_2 if (w, d, s) in shift)
 
-def maxi_workers(model, shift, non_holidays, workers, shifts, max_workers):
-    #Number of workers bewtween maximum and minimum
-    #Minimum might be broken if needed but there will be a huge lack in optimality
-    for d in non_holidays:
-        for s in shifts:
-            model.Add(sum(shift[(w, d, s)] for w in workers) <= max_workers.get((d, s), len(workers)))
 
 def free_day_next_2c(model, shift, workers, working_days,start_weekday, closed_holidays):
     for w in workers:
         for day in working_days[w]:
             # Get day of week (0 = Monday, 6 = Sunday)
-            day_of_week = (start_weekday + day - 2) % 7
+            day_of_week = (day + start_weekday - 2) % 7
             
             # Case 1: Friday (day_of_week == 4) followed by LQ on Saturday
             if (day_of_week == 4) and ((day + 1 in working_days[w]) or (day + 1 in closed_holidays)):
@@ -726,7 +730,7 @@ def assigns_solution_days(new_model, new_shift, workers_complete, workers_comple
     logger.info(f"DEBUG: Sample data from first worker:")
     if not schedule_df.empty:
         first_worker = schedule_df.iloc[0]['Worker']
-        sample_days = [f"Day {d}" for d in sorted(days_of_year)[:5]]
+        sample_days = [f"Day_{d}" for d in sorted(days_of_year)[:5]]
         for col in sample_days:
             if col in schedule_df.columns:
                 value = schedule_df.loc[schedule_df['Worker'] == first_worker, col].values[0]
@@ -741,7 +745,7 @@ def assigns_solution_days(new_model, new_shift, workers_complete, workers_comple
     for w in workers_complete:
         for d in days_of_year:
             # Skip days not in the schedule or not working days
-            day_column = f"Day {d}"
+            day_column = f"Day_{d}"
             if (day_column not in schedule_df.columns) or (d not in working_days[w]):
                 continue
             
@@ -768,7 +772,7 @@ def assigns_solution_days(new_model, new_shift, workers_complete, workers_comple
                 # Check Friday exception (followed by LQ and L)
                 if weekday == 4:
                     friday_mt_count += 1
-                    next_columns = [f"Day {d + 1}", f"Day {d + 2}"]
+                    next_columns = [f"Day_{d + 1}", f"Day_{d + 2}"]
                     if all(col in schedule_df.columns for col in next_columns):
                         next_shifts = [schedule_df.loc[schedule_df['Worker'] == w, col].values[0] for col in next_columns]
                         logger.info(f"DEBUG: Friday {d} - Next shifts: {next_shifts}")
@@ -779,7 +783,7 @@ def assigns_solution_days(new_model, new_shift, workers_complete, workers_comple
                 # Check Monday exception (preceded by L and LQ)
                 elif weekday == 0:
                     monday_mt_count += 1
-                    prev_columns = [f"Day {d - 1}", f"Day {d - 2}"]
+                    prev_columns = [f"Day_{d - 1}", f"Day_{d - 2}"]
                     if all(col in schedule_df.columns for col in prev_columns):
                         prev_shifts = [schedule_df.loc[schedule_df['Worker'] == w, col].values[0] for col in prev_columns]
                         logger.info(f"DEBUG: Monday {d} - Prev shifts: {prev_shifts}")
@@ -795,7 +799,7 @@ def assigns_solution_days(new_model, new_shift, workers_complete, workers_comple
     # Second pass: assign shifts
     for w in workers_complete:
         for d in days_of_year:
-            day_column = f"Day {d}"
+            day_column = f"Day_{d}"
 
                 
             worker_row = schedule_df.loc[schedule_df['Worker'] == w]
@@ -843,15 +847,15 @@ def day3_quality_weekend(new_model, new_shift, workers, working_days, start_week
                     # Check if Sunday is also a working day
                     if d + 1 in working_days[w] or d + 1 in closed_holidays:
                         # Check if Saturday and Sunday already form a 2-day quality weekend
-                        saturday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day {d}"].values[0]
-                        sunday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day {d+1}"].values[0]
+                        saturday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day_{d}"].values[0]
+                        sunday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day_{d+1}"].values[0]
                         
                         # Only proceed if Saturday has "LQ" and Sunday has "L"
                         if (saturday_shift == "LQ" and sunday_shift == "L") or (saturday_shift == "LQ" and sunday_shift == "F") or (saturday_shift == "F" and sunday_shift == "L") or (saturday_shift == "F" and sunday_shift == "F"):
                                 # Check if Thursday isn't L or LD (if it's in working days)
                                 thursday_constraint = True
                                 if d - 2 in working_days[w]:
-                                    thursday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day {d-2}"].values[0]
+                                    thursday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day_{d-2}"].values[0]
                                     if thursday_shift in ["L", "LD"]:
                                         thursday_constraint = False
                                 
@@ -872,7 +876,7 @@ def day3_quality_weekend(new_model, new_shift, workers, working_days, start_week
                                 # Check if Tuesday isn't L or LD (if it's in working days)
                                 tuesday_constraint = True
                                 if d + 3 in working_days[w]:
-                                    tuesday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day {d+3}"].values[0]
+                                    tuesday_shift = schedule_df.loc[schedule_df['Worker'] == w, f"Day_{d+3}"].values[0]
                                     if tuesday_shift in ["L", "LD"]:
                                         tuesday_constraint = False
                                 

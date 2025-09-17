@@ -441,7 +441,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 data_demissao[w] = 0
 
 
-        # Track first and last registered days
+            # Track first and last registered days
             if w in matriz_calendario_gd['colaborador'].values:
                 first_registered_day[w] = worker_calendar['data'].dt.dayofyear.min()
                 if first_registered_day[w] < data_admissao[w]:
@@ -486,45 +486,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
 
-        # # =================================================================
-        # # 9. PROCESS WORKER-SPECIFIC data
-        # # =================================================================
-       
         
-        # # Process each worker
-        # for w in workers_complete:
-        #     worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
             
-        #     if worker_calendar.empty:
-        #         logger.warning(f"No calendar data found for worker {w}")
-        #         empty_days[w] = []
-        #         worker_holiday[w] = []
-        #         missing_days[w] = []
-        #         fixed_days_off[w] = []
-        #         fixed_LQs[w] = []
-        #         continue
-            
-        #     # Find days with specific statuses
-        #     worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-        #     worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-        #     w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
-        #     worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
-        #     f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
-
-        #     empty_days[w] = worker_empty
-        #     missing_days[w] = worker_missing
-        #     worker_holiday[w] = w_holiday
-        #     fixed_days_off[w] = worker_fixed_days_off
-        #     free_day_complete_cycle[w] = f_day_complete_cycle
-            
-
-
-
-#        logger.info(f"Worker-specific data processed for {len(workers)} workers")
-        
-        
-
-        
         
         # =================================================================
         # 10.1. EXTRACT WORKER CONTRACT INFORMATION
@@ -593,7 +556,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-            if total_l[w] <= 0:
+            if total_l[w] < 0:
                 logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
 

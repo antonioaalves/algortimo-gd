@@ -112,7 +112,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 1200  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -278,11 +278,11 @@ def solve(
                     elif day_assignment in ['T']:
                         if d in special_days:
                             special_days_count += 1
-                        time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
+                        #time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
-                        time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
+                        #time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
 
 
                     day_counter += 1
