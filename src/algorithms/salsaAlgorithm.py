@@ -174,60 +174,14 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Unpacking processed data")
             
-            try:
-                data_dict = {
-                    'matriz_calendario_gd': processed_data[0],
-                    'days_of_year': processed_data[1],
-                    'sundays': processed_data[2],
-                    'holidays': processed_data[3],
-                    'special_days': processed_data[4],
-                    'closed_holidays': processed_data[5],
-                    'empty_days': processed_data[6],
-                    'worker_holiday': processed_data[7],
-                    'missing_days': processed_data[8],
-                    'working_days': processed_data[9],
-                    'non_holidays': processed_data[10],
-                    'start_weekday': processed_data[11],
-                    'week_to_days': processed_data[12],
-                    'worker_week_shift': processed_data[13],
-                    'matriz_colaborador_gd': processed_data[14],
-                    'workers': processed_data[15],
-                    'contract_type': processed_data[16],
-                    'total_l': processed_data[17],
-                    'total_l_dom': processed_data[18],
-                    'c2d': processed_data[19],
-                    'c3d': processed_data[20],
-                    'l_d': processed_data[21],
-                    'l_q': processed_data[22],
-                    'cxx': processed_data[23],
-                    't_lq': processed_data[24],
-                    'matriz_estimativas_gd': processed_data[25],
-                    'pess_obj': processed_data[26],
-                    'min_workers': processed_data[27],
-                    'max_workers': processed_data[28],
-                    'working_shift_2': processed_data[29],  # Adjusted for SALSA
-                    'workers_complete': processed_data[30],  # Adjusted for SALSA
-                    'workers_complete_cycle': processed_data[31],  # Adjusted for SALSA
-                    'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
-                    'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
-                    'first_registered_day': processed_data[34],
-                    'admissao_proporcional': processed_data[35],
-                    'role_by_worker': processed_data[36],  # New role mapping
-                    #'managers': processed_data[37],  # New managers list
-                    #'keyholders': processed_data[38],  # New keyholders list
-                    'data_admissao': processed_data[37],
-                    'data_demissao': processed_data[38],
-                    'last_registered_day': processed_data[39],
-                    'fixed_days_off': processed_data[40],
-                    'proportion': processed_data[41],
-                    'fixed_LQs' : processed_data[42],
-                    # 'week_cut': processed_data[34]
-                    'work_day_hours': processed_data[43],
-                }
+            self.logger.info("Using dict returned by read_data_salsa()")
+            if not isinstance(processed_data, dict):
+                raise TypeError("read_data_salsa must return a dict with named keys")
+            data_dict = processed_data
 
-            except IndexError as e:
+            """ except IndexError as e:
                 self.logger.error(f"Error unpacking processed data: {e}")
-                raise ValueError(f"Invalid data structure returned from processing function: {e}")
+                raise ValueError(f"Invalid data structure returned from processing function: {e}") """
             
             # =================================================================
             # 5. FINAL VALIDATION AND LOGGING
