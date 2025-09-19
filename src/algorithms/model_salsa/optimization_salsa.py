@@ -19,7 +19,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     HEAVY_PENALTY = 300  # Penalty for days with no workers
     MIN_WORKER_PENALTY = 60  # Penalty for breaking minimum worker requirements
     SUNDAY_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced Sunday free days ALL YEAR
-    C2D_YEAR_BALANCE_PENALTY = 8  # Penalty for unbalanced C2D free days ALL YEAR
+    C2D_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced C2D free days ALL YEAR
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
     SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing Sundays across workers
     C2D_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing C2D across workers
@@ -379,6 +379,38 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * over_penalty)
                     c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * under_penalty)
     objective_terms.extend(c2d_balance_penalties)
+    '''
+    # 5.3 Prevent more than 15 Sundays with L shifts
+    OVER_15_BALANCE_PENALTY = 200
+    over15_balance_penalties = []
+    
+    for w in workers:
+        sunday_L_vars = []
+    
+        for sunday in sundays:
+            if sunday in working_days[w]:
+                # Boolean: 1 if worker w has L on this Sunday, else 0
+                has_l_sunday = model.NewBoolVar(f"has_l_sun_{w}_{sunday}")
+    
+                model.Add(shift.get((w, sunday, "L"), 0) >= 1).OnlyEnforceIf(has_l_sunday)
+                model.Add(shift.get((w, sunday, "L"), 0) == 0).OnlyEnforceIf(has_l_sunday.Not())
+    
+                sunday_L_vars.append(has_l_sunday)
+    
+        if sunday_L_vars:
+            # Total Sundays with L for this worker
+            total_L_sundays = model.NewIntVar(0, len(sunday_L_vars), f"total_L_sundays_{w}")
+            model.Add(total_L_sundays == sum(sunday_L_vars))
+    
+            # Penalize only the excess above 15
+            over_penalty = model.NewIntVar(0, len(sunday_L_vars), f"over15_penalty_{w}")
+            model.Add(over_penalty >= total_L_sundays - 15)
+            model.Add(over_penalty >= 0)
+    
+            over15_balance_penalties.append(OVER_15_BALANCE_PENALTY * over_penalty)
+    
+    objective_terms.extend(over15_balance_penalties)
+    '''
 
 
     # 6. Penalize inconsistent shift types within a week for each worker
