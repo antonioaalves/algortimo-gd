@@ -8,11 +8,9 @@ logger = get_logger(PROJECT_NAME)
 def add_var(model, shift, w, days, code, start_weekday):
     for d in days:
         if (code == 'L' and (d + start_weekday - 2) % 7 == 5 and d + 1 in days):
-            shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_'LQ'")
-            model.Add(shift[(w, d, 'LQ')] == 1)
-        else:
-            shift[(w, d, code)] = model.NewBoolVar(f"{w}_Day{d}_{code}")
-            model.Add(shift[(w, d, code)] == 1)
+            code = 'LQ'
+        shift[(w, d, code)] = model.NewBoolVar(f"{w}_Day{d}_{code}")
+        model.Add(shift[(w, d, code)] == 1)
 
 
 def decision_variables(model, days_of_year, workers, shifts, first_day, last_day, absences, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, start_weekday):
@@ -54,5 +52,4 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         add_var(model, shift, w, fixed_LQs_set - closed_set - empty_days_set, 'LQ', start_weekday)
         add_var(model, shift, w, closed_set - empty_days_set, 'F', start_weekday)
         add_var(model, shift, w, empty_days_set, '-', start_weekday)
-    #52332 vs 31555 vs 25489
     return shift

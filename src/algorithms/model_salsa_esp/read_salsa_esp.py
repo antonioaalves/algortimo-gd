@@ -207,7 +207,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         logger.info("Identifying special days")
         
         # Define shifts and special days
-        shifts = ["M", "T", "L","LQ", "F", "V","LD", "A", "-"]
+        shifts = ["M", "T", "L", "LQ", "LD", "F", "V","LD", "A", "-"]
         
         sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['data'].dt.dayofyear.unique().tolist())
 
@@ -542,6 +542,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         cxx = {}
         t_lq = {}
         first_week_5_6 = {}
+        days_off_per_week = {}
 
         for w in workers:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
@@ -559,6 +560,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 cxx[w] = 0
                 t_lq[w] = 0
                 first_week_5_6[w] = 0
+                days_off_per_week[w] = 0
 
 
             else:
@@ -581,7 +583,11 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 cxx[w] = int(worker_row.get('cxx', 0))
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
                 first_week_5_6[w] = int(worker_row.get('5ou6', 0))
-
+                if first_week_5_6[w] != 0:
+                    days_off_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa_esp)
+                else:
+                    days_off_per_week[w] = 0
+                    
                  
 
                 logger.info(f"Worker {w} contract information extracted: "
@@ -857,7 +863,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
             fixed_LQs,          # 36x
             # week_cut
             work_day_hours,
-            first_week_5_6
+            days_off_per_week
         )
         
     except Exception as e:
@@ -922,3 +928,15 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa_esp, start
             #         fixed_days_off |= {friday}
 
     return worker_holiday, fixed_days_off, fixed_LQs
+
+def populate_every_week(first_week_5_6, data_admissao, week_to_days):
+    nbr_weeks = len(week_to_days)
+    days_off_per_week = np.zeros(nbr_weeks)
+    week = next(w for w, val in week_to_days.items() if data_admissao in val)
+
+    if first_week_5_6 == 5:
+        other = 6
+    else:
+        other = 5
+    days_off_per_week[week:] = np.tile(np.array([first_week_5_6, other]), 27)[:nbr_weeks - week]
+    return days_off_per_week

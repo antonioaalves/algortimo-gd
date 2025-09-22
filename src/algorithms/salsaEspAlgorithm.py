@@ -18,10 +18,9 @@ from src.config import PROJECT_NAME, ROOT_DIR
 from src.algorithms.model_salsa_esp.variables import decision_variables
 from src.algorithms.model_salsa_esp.salsa_esp_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
-    assign_week_shift, working_day_shifts,
-    salsa_esp_2_consecutive_free_days, salsa_esp_2_day_quality_weekend, 
-    salsa_esp_saturday_L_constraint, salsa_esp_2_free_days_week, first_day_not_free, free_days_special_days
+    LQ_attribution, compensation_days, assign_week_shift, working_day_shifts, salsa_esp_2_consecutive_free_days,
+    salsa_esp_2_day_quality_weekend, salsa_esp_saturday_L_constraint, salsa_esp_2_free_days_week, first_day_not_free,
+    free_days_special_days
 )
 from src.algorithms.model_salsa_esp.optimization_salsa_esp import salsa_esp_optimization
 from src.algorithms.solver.solver import solve
@@ -63,9 +62,9 @@ class SalsaAlgorithm(BaseAlgorithm):
         # Default parameters for the SALSA algorithm
         default_parameters = {
             "max_continuous_working_days": 7,
-            "shifts": ["M", "T", "L", "LQ", "F", "A", "V", "-"],
-            "check_shifts": ['M', 'T', 'L', 'LQ'],
-            "working_shifts": ["M", "T"],
+            "shifts": ['M', 'T', 'L', 'LQ', 'LD', 'F', 'A', 'V', '-'],
+            "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
+            "working_shifts": ['M', 'T'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -223,7 +222,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'fixed_LQs' : processed_data[42],
                     # 'week_cut': processed_data[34]
                     'work_day_hours': processed_data[43],
-                    'first_week_5_6': processed_data[44],
+                    'days_off_per_week': processed_data[44]
                 }
 
             except IndexError as e:
@@ -326,7 +325,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # week_cut = adapted_data['week_cut']
             proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
-            first_week_5_6 = adapted_data['first_week_5_6']
+            days_off_per_week = adapted_data['days_off_per_week']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -410,13 +409,13 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_esp_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, first_week_5_6)
+            salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, days_off_per_week)
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
-            
+            compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift)
                         
             self.logger.info("All SALSA constraints applied")
             
