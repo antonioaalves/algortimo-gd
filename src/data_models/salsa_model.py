@@ -1,7 +1,7 @@
 """File containing the data model for Salsa"""
 
 # Dependencies
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, List, Tuple
 import pandas as pd
 import os
 
@@ -15,12 +15,25 @@ from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
     get_param_for_posto, 
     load_wfm_scheds, 
-    get_first_and_last_day_passado,
+    get_first_and_last_day_passado_arguments,
+    get_past_employee_id_list,
+    create_employee_query_string,
+    count_holidays_in_period,
+    count_sundays_in_period,
+    count_open_holidays
 )
 from src.data_models.functions.data_treatment_functions import (
     treat_df_valid_emp, 
     treat_df_closed_days, 
     treat_df_calendario_passado,
+    treat_df_ausencias_ferias,
+    treat_df_ciclos_90,
+    treat_df_colaborador,
+    add_lqs_to_df_colaborador,
+    set_tipo_contrato_to_df_colaborador,
+    add_prioridade_folgas_to_df_colaborador,
+    admission_date_adjustments_to_df_colaborador,
+    contract_adjustments_to_df_colaborador,
     create_df_calendario,
     add_calendario_passado,
     add_ausencias_ferias,
@@ -35,6 +48,10 @@ from src.data_models.validations.load_process_data_validations import (
     validate_posto_id_list, 
     validate_posto_id,
     validate_df_valid_emp,
+    validate_past_employee_id_list,
+    validate_date_passado,
+    validate_df_ausencias_ferias,
+    validate_df_core_pro_emp_horario_det
 )
 from src.config import PROJECT_NAME, ROOT_DIR, CONFIG
 
@@ -150,7 +167,7 @@ class SalsaDataModel(BaseDescansosDataModel):
         
         self.logger.info("SalsaDescansosDataModel initialized")
 
-    def load_process_data(self, data_manager: BaseDataManager, entities_dict: Dict[str, str]) -> tuple[bool, str, Optional[str]]:
+    def load_process_data(self, data_manager: BaseDataManager, entities_dict: Dict[str, str]) -> Tuple[bool, str, str]:
         """
         Load data from the data manager.
         
@@ -203,12 +220,15 @@ class SalsaDataModel(BaseDescansosDataModel):
                 else:
                     self.logger.error(f"No instance found for data_manager: {data_manager.__name__}")
 
-                if validate_df_valid_emp(df_valid_emp):
+                success, df_valid_emp, error_msg = treat_df_valid_emp(df_valid_emp)
+                if not success:
+                    self.logger.error(f"Employee treatment failed: {error_msg}")
+                    return False, "errNoColab", error_msg
+
+                if not validate_df_valid_emp(df_valid_emp):
                     self.logger.error("df_valid_emp is invalid")
                     # TODO: Add set process errors
                     return False, "errNoColab", "df_valid_emp is invalid"
-                    
-                df_valid_emp = treat_df_valid_emp(df_valid_emp)
 
                 self.logger.info(f"valid_emp shape (rows {df_valid_emp.shape[0]}, columns {df_valid_emp.shape[1]}): {df_valid_emp.columns.tolist()}")
             except Exception as e:
@@ -236,17 +256,41 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Get start and end date
                 start_date = self.external_call_data.get('start_date', '')
                 end_date = self.external_call_data.get('end_date', '')
+                wfm_proc_colab = self.external_call_data.get('wfm_proc_colab', None)
                 self.logger.info(f"start_date: {start_date}, end_date: {end_date} stored in variables")
 
                 main_year = count_dates_per_year(start_date_str=self.external_call_data.get('start_date', ''), end_date_str=self.external_call_data.get('end_date', ''))
-                first_day_passado, last_day_passado = get_first_and_last_day_passado(
+                self.logger.info(f"main_year: {main_year} stored in variables")
+                
+                first_day_passado, last_day_passado, case_type = get_first_and_last_day_passado_arguments(
                     start_date_str=start_date, 
                     end_date_str=end_date, 
-                    main_year=main_year,
-                    wfm_proc_colab=self.external_call_data.get('wfm_proc_colab', None)
+                    main_year=main_year, 
+                    wfm_proc_colab=wfm_proc_colab, 
                 )
-                self.logger.info(f"main_year: {main_year} stored in variables")
                 self.logger.info(f"first_day_passado: {first_day_passado}, last_day_passado: {last_day_passado}")
+
+                # Calculate domingos and festivos amount
+                num_domingos = count_sundays_in_period(
+                    first_day_year_str=first_year_date,
+                    last_day_year_str=last_day_passado
+                )
+
+                if not isinstance(num_domingos, int) or num_domingos < 0:
+                    self.logger.error(f"num_domingos is invalid: {num_domingos}")
+                    return False, "", ""
+
+                num_feriados = count_holidays_in_period(
+                    start_date_str=first_year_date,
+                    end_date_str=last_day_passado,
+                    df_festivos=df_festivos,
+                    use_case=0 # TODO: this should be defined in params
+                )
+
+                if not isinstance(num_feriados, int) or num_feriados < 0:
+                    self.logger.error(f"num_feriados is invalid: {num_feriados}")
+                    return False, "", ""
+
             except Exception as e:
                 self.logger.error(f"Error loading important info into memory(unit_id, secao_id, posto_id_list, employees_id_list, main_year): {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -259,6 +303,14 @@ class SalsaDataModel(BaseDescansosDataModel):
             if not validate_posto_id_list(posto_id_list):
                 self.logger.error(f"posto_id_list is empty: {posto_id_list}")
                 return False, "errSubproc", "posto_id_list is empty"
+
+            if not validate_date_passado(first_day_passado):
+                self.logger.error(f"first_day_passado is empty: {first_day_passado}")
+                return False, "errSubproc", "first_day_passado is empty"
+
+            if not validate_date_passado(last_day_passado):
+                self.logger.error(f"last_day_passado is empty: {last_day_passado}")
+                return False, "errSubproc", "last_day_passado is empty"
 
             # Load params_lq
             try:
@@ -310,7 +362,10 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_closed_days: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            df_closed_days = treat_df_closed_days(df_closed_days, first_year_date, last_year_date)
+            success, df_closed_days, error_msg = treat_df_closed_days(df_closed_days, first_year_date, last_year_date)
+            if not success:
+                self.logger.error(f"Closed days treatment failed: {error_msg}")
+                return False, "errSubproc", error_msg
 
             if df_closed_days.empty:
                 self.logger.error(f"Error treating df_closed_days: df_closed_days is empty")
@@ -353,8 +408,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Copy the dataframes into the apropriate dict
             try:
                 self.logger.info(f"Copying dataframes into the apropriate dict")
-                # Copy the dataframes into the apropriate dict
-                # AUX DATA
+                
+                # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
@@ -367,7 +422,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['main_year'] = main_year
                 self.auxiliary_data['first_year_date'] = first_year_date
                 self.auxiliary_data['last_year_date'] = last_year_date
+                self.auxiliary_data['first_date_passado'] = first_day_passado
+                self.auxiliary_data['last_date_passado'] = last_day_passado
                 self.auxiliary_data['employees_id_list'] = employees_id_list
+                self.auxiliary_data['case_type'] = case_type
+                self.auxiliary_data['num_domingos'] = num_domingos
+                self.auxiliary_data['num_feriados'] = num_feriados
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
@@ -406,7 +466,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.error(f"Error validating func_inicializa from data manager: {str(e)}")
             return False
 
-    def treat_params(self) -> dict[str, Any]:
+    def treat_params(self) -> Tuple[bool, str, str]:
         """
         Treat parameters and store them in memory
         """
@@ -438,10 +498,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
             self.logger.info(f"Treating parameters completed successfully")
-            return {'success': True, 'algorithm_name': algorithm_name}
+            # Store algorithm_name in auxiliary_data for later use
+            self.auxiliary_data['algorithm_name'] = algorithm_name
+            return True, "", ""
         except Exception as e:
-            self.logger.error(f"Error treating parameters: {e}", exc_info=True)	
-            return {'success': False, 'algorithm_name': ''}
+            self.logger.error(f"Error treating parameters: {e}", exc_info=True)
+            return False, "errSubproc", str(e)
 
     def validate_params(self):
         """
@@ -450,7 +512,7 @@ class SalsaDataModel(BaseDescansosDataModel):
         self.logger.info(f"Validating parameters in validate_params method. Not implemented yet.")
         return True
 
-    def load_colaborador_info(self, data_manager: BaseDataManager, posto_id: int = 0) -> bool:
+    def load_colaborador_info(self, data_manager: BaseDataManager, posto_id: int = 0) -> Tuple[bool, str, str]:
         """
         transform database data into data raw
         """
@@ -461,40 +523,43 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 # Store values in variables
                 employees_id_list = self.auxiliary_data['employees_id_list']
+                case_type = self.auxiliary_data['case_type']
+                # External call data values
                 start_date = self.external_call_data['start_date']
+                wfm_proc_colab = self.external_call_data['wfm_proc_colab']
                 self.logger.info(f"Loaded information from df_valid_emp into employees_id_list: {employees_id_list}")
             except Exception as e:
                 self.logger.error(f"Error loading colaborador info: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Create colabs_str to be used in df_colaborador query
-            try:
-                self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
-                if len(employees_id_list) == 1:
-                    self.logger.info(f"employees_id_list has only one value: {employees_id_list[0]}")
-                    colabs_str = str(employees_id_list[0])
-                elif len(employees_id_list) > 1:
-                    # Fix: Create a proper comma-separated list of numbers without any quotes
-                    self.logger.info(f"employees_id_list has more than one value: {employees_id_list}")
-                    colabs_str = ','.join(str(x) for x in employees_id_list)
-                
-                self.logger.info(f"colabs_str: {colabs_str}, type: {type(colabs_str)}")
-            except Exception as e:
-                self.logger.error(f"Error creating colabs_str to be used in query: {e}", exc_info=True)
-                return False
+            colabs_str = create_employee_query_string(employee_id_list=employees_id_list)
             
             # Load df_colaborador info from data manager
             try:
                 # colaborador info
                 self.logger.info(f"Loading df_colaborador info from data manager")
                 query_path = CONFIG.get('available_entities_raw', {}).get('df_colaborador')
-                df_colaborador = data_manager.load_data('df_colaborador', query_file=query_path, colabs_id=colabs_str)
-                df_colaborador = df_colaborador.rename(columns={'ec.codigo': 'fk_colaborador', 'codigo': 'fk_colaborador'})
+                df_colaborador = data_manager.load_data(
+                    entity='df_colaborador', 
+                    query_file=query_path, 
+                    colabs_id=colabs_str
+                )
                 self.logger.info(f"df_colaborador shape (rows {df_colaborador.shape[0]}, columns {df_colaborador.shape[1]}): {df_colaborador.columns.tolist()}")
                 
             except Exception as e:
                 self.logger.error(f"Error loading df_colaborador info from data source: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
+
+            success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador)
+            if not success:
+                self.logger.error(f"Colaborador treatment failed: {error_msg}")
+                return False, "errSubproc", error_msg
+
+            # Note: validate_df_colaborador function doesn't exist, so commenting out for now
+            # if not validate_df_colaborador(df_colaborador):
+            #     self.logger.error(f"")
+            #     return False
 
             # Get matricula from df_colaborador
             try:
@@ -504,7 +569,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Loaded information from df_colaborador into matriculas_list: {matriculas_list}")
             except Exception as e:
                 self.logger.error(f"Error getting matriculas_list from df_colaborador: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Create employees_id_90_list from df_colaborador
             try:
@@ -513,7 +578,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Loaded information from df_colaborador into employees_id_90_list: {employees_id_90_list}")
             except Exception as e:
                 self.logger.error(f"Error creating employees_id_90_list from df_colaborador: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             try:
                 self.logger.info(f"Creating past_employee_id_list from df_colaborador")
@@ -522,7 +587,14 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Loaded information from df_colaborador into past_employee_id_list: {past_employee_id_list}")
             except Exception as e:
                 self.logger.error(f"Error creating past_employee_id_list from df_colaborador: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
+
+            past_employee_id_list = get_past_employee_id_list(past_employee_id_list, case_type, wfm_proc_colab)
+
+            # Quick validations
+            if not validate_past_employee_id_list(past_employee_id_list):
+                self.logger.error(f"past_employee_id_list is empty: {past_employee_id_list}")
+                return False, "errSubproc", "past_employee_id_list is empty"
 
             # Saving values into memory
             try:
@@ -537,19 +609,19 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['employees_id_90_list'] = employees_id_90_list
                 self.auxiliary_data['past_employee_id_list'] = past_employee_id_list
                 self.logger.info(f"load_colaborador_info completed successfully.")
-                return True
+                return True, "", ""
             except KeyError as e:
                 self.logger.error(f"KeyError: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             except ValueError as e:
                 self.logger.error(f"ValueError: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             except Exception as e:
                 self.logger.error(f"Error loading colaborador info using data manager. Error: {e}")
-                return False
+                return False, "errSubproc", str(e)
         except Exception as e:
             self.logger.error(f"Error loading colaborador info method: {e}", exc_info=True)
-            return False
+            return False, "errSubproc", str(e)
         
     def validate_colaborador_info(self) -> bool:
         """Function to validate the colaborador info"""
@@ -580,221 +652,8 @@ class SalsaDataModel(BaseDescansosDataModel):
         except Exception as e:
             self.logger.error(f"Error in validate_colaborador_info method: {e}", exc_info=True)
             return False
-
-    def load_estimativas_info(self, data_manager: BaseDataManager, posto_id: int = 0, start_date: str = '', end_date: str = ''):
-        """
-        Load necessities from data manager and treat them data
-        """
-        try:
-            self.logger.info(f"Starting load_estimativas_info method.")
-            # Get current_posto_id from auxiliary_data
-            try:
-                posto_id = self.auxiliary_data['current_posto_id']
-                self.logger.info(f"Loaded information from auxiliary_data into posto_id: {posto_id}")
-            except Exception as e:
-                self.logger.error(f"Error getting posto_id from auxiliary_data: {e}", exc_info=True)
-                return False
-
-            # Validate input parameters
-            if not validate_posto_id(posto_id):
-                self.logger.error(f"posto_id provided is invalid: {posto_id}")
-                return False
-            if start_date == '' or start_date == None or end_date == '' or end_date == None:
-                self.logger.error(f"start_date or end_date provided are empty. start: {start_date}, end_date: {end_date}")
-                return False
-
-            try:
-                # TODO: Review this
-                self.logger.info("Initializing df_estimativas as an empty dataframe")
-                # df_estimativas borns as an empty dataframe
-                df_estimativas = pd.DataFrame()
-
-                columns_select = ['nome', 'emp', 'fk_tipo_posto', 'loja', 'secao', 'h_tm_in', 'h_tm_out', 'h_tt_in', 'h_tt_out', 'h_seg_in', 'h_seg_out', 'h_ter_in', 'h_ter_out', 'h_qua_in', 'h_qua_out', 'h_qui_in', 'h_qui_out', 'h_sex_in', 'h_sex_out', 'h_sab_in', 'h_sab_out', 'h_dom_in', 'h_dom_out', 'h_fer_in', 'h_fer_out'] # TODO: define what columns to select
-                self.logger.info(f"Columns to select: {columns_select}")
-            except Exception as e:
-                self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
-                return False
-
-            try:
-                self.logger.info(f"Loading df_turnos from raw_data df_colaborador with columns selected: {columns_select}")
-                # Get sql file path, if the cvs is being used, it gets the the path defined on dummy_data_filepaths
-                # turnos information: doesnt need a query since is information resent on core_alg_params
-                
-                df_turnos = self.raw_data['df_colaborador'].copy()
-                df_turnos = df_turnos[columns_select]
-                self.logger.info(f"df_turnos shape (rows {df_turnos.shape[0]}, columns {df_turnos.shape[1]}): {df_turnos.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error processing df_turnos from colaborador data: {e}", exc_info=True)
-                return False
-
-            try:
-                self.logger.info("Loading df_estrutura_wfm from data manager")
-                # Estrutura wfm information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_estrutura_wfm', '')
-                if query_path == '':
-                    self.logger.warning("df_estrutura_wfm query path not found in config")
-                df_estrutura_wfm = data_manager.load_data('df_estrutura_wfm', query_file=query_path)
-                self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_estrutura_wfm: {e}", exc_info=True)
-                return False
-
-            try:
-                self.logger.info("Loading df_feriados from data manager")
-                # feriados information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_feriados', '')
-                if query_path == '':
-                    self.logger.warning("df_feriados query path not found in config")
-                df_feriados = data_manager.load_data('df_feriados', query_file=query_path)
-                self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
-                return False
-
-            try:
-                self.logger.info("Loading df_faixa_horario from data manager")
-                # faixa horario information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_faixa_horario', '')
-                if query_path == '':
-                    self.logger.warning("df_faixa_horario query path not found in config")
-                df_faixa_horario = data_manager.load_data('df_faixa_horario', query_file=query_path)
-                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_faixa_horario: {e}", exc_info=True)
-                return False
-
-            try:
-                self.logger.info("Loading df_orcamento from data manager")
-                # orcamento information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_orcamento', '')
-                if query_path == '':
-                    self.logger.warning("df_orcamento query path not found in config")
-                start_date_quoted = "'" + start_date + "'"
-                end_date_quoted = "'" + end_date + "'"
-                df_orcamento = data_manager.load_data('df_orcamento', query_file=query_path, posto_id=posto_id, start_date=start_date_quoted, end_date=end_date_quoted)
-                self.logger.info(f"df_orcamento shape (rows {df_orcamento.shape[0]}, columns {df_orcamento.shape[1]}): {df_orcamento.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_orcamento: {e}", exc_info=True)
-                return False
-
-            try:
-                self.logger.info("Loading df_granularidade from data manager")
-                # granularidade information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_granularidade', '')
-                if query_path == '':
-                    self.logger.warning("df_granularidade query path not found in config")
-                start_date_quoted = "'" + start_date + "'"
-                end_date_quoted = "'" + end_date + "'"
-                df_granularidade = data_manager.load_data('df_granularidade', query_file=query_path, start_date=start_date_quoted, end_date=end_date_quoted, posto_id=posto_id)
-                self.logger.info(f"df_granularidade shape (rows {df_granularidade.shape[0]}, columns {df_granularidade.shape[1]}): {df_granularidade.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_granularidade: {e}", exc_info=True)
-                return False
-
-            try:
-                self.logger.info("Saving dataframes to auxiliary_data and raw_data")
-                # TODO: save the dataframes if they are needed elsewhere, if not let them die here
-                self.raw_data['df_estimativas'] = df_estimativas.copy()
-                self.auxiliary_data['df_turnos'] = df_turnos.copy()
-                self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
-                self.auxiliary_data['df_feriados'] = df_feriados.copy()
-                self.auxiliary_data['df_faixa_horario'] = df_faixa_horario.copy()
-                self.auxiliary_data['df_orcamento'] = df_orcamento.copy()
-                self.auxiliary_data['df_granularidade'] = df_granularidade.copy()
-                
-                if not self.auxiliary_data:
-                    self.logger.warning("No data was loaded into auxiliary_data")
-                    return False
-                    
-                self.logger.info(f"load_estimativas_info completed successfully.")
-                return True
-            except KeyError as e:
-                self.logger.error(f"KeyError when saving dataframes: {e}", exc_info=True)
-                return False
-            except ValueError as e:
-                self.logger.error(f"ValueError when saving dataframes: {e}", exc_info=True)
-                return False
-            except Exception as e:
-                self.logger.error(f"Error saving dataframes to auxiliary_data and raw_data: {e}", exc_info=True)
-                return False
-        
-        except Exception as e:
-            self.logger.error(f"Error in load_estimativas_info method: {e}", exc_info=True)
-            return False
-
-    def validate_estimativas_info(self) -> tuple[bool, list[str]]:
-        """Function to validate the estimativas info"""
-        try:
-            self.logger.info("Starting validate_estimativas_info processing")
-            validation_success = True
-            invalid_entities = []
-            # Get estimativas info data
-            # Not needed since df_estimativas is empty
-            #try:
-            #    df_estimativas = self.raw_data['df_estimativas'].copy()
-            #except KeyError as e:
-            #    self.logger.error(f"Missing required DataFrame in validate_estimativas_info: {e}", exc_info=True)
-            #    validation_success = False
-            #    invalid_entities.append('df_estimativas')
-            #except Exception as e:
-            #    self.logger.error(f"Error loading data in validate_estimativas_info: {e}", exc_info=True)
-            #    validation_success = False
-            #    invalid_entities.append('df_estimativas')
-
-            ## Validate estimativas info
-            #if df_estimativas.empty or len(df_estimativas) < 1:
-            #    self.logger.error(f"df_estimativas is empty. df_estimativas shape: {df_estimativas.shape}")
-            #    validation_success = False
-            #    invalid_entities.append('df_estimativas')
-
-            # Validate granularidade info
-            try:
-                df_granularidade = self.auxiliary_data['df_granularidade'].copy()
-            except KeyError as e:
-                self.logger.error(f"Missing required DataFrame in validate_estimativas_info: {e}", exc_info=True)
-                validation_success = False
-                invalid_entities.append('df_granularidade')
-            except Exception as e:
-                self.logger.error(f"Error loading data in validate_estimativas_info: {e}", exc_info=True)
-                validation_success = False
-                invalid_entities.append('df_granularidade')
-
-            # Validate granularidade info
-            if df_granularidade.empty or len(df_granularidade) < 1:
-                self.logger.error(f"df_granularidade is empty. df_granularidade shape: {df_granularidade.shape}")
-                validation_success = False
-                invalid_entities.append('df_granularidade')
-
-            # Validate df_faixa_horario info
-            try:
-                df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
-            except KeyError as e:
-                self.logger.error(f"Missing required df_faixa_horario DataFrame in auxiliary_data: {e}", exc_info=True)
-                validation_success = False
-                invalid_entities.append('df_faixa_horario')
-            except Exception as e:
-                self.logger.error(f"Error loading data in validate_estimativas_info: {e}", exc_info=True)
-                validation_success = False
-                invalid_entities.append('df_faixa_horario')
-
-            if df_faixa_horario.empty or len(df_faixa_horario) < 1:
-                self.logger.error(f"df_faixa_horario is empty. df_faixa_horario shape: {df_faixa_horario.shape}")
-                validation_success = False
-                invalid_entities.append('df_faixa_horario')
-
-            # Overall validation result return
-            if not validation_success:
-                self.logger.error(f"Invalid entities: {invalid_entities}")
-                return False, invalid_entities
-            # If validation is successful, return True and an empty list of invalid entities
-            return True, []
-
-        except Exception as e:
-            self.logger.error(f"Error in validate_estimativas_info method: {e}", exc_info=True)
-            return False, []
-
     
-    def load_calendario_info(self, data_manager: BaseDataManager, process_id: int = 0, posto_id: int = 0, start_date: str = '', end_date: str = '', past_employee_id_list: List[int] = []):
+    def load_calendario_info(self, data_manager: BaseDataManager, process_id: int = 0, posto_id: int = 0, start_date: str = '', end_date: str = '', past_employee_id_list: List[int] = []) -> Tuple[bool, str, str]:
         """
         Load calendario from data manager and treat the data
         """
@@ -805,53 +664,34 @@ class SalsaDataModel(BaseDescansosDataModel):
             # TODO: posto_id should come from auxiliary_data
             if posto_id == 0 or posto_id == None:
                 self.logger.error("posto_id is 0, returning False. Check load_calendario_info call method.")
-                return False
+                return False, "errSubproc", "posto_id is 0 or None"
         
             # Get needed data
             try:
                 self.logger.info("Loading tipo_contrato info from df_colaborador")
+                employees_id_list = self.auxiliary_data['employees_id_list']
                 matriculas_list = self.auxiliary_data['matriculas_list']
                 employees_id_90_list = self.auxiliary_data['employees_id_90_list']
-                past_employee_id_list = self.auxiliary_data['past_employee_id_list']
                 employee_id_matriculas_map = self.auxiliary_data['employee_id_matriculas_map']
+                first_date_passado = self.auxiliary_data['first_date_passado']
+                last_date_passado = self.auxiliary_data['last_date_passado']
+                past_employee_id_list = self.auxiliary_data['past_employee_id_list']
+                case_type = self.auxiliary_data['case_type']
 
-                # TODO: Consider removing main_year
-                main_year = self.auxiliary_data['main_year']
-                first_date_passado = self.auxiliary_data['first_year_date']
-                last_date_passado = pd.to_datetime(self.auxiliary_data['last_year_date']) + pd.Timedelta(days=7)
-                last_date_passado = last_date_passado.strftime('%Y-%m-%d')
-                self.logger.info(f"Extracted {len(matriculas_list)} collaborators from emp column")
+                # External call data values
+                wfm_proc_colab = self.external_call_data['wfm_proc_colab']
+                start_date_str = self.external_call_data['start_date']
+                end_date_str = self.external_call_data['end_date']
+
                 #df_tipo_contrato = df_colaborador[['emp', 'tipo_contrato']] # TODO: ensure it is needed
             except Exception as e:
                 self.logger.error(f"Error processing colaborador info: {e}", exc_info=True)
-                return False
-
-            # Treatment data functions calls
-            try:
-                self.logger.info("Treating data functions calls")
-                df_calendario_passado = treat_df_calendario_passado(df_calendario_passado)
-            except Exception as e:
-                self.logger.error(f"Error treating data functions calls: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             # Treat past_employee_id_list str
-            try:
-                self.logger.info("Treating past_employee_id_list str")
-                self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
-                #if len(past_employee_id_list) == 0:
-                #    self.logger.error(f"Error in load_colaborador_info method: past_employee_id_list provided is empty (invalid): {past_employee_id_list}")
-                #    return False
-                if len(past_employee_id_list) == 1:
-                    self.logger.info(f"past_employee_id_list has only one value: {past_employee_id_list[0]}")
-                    colabs_passado_str = str(past_employee_id_list[0])
-                elif len(past_employee_id_list) > 1:
-                    # Fix: Create a proper comma-separated list of numbers without any quotes
-                    self.logger.info(f"past_employee_id_list has more than one value: {past_employee_id_list}")
-                    colabs_passado_str = ','.join(str(x) for x in past_employee_id_list)
-                self.logger.info(f"colabs_passado_str: {colabs_passado_str}")
-            except Exception as e:
-                self.logger.error(f"Error treating past_employee_id_list str: {e}", exc_info=True)
-                colabs_passado_str = ''
+
+            self.logger.info("Treating past_employee_id_list str. Creating colabs_str to be used in df_colaborador query.")
+            colabs_passado_str = create_employee_query_string(past_employee_id_list)
 
             try:
                 # Only query if we have employees and the date range makes sense
@@ -879,6 +719,24 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_calendario_passado: {e}", exc_info=True)
                 df_calendario_passado = pd.DataFrame()
 
+            # Treatment df_calendario_passado
+            try:
+                self.logger.info("Treating df_calendario_passado")
+                success, df_calendario_passado, error_msg = treat_df_calendario_passado(
+                    df_calendario_passado=df_calendario_passado,
+                    employees_id_list=employees_id_list,
+                    past_employee_id_list=past_employee_id_list,
+                    case_type=case_type,
+                    wfm_proc_colab=wfm_proc_colab,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                )
+                if not success:
+                    self.logger.error(f"Calendario passado treatment failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+            except Exception as e:
+                self.logger.error(f"Error treating df_calendario_passado: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
             
             try:
                 self.logger.info("Loading df_ausencias_ferias from data manager")
@@ -899,6 +757,20 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading ausencias_ferias: {e}", exc_info=True)
                 df_ausencias_ferias = pd.DataFrame()
 
+            try:
+                self.logger.info("Treating df_ausencias_ferias")
+                success, df_ausencias_ferias, error_msg = treat_df_ausencias_ferias(df_ausencias_ferias)
+                if not success:
+                    self.logger.error(f"Ausencias ferias treatment failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+            except Exception as e:
+                self.logger.error(f"Error treating ausencias_ferias: {e}", exc_info=True)
+                return False, "errSubproc", "Error treating ausencias_ferias"
+
+            if not df_ausencias_ferias.empty and not validate_df_ausencias_ferias(df_ausencias_ferias):
+                self.logger.error(f"df_ausencias_ferias not valid: {df_ausencias_ferias}")
+                return False, "errSubproc", "df_ausencias_ferias validation failed"
+
             # DF_CORE_PRO_EMP_HORARIO_DET - pre folgas do ciclo
             try:
                 self.logger.info("Loading df_core_pro_emp_horario_det from data manager")
@@ -915,6 +787,10 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.error(f"Error loading df_core_pro_emp_horario_det: {e}", exc_info=True)
                 df_core_pro_emp_horario_det = pd.DataFrame()
+
+            if not validate_df_core_pro_emp_horario_det(df_core_pro_emp_horario_det):
+                self.logger.error("df_core_pro_emp_horario_det validation failed")
+                return False, "errSubproc", "df_core_pro_emp_horario_det validation failed"
 
             try:
                 self.logger.info("Loading df_ciclos_90 from data manager")
@@ -977,20 +853,20 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False
                     
                 self.logger.info("load_calendario_info completed successfully")
-                return True
+                return True, "", ""
             except KeyError as e:
                 self.logger.error(f"KeyError when saving calendario data: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             except ValueError as e:
                 self.logger.error(f"ValueError when saving calendario data: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             except Exception as e:
                 self.logger.error(f"Error saving calendario results to memory: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             
         except Exception as e:
             self.logger.error(f"Error in load_calendario_info method: {e}", exc_info=True)
-            return False
+            return False, "errSubproc", str(e)
 
     def validate_calendario_info(self) -> tuple[bool, list[str]]:
         """
@@ -1028,7 +904,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.error(f"Error in validate_calendario_info method: {e}", exc_info=True)
             return False, []
 
-    def load_calendario_transformations(self) -> bool:
+    def load_calendario_transformations(self) -> Tuple[bool, str, str]:
         try:
             self.logger.info("Starting load_calendario_transformations processing")
             
@@ -1048,41 +924,188 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_core_pro_emp_horario_det = self.auxiliary_data['df_core_pro_emp_horario_det']
                 df_ciclos_90 = self.auxiliary_data['df_ciclos_90']
                 df_days_off = self.auxiliary_data['df_days_off']
+                
             except KeyError as e:
                 self.logger.error(f"Missing required DataFrame in load_calendario_transformations: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
             except Exception as e:
                 self.logger.error(f"Error loading DataFrame in load_calendario_transformations: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
             try:
-                # TODO: add create_df_calendario logic
-                df_calendario = create_df_calendario(
+                # Create df_calendario
+                success, df_calendario, error_msg = create_df_calendario(
                     start_date=start_date, 
                     end_date=end_date,
                     employee_id_matriculas_map=employee_id_matriculas_map
                 )
+                if not success:
+                    self.logger.error(f"Calendar creation failed: {error_msg}")
+                    return False, "errSubproc", error_msg
 
-                # TODO: add df_ausencias_ferias to df_calendario
-                df_calendario = add_ausencias_ferias(df_calendario, df_ausencias_ferias)
+                # Add df_ausencias_ferias to df_calendario
+                success, df_calendario, error_msg = add_ausencias_ferias(df_calendario, df_ausencias_ferias)
+                if not success:
+                    self.logger.error(f"Adding ausencias ferias failed: {error_msg}")
+                    return False, "errSubproc", error_msg
 
-                # TODO: add df_ciclos_90 to df_calendario
-                df_calendario = add_ciclos_90(df_calendario, df_ciclos_90)
+                # Add df_ciclos_90 to df_calendario
+                success, df_calendario, error_msg = add_ciclos_90(df_calendario, df_ciclos_90)
+                if not success:
+                    self.logger.error(f"Adding ciclos 90 failed: {error_msg}")
+                    return False, "errSubproc", error_msg
                 
-                # TODO: add df_days_off to df_calendario
-                df_calendario = add_days_off(df_calendario, df_days_off)
+                # Add df_days_off to df_calendario
+                success, df_calendario, error_msg = add_days_off(df_calendario, df_days_off)
+                if not success:
+                    self.logger.error(f"Adding days off failed: {error_msg}")
+                    return False, "errSubproc", error_msg
                 
-                # TODO: add df_calendario_passado to df_calendario
-                df_calendario = add_calendario_passado(df_calendario, df_calendario_passado)
+                # Add df_calendario_passado to df_calendario
+                success, df_calendario, error_msg = add_calendario_passado(df_calendario, df_calendario_passado)
+                if not success:
+                    self.logger.error(f"Adding calendario passado failed: {error_msg}")
+                    return False, "errSubproc", error_msg
 
-                # TODO: add df_core_pro_emp_horario_det to df_calendario
-                df_calendario = add_folgas_ciclos(df_calendario, df_core_pro_emp_horario_det)
+                # Add df_core_pro_emp_horario_det to df_calendario
+                success, df_calendario, error_msg = add_folgas_ciclos(df_calendario, df_core_pro_emp_horario_det)
+                if not success:
+                    self.logger.error(f"Adding folgas ciclos failed: {error_msg}")
+                    return False, "errSubproc", error_msg
         
-                pass
+                # TODO: Save df_calendario to appropriate location and return success
+                self.logger.info("Calendar transformations completed successfully")
+
+                # Save df_calendario to raw_data
+                try:
+                    self.raw_data['df_calendario'] = df_calendario.copy()
+                except KeyError as e:
+                    self.logger.error(f"KeyError when saving df_calendario to raw_data: {e}", exc_info=True)
+                    return False, "errSubproc", str(e)
+                except ValueError as e:
+                    self.logger.error(f"ValueError when saving df_calendario to raw_data: {e}", exc_info=True)
+                    return False, "errSubproc", str(e)
+                except Exception as e:
+                    self.logger.error(f"Error saving df_calendario to raw_data: {e}", exc_info=True)
+                    return False, "errSubproc", str(e)
+
+
+                return True, "", ""
+                
             except Exception as e:
                 self.logger.error(f"Error in load_calendario_transformations method: {e}", exc_info=True)
-                return False
+                return False, "errSubproc", str(e)
 
         except Exception as e:
             self.logger.error(f"Error in load_calendario_transformations method: {e}", exc_info=True)
-            return False
+            return False, "errSubproc", str(e)
+
+
+    def load_colaborador_transformations(self) -> Tuple[bool, str, str]:
+        """
+        """
+        # Main try/except block, for general purposes
+        try:
+            # Get important information from memory
+            try:
+                # Variables
+                employee_id_list = self.auxiliary_data['employee_id_list']
+                unit_id = self.auxiliary_data['unit_id']
+                convenio_bd  = self.auxiliary_data['GD_convenioBD']
+                num_domingos = self.auxiliary_data['num_domingos']
+                num_feriados = self.auxiliary_data['num_feriados']
+                # Dataframes
+                df_params_lq = self.auxiliary_data['df_params_lq']
+                df_valid_emp = self.auxiliary_data['df_valid_emp']
+                df_festivos = self.auxiliary_data['df_festivos']
+                df_colaborador = self.raw_data['df_colaborador']
+                # External call data
+                start_date_str = self.external_call_data['start_date']
+                end_date_str = self.external_call_data['end_date']
+            except KeyError as e:
+                self.logger.error(f"Missing required parameter in colaborador_transformations: {e}", exc_info=True)
+                return False, "", ""
+            except Exception as e:
+                self.logger.error(f"", exc_info=True)
+                return False, "", ""
+
+            # Define which columns are going to be added:
+            try:
+                add_lq_column = False
+                add_l_dom_salsa_column = True
+
+                # Add lq column
+                success, df_colaborador, error_msg = add_lqs_to_df_colaborador(
+                    df_colaborador=df_colaborador, 
+                    df_params_lq=df_params_lq, 
+                    use_case=0
+                )
+                if not success:
+                    self.logger.error(f"Adding lq column failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # TODO: Add params contrato column information
+                success, df_colaborador, error_msg = set_tipo_contrato_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Adding tipo_contrato column failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # TODO: Add coluna prioridade folgas
+                success, df_colaborador, error_msg = add_prioridade_folgas_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    df_valid_emp=df_valid_emp,
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Adding prioridade_folgas column failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # TODO: Add totals adjustments for tipo_contrato and convenio (one function for each column)
+                success, df_colaborador, error_msg = contract_adjustments_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    convenio_bd=convenio_bd,
+                    num_fer_dom=num_domingos,
+                    fer_fechados=num_feriados,
+                    num_sundays=num_domingos,
+                    matriz_festivos=df_festivos,
+                    count_open_holidays_func=count_open_holidays
+                )
+                if not success:
+                    self.logger.error(f"Adding contract adjustments failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # TODO: Add totals adjustments for admission date
+                success, df_colaborador, error_msg = admission_date_adjustments_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    start_date=start_date_str,
+                    end_date=end_date_str
+                )
+                if not success:
+                    self.logger.error(f"Adding admission date adjustments failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                try:
+                    self.raw_data['df_colaborador'] = df_colaborador.copy()
+                except KeyError as e:
+                    self.logger.error(f"KeyError when saving df_calendario to raw_data: {e}", exc_info=True)
+                    return False, "errSubproc", str(e)
+                except ValueError as e:
+                    self.logger.error(f"ValueError when saving df_calendario to raw_data: {e}", exc_info=True)
+                    return False, "errSubproc", str(e)
+                except Exception as e:
+                    self.logger.error(f"Error saving df_calendario to raw_data: {e}", exc_info=True)
+                    return False, "errSubproc", str(e)
+
+                return True, "", ""
+            except Exception as e:
+                self.logger.error(f"Error in load_colaborador_transformations method: {e}", exc_info=True)
+                return False, "", ""
+            pass
+        except Exception as e:
+            self.logger.error(f"Error in load_colaborador_transformations method: {e}", exc_info=True)
+            return False, "", ""

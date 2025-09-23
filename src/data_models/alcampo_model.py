@@ -3,9 +3,9 @@
 # Dependencies
 
 # Local stuff
-from src.data_models.base import BaseDataModel
+from src.data_models.base import BaseDescansosDataModel
 
-class AlcampoDataModel(BaseDataModel):
+class AlcampoDataModel(BaseDescansosDataModel):
     """"""
 
     def __init__(self):

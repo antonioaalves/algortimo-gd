@@ -210,9 +210,10 @@ class AlgoritmoGDService(BaseService):
                     "Starting data loading raw"
                 )
             
-            data_model_name = 'default_data_model'
+            data_model_name =  'salsa_data_model' #'default_data_model'
+            #data_model_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
 
-            # Load each entity
+            # Create data model instance
             self.data = DataModelFactory.create_data_model(
                 decision=data_model_name,
                 external_data=self.external_data if self.external_data else {}

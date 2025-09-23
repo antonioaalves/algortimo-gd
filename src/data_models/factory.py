@@ -9,7 +9,7 @@ from base_data_project.storage.containers import BaseDataContainer
 
 # Local stuff
 from src.config import PROJECT_NAME
-from src.data_models.base import BaseDataModel
+from src.data_models.base import BaseDescansosDataModel
 from src.data_models.models import DescansosDataModel
 from src.data_models.salsa_model import SalsaDataModel
 from src.data_models.alcampo_model import AlcampoDataModel
@@ -23,7 +23,7 @@ class DataModelFactory:
     """
 
     @staticmethod
-    def create_data_model(decision: str, external_data: Dict[str, Any]) -> BaseDataModel:
+    def create_data_model(decision: str, external_data: Dict[str, Any]) -> BaseDescansosDataModel:
         """Choose an algorithm based on user decisions"""
 
         available_data_models = ['default_data_model', 'salsa_data_model', 'alcampo_data_model']
@@ -42,10 +42,18 @@ class DataModelFactory:
 
         if decision.lower() == 'salsa_data_model':
             logger.info(f"Creating {decision.lower()}")
-            return SalsaDataModel()
+            return SalsaDataModel(
+                    data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
+                    project_name=PROJECT_NAME,
+                    external_data=external_data if external_data else {}
+            )
         elif decision.lower() == 'alcampo_data_model':
             logger.info(f"Creating {decision.lower()}")
-            return AlcampoDataModel()
+            return AlcampoDataModel(
+                    data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
+                    project_name=PROJECT_NAME,
+                    external_data=external_data if external_data else {}
+                )
         elif decision.lower() == 'default_data_model':
             logger.info(f"Creating {decision.lower()}")
             return DescansosDataModel(

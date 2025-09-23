@@ -1,10 +1,12 @@
 """File containing the helper functions for the DescansosDataModel"""
 
 # Dependencies
+import os
 import pandas as pd
 import datetime as dt
-from typing import List, Tuple, Dict
+from typing import List, Optional, Tuple, Dict
 from base_data_project.log_config import get_logger
+from base_data_project.data_manager.managers import DBDataManager
 
 # Local stuff
 from src.config import PROJECT_NAME
@@ -354,7 +356,7 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
         logger.error(f"Error in load_pre_ger_scheds: {str(e)}")
         return pd.DataFrame(), []
 
-def get_first_and_last_day_passado(start_date_str: str, end_date_str: str, main_year: str, wfm_proc_colab: str) -> Tuple[str, str]:
+def get_first_and_last_day_passado_arguments(start_date_str: str, end_date_str: str, main_year: str, wfm_proc_colab: str) -> Tuple[str, str, int]:
     """
     Data treatment logic for past dates according to what the external_call_data params are.
     The output of this function is going to query the database for past calendars. 
@@ -370,20 +372,19 @@ def get_first_and_last_day_passado(start_date_str: str, end_date_str: str, main_
         end_date_str (str): End date in 'YYYY-MM-DD' format
         main_year (str): The main year to compare dates against (YYYY format)
         wfm_proc_colab (str): WFM process collaborator parameter, empty string or value
-        
     Returns:
-        Tuple[str, str]: A tuple containing (first_day_passado, last_day_passado) in 'YYYY-MM-DD' format.
+        Tuple[str, str, int]: A tuple containing (first_day_passado, last_day_passado, case_type) in 'YYYY-MM-DD' format.
                         Returns ('', '') if an error occurs.
                         
     Business Logic Cases:
-        CASE 1: start=01-01, end=31-12, wfm='' -> (Monday of prev week, day before start)
-        CASE 2: start>01-01, end=31-12, wfm='' -> (01-01, day before start)
-        CASE 3: start=01-01, end<31-12, wfm='' -> (Monday of prev week, day before start)
-        CASE 4: start>01-01, end<31-12, wfm='' -> (01-01, 31-12)
-        CASE 5: start=01-01, end=31-12, wfm!='' -> (Monday of prev week, Sunday of next week)
-        CASE 6: start>01-01, end=31-12, wfm!='' -> (01-01, Sunday of next week)
-        CASE 7: start=01-01, end<31-12, wfm!='' -> (Monday of prev week, Sunday of next week)
-        CASE 8: start>01-01, end<31-12, wfm!='' -> (01-01, 31-12)
+        CASE 1: start=01-01, end=31-12, colab='' -> (Monday of prev week, day before start)
+        CASE 2: start>01-01, end=31-12, colab='' -> (01-01, day before start)
+        CASE 3: start=01-01, end<31-12, colab='' -> (Monday of prev week, day before start)
+        CASE 4: start>01-01, end<31-12, colab='' -> (01-01, 31-12)
+        CASE 5: start=01-01, end=31-12, colab!='' -> (Monday of prev week, Sunday of next week)
+        CASE 6: start>01-01, end=31-12, colab!='' -> (01-01, Sunday of next week)
+        CASE 7: start=01-01, end<31-12, colab!='' -> (Monday of prev week, Sunday of next week)
+        CASE 8: start>01-01, end<31-12, colab!='' -> (01-01, 31-12)
         
     Raises:
         Logs error and returns empty strings if date parsing fails or invalid date ranges provided.
@@ -399,51 +400,58 @@ def get_first_and_last_day_passado(start_date_str: str, end_date_str: str, main_
         if start_date_dt == first_january and end_date_dt == last_december and wfm_proc_colab == '':
             first_day_passado_str = get_monday_of_previous_week(start_date_str)
             last_day_passado_str = (start_date_dt - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+            case_type = 1
 
         # CASO 2: start_date > 01-01 e end_date = 31-12 e wfm_proc_colab = ''
         elif start_date_dt > first_january and end_date_dt == last_december and wfm_proc_colab == '':
             first_day_passado_str = first_january.strftime('%Y-%m-%d')
             last_day_passado_str = (start_date_dt - dt.timedelta(days=1)).strftime('%Y-%m-%d')
+            case_type = 2
 
         # CASO 3: start_date = 01-01 e end_date < 31-12 e wfm_proc_colab = ''
         elif start_date_dt == first_january and end_date_dt < last_december and wfm_proc_colab == '':
             first_day_passado_str = get_monday_of_previous_week(start_date_str)
             last_day_passado_str = (start_date_dt - dt.timedelta(days=1)).strftime('%Y-%m-%d')
-
+            case_type = 3
+            
         # CASO 4: start_date > 01-01 e end_date < 31-12 e wfm_proc_colab = ''
         elif start_date_dt > first_january and end_date_dt < last_december and wfm_proc_colab == '':
             first_day_passado_str = first_january.strftime('%Y-%m-%d')
             last_day_passado_str = last_december.strftime('%Y-%m-%d')
+            case_type = 4
 
         # CASO 5: start_date = 01-01 e end_date = 31-12 e wfm_proc_colab != ''
         elif start_date_dt == first_january and end_date_dt == last_december and wfm_proc_colab != '':
             first_day_passado_str = get_monday_of_previous_week(start_date_str)
             last_day_passado_str = get_sunday_of_next_week(end_date_str)
+            case_type = 5
 
         # CASO 6: start_date > 01-01 e end_date = 31-12 e wfm_proc_colab != ''
         elif start_date_dt > first_january and end_date_dt == last_december and wfm_proc_colab != '':
             first_day_passado_str = first_january.strftime('%Y-%m-%d')
             last_day_passado_str = get_sunday_of_next_week(end_date_str)
+            case_type = 6
 
         # CASO 7: start_date = 01-01 e end_date < 31-12 e wfm_proc_colab != ''
         elif start_date_dt == first_january and end_date_dt < last_december and wfm_proc_colab != '':
             first_day_passado_str = get_monday_of_previous_week(start_date_str)
             last_day_passado_str = get_sunday_of_next_week(end_date_str)
+            case_type = 7
 
         # CASO 8: start_date > 01-01 e end_date < 31-12 e wfm_proc_colab != ''
         elif start_date_dt > first_january and end_date_dt < last_december and wfm_proc_colab != '':
             first_day_passado_str = first_january.strftime('%Y-%m-%d')
             last_day_passado_str = last_december.strftime('%Y-%m-%d')
-
-        # No other cases are predicted
+            case_type = 8
+        # No other cases are predicted - fall back gracefully
         else:
             logger.error(f"start_date {start_date_str} and end_date {end_date_str} are not compatible with the programed logic")
-            return '', ''
+            return '', '', 0
 
-        return first_day_passado_str, last_day_passado_str
+        return first_day_passado_str, last_day_passado_str, case_type
     except Exception as e:
         logger.error(f"Error in get_first_and_last_day_passado: {str(e)}")
-        return '', ''
+        return '', '', 0
 
 def get_monday_of_previous_week(date_str: str) -> str:
     """
@@ -527,3 +535,320 @@ def get_sunday_of_next_week(date_str: str) -> str:
     except Exception as e:
         logger.error(f"Error in get_sunday_of_next_week: {str(e)}")
         return ''
+
+def get_past_employee_id_list(past_employee_id_list: List[int], case_type: int, wfm_proc_colab: str) -> List[int]:
+    """
+    Get the past employee id list based on the case type.
+    """
+    try:
+        if case_type == 0:
+            result = []
+        elif case_type == 4:
+            result = past_employee_id_list.remove(wfm_proc_colab)
+    except Exception as e:
+        logger.error(f"Error in get_past_employee_id_list: {str(e)}")
+        return []
+    return result
+
+def create_employee_query_string(employee_id_list: List[str]) -> str:
+    """
+    Creates a string with the employee_ids for query substitution.
+    """
+    try:
+        if len(employee_id_list) == 0:
+            return ''
+        elif len(employee_id_list) == 1:
+            employee_str = str(employee_id_list[0])
+        elif len(employee_id_list) > 1:
+            employee_str = ','.join(str(x) for x in employee_id_list)
+
+        logger.info(f"Employee ids string for query created: {employee_str}")
+        return employee_str
+    except Exception as e:
+        logger.error()
+        return ''
+
+def count_holidays_in_period(start_date_str: str, end_date_str: str, df_festivos: pd.DataFrame, use_case: int) -> int:
+    """
+    Count holidays in a period.
+    """
+    try:
+        # Case 0: num_festivos is 0 for l_dom calculations
+        if use_case == 0:
+            num_festivos = 0
+        else:
+            start_date_dt = pd.to_datetime(start_date_str, format='%Y-%m-%d')
+            end_date_dt = pd.to_datetime(end_date_str, format='%Y-%m-%d')
+            df_festivos['data'] = pd.to_datetime(df_festivos['data'])        
+            # Case 1: count the number of feriados from tipo 3
+            if use_case == 1:
+                tipo_feriado = [3]
+                df_festivos = df_festivos[df_festivos['tipo'] in tipo_feriado]
+                num_festivos = len(df_festivos[(df_festivos['data'] >= start_date_dt) & (df_festivos['data'] <= end_date_dt)])
+            # Case 2: count the number of feriados from tipo 2
+            elif use_case == 2:
+                tipo_feriado = [2,3]
+                df_festivos = df_festivos[df_festivos['tipo'] in tipo_feriado]
+                num_festivos = len(df_festivos[(df_festivos['data'] >= start_date_dt) & (df_festivos['data'] <= end_date_dt)])
+            else:
+                logger.error(f"Use case provided not valid: {use_case}")
+                return -1
+
+        return num_festivos
+    except Exception as e:
+        logger.error(f"Error in count_holidays_in_period: {str(e)}", exc_info=True)
+        return -1
+
+def count_sundays_in_period(first_day_year_str: str, last_day_year_str: str, start_date_str: Optional[str], end_date_str: Optional[str]) -> int:
+    """
+    Helper function that counts the number of sundays in a given period between a start and end date.
+    For this implementation we should 
+    """
+    try:
+        start_date_dt = pd.to_datetime(first_day_year_str, format='%Y-%m-%d')
+        end_date_dt = pd.to_datetime(last_day_year_str, format='%Y-%m-%d')
+        day_seq = pd.date_range(start=start_date_dt, end=end_date_dt, freq='D')
+
+        df = pd.DataFrame({
+            'day_seq': day_seq,
+            'wd': pd.Series(day_seq).dt.dayofweek + 1  # Convert to 1-7 where 1=Monday, 7=Sunday            
+        })
+
+        num_sundays = len(df[df['wd'] == 7])
+
+        return num_sundays
+
+    except Exception as e:
+        logger.error(f"Error calculating sundays amount on count_sundays_in_period helper function:{str(e)}", exc_info=True)
+        return -1
+
+# Taken from original helpers functions but maybe no need for it
+def count_open_holidays(matriz_festivos: pd.DataFrame, tipo_contrato: int) -> List[int]:
+    """
+    Helper method to count open holidays based on contract type.
+    
+    Args:
+        matriz_festivos: DataFrame with holiday data
+        tipo_contrato: Contract type (2 or 3)
+        
+    Returns:
+        List with [l_dom_count, total_working_days]
+    """
+    try:
+        # Convert data column to datetime if not already
+        matriz_festivos['data'] = pd.to_datetime(matriz_festivos['data'])
+        
+        if tipo_contrato == 3:
+            # Count holidays Monday to Thursday (weekday 0-3)
+            weekday_holidays = matriz_festivos[
+                (matriz_festivos['data'].dt.weekday >= 0) & 
+                (matriz_festivos['data'].dt.weekday <= 3)
+            ]
+        elif tipo_contrato == 2:
+            # Count holidays Monday to Friday (weekday 0-4)
+            weekday_holidays = matriz_festivos[
+                (matriz_festivos['data'].dt.weekday >= 0) & 
+                (matriz_festivos['data'].dt.weekday <= 4)
+            ]
+        else:
+            weekday_holidays = pd.DataFrame()
+        
+        l_dom_count = len(weekday_holidays)
+        
+        # Calculate total working days based on contract type
+        # This is a simplified calculation - you may need to adjust based on business rules
+        if tipo_contrato == 3:
+            total_working_days = 4 * 52  # Approximate: 4 days per week * 52 weeks
+        elif tipo_contrato == 2:
+            total_working_days = 5 * 52  # Approximate: 5 days per week * 52 weeks
+        else:
+            total_working_days = 0
+            
+        return [l_dom_count, total_working_days]
+        
+    except Exception as e:
+        logger.error(f"Error in count_open_holidays: {str(e)}")
+        return [0, 0]
+
+def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert HORARIO values to sched_type and sched_subtype columns
+    
+    Args:
+        df (pd.DataFrame): Input dataframe with HORARIO column
+    
+    Returns:
+        pd.DataFrame: DataFrame with added sched_type and sched_subtype columns
+    """
+    
+    # Create a copy to avoid modifying the original dataframe
+    df = pd.DataFrame(df).copy()
+    
+    # Define mapping for SCHED_TYPE
+    sched_type_mapping = {
+        'M': 'T',
+        'T': 'T', 
+        'MoT': 'T',
+        'ToM': 'T',
+        'P': 'T',
+        'L': 'F',
+        'LD': 'F',
+        'LQ': 'F',
+        'C': 'F',
+        'F': 'R',
+        '-': 'N',
+        'V': 'T',
+        'A': 'T',
+        'DFS': 'T'
+    }
+    
+    # Define mapping for sched_subtype
+    sched_subtype_mapping = {
+        'M': 'M',
+        'T': 'T',
+        'MoT': 'H',
+        'ToM': 'H', 
+        'P': 'P',
+        'L': '',
+        'LD': 'D',
+        'LQ': 'Q',
+        'C': 'C',
+        'F': '',
+        '-': '',
+        'V': 'A',
+        'A': 'A',
+        'DFS': 'C'
+    }
+    
+    # Apply mappings
+    df['sched_type'] = df['horario'].map(sched_type_mapping)
+    df['sched_subtype'] = df['horario'].map(sched_subtype_mapping)
+    
+    return df
+
+def bulk_insert_with_query(data_manager: DBDataManager,
+                          data: pd.DataFrame,
+                          query_file: str,
+                          **kwargs) -> bool:
+    """
+    Execute bulk insert using a parameterized query file with connection handling.
+    """
+    logger = get_logger(PROJECT_NAME)
+   
+    # Validate inputs
+    if not hasattr(data_manager, 'session') or data_manager.session is None:
+        logger.error("No database session available")
+        return False
+   
+    if not os.path.exists(query_file):
+        logger.error(f"Query file not found: {query_file}")
+        return False
+   
+    if data.empty:
+        logger.warning("Empty DataFrame provided, no records to insert")
+        return True
+ 
+    # Simple retry loop for connection issues
+    max_retries = 2
+   
+    for attempt in range(max_retries + 1):
+        try:
+            from sqlalchemy import text
+           
+            # If this is a retry attempt, recreate the session completely
+            if attempt > 0:
+                logger.info(f"Recreating session for retry attempt {attempt + 1}")
+                try:
+                    # Close the old session
+                    data_manager.session.close()
+                   
+                    # Create a completely new session
+                    from sqlalchemy.orm import sessionmaker
+                    Session = sessionmaker(bind=data_manager.engine)
+                    data_manager.session = Session()
+                   
+                    # Test the new session
+                    data_manager.session.execute(text("SELECT 1 FROM DUAL")).fetchone()
+                    logger.info("New session created and tested successfully")
+                   
+                except Exception as recreate_error:
+                    logger.error(f"Failed to recreate session: {recreate_error}")
+                    if attempt == max_retries:
+                        return False
+                    continue
+           
+            # Read the insert query
+            with open(query_file, 'r', encoding='utf-8') as f:
+                insert_query = f.read().strip()
+           
+            if not insert_query:
+                logger.error(f"Query file is empty: {query_file}")
+                return False
+           
+            logger.info(f"Executing bulk insert of {len(data)} rows (attempt {attempt + 1})")
+           
+            # Convert DataFrame to list of dictionaries for parameter binding
+            records = data.to_dict('records')
+           
+            # Execute the insert for each record
+            for i, record in enumerate(records):
+                try:
+                    # Merge additional kwargs with record data
+                    params = {**kwargs, **record}
+                    # Remove pathOS from params if it exists (it's for connection handling only)
+                    params.pop('pathOS', None)
+                   
+                    data_manager.session.execute(text(insert_query), params)
+                   
+                    # Log progress for large datasets
+                    if (i + 1) % 1000 == 0:
+                        logger.info(f"Processed {i + 1}/{len(records)} records")
+                       
+                except Exception as record_error:
+                    logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
+                    logger.debug(f"Failed record data: {record}")
+                    raise
+           
+            # Commit all inserts
+            data_manager.session.commit()
+           
+            logger.info(f"Successfully inserted {len(records)} records")
+            return True
+           
+        except Exception as e:
+            error_str = str(e).lower()
+           
+            # Check if this is a connection-related error
+            connection_errors = [
+                'not connected', 'dpi-1010', 'connection', 'timeout', 'closed',
+                'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
+            ]
+           
+            is_connection_error = any(err_keyword in error_str for err_keyword in connection_errors)
+           
+            if is_connection_error and attempt < max_retries:
+                logger.warning(f"Connection error detected (attempt {attempt + 1}): {e}")
+               
+                # Rollback current transaction
+                try:
+                    data_manager.session.rollback()
+                except Exception as rollback_error:
+                    logger.debug(f"Rollback failed (expected): {rollback_error}")
+               
+                logger.info(f"Will retry with new session (attempt {attempt + 2})")
+                continue
+            else:
+                # Not a connection error or max retries reached
+                logger.error(f"Bulk insert failed: {e}")
+               
+                # Rollback on error
+                try:
+                    data_manager.session.rollback()
+                except:
+                    pass
+               
+                return False
+   
+    # Should not reach here
+    logger.error(f"Bulk insert failed after {max_retries + 1} attempts")
+    return False
