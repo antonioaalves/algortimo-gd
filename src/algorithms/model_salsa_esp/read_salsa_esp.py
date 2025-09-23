@@ -71,7 +71,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
         # =================================================================
-        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA_esp', 'L_RES', 'L_RES2', '5ou6']
+        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2'] #, '5ou6'
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
         required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno', 'carga_diaria']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
@@ -542,7 +542,8 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         cxx = {}
         t_lq = {}
         first_week_5_6 = {}
-        days_off_per_week = {}
+        work_days_per_week = {}
+        week_compensation_limit = {}
 
         for w in workers:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
@@ -560,7 +561,8 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 cxx[w] = 0
                 t_lq[w] = 0
                 first_week_5_6[w] = 0
-                days_off_per_week[w] = 0
+                work_days_per_week[w] = 0
+                week_compensation_limit[w] = 0
 
 
             else:
@@ -569,7 +571,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
-                total_l_dom[w] = int(worker_row.get('l_dom_salsa_esp', 0))
+                total_l_dom[w] = int(worker_row.get('l_dom_salsa', 0))
                 if (total_l_dom[w] != 0):
                     logger.error(f"Wrong number of sundays off for worker {w}, should be 0, and received {total_l_dom[w]}")
                     total_l_dom[w] = 0
@@ -582,14 +584,17 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 l_q[w] = int(worker_row.get('l_q', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
-                first_week_5_6[w] = int(worker_row.get('5ou6', 0))
-                if first_week_5_6[w] != 0:
-                    days_off_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa_esp)
-                else:
-                    days_off_per_week[w] = 0
-                    
-                 
+                #first_week_5_6[w] = int(worker_row.get('5ou6', 0))
+                first_week_5_6[w] = 5 #para testes assumir sempre 5
 
+                if contract_type[w] == 8:
+                    work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa_esp) #passar aqui dados do ano passado do trabalhador
+                    logger.info(f"{w} work_Days {work_days_per_week[w]} len {len(work_days_per_week[w])} data admissao {data_admissao[w]}")
+                else:
+                    work_days_per_week[w] = [5] * 52
+
+                #week_compensation_limit[w] = int(worker_row.get('N_Sem_A_Folga', 2))
+                week_compensation_limit[w] = 2 #para testes assumir sempre 2
                 logger.info(f"Worker {w} contract information extracted: "
                             f"Contract Type: {contract_type[w]}, "
                             f"Total L: {total_l[w]}, "
@@ -863,7 +868,8 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
             fixed_LQs,          # 36x
             # week_cut
             work_day_hours,
-            days_off_per_week
+            work_days_per_week,
+            week_compensation_limit
         )
         
     except Exception as e:
@@ -931,12 +937,17 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa_esp, start
 
 def populate_every_week(first_week_5_6, data_admissao, week_to_days):
     nbr_weeks = len(week_to_days)
-    days_off_per_week = np.zeros(nbr_weeks)
-    week = next(w for w, val in week_to_days.items() if data_admissao in val)
+    work_days_per_week = np.zeros(nbr_weeks)
+    week = next((w for w, val in week_to_days.items() if data_admissao in val), None)
 
     if first_week_5_6 == 5:
         other = 6
     else:
         other = 5
-    days_off_per_week[week:] = np.tile(np.array([first_week_5_6, other]), 27)[:nbr_weeks - week]
-    return days_off_per_week
+    if week is not None:
+        work_days_per_week[week:] = np.tile(np.array([first_week_5_6, other]), 27)[:nbr_weeks - week]
+    else:
+        work_days_per_week = np.tile(np.array([first_week_5_6, other]), 27)
+        #preciso ir ver como acabou ultima semana do ano
+        #como?
+    return work_days_per_week

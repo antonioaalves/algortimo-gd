@@ -8,9 +8,11 @@ logger = get_logger(PROJECT_NAME)
 def add_var(model, shift, w, days, code, start_weekday):
     for d in days:
         if (code == 'L' and (d + start_weekday - 2) % 7 == 5 and d + 1 in days):
-            code = 'LQ'
-        shift[(w, d, code)] = model.NewBoolVar(f"{w}_Day{d}_{code}")
-        model.Add(shift[(w, d, code)] == 1)
+            shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_'LQ'")
+            model.Add(shift[(w, d, 'LQ')] == 1)
+        else:
+            shift[(w, d, code)] = model.NewBoolVar(f"{w}_Day{d}_{code}")
+            model.Add(shift[(w, d, code)] == 1)
 
 
 def decision_variables(model, days_of_year, workers, shifts, first_day, last_day, absences, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, start_weekday):
@@ -37,10 +39,8 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         logger.info(f"DEBUG fixed days {fixed_days_set}")
         logger.info(f"DEBUG fixed lqs {fixed_LQs_set}")
         logger.info(f"DEBUG absence {absence_set}")
- 
         blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set
 
- 
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
                 for s in shifts2:

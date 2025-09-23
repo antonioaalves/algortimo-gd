@@ -34,7 +34,7 @@ from src.helpers import (_create_empty_results, _calculate_comprehensive_stats,
 # Set up logger
 logger = get_logger(PROJECT_NAME)
 
-class SalsaAlgorithm(BaseAlgorithm):
+class SalsaEspAlgorithm(BaseAlgorithm):
     """
     SALSA shift scheduling algorithm implementation.
 
@@ -222,7 +222,8 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'fixed_LQs' : processed_data[42],
                     # 'week_cut': processed_data[34]
                     'work_day_hours': processed_data[43],
-                    'days_off_per_week': processed_data[44]
+                    'work_days_per_week': processed_data[44],
+                    'week_compensation_limit': processed_data[45]
                 }
 
             except IndexError as e:
@@ -325,7 +326,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             # week_cut = adapted_data['week_cut']
             proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
-            days_off_per_week = adapted_data['days_off_per_week']
+            work_days_per_week = adapted_data['work_days_per_week']
+            week_compensation_limit = adapted_data['week_compensation_limit']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -383,17 +385,12 @@ class SalsaAlgorithm(BaseAlgorithm):
             shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
             
             # Week working days constraint based on contract type
-            week_working_days_constraint(model, shift, week_to_days_salsa_esp, workers, working_shift, contract_type)
+            week_working_days_constraint(model, shift, week_to_days_salsa_esp, workers, working_shift, contract_type, work_days_per_week)
             
             # Maximum continuous working days constraint
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
-            LQ_attribution(model, shift, workers, working_days, c2d)
-            
-            # Closed holiday attribution constraint
-            #closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
-
-            #holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)            
+            LQ_attribution(model, shift, workers, working_days, c2d)      
             
             # Worker week shift assignments
             assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
@@ -409,13 +406,13 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             salsa_esp_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, days_off_per_week)
+            salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
-            compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift)
+            compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off)
                         
             self.logger.info("All SALSA constraints applied")
             

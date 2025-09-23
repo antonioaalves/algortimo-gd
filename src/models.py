@@ -3461,7 +3461,7 @@ class DescansosDataModel(BaseDataModel):
             for col in existing_cols:
                 self.logger.info(f"DEBUG: {col} before reset: {matrizA_bk[col].tolist()}")
             
-            if algorithm_name == 'salsa_algorithm':
+            if algorithm_name == 'salsa_algorithm' or algorithm_name == 'salsa_esp_algorithm':
                 self.logger.info("DEBUG: Condition met - applying salsa_algorithm zeros")
                 if 'l_res' in matrizA_bk.columns:
                     matrizA_bk.loc[:, 'l_res'] = 0
