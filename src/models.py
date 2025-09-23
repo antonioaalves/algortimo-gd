@@ -850,6 +850,7 @@ class DescansosDataModel(BaseDataModel):
                 #if len(colabs_passado) == 0:
                 #    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
                 #    return False
+                colabs_str = ''
                 if len(colabs_passado) == 1:
                     self.logger.info(f"colabs_passado has only one value: {colabs_passado[0]}")
                     colabs_str = str(colabs_passado[0])
