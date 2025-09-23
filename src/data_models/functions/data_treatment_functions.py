@@ -875,8 +875,9 @@ def add_l_dom_to_df_colaborador(
             # Third mask
             mask_32_bd = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == convenio_bd)
             if mask_32_bd.any():
-                # TODO: Create the logic for this column
-                pass      
+                for tipo_contrato in [3, 2]:
+                    tipo_mask = mask_32_sabeco & (df_result['tipo_contrato'] == tipo_contrato)
+                        
 
         # Used by alcampo
         elif use_case == 2:
