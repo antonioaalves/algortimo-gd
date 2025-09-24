@@ -26,6 +26,7 @@ from src.data_models.functions.helper_functions import convert_types_in
 from src.data_models.validations.load_process_data_validations import (
     validate_df_colaborador
 )
+from src.helpers import count_open_holidays
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -806,9 +807,9 @@ def add_l_d_to_df_colaborador(
             if mask_6_sabeco.any():
                 df_result.loc[mask_6_sabeco, 'ld'] = df_result.loc[mask_6_sabeco, 'dyf_max_t']
 
-            mask_54_bd = (df_result['tipo_contrato'].isin([5, 4])) & (df_result['convenio'] == convenio_bd)
-            if mask_54_bd.any():
-                df_result.loc[mask_54_bd, 'ld'] = df_result.loc[mask_54_bd, 'dyf_max_t']
+            mask_54_sabeco = (df_result['tipo_contrato'].isin([5, 4])) & (df_result['convenio'] == 'SABECO')
+            if mask_54_sabeco.any():
+                df_result.loc[mask_54_sabeco, 'ld'] = df_result.loc[mask_54_sabeco, 'dyf_max_t']
 
             # Process contract types 3,2 with SABECO
             mask_32_sabeco = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == 'SABECO')
@@ -823,6 +824,7 @@ def add_l_d_to_df_colaborador(
 
 def add_l_dom_to_df_colaborador(
     df_colaborador: pd.DataFrame,
+    df_festivos: pd.DataFrame,
     convenio_bd: str,
     start_date_str: str,
     end_date_str: str,
@@ -857,6 +859,7 @@ def add_l_dom_to_df_colaborador(
             total_days = (end_date_dt - start_date_dt).days + 1
             div_factors.loc[needs_admission_adjustment] = days_from_admission / total_days
 
+        # Case 0: 
         if use_case == 0:
             df_result['l_dom'] = 0
 
@@ -877,6 +880,10 @@ def add_l_dom_to_df_colaborador(
             if mask_32_bd.any():
                 for tipo_contrato in [3, 2]:
                     tipo_mask = mask_32_sabeco & (df_result['tipo_contrato'] == tipo_contrato)
+                    if tipo_mask.any():
+                        coh = count_open_holidays(df_festivos, tipo_contrato)
+                        df_result.loc[tipo_mask, 'l_dom'] = coh[0]
+                        df_result.loc[tipo_mask, 'l_total'] = coh[1] - coh[0]
                         
 
         # Used by alcampo
@@ -889,11 +896,19 @@ def add_l_dom_to_df_colaborador(
             if mask_54_bd.any():
                 df_result.loc[mask_54_bd, 'l_dom'] = num_fer_dom - df_result.loc[mask_54_bd, 'dyf_max_t'] - num_feriados_fechados
 
-            # Third mask
+            # Process contract types 3,2 with convenio_bd
             mask_32_bd = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == convenio_bd)
             if mask_32_bd.any():
-                # TODO: Create the logic for this column
-                pass
+                if df_festivos is not None and len(df_festivos) > 0:
+                    # Process each contract type separately for holiday calculations
+                    for tipo_contrato in [3, 2]:
+                        tipo_mask = mask_32_bd & (df_result['tipo_contrato'] == tipo_contrato)
+                        if tipo_mask.any():
+                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            df_result.loc[tipo_mask, 'l_dom'] = coh[0]
+                else:
+                    df_result.loc[mask_32_bd, 'l_dom'] = 0
+
 
             mask_6_sabeco = (df_result['tipo_contrato'] == 6) & (df_result['convenio'] == 'SABECO')
             if mask_6_sabeco.any():
@@ -906,20 +921,91 @@ def add_l_dom_to_df_colaborador(
             # Process contract types 3,2 with SABECO
             mask_32_sabeco = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == 'SABECO')
             if mask_32_sabeco.any():
-                # TODO: Create the logic for this column
-                pass                
+                tipo_mask = mask_32_sabeco & (df_result['tipo_contrato'] == tipo_contrato)
+                if tipo_mask.any():
+                    coh = count_open_holidays(df_festivos, tipo_contrato)
+                    df_result.loc[tipo_mask, 'l_dom'] = coh[0] 
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"      
 
+def set_c2d_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    """
+    try:
+        # Case 0:
+        if use_case == 0:
+            df_colaborador['c2d'] = 0
+
+        elif use_case == 1:
+            df_colaborador['c2d'] = df_colaborador['c2d'] + df_colaborador['c3d']
+            # TODO: Define the logic for salsa:
+            pass
+
+        elif use_case == 2:
+            # TODO: Define the logic for salsa
+            pass
+
+        return df_colaborador
+
+    except Exception as e:
+        logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"
+
+def set_c3d_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, use_case: int):
+    """
+    """
+
+    try:
+        if use_case == 0:
+            df_colaborador['c3d'] = 0
+        
+        elif use_case == 1:
+            mask_6_bd = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_6_bd.any():
+                pass # no changes needed
+
+            mask_54_bd = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_54_bd.any():
+                pass # no changes defined
+
+            mask_32_bd = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_32_bd.any():
+                df_colaborador.loc[mask_32_bd, 'c3d'] = 0
+
+        elif use_case == 2:
+            mask_6_bd = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_6_bd.any():
+                pass # no changes needed
+
+            mask_54_bd = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_54_bd.any():
+                pass # no changes defined
+
+            mask_32_bd = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_32_bd.any():
+                df_colaborador.loc[mask_32_bd, 'c3d'] = 0
+
+            mask_6_sabeco = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_6_sabeco.any():
+                df_colaborador.loc[mask_6_sabeco, 'c3d'] = 0
+
+            mask_54_sabeco = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_54_sabeco.any():
+                df_colaborador.loc[mask_54_sabeco, 'c3d'] = 0
+
+            # Process contract types 3,2 with SABECO
+            mask_32_sabeco = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_32_sabeco.any():
+                df_colaborador.loc[mask_32_sabeco, 'c3d'] = 0
+
+    except Exception as e:
+        logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"    
+    
+
 def add_l_q_to_df_colaborador():
-    pass
-
-def add_c2d_to_df_colaborador():
-    pass
-
-def add_c3d_to_df_colaborador():
     pass
 
 def add_l_total_to_df_colaborador():
