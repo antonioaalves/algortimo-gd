@@ -1,1 +1,0 @@
-select data,tipo from wfm.esc_feriado where fk_unidade = {unit_id}

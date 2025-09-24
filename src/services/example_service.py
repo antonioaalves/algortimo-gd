@@ -310,7 +310,7 @@ class AlgoritmoGDService(BaseService):
                         "valid_raw_data": valid_raw_data,
                         "colab_matricula": self.external_data['colab_matricula'],
                         "data_shapes": {
-                            "raw_data": self.data.auxiliary_data['valid_emp'].shape if not self.data.auxiliary_data['valid_emp'].empty else None
+                            "raw_data": self.data.auxiliary_data['df_valid_emp'].shape if not self.data.auxiliary_data['df_valid_emp'].empty else None
                         }
                     }
                 )
@@ -767,9 +767,8 @@ class AlgoritmoGDService(BaseService):
                 self.logger.info(f"DEBUG SUBSTAGE: Skipping set_process_errors for param treatment - condition failed")
 
             # Establish connection to data source
-            params = self.data.treat_params()
-            valid_params = params.get('success', False)
-            algorithm_name = params.get('algorithm_name', '')
+            valid_params, error_code, error_msg = self.data.treat_params()
+            algorithm_name = self.data.auxiliary_data.get('algorithm_name', '')
             #self.logger.info(f"DEBUG: Algorithm name: {algorithm_name}, type: {type(algorithm_name)}")
             
             if not valid_params:

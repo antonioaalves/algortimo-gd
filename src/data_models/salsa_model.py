@@ -33,7 +33,12 @@ from src.data_models.functions.data_treatment_functions import (
     set_tipo_contrato_to_df_colaborador,
     add_prioridade_folgas_to_df_colaborador,
     admission_date_adjustments_to_df_colaborador,
-    contract_adjustments_to_df_colaborador,
+    add_l_d_to_df_colaborador,
+    add_l_dom_to_df_colaborador,
+    add_l_q_to_df_colaborador, 
+    add_l_total_to_df_colaborador,
+    set_c2d_to_df_colaborador,
+    set_c3d_to_df_colaborador,
     create_df_calendario,
     add_calendario_passado,
     add_ausencias_ferias,
@@ -261,6 +266,12 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 main_year = count_dates_per_year(start_date_str=self.external_call_data.get('start_date', ''), end_date_str=self.external_call_data.get('end_date', ''))
                 self.logger.info(f"main_year: {main_year} stored in variables")
+
+                
+                # Load first_year_date and last_year_date
+                self.logger.info(f"Treating first_year_date and last_year_date")
+                first_year_date = pd.to_datetime(f"{main_year}-01-01")
+                last_year_date = pd.to_datetime(f"{main_year}-12-31")
                 
                 first_day_passado, last_day_passado, case_type = get_first_and_last_day_passado_arguments(
                     start_date_str=start_date, 
@@ -271,24 +282,15 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"first_day_passado: {first_day_passado}, last_day_passado: {last_day_passado}")
 
                 # Calculate domingos and festivos amount
-                num_domingos = count_sundays_in_period(
+                num_sundays_year = count_sundays_in_period(
                     first_day_year_str=first_year_date,
-                    last_day_year_str=last_day_passado
+                    last_day_year_str=last_day_passado,
+                    start_date_str=start_date,
+                    end_date_str=end_date
                 )
 
-                if not isinstance(num_domingos, int) or num_domingos < 0:
-                    self.logger.error(f"num_domingos is invalid: {num_domingos}")
-                    return False, "", ""
-
-                num_feriados = count_holidays_in_period(
-                    start_date_str=first_year_date,
-                    end_date_str=last_day_passado,
-                    df_festivos=df_festivos,
-                    use_case=0 # TODO: this should be defined in params
-                )
-
-                if not isinstance(num_feriados, int) or num_feriados < 0:
-                    self.logger.error(f"num_feriados is invalid: {num_feriados}")
+                if not isinstance(num_sundays_year, int) or num_sundays_year < 0:
+                    self.logger.error(f"num_sundays_year is invalid: {num_sundays_year}")
                     return False, "", ""
 
             except Exception as e:
@@ -342,14 +344,20 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_festivos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # Load first_year_date and last_year_date
-            try:
-                self.logger.info(f"Treating first_year_date and last_year_date")
-                first_year_date = pd.to_datetime(f"{main_year}-01-01")
-                last_year_date = pd.to_datetime(f"{main_year}-12-31")
-            except Exception as e:
-                self.logger.error(f"Error treating first_year_date and last_year_date: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+            num_feriados_abertos, num_feriados_fechados = count_holidays_in_period(
+                start_date_str=first_year_date,
+                end_date_str=last_year_date,
+                df_festivos=df_festivos,
+                use_case=0 # TODO: this should be defined in params
+            )
+
+            if not isinstance(num_feriados_abertos, int) or num_feriados_abertos < 0:
+                self.logger.error(f"num_feriados is invalid: {num_feriados_abertos}")
+                return False, "", ""
+
+            if not isinstance(num_feriados_fechados, int) or num_feriados_fechados < 0:
+                self.logger.error(f"num_feriados is invalid: {num_feriados_fechados}")
+                return False, "", ""
 
             # Load closed days information
             try:
@@ -362,14 +370,16 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_closed_days: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            self.logger.info(f"DEBUG: df_closed_days: {df_closed_days}")
+
             success, df_closed_days, error_msg = treat_df_closed_days(df_closed_days, first_year_date, last_year_date)
             if not success:
                 self.logger.error(f"Closed days treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
 
             if df_closed_days.empty:
-                self.logger.error(f"Error treating df_closed_days: df_closed_days is empty")
-                return False, "errSubproc", "df_closed_days is empty"
+                self.logger.info(f"No closed days found in the specified date range - proceeding with empty DataFrame")
+                # Empty df_closed_days is valid - it means no closed days in the period
 
             # Load global parameters - Very important!! This could be done with params_lq query most probably
             try:
@@ -426,8 +436,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['last_date_passado'] = last_day_passado
                 self.auxiliary_data['employees_id_list'] = employees_id_list
                 self.auxiliary_data['case_type'] = case_type
-                self.auxiliary_data['num_domingos'] = num_domingos
-                self.auxiliary_data['num_feriados'] = num_feriados
+                self.auxiliary_data['num_sundays_year'] = num_sundays_year
+                self.auxiliary_data['num_feriados_abertos'] = num_feriados_abertos
+                self.auxiliary_data['num_feriados_fechados'] = num_feriados_fechados
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
@@ -454,7 +465,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.error(f"Error loading process data: {str(e)}", exc_info=True)
             return False, "errSubproc", str(e)
 
-    def validate_load_process_data(self) -> bool:
+    def validate_process_data(self) -> bool:
         """
         Validates func_inicializa operations. Validates data before running the allocation cycle.
         """
@@ -481,7 +492,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Get all parameters in one call
             retrieved_params = get_param_for_posto(
                 df=df_params, 
-                posto_id=self.external_call_data['current_posto_id'], 
+                posto_id=self.auxiliary_data['current_posto_id'], 
                 unit_id=self.auxiliary_data['unit_id'], 
                 secao_id=self.auxiliary_data['secao_id'], 
                 params_names_list=params_names_list
@@ -1012,8 +1023,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 employee_id_list = self.auxiliary_data['employee_id_list']
                 unit_id = self.auxiliary_data['unit_id']
                 convenio_bd  = self.auxiliary_data['GD_convenioBD']
-                num_domingos = self.auxiliary_data['num_domingos']
-                num_feriados = self.auxiliary_data['num_feriados']
+                num_sundays_year = self.auxiliary_data['num_sundays_year']
+                num_feriados_abertos = self.auxiliary_data['num_feriados_abertos']
+                num_feriados_fechados = self.auxiliary_data['num_feriados_fechados']
                 # Dataframes
                 df_params_lq = self.auxiliary_data['df_params_lq']
                 df_valid_emp = self.auxiliary_data['df_valid_emp']
@@ -1063,21 +1075,77 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding prioridade_folgas column failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # TODO: Add totals adjustments for tipo_contrato and convenio (one function for each column)
-                success, df_colaborador, error_msg = contract_adjustments_to_df_colaborador(
+                # Set C2D values based on use case
+                success, df_colaborador, error_msg = set_c2d_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    start_date=start_date_str,
-                    end_date=end_date_str,
-                    convenio_bd=convenio_bd,
-                    num_fer_dom=num_domingos,
-                    fer_fechados=num_feriados,
-                    num_sundays=num_domingos,
-                    matriz_festivos=df_festivos,
-                    count_open_holidays_func=count_open_holidays
+                    use_case=1
                 )
                 if not success:
-                    self.logger.error(f"Adding contract adjustments failed: {error_msg}")
+                    self.logger.error(f"Setting c2d failed: {error_msg}")
                     return False, "errSubproc", error_msg
+
+                # Set C3D values based on convenio and use case
+                success, df_colaborador, error_msg = set_c3d_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    convenio_bd=convenio_bd,
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Setting c3d failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # Add L_D (working days) calculations
+                success, df_colaborador, error_msg = add_l_d_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    convenio_bd=convenio_bd,
+                    num_fer_dom=num_sundays_year,
+                    fer_fechados=num_feriados_fechados,
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Adding l_d failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # Add L_DOM (weekend/holiday days) calculations
+                success, df_colaborador, error_msg = add_l_dom_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    df_festivos=df_festivos,
+                    convenio_bd=convenio_bd,
+                    num_fer_dom=num_sundays_year,
+                    fer_fechados=num_feriados,
+                    num_sundays=num_sundays_year,
+                    start_date=start_date_str,
+                    end_date=end_date_str,
+                    count_open_holidays_func=count_open_holidays,
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Adding l_dom failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # Add L_Q (quality leave) calculations
+                success, df_colaborador, error_msg = add_l_q_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    convenio_bd=convenio_bd,
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Adding l_q failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                # Add L_TOTAL (total leave) calculations
+                success, df_colaborador, error_msg = add_l_total_to_df_colaborador(
+                    df_colaborador=df_colaborador,
+                    df_festivos=df_festivos,
+                    convenio_bd=convenio_bd,
+                    num_sundays=num_sundays_year,
+                    num_fer_dom=num_sundays_year,
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Adding l_total failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
 
                 # TODO: Add totals adjustments for admission date
                 success, df_colaborador, error_msg = admission_date_adjustments_to_df_colaborador(

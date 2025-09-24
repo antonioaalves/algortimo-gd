@@ -878,12 +878,15 @@ def add_l_dom_to_df_colaborador(
             # Third mask
             mask_32_bd = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == convenio_bd)
             if mask_32_bd.any():
-                for tipo_contrato in [3, 2]:
-                    tipo_mask = mask_32_sabeco & (df_result['tipo_contrato'] == tipo_contrato)
-                    if tipo_mask.any():
-                        coh = count_open_holidays(df_festivos, tipo_contrato)
-                        df_result.loc[tipo_mask, 'l_dom'] = coh[0]
-                        df_result.loc[tipo_mask, 'l_total'] = coh[1] - coh[0]
+                if df_festivos is not None and len(df_festivos) > 0:
+                    # Process each contract type separately for holiday calculations
+                    for tipo_contrato in [3, 2]:
+                        tipo_mask = mask_32_bd & (df_result['tipo_contrato'] == tipo_contrato)
+                        if tipo_mask.any():
+                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            df_result.loc[tipo_mask, 'l_dom'] = coh[0]
+                else:
+                    df_result.loc[mask_32_bd, 'l_dom'] = 0
                         
 
         # Used by alcampo
@@ -921,10 +924,22 @@ def add_l_dom_to_df_colaborador(
             # Process contract types 3,2 with SABECO
             mask_32_sabeco = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == 'SABECO')
             if mask_32_sabeco.any():
-                tipo_mask = mask_32_sabeco & (df_result['tipo_contrato'] == tipo_contrato)
-                if tipo_mask.any():
-                    coh = count_open_holidays(df_festivos, tipo_contrato)
-                    df_result.loc[tipo_mask, 'l_dom'] = coh[0] 
+                if df_festivos is not None and len(df_festivos) > 0:
+                    # Process each contract type separately for holiday calculations
+                    for tipo_contrato in [3, 2]:                
+                        tipo_mask = mask_32_sabeco & (df_result['tipo_contrato'] == tipo_contrato)
+                        if tipo_mask.any():
+                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            df_result.loc[tipo_mask, 'l_dom'] = coh[0]
+                else:
+                    df_result.loc[mask_32_bd, 'l_dom'] = 0
+
+        else:
+            error_msg = f"use case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+
+        return df_result
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
@@ -938,22 +953,25 @@ def set_c2d_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: int) -> Tu
         if use_case == 0:
             df_colaborador['c2d'] = 0
 
+        # Case 1: Salsa e Alcampo
         elif use_case == 1:
             df_colaborador['c2d'] = df_colaborador['c2d'] + df_colaborador['c3d']
-            # TODO: Define the logic for salsa:
-            pass
 
         elif use_case == 2:
-            # TODO: Define the logic for salsa
             pass
+
+        else:
+            error_msg = f"use case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg        
 
         return df_colaborador
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
-        return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"
+        return False, pd.DataFrame(), f"Processing c2d for df_colaborador failed: {str(e)}"
 
-def set_c3d_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, use_case: int):
+def set_c3d_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
     """
     """
 
@@ -1000,16 +1018,133 @@ def set_c3d_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, us
             if mask_32_sabeco.any():
                 df_colaborador.loc[mask_32_sabeco, 'c3d'] = 0
 
+        else:
+            error_msg = f"use case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+
+        return df_colaborador
+
+    except Exception as e:
+        logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"
+
+def add_l_q_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    """
+    try:
+        if 'lq' in df_colaborador.columns:
+            df_colaborador.drop('lq', axis='columns')
+        if use_case == 0:
+            df_colaborador['lq'] = 0
+
+        # Salsa use_case
+        elif use_case == 1:
+            mask_6_bd = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_6_bd.any():
+                df_colaborador.loc[mask_6_bd, 'lq'] = df_colaborador.loc[mask_6_bd, 'lq'] - df_colaborador.loc[mask_6_bd, 'c2d'] - df_colaborador.loc[mask_6_bd, 'c3d']
+
+            mask_54_bd = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_54_bd.any():
+                df_colaborador.loc[mask_54_bd, 'lq'] = 0
+
+            mask_32_bd = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_32_bd.any():
+                df_colaborador.loc[mask_32_bd, 'lq'] = 0
+
+        # Alcampo use_case
+        elif use_case == 2:
+            mask_6_bd = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_6_bd.any():
+                df_colaborador.loc[mask_6_bd, 'lq'] = df_colaborador.loc[mask_6_bd, 'lq'] - df_colaborador.loc[mask_6_bd, 'c2d'] - df_colaborador.loc[mask_6_bd, 'c3d']
+
+            mask_54_bd = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_54_bd.any():
+                df_colaborador.loc[mask_54_bd, 'lq'] = 0
+
+            mask_32_bd = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_32_bd.any():
+                df_colaborador.loc[mask_32_bd, 'lq'] = 0
+
+            mask_6_sabeco = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_6_sabeco.any():
+                df_colaborador.loc[mask_6_sabeco, 'lq'] = 0
+
+            mask_54_sabeco = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_54_sabeco.any():
+                df_colaborador.loc[mask_54_sabeco, 'lq'] = 0
+
+            # Process contract types 3,2 with SABECO
+            mask_32_sabeco = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_32_sabeco.any():
+                df_colaborador.loc[mask_32_sabeco, 'lq'] = 0
+
+        else:
+            error_msg = f"use case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+
+
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"    
-    
 
-def add_l_q_to_df_colaborador():
-    pass
+def add_l_total_to_df_colaborador(df_colaborador: pd.DataFrame, df_festivos: pd.DataFrame, convenio_bd: str, num_sundays: int, num_fer_dom: int, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    """
 
-def add_l_total_to_df_colaborador():
-    pass
+    try:
+        if 'l_total' in df_colaborador.columns:
+            df_colaborador.drop('l_total', axis='columns')
+
+        if use_case == 0:
+            df_colaborador['l_total'] = 0
+
+        elif use_case == 1:
+            mask_6_bd = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_6_bd.any():
+                df_colaborador.loc[mask_6_bd, 'l_total'] = num_fer_dom + df_colaborador.loc[mask_6_bd, 'lq'] + df_colaborador.loc[mask_6_bd, 'c2d'] + df_colaborador.loc[mask_6_bd, 'c3d']
+
+            mask_54_bd = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_54_bd.any():
+                df_colaborador.loc[mask_54_bd, 'l_total'] = num_sundays * (7 - int(df_colaborador.loc[mask_54_bd, 'tipo_contrato']))
+
+            mask_32_bd = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == convenio_bd)
+            if mask_32_bd.any():
+                if df_festivos is not None and len(df_festivos) > 0:
+                    # Process each contract type separately for holiday calculations
+                    for tipo_contrato in [3, 2]:
+                        tipo_mask = mask_32_bd & (df_colaborador['tipo_contrato'] == tipo_contrato)
+                        if tipo_mask.any():
+                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            df_colaborador.loc[tipo_mask, 'l_total'] = coh[1]
+                else:
+                    df_colaborador.loc[mask_32_bd, 'l_total'] = 0
+
+            mask_6_sabeco = (df_colaborador['tipo_contrato'] == 6) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_6_sabeco.any():
+                df_colaborador.loc[mask_6_sabeco, 'l_total'] = num_fer_dom + df_colaborador[mask_6_sabeco, 'c2d']
+
+            mask_54_sabeco = (df_colaborador['tipo_contrato'].isin([5, 4])) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_54_sabeco.any():
+                df_colaborador.loc[mask_54_sabeco, 'l_total'] = num_sundays * (7 - int(df_colaborador.loc[mask_54_sabeco, 'tipo_contrato'])) + 8
+
+            # Process contract types 3,2 with SABECO
+            mask_32_sabeco = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == 'SABECO')
+            if mask_32_sabeco.any():
+                if df_festivos is not None and len(df_festivos) > 0:
+                    # Process each contract type separately for holiday calculations
+                    for tipo_contrato in [3, 2]:                
+                        tipo_mask = mask_32_sabeco & (df_colaborador['tipo_contrato'] == tipo_contrato)
+                        if tipo_mask.any():
+                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            df_colaborador.loc[tipo_mask, 'l_total'] = coh[1]
+                else:
+                    df_colaborador.loc[mask_32_bd, 'l_total'] = 0       
+
+    except Exception as e:
+        logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"  
 
 
 

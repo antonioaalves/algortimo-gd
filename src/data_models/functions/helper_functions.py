@@ -568,36 +568,35 @@ def create_employee_query_string(employee_id_list: List[str]) -> str:
         logger.error()
         return ''
 
-def count_holidays_in_period(start_date_str: str, end_date_str: str, df_festivos: pd.DataFrame, use_case: int) -> int:
+def count_holidays_in_period(start_date_str: str, end_date_str: str, df_festivos: pd.DataFrame, use_case: int) -> Tuple[int, int]:
     """
     Count holidays in a period.
     """
     try:
         # Case 0: num_festivos is 0 for l_dom calculations
         if use_case == 0:
-            num_festivos = 0
+            num_feriados_abertos = 0
+            num_feriados_fechados = 0
         else:
-            start_date_dt = pd.to_datetime(start_date_str, format='%Y-%m-%d')
-            end_date_dt = pd.to_datetime(end_date_str, format='%Y-%m-%d')
-            df_festivos['data'] = pd.to_datetime(df_festivos['data'])        
+            df_festivos['data'] = pd.to_datetime(df_festivos['data'])
             # Case 1: count the number of feriados from tipo 3
             if use_case == 1:
-                tipo_feriado = [3]
+                tipo_feriado = [2, 3]
                 df_festivos = df_festivos[df_festivos['tipo'] in tipo_feriado]
-                num_festivos = len(df_festivos[(df_festivos['data'] >= start_date_dt) & (df_festivos['data'] <= end_date_dt)])
+                num_feriados_abertos = len(df_festivos['tipo' == 2])
+                num_feriados_fechados = len(df_festivos['tipo' == 3])
+
             # Case 2: count the number of feriados from tipo 2
             elif use_case == 2:
-                tipo_feriado = [2,3]
-                df_festivos = df_festivos[df_festivos['tipo'] in tipo_feriado]
-                num_festivos = len(df_festivos[(df_festivos['data'] >= start_date_dt) & (df_festivos['data'] <= end_date_dt)])
+                raise NotImplemented
             else:
                 logger.error(f"Use case provided not valid: {use_case}")
-                return -1
+                return -1, -1
 
-        return num_festivos
+        return num_feriados_abertos, num_feriados_fechados
     except Exception as e:
         logger.error(f"Error in count_holidays_in_period: {str(e)}", exc_info=True)
-        return -1
+        return -1, -1
 
 def count_sundays_in_period(first_day_year_str: str, last_day_year_str: str, start_date_str: Optional[str], end_date_str: Optional[str]) -> int:
     """
@@ -614,9 +613,9 @@ def count_sundays_in_period(first_day_year_str: str, last_day_year_str: str, sta
             'wd': pd.Series(day_seq).dt.dayofweek + 1  # Convert to 1-7 where 1=Monday, 7=Sunday            
         })
 
-        num_sundays = len(df[df['wd'] == 7])
+        num_sundays_year = len(df[df['wd'] == 7])
 
-        return num_sundays
+        return num_sundays_year
 
     except Exception as e:
         logger.error(f"Error calculating sundays amount on count_sundays_in_period helper function:{str(e)}", exc_info=True)
