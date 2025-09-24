@@ -370,8 +370,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_closed_days: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            self.logger.info(f"DEBUG: df_closed_days: {df_closed_days}")
-
             success, df_closed_days, error_msg = treat_df_closed_days(df_closed_days, first_year_date, last_year_date)
             if not success:
                 self.logger.error(f"Closed days treatment failed: {error_msg}")
@@ -1112,7 +1110,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df_festivos=df_festivos,
                     convenio_bd=convenio_bd,
                     num_fer_dom=num_sundays_year,
-                    fer_fechados=num_feriados,
+                    fer_fechados=num_feriados_fechados,
                     num_sundays=num_sundays_year,
                     start_date=start_date_str,
                     end_date=end_date_str,
