@@ -474,17 +474,18 @@ def add_prioridade_folgas_to_df_colaborador(df_colaborador: pd.DataFrame, df_val
         logger.error(f"Error in set_tipo_contrato_to_df_colaborador: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), ""
 
-def admission_date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, start_date: str, end_date: str) -> Tuple[bool, pd.DataFrame, str]:
+def date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, main_year: int) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Apply admission date adjustments to df_colaborador using vectorized operations.
+    Apply date adjustments to df_colaborador using vectorized operations for annual counters.
     
-    Adjusts dyf_max_t, lq, c2d, and c3d fields proportionally based on admission date
-    when the employee was hired after the start_date of the period.
+    Adjusts l_d, l_dom, l_q, l_total, c2d, and c3d fields proportionally based on:
+    - Admission date: when employee was hired after January 1st
+    - Termination date: when employee left before December 31st
+    - Both: when employee was hired after January 1st AND left before December 31st
     
     Args:
         df_colaborador: DataFrame with employee data
-        start_date: Period start date as string (YYYY-MM-DD format)
-        end_date: Period end date as string (YYYY-MM-DD format)
+        year: The year for which to apply adjustments (annual counters)
         
     Returns:
         Tuple[bool, DataFrame, str]: Success flag, processed DataFrame, error message
@@ -494,10 +495,14 @@ def admission_date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, s
         if df_colaborador is None or df_colaborador.empty:
             return False, pd.DataFrame(), "Input validation failed: empty df_colaborador"
             
-        if not start_date or not end_date:
-            return False, pd.DataFrame(), "Input validation failed: missing date parameters"
+        if not main_year or not isinstance(main_year, int) or main_year < 1900 or main_year > 2100:
+            return False, pd.DataFrame(), "Input validation failed: invalid year parameter"
             
-        logger.info(f"Applying admission date adjustments from {start_date} to {end_date} for {len(df_colaborador)} employees")
+        # Construct annual dates from year
+        start_date = f"{main_year}-01-01"
+        end_date = f"{main_year}-12-31"
+        
+        logger.info(f"Applying date adjustments for year {main_year} ({start_date} to {end_date}) for {len(df_colaborador)} employees")
         
         # TREATMENT LOGIC
         df_result = df_colaborador.copy()
@@ -505,69 +510,162 @@ def admission_date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, s
         # Convert date strings to datetime
         start_dt = pd.to_datetime(start_date)
         end_dt = pd.to_datetime(end_date)
+        total_days = (end_dt - start_dt).days + 1
         
-        # Convert data_admissao to datetime if it's not already
+        # Convert dates to datetime if they're not already
         df_result['data_admissao'] = pd.to_datetime(df_result['data_admissao'], errors='coerce')
         
-        # Create mask for employees hired after start_date
-        needs_adjustment = (
+        # Handle data_demissao - convert to datetime and handle null/empty values
+        if 'data_demissao' in df_result.columns:
+            # Replace empty strings with NaN
+            df_result['data_demissao'] = df_result['data_demissao'].replace('', pd.NaT)
+            df_result['data_demissao'] = pd.to_datetime(df_result['data_demissao'], errors='coerce')
+        else:
+            # If column doesn't exist, create it as NaT (no termination dates)
+            df_result['data_demissao'] = pd.NaT
+        
+        # Define fields to adjust
+        fields_to_adjust = ['l_d', 'l_dom', 'l_q', 'l_total', 'c2d', 'c3d']
+        
+        # SCENARIO A: Late hire only (hired after start_date, still active)
+        late_hire_mask = (
             df_result['data_admissao'].notna() & 
-            (start_dt < df_result['data_admissao'])
+            (start_dt < df_result['data_admissao']) &
+            df_result['data_demissao'].isna()
         )
         
-        if needs_adjustment.any():
-            logger.info(f"DEBUG: {needs_adjustment.sum()} employees need admission date adjustments")
+        if late_hire_mask.any():
+            logger.info(f"DEBUG: {late_hire_mask.sum()} employees need late hire adjustments")
             
-            # Calculate adjustment factors vectorized
-            days_from_admission = (end_dt - df_result.loc[needs_adjustment, 'data_admissao']).dt.days + 1
-            total_days = (end_dt - start_dt).days + 1
-            div_factors = days_from_admission / total_days
+            # Calculate adjustment factors
+            days_worked = (end_dt - df_result.loc[late_hire_mask, 'data_admissao']).dt.days + 1
+            div_factors = days_worked / total_days
             
-            # Log debug info for affected employees
-            for idx in df_result[needs_adjustment].index:
+            # Log debug info and apply adjustments
+            for idx in df_result[late_hire_mask].index:
                 matricula = df_result.loc[idx, 'matricula']
                 div = div_factors.loc[idx]
-                logger.info(f"DEBUG: Employee {matricula} - days_from_admission: {days_from_admission.loc[idx]}, total_days: {total_days}, div: {div}")
+                logger.info(f"DEBUG Late Hire - Employee {matricula}: days_worked: {days_worked.loc[idx]}, total_days: {total_days}, div: {div}")
                 
                 # Log before values
-                logger.info(f"DEBUG before: dyf_max_t: {df_result.loc[idx, 'dyf_max_t']}, lq: {df_result.loc[idx, 'lq']}, c2d: {df_result.loc[idx, 'c2d']}, c3d: {df_result.loc[idx, 'c3d']}")
+                before_values = {field: df_result.loc[idx, field] for field in fields_to_adjust if field in df_result.columns}
+                logger.info(f"DEBUG before: {before_values}")
             
-            # Apply adjustments vectorized using numpy ceiling
-            fields_to_adjust = ['dyf_max_t', 'lq', 'c2d', 'c3d']
+            # Apply adjustments vectorized
             for field in fields_to_adjust:
                 if field in df_result.columns:
-                    df_result.loc[needs_adjustment, field] = np.ceil(
-                        df_result.loc[needs_adjustment, field] * div_factors
+                    df_result.loc[late_hire_mask, field] = np.ceil(
+                        df_result.loc[late_hire_mask, field] * div_factors
                     )
             
             # Log after values
-            for idx in df_result[needs_adjustment].index:
+            for idx in df_result[late_hire_mask].index:
                 matricula = df_result.loc[idx, 'matricula']
-                logger.info(f"DEBUG after: dyf_max_t: {df_result.loc[idx, 'dyf_max_t']}, lq: {df_result.loc[idx, 'lq']}, c2d: {df_result.loc[idx, 'c2d']}, c3d: {df_result.loc[idx, 'c3d']}")
+                after_values = {field: df_result.loc[idx, field] for field in fields_to_adjust if field in df_result.columns}
+                logger.info(f"DEBUG after: {after_values}")
+        
+        # SCENARIO B: Early termination only (hired before/on start_date, left before end_date)
+        early_term_mask = (
+            df_result['data_admissao'].notna() & 
+            (df_result['data_admissao'] <= start_dt) &
+            df_result['data_demissao'].notna() &
+            (df_result['data_demissao'] < end_dt)
+        )
+        
+        if early_term_mask.any():
+            logger.info(f"DEBUG: {early_term_mask.sum()} employees need early termination adjustments")
             
-            # Handle LQ recalculation vectorized (when c3d + c2d > lq)
-            lq_adjustment_mask = needs_adjustment & (
-                (df_result['c3d'] + df_result['c2d']) > df_result['lq']
+            # Calculate adjustment factors
+            days_worked = (df_result.loc[early_term_mask, 'data_demissao'] - start_dt).dt.days + 1
+            div_factors = days_worked / total_days
+            
+            # Log debug info and apply adjustments
+            for idx in df_result[early_term_mask].index:
+                matricula = df_result.loc[idx, 'matricula']
+                div = div_factors.loc[idx]
+                logger.info(f"DEBUG Early Term - Employee {matricula}: days_worked: {days_worked.loc[idx]}, total_days: {total_days}, div: {div}")
+                
+                # Log before values
+                before_values = {field: df_result.loc[idx, field] for field in fields_to_adjust if field in df_result.columns}
+                logger.info(f"DEBUG before: {before_values}")
+            
+            # Apply adjustments vectorized
+            for field in fields_to_adjust:
+                if field in df_result.columns:
+                    df_result.loc[early_term_mask, field] = np.ceil(
+                        df_result.loc[early_term_mask, field] * div_factors
+                    )
+            
+            # Log after values
+            for idx in df_result[early_term_mask].index:
+                matricula = df_result.loc[idx, 'matricula']
+                after_values = {field: df_result.loc[idx, field] for field in fields_to_adjust if field in df_result.columns}
+                logger.info(f"DEBUG after: {after_values}")
+        
+        # SCENARIO C: Both late hire AND early termination
+        both_adjust_mask = (
+            df_result['data_admissao'].notna() & 
+            (start_dt < df_result['data_admissao']) &
+            df_result['data_demissao'].notna() &
+            (df_result['data_demissao'] < end_dt)
+        )
+        
+        if both_adjust_mask.any():
+            logger.info(f"DEBUG: {both_adjust_mask.sum()} employees need both late hire and early termination adjustments")
+            
+            # Calculate adjustment factors
+            days_worked = (df_result.loc[both_adjust_mask, 'data_demissao'] - df_result.loc[both_adjust_mask, 'data_admissao']).dt.days + 1
+            div_factors = days_worked / total_days
+            
+            # Log debug info and apply adjustments
+            for idx in df_result[both_adjust_mask].index:
+                matricula = df_result.loc[idx, 'matricula']
+                div = div_factors.loc[idx]
+                logger.info(f"DEBUG Both - Employee {matricula}: days_worked: {days_worked.loc[idx]}, total_days: {total_days}, div: {div}")
+                
+                # Log before values
+                before_values = {field: df_result.loc[idx, field] for field in fields_to_adjust if field in df_result.columns}
+                logger.info(f"DEBUG before: {before_values}")
+            
+            # Apply adjustments vectorized
+            for field in fields_to_adjust:
+                if field in df_result.columns:
+                    df_result.loc[both_adjust_mask, field] = np.ceil(
+                        df_result.loc[both_adjust_mask, field] * div_factors
+                    )
+            
+            # Log after values
+            for idx in df_result[both_adjust_mask].index:
+                matricula = df_result.loc[idx, 'matricula']
+                after_values = {field: df_result.loc[idx, field] for field in fields_to_adjust if field in df_result.columns}
+                logger.info(f"DEBUG after: {after_values}")
+        
+        # Handle L_Q recalculation for all adjusted employees (when c3d + c2d > l_q)
+        all_adjusted_mask = late_hire_mask | early_term_mask | both_adjust_mask
+        
+        if all_adjusted_mask.any() and 'l_q' in df_result.columns and 'c2d' in df_result.columns and 'c3d' in df_result.columns:
+            lq_adjustment_mask = all_adjusted_mask & (
+                (df_result['c3d'] + df_result['c2d']) > df_result['l_q']
             )
             
             if lq_adjustment_mask.any():
-                # Recalculate LQ values vectorized
-                df_result.loc[lq_adjustment_mask, 'lq'] = (
+                # Recalculate L_Q values vectorized
+                df_result.loc[lq_adjustment_mask, 'l_q'] = (
                     df_result.loc[lq_adjustment_mask, 'c2d'] + 
                     df_result.loc[lq_adjustment_mask, 'c3d'] + 
                     df_result.loc[lq_adjustment_mask, 'c3d']
                 )
                 
-                # Log error messages for employees with LQ recalculation
+                # Log error messages for employees with L_Q recalculation
                 for idx in df_result[lq_adjustment_mask].index:
                     matricula = df_result.loc[idx, 'matricula']
-                    logger.error(f"Empleado {matricula} sin suficiente LQ para fines de semana de calidad. Recalculated lq: {df_result.loc[idx, 'lq']}")
+                    logger.error(f"Empleado {matricula} sin suficiente L_Q para fines de semana de calidad. Recalculated l_q: {df_result.loc[idx, 'l_q']}")
         
-        logger.info(f"Successfully applied admission date adjustments to {len(df_result)} employees")
+        logger.info(f"Successfully applied date adjustments to {len(df_result)} employees")
         return True, df_result, ""
         
     except Exception as e:
-        logger.error(f"Error in admission_date_adjustments_to_df_colaborador: {str(e)}", exc_info=True)
+        logger.error(f"Error in date_adjustments_to_df_colaborador: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), f"Processing failed: {str(e)}"
 
 

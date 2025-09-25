@@ -32,7 +32,7 @@ from src.data_models.functions.data_treatment_functions import (
     add_lqs_to_df_colaborador,
     set_tipo_contrato_to_df_colaborador,
     add_prioridade_folgas_to_df_colaborador,
-    admission_date_adjustments_to_df_colaborador,
+    date_adjustments_to_df_colaborador,
     add_l_d_to_df_colaborador,
     add_l_dom_to_df_colaborador,
     add_l_q_to_df_colaborador, 
@@ -1146,10 +1146,9 @@ class SalsaDataModel(BaseDescansosDataModel):
 
 
                 # TODO: Add totals adjustments for admission date
-                success, df_colaborador, error_msg = admission_date_adjustments_to_df_colaborador(
+                success, df_colaborador, error_msg = date_adjustments_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    start_date=start_date_str,
-                    end_date=end_date_str
+                    year=self.auxiliary_data['main_year']
                 )
                 if not success:
                     self.logger.error(f"Adding admission date adjustments failed: {error_msg}")
