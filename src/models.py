@@ -1709,7 +1709,7 @@ class DescansosDataModel(BaseDataModel):
                 "fk_colaborador", "unidade", "secao", "posto", "convenio", "nome", "matricula",
                 "min_dia_trab", "max_dia_trab", "tipo_turno", "seq_turno", "t_total", "l_total",
                 "dyf_max_t", "lqs", "q", "c2d", "c3d", "cxx", "semana_1", "out", "ciclo", 
-                "data_admissao", "data_demissao", "dofhc"
+                "data_admissao", "data_demissao", "dofhc", "seed_5_6", "n_sem_a_folga"
             ]
             
             # Map current columns to expected columns if they differ
@@ -3074,7 +3074,8 @@ class DescansosDataModel(BaseDataModel):
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
                 'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao', 'prioridade_folgas',
-                'l_dom_salsa' # TODO: Remove this in next big release
+                'l_dom_salsa', # TODO: Remove this in next big release
+                 "seed_5_6", "n_sem_a_folga"
             ]].copy()
             
             # Rename columns to match R output
