@@ -68,6 +68,7 @@ CONFIG = {
         'GD_algorithmName',
         'GD_consideraFestivos',
         'GD_convenioBD',
+        'NUM_DIAS_CONS'
     ],
 
     'parameters_defaults': {
