@@ -758,10 +758,14 @@ def _convert_free_days(algorithm_results: pd.DataFrame, data_processed: Dict[str
                 free_days = [d for d in days if worker_data[f'Day_{d}'].isin(['L', 'LQ']).any()]
 
                 if len(free_days) == 1:
-                    algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[0]}'] = 'FO'
+                    original_shift = worker_data[f'Day_{free_days[0]}'].iloc[0]
+                    algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[0]}'] = original_shift
                 elif len(free_days) > 1:
-                    algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[-1]}'] = 'FO'
-                    algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[-2]}'] = 'FC'
+                    original_shift_last = worker_data[f'Day_{free_days[-1]}'].iloc[0]
+                    algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[-1]}'] = original_shift_last
+
+                    original_shift_second_last = worker_data[f'Day_{free_days[-2]}'].iloc[0]
+                    algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{free_days[-2]}'] = original_shift_second_last
                     for d in free_days[:-2]:
                         algorithm_results.loc[algorithm_results['Worker'] == w, f'Day_{d}'] = '-'
 
