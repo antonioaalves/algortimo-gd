@@ -14,10 +14,67 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # Create the objective function with heavy penalties
     objective_terms = []
+    PESS_OBJ_PENALTY = 1000  # Penalty for deviations from pessObj
+    CONSECUTIVE_FREE_DAY = -1  # Bonus for consecutive free days
     HEAVY_PENALTY = 300  # Penalty for days with no workers
     MIN_WORKER_PENALTY = 60  # Penalty for breaking minimum worker requirements
+    SUNDAY_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced Sunday free days ALL YEAR
+    C2D_YEAR_BALANCE_PENALTY = 8  # Penalty for unbalanced C2D free days ALL YEAR
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
-    hours_scale = 8
+    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing Sundays across workers
+    C2D_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing C2D across workers
+    MANAGER_KEYHOLDER_CONFLICT_PENALTY = 30000
+    KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY = 50000
+    MANAGER_MANAGER_CONFLICT_PENALTY = 50000
+
+
+    optimization_details = {
+        'point_1_pessobj_deviations': {
+            'variables': {},
+            'weights': {},
+            'penalty_weight': PESS_OBJ_PENALTY
+        },
+        'point_2_consecutive_free_days': {
+            'variables': [],
+            'weight': CONSECUTIVE_FREE_DAY
+        },
+        'point_3_no_workers': {
+            'variables': {},
+            'penalty_weight': HEAVY_PENALTY
+        },
+        'point_4_min_workers': {
+            'variables': {},
+            'penalty_weight': MIN_WORKER_PENALTY
+        },
+        'point_5_1_sunday_balance': {
+            'variables': [],
+            'penalty_weight': SUNDAY_YEAR_BALANCE_PENALTY
+        },
+        'point_5_2_c2d_balance': {
+            'variables': [],
+            'penalty_weight': C2D_YEAR_BALANCE_PENALTY
+        },
+        'point_6_inconsistent_shifts': {
+            'variables': {},
+            'penalty_weight': INCONSISTENT_SHIFT_PENALTY
+        },
+        'point_7_sunday_balance_across_workers': {
+            'variables': [],
+            'penalty_weight': SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY
+        },
+        'point_7b_lq_balance_across_workers': {
+            'variables': [],
+            'penalty_weight': C2D_BALANCE_ACROSS_WORKERS_PENALTY
+        },
+        'point_8_manager_keyholder_conflicts': {
+            'variables': {},
+            'penalty_weights': {
+                'mgr_kh_same_off': MANAGER_KEYHOLDER_CONFLICT_PENALTY,
+                'kh_overlap': KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY,
+                'mgr_overlap': MANAGER_MANAGER_CONFLICT_PENALTY
+            }
+        }
+    }
 
 
     # 1. Penalize deviations from pessObj
@@ -45,10 +102,14 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             model.Add(neg_diff >= 0)  # Ensure neg_diff is non-negative
             
             # Add both positive and negative deviations to the objective function
-            objective_terms.append(1000 * pos_diff)
-            objective_terms.append(1000 * neg_diff)
-        day_counter += 1
+            objective_terms.append(PESS_OBJ_PENALTY * pos_diff)
+            objective_terms.append(PESS_OBJ_PENALTY * neg_diff)
 
+            optimization_details['point_1_pessobj_deviations']['variables'][(d, s)] = {
+                'pos_diff': pos_diff,
+                'neg_diff': neg_diff,
+                'target': target
+            }
 
     # 2. NEW: Reward consecutive free days
     consecutive_free_day_bonus = []
@@ -71,6 +132,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             model.Add(free_shift_sum == 0).OnlyEnforceIf(free_day.Not())
             
             free_day_vars[d] = free_day
+
+
         
         # For each pair of consecutive days in the worker's schedule
         for i in range(len(all_work_days) - 1):
@@ -89,9 +152,17 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 # Add a negative term (bonus) to the objective function for each consecutive free day pair
                 consecutive_free_day_bonus.append(consecutive_free)
 
+                # Store in optimization details
+                optimization_details['point_2_consecutive_free_days']['variables'].append({
+                    'worker': w,
+                    'day1': day1,
+                    'day2': day2,
+                    'variable': consecutive_free
+                })
+
     # Add the bonus term to the objective with appropriate weight (negative to minimize)
     # Using a weight of -1 to prioritize consecutive free days
-    objective_terms.extend([-1 * term for term in consecutive_free_day_bonus])
+    objective_terms.extend([CONSECUTIVE_FREE_DAY * term for term in consecutive_free_day_bonus])
     
     #3. No workers in a day penalty
     for d in days_of_year:
@@ -108,6 +179,12 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     
                     # Store the variable
                     no_workers_penalties[(d, s)] = no_workers
+
+                    # Store in optimization details
+                    optimization_details['point_3_no_workers']['variables'][(d, s)] = {
+                        'variable': no_workers,
+                        'target': pessObj.get((d, s), 0)
+                    }
                     
                     # Add a heavy penalty to the objective function
                     objective_terms.append(HEAVY_PENALTY * no_workers)
@@ -128,6 +205,11 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 
                 # Store the variable
                 min_workers_penalties[(d, s)] = shortfall
+
+                optimization_details['point_4_min_workers']['variables'][(d, s)] = {
+                    'shortfall': shortfall,
+                    'min_required': min_req
+                }
                 
                 # Add penalty to the objective function
                 objective_terms.append(MIN_WORKER_PENALTY * shortfall)
@@ -135,10 +217,9 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
 
     # 5.1 Balance sundays free days 
-    SUNDAY_BALANCE_PENALTY = 1  # Weight for Sunday balance penalty
     sunday_balance_penalties = []
-        
-        
+    
+    
     for w in workers:
         worker_sundays = [d for d in sundays if d in working_days[w]]
         
@@ -194,14 +275,23 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     model.Add(under_penalty >= ideal_count - segment_free_count)
                     model.Add(under_penalty >= 0)  # Ensure non-negative
                     
-                    sunday_balance_penalties.append(SUNDAY_BALANCE_PENALTY * over_penalty)
-                    sunday_balance_penalties.append(SUNDAY_BALANCE_PENALTY * under_penalty)
+                    # Store in optimization details
+                    optimization_details['point_5_1_sunday_balance']['variables'].append({
+                    'worker': w,
+                    'segment': segment,
+                    'over_penalty': over_penalty,
+                    'under_penalty': under_penalty,
+                    'ideal_count': ideal_count,
+                    'segment_sundays': [worker_sundays[i] for i in range(start_idx, min(end_idx, len(worker_sundays)))]
+                })
+                    
+                    sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * over_penalty)
+                    sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * under_penalty)
     
     objective_terms.extend(sunday_balance_penalties)
 
 
     # 5.2 Balance c2d free days
-    C2D_BALANCE_PENALTY = 8  # Weight for c2d balance penalty
     c2d_balance_penalties = []
     quality_weekend_2_dict = {}
     for w in workers:
@@ -271,10 +361,22 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     
                     model.Add(under_penalty >= ideal_count - segment_count)
                     model.Add(under_penalty >= 0)  # Ensure non-negative
+                    # Store in optimization details
+                    optimization_details['point_5_2_c2d_balance']['variables'].append({
+                    'worker': w,
+                    'segment': segment,
+                    'over_penalty': over_penalty,
+                    'under_penalty': under_penalty,
+                    'ideal_count': ideal_count,
+                    'segment_weekends': [weekend_dates[i] for i in range(start_idx, min(end_idx, len(weekend_dates)))]
+                    })
                     
-                    c2d_balance_penalties.append(C2D_BALANCE_PENALTY * over_penalty)
-                    c2d_balance_penalties.append(C2D_BALANCE_PENALTY * under_penalty)
-    
+                    c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * over_penalty)
+                    c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * under_penalty)
+
+
+
+
     objective_terms.extend(c2d_balance_penalties)
 
     # 6. Penalize inconsistent shift types within a week for each worker
@@ -309,14 +411,20 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             
                 # Store the variable
                 inconsistent_shift_penalties[(w, week)] = inconsistent_shifts
+
+                # Store in optimization details
+                optimization_details['point_6_inconsistent_shifts']['variables'][(w, week)] = {
+                    'inconsistent_variable': inconsistent_shifts,
+                    'has_m_shift': has_m_shift,
+                    'has_t_shift': has_t_shift,
+                    'working_days_in_week': working_days_in_week
+                }
                 
                 # Add penalty to the objective function
                 objective_terms.append(INCONSISTENT_SHIFT_PENALTY * inconsistent_shifts)
 
-   # 7 Balancing number of sundays free days across the workers 
- 
-
-    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 50
+    # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
+    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5
     sunday_balance_across_workers_penalties = []
 
     # Create constraint variables for each worker's total Sunday free days
@@ -388,6 +496,18 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     model.Add(proportional_diff_neg >= 
                             sunday_free_worker_vars[w2] * prop1_int - sunday_free_worker_vars[w1] * prop2_int)
                     model.Add(proportional_diff_neg >= 0)
+
+                    # Store in optimization details
+                    optimization_details['point_7_sunday_balance_across_workers']['variables'].append({
+                        'worker1': w1,
+                        'worker2': w2,
+                        'proportional_diff_pos': proportional_diff_pos,
+                        'proportional_diff_neg': proportional_diff_neg,
+                        'prop1': prop1,
+                        'prop2': prop2,
+                        'total_sunday_free_w1': sunday_free_worker_vars[w1],
+                        'total_sunday_free_w2': sunday_free_worker_vars[w2]
+                    })
                     
                     # Add penalties for proportional imbalance
                     weight = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 2  # Distribute penalty across pairs
@@ -398,9 +518,10 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     objective_terms.extend(sunday_balance_across_workers_penalties)  
  
 
+
     # 7B Balancing number of LQ (quality weekends) across workers (pairwise)
     # Business rule: a weekend counts as LQ iff Saturday has shift "LQ" AND Sunday has shift "L".
-    LQ_BALANCE_ACROSS_WORKERS_PENALTY = 50
+    LQ_BALANCE_ACROSS_WORKERS_PENALTY = 5
     lq_balance_across_workers_penalties = []
 
     lq_free_worker_vars = {}
@@ -486,6 +607,18 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 model.Add(diff_pos >= lq_free_worker_vars[w1] * prop2_int - lq_free_worker_vars[w2] * prop1_int)
                 model.Add(diff_neg >= lq_free_worker_vars[w2] * prop1_int - lq_free_worker_vars[w1] * prop2_int)
 
+                # Store in optimization details
+                optimization_details['point_7b_lq_balance_across_workers']['variables'].append({
+                    'worker1': w1,
+                    'worker2': w2,
+                    'diff_pos': diff_pos,
+                    'diff_neg': diff_neg,
+                    'prop1': prop1,
+                    'prop2': prop2,
+                    'total_lq_free_w1': lq_free_worker_vars[w1],
+                    'total_lq_free_w2': lq_free_worker_vars[w2]
+                })
+
                 weight = LQ_BALANCE_ACROSS_WORKERS_PENALTY // 2
                 lq_balance_across_workers_penalties.append(weight * diff_pos)
                 lq_balance_across_workers_penalties.append(weight * diff_neg)
@@ -493,11 +626,11 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     # Add to objective
     objective_terms.extend(lq_balance_across_workers_penalties) 
 
+   
 
-    # Pesos
-    PEN_MGR_KH_SAME_OFF = 30000
-    PEN_KH_OVERLAP      = 50000
-    PEN_MGR_OVERLAP     = 50000  # se quiseres manter penalização de managers
+#################################################################################################################################
+    # 8) Mutualy exclusive free days for managers and keyholders (STRSOL 879)
+
 
     # OFF_LABELS consideradas como “folga”
     OFF_LABELS = ("L", "LQ")
@@ -544,24 +677,45 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         model.AddBoolAnd([mgr_any, kh_any]).OnlyEnforceIf(both_off)
         model.AddBoolOr([mgr_any.Not(), kh_any.Not()]).OnlyEnforceIf(both_off.Not())
 
-        objective_terms.append(PEN_MGR_KH_SAME_OFF * both_off)
+        # Store in optimization details
+        optimization_details['point_8_manager_keyholder_conflicts']['variables'][(d, 'mgr_kh_same_off')] = {
+            'both_off': both_off,
+            'mgr_any': mgr_any,
+            'kh_any': kh_any
+        }
+
+        objective_terms.append(MANAGER_KEYHOLDER_CONFLICT_PENALTY * both_off)
 
         # --- b) Overlap entre keyholders (>= 2 off no mesmo dia)
-        if PEN_KH_OVERLAP > 0:
+        if KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY > 0:
             kh_overlap = model.NewBoolVar(f"kh_overlap_{d}")
             debug_vars[f"kh_overlap_{d}"] = kh_overlap
 
             model.Add(kh_sum >= 2).OnlyEnforceIf(kh_overlap)
             model.Add(kh_sum <= 1).OnlyEnforceIf(kh_overlap.Not())
-            objective_terms.append(PEN_KH_OVERLAP * kh_overlap)
+
+            # Store in optimization details
+            optimization_details['point_8_manager_keyholder_conflicts']['variables'][(d, 'kh_overlap')] = {
+                'kh_overlap': kh_overlap,
+                'kh_count': kh_sum
+            }
+
+            objective_terms.append(KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY * kh_overlap)
 
         # --- c) Overlap entre managers (>= 2 off no mesmo dia) [opcional]
-        if PEN_MGR_OVERLAP > 0 and managers:
+        if MANAGER_MANAGER_CONFLICT_PENALTY > 0 and managers:
             mgr_overlap = model.NewBoolVar(f"mgr_overlap_{d}")
             debug_vars[f"mgr_overlap_{d}"] = mgr_overlap
             model.Add(mgr_sum >= 2).OnlyEnforceIf(mgr_overlap)
             model.Add(mgr_sum <= 1).OnlyEnforceIf(mgr_overlap.Not())
-            objective_terms.append(PEN_MGR_OVERLAP * mgr_overlap) 
+
+            # Store in optimization details
+            optimization_details['point_8_manager_keyholder_conflicts']['variables'][(d, 'mgr_overlap')] = {
+                'mgr_overlap': mgr_overlap,
+                'mgr_count': mgr_sum
+            }
+
+            objective_terms.append(MANAGER_MANAGER_CONFLICT_PENALTY * mgr_overlap)
 
 
         
@@ -570,4 +724,4 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     model.Minimize(sum(objective_terms))
 
-    return debug_vars
+    return debug_vars, optimization_details

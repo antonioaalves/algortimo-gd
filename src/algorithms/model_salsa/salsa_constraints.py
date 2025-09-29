@@ -423,10 +423,11 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                         # Very short week: no requirement
                         required_free_days = 1
                 else:
-                        required_free_days = 0
-               
-                logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
-                           f"Required Free Days = {required_free_days}")
+                     # Very short week: no requirement
+                     required_free_days = 0
+            
+                # logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
+                #            f"Required Free Days = {required_free_days}")
 
             if required_free_days < (len(fixed_days_week) + len(fixed_lqs_week)):
                 required_free_days = len(fixed_days_week) + len(fixed_lqs_week)
