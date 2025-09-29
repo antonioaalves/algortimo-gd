@@ -64,7 +64,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             "max_continuous_working_days": 7,
             "shifts": ['M', 'T', 'L', 'LQ', 'LD', 'F', 'A', 'V', '-'],
             "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
-            "working_shifts": ['M', 'T'],
+            "working_shifts": ['M', 'T', 'LD'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -412,7 +412,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
-            compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off)
+            compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs)
                         
             self.logger.info("All SALSA constraints applied")
             
