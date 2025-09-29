@@ -12,7 +12,7 @@ from src.config import PROJECT_NAME
 # Set up logger
 logger = get_logger(PROJECT_NAME)
 
-def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Tuple[Any, ...]:
+def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Enhanced version of read_data_salsa with comprehensive logging and error checks.
     
@@ -20,7 +20,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         medium_dataframes: Dictionary containing the required DataFrames
         
     Returns:
-        Tuple containing all processed data elements for the algorithm
+        Dictonary containing all processed data elements for the algorithm
         
     Raises:
         ValueError: If required DataFrames are missing or invalid
@@ -799,55 +799,52 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         # 13. RETURN ALL PROCESSED data
         # =================================================================
-        return (
-            matriz_calendario_gd,    # 0x
-            days_of_year,           # 1x
-            sundays,                # 2x
-            holidays,               # 3x
-            special_days,           # 4x
-            closed_holidays,        # 5x
-            empty_days,             # 6x
-            worker_holiday,         # 7x
-            missing_days,           # 8x
-            working_days,           # 9x
-            non_holidays,           # 10x
-            start_weekday,          # 11x
-            week_to_days,           # 12x
-            worker_week_shift,      # 13x
-            matriz_colaborador_gd,  # 14x
-            workers,                # 15x
-            contract_type,          # 16x
-            total_l,                # 17x
-            total_l_dom,            # 18x
-            c2d,                    # 19x
-            c3d,                    # 20x
-            l_d,                    # 21x
-            l_q,                    # 22x
-            cxx,                    # 23x
-            t_lq,                   # 24x                   # 25
-            matriz_estimativas_gd,  # 26x
-            pess_obj,                # 27x
-            min_workers,            # 28x
-            max_workers,            # 29x
-            working_shift_2,         # 30
-            workers_complete,       # 31
-            workers_complete_cycle,  # 32
-            free_day_complete_cycle,  # 33
-            week_to_days_salsa,     # 34x
-            first_registered_day,
-            admissao_proporcional,   # 35x
-            role_by_worker,        # 37x
-            #managers,               # 38x
-            #keyholders,             # 39x
-            data_admissao,
-            data_demissao,
-            last_registered_day,
-            fixed_days_off,             # 36x
-            proportion,
-            fixed_LQs,          # 36x
-            # week_cut
-            work_day_hours,
-        )
+        return {
+            "matriz_calendario_gd": matriz_calendario_gd,    # 0
+            "days_of_year": days_of_year,                    # 1
+            "sundays": sundays,                              # 2
+            "holidays": holidays,                            # 3
+            "special_days": special_days,                    # 4
+            "closed_holidays": closed_holidays,              # 5
+            "empty_days": empty_days,                        # 6
+            "worker_holiday": worker_holiday,                # 7
+            "missing_days": missing_days,                    # 8
+            "working_days": working_days,                    # 9
+            "non_holidays": non_holidays,                    # 10
+            "start_weekday": start_weekday,                  # 11
+            "week_to_days": week_to_days,                    # 12
+            "worker_week_shift": worker_week_shift,          # 13
+            "matriz_colaborador_gd": matriz_colaborador_gd,  # 14
+            "workers": workers,                              # 15
+            "contract_type": contract_type,                  # 16
+            "total_l": total_l,                              # 17
+            "total_l_dom": total_l_dom,                      # 18
+            "c2d": c2d,                                      # 19
+            "c3d": c3d,                                      # 20
+            "l_d": l_d,                                      # 21
+            "l_q": l_q,                                      # 22
+            "cxx": cxx,                                      # 23
+            "t_lq": t_lq,                                    # 24
+            "matriz_estimativas_gd": matriz_estimativas_gd,  # 25
+            "pess_obj": pess_obj,                            # 26
+            "min_workers": min_workers,                      # 27
+            "max_workers": max_workers,                      # 28
+            "working_shift_2": working_shift_2,              # 29
+            "workers_complete": workers_complete,            # 30
+            "workers_complete_cycle": workers_complete_cycle,# 31
+            "free_day_complete_cycle": free_day_complete_cycle, # 32
+            "week_to_days_salsa": week_to_days_salsa,        # 33
+            "first_registered_day": first_registered_day,    # 34
+            "admissao_proporcional": admissao_proporcional,  # 35
+            "role_by_worker": role_by_worker,                # 36
+            "data_admissao": data_admissao,                  # 37
+            "data_demissao": data_demissao,                  # 38
+            "last_registered_day": last_registered_day,      # 39
+            "fixed_days_off": fixed_days_off,                # 40
+            "proportion": proportion,                        # 41
+            "fixed_LQs": fixed_LQs,                          # 42
+            "work_day_hours": work_day_hours,                # 43
+            }
         
     except Exception as e:
         logger.error(f"Error in read_data_salsa: {e}", exc_info=True)
