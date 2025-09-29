@@ -296,8 +296,8 @@ def solve(
                 table_data.append(worker_row)
                 processed_workers += 1
                                     
-                logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
-                    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
+                #logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
+                #    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
                                     
             except Exception as e:
                 logger.error(f"Error processing worker {w}: {str(e)}")
