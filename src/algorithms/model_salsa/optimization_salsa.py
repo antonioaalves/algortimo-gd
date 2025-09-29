@@ -26,7 +26,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     MANAGER_KEYHOLDER_CONFLICT_PENALTY = 30000
     KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY = 50000
     MANAGER_MANAGER_CONFLICT_PENALTY = 50000
-
+    hours_scale = 8
 
     optimization_details = {
         'point_1_pessobj_deviations': {
