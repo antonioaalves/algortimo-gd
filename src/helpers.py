@@ -2148,4 +2148,26 @@ def _create_export_info(process_id: int, ROOT_DIR) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error creating export info: {e}")
         return {}
-        
+
+# Pass this function to the data_treatment_functions
+def get_colabs_passado(wfm_proc_colab: str, df_mpd_valid_employees: pd.DataFrame, fk_tipo_posto: str) -> Tuple[bool, List[int], str]:
+    """
+    """
+
+    # Validate there is not multiple employees with expected conditions
+    try:
+        df = df_mpd_valid_employees[df_mpd_valid_employees['fk_tipo_posto'] == fk_tipo_posto]
+        mask = (df['gera_horario_ind'] == 'Y' & df['existe_horario_ind'] == 'N')
+        colabs_a_gerar = df[mask, 'fk_colaborador'].unique()
+        if len(colabs_a_gerar) > 1:
+            return False, [], "There should be only one employee for allocation."
+
+        if colabs_a_gerar[0] != wfm_proc_colab:
+            return False, [], "The employee present in the df_mpd_valid_employees query."
+
+        colabs_passado = df['fk_colaborador'].unique().remove(wfm_proc_colab)
+        logger.info(f"Created colabs_passado list: {colabs_passado}")
+        return colabs_passado
+    except Exception as e:
+        logger.error(f"", exc_info=True)
+        return False, [], "Error crating the colabs_passado_list"

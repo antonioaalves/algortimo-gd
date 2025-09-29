@@ -1,0 +1,1 @@
+select * from table(WFM.S_PROCESSO.GET_PROCESS_MPD_EMPLOYEES({process_id}))

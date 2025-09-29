@@ -22,7 +22,8 @@ from src.helpers import (
     add_trads_code, assign_90_cycles, load_pre_ger_scheds, get_limit_mt,
     count_dates_per_year, load_wfm_scheds, func_turnos, adjusted_isoweek,
     custom_round, calcular_folgas2, calcular_folgas3, insert_holidays_absences, insert_closed_days,
-    get_param_for_posto, convert_types_out, bulk_insert_with_query, insert_dayoffs_override
+    get_param_for_posto, convert_types_out, bulk_insert_with_query, insert_dayoffs_override,
+    get_colabs_passado
 )
 from src.load_csv_functions.load_valid_emp import load_valid_emp_csv
 from src.algorithms.factory import AlgorithmFactory
@@ -228,6 +229,17 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error loading valid_emp: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            # Get new valid employees from new service
+            try:
+                query_path = entities_dict['df_mpd_valid_employees']
+                process_id_str = "'" + str(self.external_call_data['current_process_id']) + "'"
+                df_mpd_valid_employees = data_manager.load_data('df_mpd_valid_employees', query_file=query_path, process_id=process_id_str)
+
+                # Use data treatment function to get colabs list
+                pass
+            except Exception as e:
+                self.logger.error(f"Error loading df_mpd_valid_employees: {e}", exc_info=True)
+                return False, "errSubproc", str(e)            
 
             # Load important info into memory
             try:
@@ -357,6 +369,7 @@ class DescansosDataModel(BaseDataModel):
                 # Copy the dataframes into the apropriate dict
                 # AUX DATA
                 self.auxiliary_data['valid_emp'] = valid_emp.copy()
+                self.auxiliary_data['df_mpd_valid_employees'] = df_mpd_valid_employees.copy()
                 self.auxiliary_data['params_lq'] = params_lq.copy()
                 self.auxiliary_data['params_df'] = params_df.copy()
                 self.auxiliary_data['df_festivos'] = df_festivos.copy()
@@ -833,12 +846,17 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info("Filtering employees by admission date")
                 df_colaborador = self.raw_data['df_colaborador']
                 start_date_dt = pd.to_datetime(start_date)
+                wfm_proc_colab = self.external_call_data['wfm_proc_colab']
+                df_mpd_valid_employees = self.auxiliary_data['df_mpd_valid_employees'].copy()
 
                 # Fixed: Added proper error handling
-                colabs_passado = df_colaborador[
-                    pd.to_datetime(df_colaborador['data_admissao']) < start_date_dt
-                ]['fk_colaborador'].tolist()
-                self.logger.info(f"Found {len(colabs_passado)} employees with past admission dates: {colabs_passado}")
+                if wfm_proc_colab != '':
+                    colabs_passado = df_colaborador[
+                        pd.to_datetime(df_colaborador['data_admissao']) < start_date_dt
+                    ]['fk_colaborador'].tolist()
+                    self.logger.info(f"Found {len(colabs_passado)} employees with past admission dates: {colabs_passado}")
+                else:
+                    colabs_passado = get_colabs_passado(wfm_proc_colab=wfm_proc_colab, df_mpd_valid_employees=df_mpd_valid_employees, fk_tipo_posto=posto_id)
             except Exception as e:
                 self.logger.error(f"Error filtering employees by admission date: {e}", exc_info=True)
                 colabs_passado = []
