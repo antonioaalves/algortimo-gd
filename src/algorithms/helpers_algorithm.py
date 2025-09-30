@@ -24,6 +24,9 @@ def analyze_optimization_results(solver, optimization_details):
         'total_penalty': 0
     }
     
+    if optimization_details is None:
+        return results
+    
     penalty_weight = optimization_details['point_1_pessobj_deviations']['penalty_weight']
     
     for (d, s), var_info in optimization_details['point_1_pessobj_deviations']['variables'].items():
@@ -338,17 +341,6 @@ def analyze_optimization_results(solver, optimization_details):
     }
     
     return results
-import pandas as pd
-import os
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
-
-# Local stuff
-from src.config import PROJECT_NAME
-from base_data_project.log_config import get_logger
-
-logger = get_logger(PROJECT_NAME)
-
 
 def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
     """Create empty results structure when no data is available."""

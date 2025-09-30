@@ -247,6 +247,7 @@ def solve(
                 worker_row = [w]  # Start with the worker's name
                 l_count = 0
                 lq_count = 0
+                ld_count = 0
                 special_days_count = 0
                 unassigned_days = 0
 

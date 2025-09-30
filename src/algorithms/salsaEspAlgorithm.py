@@ -430,7 +430,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, 
+            schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, 
                               output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
                                                          f'salsa_esp_schedule_{self.process_id}.xlsx'))
             
