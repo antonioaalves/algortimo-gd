@@ -1365,27 +1365,29 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
         # TREATMENT LOGIC
         df_result = df_calendario.copy()
         
-        # Create merge keys for matching
-        merge_cols = ['fk_colaborador', 'data']
+        # Create lookup Series from df_calendario_passado using MultiIndex
+        passado_lookup = df_calendario_passado.set_index(['fk_colaborador', 'data'])['horario']
         
-        # Merge with df_calendario_passado to get historical horario values
-        # Use left join to preserve all records from df_calendario
-        merged = df_result.merge(
-            df_calendario_passado[merge_cols + ['horario']], 
-            on=merge_cols, 
-            how='left', 
-            suffixes=('', '_passado')
-        )
+        # Create MultiIndex for df_result to enable vectorized lookup (without tipo_turno)
+        result_index = df_result.set_index(['fk_colaborador', 'data']).index
         
-        # Fill missing horario values with historical data
-        # Only fill where current horario is null/empty and historical data exists
-        mask_missing = (df_result['horario'].isnull()) | (df_result['horario'] == '') | (df_result['horario'] == '-')
-        mask_has_historical = merged['horario_passado'].notna() & (merged['horario_passado'] != '') & (merged['horario_passado'] != '-')
+        # Vectorized lookup: map passado values to result positions
+        mapped_values = result_index.map(passado_lookup)
         
-        df_result.loc[mask_missing & mask_has_historical, 'horario'] = merged.loc[mask_missing & mask_has_historical, 'horario_passado']
+        # Create mask for empty horario values in df_result
+        empty_mask = (df_result['horario'].isnull()) | (df_result['horario'] == '') | (df_result['horario'] == '-')
         
-        filled_count = (mask_missing & mask_has_historical).sum()
-        logger.info(f"Filled {filled_count} missing horario values using df_calendario_passado")
+        # Create mask for valid values from passado (not empty/null)
+        valid_passado_mask = mapped_values.notna() & (mapped_values != '') & (mapped_values != '-')
+        
+        # Combine masks: fill only where current is empty AND passado has valid data
+        fill_mask = empty_mask & valid_passado_mask
+        
+        # Vectorized assignment
+        df_result.loc[fill_mask, 'horario'] = mapped_values[fill_mask]
+        
+        filled_count = fill_mask.sum()
+        logger.info(f"Filled {filled_count} empty horario values from df_calendario_passado")
         
         # OUTPUT VALIDATION
         if df_result.empty:
@@ -1399,7 +1401,8 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
 
 def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Add df_ausencias_ferias to df_calendario.
+    Fill df_calendario horario values with absence/vacation data from df_ausencias_ferias.
+    Maps tipo_ausencia to horario codes based on employee_id and data.
     """
     try:
         # INPUT VALIDATION
@@ -1407,19 +1410,50 @@ def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.Da
             return False, pd.DataFrame(), "Input validation failed: empty calendario DataFrame"
             
         # TREATMENT LOGIC
-        logger.info(f"Adding df_ausencias_ferias to df_calendario. Not implemented yet.")
-        # TODO: Add implementation when business logic is defined
+        if df_ausencias_ferias.empty:
+            logger.info("df_ausencias_ferias is empty, returning original df_calendario")
+            return True, df_calendario, ""
         
-        # OUTPUT VALIDATION
-        return True, df_calendario, ""
+        df_result = df_calendario.copy()
+        
+        # Create lookup Series from df_ausencias_ferias using MultiIndex
+        # Use fk_colaborador if employee_id doesn't exist yet
+        employee_col = 'employee_id' if 'employee_id' in df_ausencias_ferias.columns else 'fk_colaborador'
+        ausencias_lookup = df_ausencias_ferias.set_index([employee_col, 'data'])['tipo_ausencia']
+        
+        # Create MultiIndex for df_result to enable vectorized lookup (without tipo_turno)
+        result_index = df_result.set_index(['fk_colaborador', 'data']).index
+        
+        # Vectorized lookup: map ausencias values to result positions
+        mapped_values = result_index.map(ausencias_lookup)
+        
+        # Create mask for empty horario values in df_result
+        empty_mask = (df_result['horario'].isnull()) | (df_result['horario'] == '') | (df_result['horario'] == '-')
+        
+        # Create mask for valid values from ausencias (not empty/null)
+        valid_ausencias_mask = mapped_values.notna() & (mapped_values != '') & (mapped_values != '-')
+        
+        # Combine masks: fill only where current is empty AND ausencias has valid data
+        fill_mask = empty_mask & valid_ausencias_mask
+        
+        # Vectorized assignment
+        df_result.loc[fill_mask, 'horario'] = mapped_values[fill_mask]
+        
+        filled_count = fill_mask.sum()
+        logger.info(f"Filled {filled_count} empty horario values from df_ausencias_ferias")
+        
+        return True, df_result, f"Successfully filled {filled_count} horario values from ausencias data"
         
     except Exception as e:
-        logger.error(f"Error in add_ausencias_ferias: {str(e)}", exc_info=True)
-        return False, pd.DataFrame(), ""
+        error_msg = f"Error in add_ausencias_ferias: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
 
 def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Add df_core_pro_emp_horario_det to df_calendario.
+    Override df_calendario horario values with day-offs from df_core_pro_emp_horario_det.
+    Applies 'L' for day-offs (tipo_dia = 'F') to both M and T shifts.
     """
     try:
         # INPUT VALIDATION
@@ -1427,19 +1461,53 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
             return False, pd.DataFrame(), "Input validation failed: empty calendario DataFrame"
             
         # TREATMENT LOGIC
-        logger.info(f"Adding df_core_pro_emp_horario_det to df_calendario. Not implemented yet.")
-        # TODO: Add implementation when business logic is defined
+        if df_core_pro_emp_horario_det.empty:
+            logger.info("df_core_pro_emp_horario_det is empty, returning original df_calendario")
+            return True, df_calendario, ""
         
-        # OUTPUT VALIDATION
-        return True, df_calendario, ""
+        df_result = df_calendario.copy()
+        
+        # Filter for day-offs only (tipo_dia = 'F')
+        df_dayoffs = df_core_pro_emp_horario_det[
+            df_core_pro_emp_horario_det['tipo_dia'] == 'F'
+        ].copy()
+        
+        if df_dayoffs.empty:
+            logger.info("No day-off records found, returning original df_calendario")
+            return True, df_result, ""
+        
+        # Convert schedule_day to string format for matching
+        df_dayoffs['data'] = pd.to_datetime(df_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
+        
+        # Create lookup Series from day-offs using MultiIndex
+        dayoffs_lookup = df_dayoffs.set_index(['employee_id', 'data'])['tipo_dia']
+        
+        # Create MultiIndex for df_result to enable vectorized lookup
+        result_index = df_result.set_index(['fk_colaborador', 'data']).index
+        
+        # Vectorized lookup: map day-off values to result positions
+        mapped_values = result_index.map(dayoffs_lookup)
+        
+        # Create mask for day-off records (tipo_dia = 'F')
+        dayoff_mask = mapped_values == 'F'
+        
+        # Vectorized assignment: Override with 'L' for all day-offs
+        df_result.loc[dayoff_mask, 'horario'] = 'L'
+        
+        filled_count = dayoff_mask.sum()
+        logger.info(f"Applied {filled_count} day-off overrides (L) from df_core_pro_emp_horario_det")
+        
+        return True, df_result, f"Successfully applied {filled_count} day-off overrides"
         
     except Exception as e:
-        logger.error(f"Error in add_folgas_ciclos: {str(e)}", exc_info=True)
-        return False, pd.DataFrame(), ""
+        error_msg = f"Error in add_folgas_ciclos: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
 
 def add_ciclos_90(df_calendario: pd.DataFrame, df_ciclos_90: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Add df_ciclos_90 to df_calendario.
+    Fill df_calendario horario values with 90-day cycle data from df_ciclos_90.
+    Uses codigo_trads or horario_ind values for schedule assignments.
     """
     try:
         # INPUT VALIDATION
@@ -1447,15 +1515,49 @@ def add_ciclos_90(df_calendario: pd.DataFrame, df_ciclos_90: pd.DataFrame) -> Tu
             return False, pd.DataFrame(), "Input validation failed: empty calendario DataFrame"
             
         # TREATMENT LOGIC
-        logger.info(f"Adding df_ciclos_90 to df_calendario. Not implemented yet.")
-        # TODO: Add implementation when business logic is defined
+        if df_ciclos_90.empty:
+            logger.info("df_ciclos_90 is empty, returning original df_calendario")
+            return True, df_calendario, ""
         
-        # OUTPUT VALIDATION
-        return True, df_calendario, ""
+        df_result = df_calendario.copy()
+        
+        # Convert schedule_day to string format for matching
+        df_ciclos_mapped = df_ciclos_90.copy()
+        df_ciclos_mapped['data'] = pd.to_datetime(df_ciclos_mapped['schedule_day']).dt.strftime('%Y-%m-%d')
+        
+        # Use codigo_trads if available, otherwise use horario_ind as fallback
+        horario_col = 'codigo_trads' if 'codigo_trads' in df_ciclos_mapped.columns else 'horario_ind'
+        
+        # Create lookup Series from df_ciclos_90 using MultiIndex
+        ciclos_lookup = df_ciclos_mapped.set_index(['employee_id', 'data'])[horario_col]
+        
+        # Create MultiIndex for df_result to enable vectorized lookup
+        result_index = df_result.set_index(['fk_colaborador', 'data']).index
+        
+        # Vectorized lookup: map ciclos values to result positions
+        mapped_values = result_index.map(ciclos_lookup)
+        
+        # Create mask for empty horario values in df_result
+        empty_mask = (df_result['horario'].isnull()) | (df_result['horario'] == '') | (df_result['horario'] == '-')
+        
+        # Create mask for valid values from ciclos (not empty/null)
+        valid_ciclos_mask = mapped_values.notna() & (mapped_values != '') & (mapped_values != '-')
+        
+        # Combine masks: fill only where current is empty AND ciclos has valid data
+        fill_mask = empty_mask & valid_ciclos_mask
+        
+        # Vectorized assignment
+        df_result.loc[fill_mask, 'horario'] = mapped_values[fill_mask]
+        
+        filled_count = fill_mask.sum()
+        logger.info(f"Filled {filled_count} empty horario values from df_ciclos_90")
+        
+        return True, df_result, f"Successfully filled {filled_count} horario values from 90-day cycles"
         
     except Exception as e:
-        logger.error(f"Error in add_ciclos_90: {str(e)}", exc_info=True)
-        return False, pd.DataFrame(), ""
+        error_msg = f"Error in add_ciclos_90: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
 
 def add_days_off(df_calendario: pd.DataFrame, df_days_off: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
