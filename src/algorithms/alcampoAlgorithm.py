@@ -95,14 +95,14 @@ class AlcampoAlgorithm(BaseAlgorithm):
 
 
 
-    def adapt_data(self, data: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def adapt_data(self, data: Dict[str, pd.DataFrame], algorithm_params_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Adapt input data for the shift scheduling algorithm.
         
         Args:
             data: Dictionary containing DataFrames:
                 - Should contain medium_dataframes with 'matrizA_bk', 'matrizB_bk', 'matriz2_bk'
-            algorithm_treatment_params: Optional dictionary containing algorithm-specific
+            algorithm_params_dict: Optional dictionary containing algorithm-specific
                                       data treatment parameters (ignored by AlcampoAlgorithm)
                 
         Returns:
@@ -112,8 +112,8 @@ class AlcampoAlgorithm(BaseAlgorithm):
             self.logger.info("Starting data adaptation for Alcampo algorithm")
             
             # AlcampoAlgorithm doesn't use treatment parameters, but accepts them for interface consistency
-            if algorithm_treatment_params:
-                self.logger.debug(f"AlcampoAlgorithm received treatment parameters but ignores them: {list(algorithm_treatment_params.keys())}")
+            if algorithm_params_dict:
+                self.logger.debug(f"AlcampoAlgorithm received treatment parameters but ignores them: {list(algorithm_params_dict.keys())}")
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE

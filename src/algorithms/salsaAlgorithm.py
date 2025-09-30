@@ -93,14 +93,14 @@ class SalsaAlgorithm(BaseAlgorithm):
         # Add any algorithm-specific initialization
         self.logger.info(f"Initialized {self.algo_name} with parameters: {self.parameters}")
 
-    def adapt_data(self, data: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def adapt_data(self, data: Dict[str, pd.DataFrame], algorithm_params_dict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Adapt input data for the SALSA shift scheduling algorithm.
         
         Args:
             data: Dictionary containing DataFrames:
                 - Should contain medium_dataframes with calendar, estimates, and collaborator data
-            algorithm_treatment_params: Dictionary containing algorithm treatment parameters
+            algorithm_params_dict: Dictionary containing algorithm treatment parameters
                 
         Returns:
             Dictionary containing processed data elements for the algorithm
@@ -109,11 +109,11 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Starting data adaptation for SALSA algorithm")
             
             # Handle treatment parameters - use empty dict if None
-            if algorithm_treatment_params is None:
-                algorithm_treatment_params = {}
-                self.logger.debug("No algorithm treatment parameters provided, using empty dict")
+            if algorithm_params_dict is None:
+                algorithm_params_dict = {}
+                self.logger.debug("No algorithm params dict provided, using empty dict")
             else:
-                self.logger.info(f"Using algorithm treatment parameters: {list(algorithm_treatment_params.keys())}")
+                self.logger.info(f"Using algorithm params dict: {list(algorithm_params_dict.keys())}")
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE
@@ -166,7 +166,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Import the SALSA data processing function
             from src.algorithms.model_salsa.read_salsa import read_data_salsa
             
-            processed_data = read_data_salsa(medium_dataframes, algorithm_treatment_params)
+            processed_data = read_data_salsa(medium_dataframes, algorithm_params_dict)
             
             
             # =================================================================

@@ -3898,7 +3898,7 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info(f"Running algorithm {algorithm_name}")
-                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=algorithm_params)
+                results = algorithm.run(data=self.medium_data, algorithm_params_dict=algorithm_params)
 
                 if not results:
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")
