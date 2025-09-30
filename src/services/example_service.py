@@ -397,7 +397,7 @@ class AlgoritmoGDService(BaseService):
                 # TODO: Remove this sine the algorithm_name comes from parasm
                 #algorithm_name = decisions.get('algorithm', {}).get('name', algorithm_name)
                 algorithm_name = ''
-                algorithm_params = decisions.get('algorithm', {}).get('parameters', algorithm_params)
+                #algorithm_params = decisions.get('algorithm', {}).get('parameters', algorithm_params)
                 insert_results = decisions.get('insertions', {}).get('insert_results', False)
                 #self.logger.info(f"Found defaults: {defaults}")
                 #self.logger.info(f"Retrieving these values from config algorithm_name: {algorithm_name}, algorithm_params: {algorithm_params}, insert_results: {insert_results}")
@@ -406,13 +406,13 @@ class AlgoritmoGDService(BaseService):
                 #    self.logger.error("No algorithm name provided in decisions")
                 #    return False
 
-                if algorithm_params is None:
-                    self.logger.error("No algorithm parameters provided in decisions")
-                    return False
+                #if algorithm_params is None:
+                #    self.logger.error("No algorithm parameters provided in decisions")
+                #    return False
 
                 # Type assertions to help type checker
                 #assert isinstance(algorithm_name, str)
-                assert isinstance(algorithm_params, dict)
+                #assert isinstance(algorithm_params, dict)
 
             # Log start of the process to database
             #self.logger.info(f"DEBUG set_process_errors condition BEFORE LOOP: raw_connection={self.raw_connection is not None}, messages_df_empty={messages_df.empty}, messages_df_len={len(messages_df)}")
@@ -575,8 +575,8 @@ class AlgoritmoGDService(BaseService):
                 algorithm_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
                 #self.logger.info(f"DEBUG: Algorithm name before calling allocation_cycle substage: {algorithm_name}")
                 assert isinstance(algorithm_name, str)
-                assert isinstance(algorithm_params, dict)
-                valid_allocation_cycle = self._execute_allocation_cycle_substage(algorithm_params=algorithm_params, stage_name=stage_name, algorithm_name=algorithm_name)
+                #assert isinstance(algorithm_params, dict)
+                valid_allocation_cycle = self._execute_allocation_cycle_substage(algorithm_params={}, stage_name=stage_name, algorithm_name=algorithm_name)
                 if not valid_allocation_cycle:
                     if self.stage_handler:
                         self.stage_handler.track_progress(

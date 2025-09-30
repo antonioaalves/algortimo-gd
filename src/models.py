@@ -117,8 +117,13 @@ class DescansosDataModel(BaseDataModel):
         }
         
         # Algorithm treatment params - data to be sent to the algorithm for treatment purposes
-        self.algorithm_treatment_params = {
-            'admissao_proporcional': None,
+        self.algorithm_data_params = {
+            'treatment_params': {
+                'admissao_proporcional': None,
+            },
+            'constraint_params': {
+                'NUM_DIAS_CONS': None,
+            },
         }
         # Data first stage - See data lifecycle to understand what this data is
         self.raw_data: Dict[str, Any] = {
@@ -372,9 +377,15 @@ class DescansosDataModel(BaseDataModel):
                 
                 # ALGORITHM TREATMENT PARAMS
                 # TODO: remove comment from query line
-                self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
+                if parameters_cfg:
+                    #self.algorithm_data_params['algorithm_treatment_params']['admissao_proporcional'] = parameters_cfg
+                    self.algorithm_data_params.update({
+                        'algorithm_treatment_params': {
+                            'admissao_proporcional': parameters_cfg,
+                        }
+                    })
                 #self.algorithm_treatment_params['admissao_proporcional'] = 'floor'
-                self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
+                self.logger.info(f"algorithm_treatment_params: {self.algorithm_data_params}")
 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
@@ -423,6 +434,26 @@ class DescansosDataModel(BaseDataModel):
                 params_names_list=params_names_list
             ) or {}
 
+            # Save data into variables
+            try:
+                num_dias_cons = retrieved_params['NUM_DIAS_CONS']
+                if num_dias_cons:
+                    #self.algorithm_data_params['constraint_params']['NUM_DIAS_CONS'] = num_dias_cons
+                    self.algorithm_data_params.update({
+                        'constraint_params': {
+                            'NUM_DIAS_CONS': num_dias_cons
+                        }
+                    })
+            except KeyError as e:
+                self.logger.error(f"KeyError when saving dataframes: {e}", exc_info=True)
+                return False
+            except ValueError as e:
+                self.logger.error(f"ValueError when saving dataframes: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error saving dataframes to auxiliary_data and raw_data: {e}", exc_info=True)
+                return False
+
             self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)
             for param_name in params_names_list:
@@ -433,6 +464,7 @@ class DescansosDataModel(BaseDataModel):
                 # Workaround feito para registar o nome do algoritmo - assim usa-se uma funcionalidade base do base-data-project
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
+
             self.logger.info(f"Treating parameters completed successfully")
             return {'success': True, 'algorithm_name': algorithm_name}
         except Exception as e:
@@ -3796,6 +3828,7 @@ class DescansosDataModel(BaseDataModel):
         try:
             self.logger.info(f"Starting allocation_cycle processing")
             
+            # Get and treat algorithm name
             try:
                 self.logger.info("Validating input parameters for allocation cycle")
                 if not algorithm_name or not isinstance(algorithm_name, str):
@@ -3811,11 +3844,27 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error validating allocation cycle input parameters: {e}", exc_info=True)
                 return False
 
+            # Get the algorithm_params from data
+            try:
+                algorithm_params = self.algorithm_data_params
+                self.logger.info(f"algorithm_params:\n{algorithm_params}")
+
+            except KeyError as e:
+                self.logger.error(f"KeyError when getting algorithm params: {e}", exc_info=True)
+                return False
+            except ValueError as e:
+                self.logger.error(f"ValueError when getting algorithm params: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error when getting algorithm params: {e}", exc_info=True)
+                return False
+
+
             try:
                 self.logger.info(f"Creating algorithm instance for: {algorithm_name}")
                 algorithm = AlgorithmFactory.create_algorithm(
                     decision=algorithm_name,
-                    parameters=algorithm_params,
+                    parameters={},
                     process_id=self.external_call_data.get("current_process_id", 0),
                     start_date=self.external_call_data.get("start_date", ''),
                     end_date=self.external_call_data.get("end_date", '')
@@ -3849,7 +3898,7 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info(f"Running algorithm {algorithm_name}")
-                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=self.algorithm_treatment_params)
+                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=algorithm_params)
 
                 if not results:
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")

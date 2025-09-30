@@ -36,7 +36,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
 
         required_parameters = ['admissao_proporcional']
-        missing_parameters = [param for param in required_parameters if param not in algorithm_treatment_params ]
+        missing_parameters = [param for param in required_parameters if param not in algorithm_treatment_params['treatment_params'] ]
         
         if missing_dataframes:
             raise ValueError(f"Missing required DataFrames: {missing_dataframes}")
@@ -54,7 +54,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
-        admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
+        admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
