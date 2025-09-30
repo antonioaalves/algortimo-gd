@@ -125,11 +125,13 @@ def working_day_shifts(model, shift, workers, working_days, check_shift, workers
             if total_shifts:
                 model.add_exactly_one(total_shifts)
 
-def salsa_2_consecutive_free_days(model, shift, workers, working_days):
+def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type):
     for w in workers: 
         # Get all working days for this worker
         all_work_days = sorted(working_days[w])
-        
+
+        max_continuous_free_days = 7 - contract_type.get(w, 0)
+
         # Create boolean variables for each day indicating if it's a free day (L, F, or LQ)
         free_day_vars = {}
         for d in all_work_days:
@@ -151,18 +153,23 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days):
             free_day_vars[d] = free_day
         
         # For each consecutive triplet of days in the worker's schedule
-        for i in range(len(all_work_days) - 2):
-            day1 = all_work_days[i]
-            day2 = all_work_days[i+1]
-            day3 = all_work_days[i+2]
+        for i in range(len(all_work_days) - max_continuous_free_days):
+            # Get the sequence of consecutive day indices
+            day_sequence = all_work_days[i:i + max_continuous_free_days + 1]
+            
+            # Check if all days in the sequence are actually consecutive (no gaps)
+            is_consecutive = all(
+                day_sequence[j + 1] == day_sequence[j] + 1 
+                for j in range(len(day_sequence) - 1)
+            )
             
             # Only apply constraint if days are actually consecutive
-            if day2 == day1 + 1 and day3 == day2 + 1:
-                # At least one of any three consecutive days must NOT be a free day
+            if is_consecutive:
+                # At least one of the (max_continuous_free_days + 1) consecutive days must NOT be a free day
+                # This prevents having more than max_continuous_free_days consecutive free days
                 model.AddBoolOr([
-                    free_day_vars[day1].Not(), 
-                    free_day_vars[day2].Not(), 
-                    free_day_vars[day3].Not()
+                    free_day_vars[day].Not() 
+                    for day in day_sequence
                 ])
 
 
@@ -350,7 +357,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
 
-def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs):
+def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -389,33 +396,38 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
 
                 actual_days_in_week = len(week_work_days)  # Total days in this week
                 proportion = actual_days_in_week / 7.0
-                proportion_days = proportion * 2
-                
+                free_days_weekly = 7 - contract_type.get(w, 0)
+                proportion_days = proportion * free_days_weekly
+
                 # Apply the rounding strategy for admissao/demissao weeks
                 if admissao_proporcional == 'floor':
                     required_free_days = max(0, int(floor(proportion_days)))
-                    
+                        
                 elif admissao_proporcional == 'ceil':
                     required_free_days = max(0, int(ceil(proportion_days)))
-                    
+                        
                 else:
                     required_free_days = max(0, int(floor(proportion_days)))
 
                 logger.info(f"Worker {w}, Week {week} (Admissao/Demissao week), Days {week_work_days}: "
-                           f"Proportion = {proportion_days:.2f}, Required Free Days = {required_free_days}")
+                            f"Proportion = {proportion_days:.2f}, Required Free Days = {required_free_days}")
             
             else:
-                if len(week_work_days) >= 2:
-                    required_free_days = 2
+                if len(week_work_days) >= 7- contract_type.get(w, 0):
+                    required_free_days = 7 - contract_type.get(w, 0)
+                elif len(week_work_days) == 2:
+                        # Partial week with 4+ days: require 1 free day
+                        required_free_days = 2
+
                 elif len(week_work_days) == 1:
-                    # Partial week with 4+ days: require 1 free day
-                    required_free_days = 1
+                        # Very short week: no requirement
+                        required_free_days = 1
                 else:
                      # Very short week: no requirement
                      required_free_days = 0
             
-                logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
-                           f"Required Free Days = {required_free_days}")
+                # logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
+                #            f"Required Free Days = {required_free_days}")
 
             if required_free_days < (len(fixed_days_week) + len(fixed_lqs_week)):
                 required_free_days = len(fixed_days_week) + len(fixed_lqs_week)
@@ -437,6 +449,10 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 if required_free_days == 2:
                     if (len(week_work_days) >= 2):
                         model.Add(free_shift_sum == required_free_days)
+                elif required_free_days == 3:
+                    if (len(week_work_days) >= 3):
+                        model.Add(free_shift_sum == required_free_days)
+                        logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
                 elif required_free_days == 1:
                     if (len(week_work_days) >= 1):
                         logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")

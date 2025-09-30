@@ -33,12 +33,11 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         fixed_LQs_set = set(fixed_LQs[w])- missing_set - closed_set
         fixed_days_set = set(fixed_days_off[w]) - missing_set - closed_set - fixed_LQs_set
         absence_set = set(absences[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set
-        logger.info(f"DEBUG worker {w}")
-        logger.info(f"DEBUG empty days {empty_days_set}")
-        logger.info(f"DEBUG missing {missing_set}")
-        logger.info(f"DEBUG fixed days {fixed_days_set}")
-        logger.info(f"DEBUG fixed lqs {fixed_LQs_set}")
-        logger.info(f"DEBUG absence {absence_set}")
+        # logger.info(f"DEBUG empty days {empty_days_set}")
+        # logger.info(f"DEBUG missing {missing_set}")
+        # logger.info(f"DEBUG fixed days {fixed_days_set}")
+        # logger.info(f"DEBUG fixed lqs {fixed_LQs_set}")
+        # logger.info(f"DEBUG absence {absence_set}")
  
         blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set
 

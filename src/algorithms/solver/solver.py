@@ -14,6 +14,7 @@ from src.config import ROOT_DIR
 import os
 import psutil
 from src.algorithms.solver.solver_callback import SolutionCallback
+from src.algorithms.helpers_algorithm import analyze_optimization_results
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -23,7 +24,7 @@ def solve(
     model: cp_model.CpModel, 
     days_of_year: List[int], 
     workers: List[int], 
-    special_days: List[int], 
+    special_days: List[int],    
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
     work_day_hours: Dict[int, List[int]],
@@ -33,7 +34,8 @@ def solve(
     log_search_progress: bool = 0,
     log_callback: Optional[Callable[[str], None]] = None,
     output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx'),
-    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter,
+    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter
+    optimization_details: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
@@ -112,7 +114,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 120  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -149,6 +151,9 @@ def solve(
 
 
         status = solver.Solve(model, solution_callback)
+        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+            results = analyze_optimization_results(solver, optimization_details)
+    
 
         solve_end = time.time()
         actual_duration = solve_end - solve_start
@@ -240,14 +245,12 @@ def solve(
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
-                # Initialize counters for this worker
                 l_count = 0
                 lq_count = 0
-                ld_count = 0
-                tc_count = 0
-                special_days_count = 0  # Counter for special days with M or T shifts
+                special_days_count = 0
                 unassigned_days = 0
-                
+
+
                 logger.debug(f"Processing worker {w}")
 
                 day_counter = 0
@@ -299,13 +302,13 @@ def solve(
                 
                 table_data.append(worker_row)
                 processed_workers += 1
-                
-                logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
-                           f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
-                
+                                    
+                #logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
+                #    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
+                                    
             except Exception as e:
                 logger.error(f"Error processing worker {w}: {str(e)}")
-                continue
+                continue                  
         
         logger.info(f"Successfully processed {processed_workers} workers")
         
@@ -346,7 +349,7 @@ def solve(
             logger.info(f"  Worker {worker_id}: {stats}")
         
         logger.info("[OK] Solver completed successfully")
-        return df
+        return df , results
         
     except Exception as e:
         logger.error(f"Error in solver: {str(e)}", exc_info=True)

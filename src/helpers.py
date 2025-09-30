@@ -1755,7 +1755,7 @@ def bulk_insert_with_query(data_manager: DBDataManager,
     # Should not reach here
     logger.error(f"Bulk insert failed after {max_retries + 1} attempts")
     return False
-    
+
 def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
     """Create empty results structure when no data is available."""
     return {
@@ -1794,6 +1794,7 @@ def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_
             'key_metrics': {}
         }
     }
+
 
 def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: str, end_date: str, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Calculate comprehensive statistics from algorithm results in wide format."""
@@ -2148,4 +2149,3 @@ def _create_export_info(process_id: int, ROOT_DIR) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error creating export info: {e}")
         return {}
-        

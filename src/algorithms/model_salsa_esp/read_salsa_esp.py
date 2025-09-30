@@ -71,7 +71,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
         # =================================================================
-        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2'] #, '5ou6'
+        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2', 'SEED_5_6', 'N_Sem_A_Folga']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
         required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno', 'carga_diaria']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
@@ -353,11 +353,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
             worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
             worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
             w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
-            if w == 7656:
-                if 249 not in w_holiday:
-                    print("\n\n\n\n vou gritar")
-                if 249 in w_holiday:
-                    print("\n\n\n\n NAO PERCEBO NADA\n\n\n\n")
+
             worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
             worker_work_day_hours = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
@@ -487,11 +483,6 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 if not working_days[w]:
                     logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
 
-            if w == 7656:
-                if 249 not in worker_holiday[w]:
-                    print("\n\n\n\n vou gritar")
-                if 249 in worker_holiday[w]:
-                    print("\n\n\n\n NAO PERCEBO NADA\n\n\n\n")
 
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
 
@@ -553,7 +544,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         first_week_5_6 = {}
         work_days_per_week = {}
         week_compensation_limit = {}
-
+        
         for w in workers:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
             
@@ -593,23 +584,11 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 l_q[w] = int(worker_row.get('l_q', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
-                #first_week_5_6[w] = int(worker_row.get('5ou6', 0))
-                first_week_5_6[w] = 5 #para testes assumir sempre 5
+                first_week_5_6[w] = int(worker_row.get('SEED_5_6', 5))
 
                 if contract_type[w] == 8:
                     work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa_esp) #passar aqui dados do ano passado do trabalhador
-                    logger.info(f"{w} work_Days {work_days_per_week[w]} len {len(work_days_per_week[w])} data admissao {data_admissao[w]} week started {next((a for a, val in week_to_days_salsa_esp.items() if data_admissao[w] in val), 0)} days wokred that week {work_days_per_week[w][next((a for a, val in week_to_days_salsa_esp.items() if data_admissao[w] in val), 0)]}")
-                    if w == 7656:
-                        print("7676")
-                        print(f"{sorted(worker_holiday[w])}")
-                        if 249 in worker_holiday[w]:
-                            print("aqui estou dentro ainda")
                     worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa_esp, start_weekday, set(closed_holidays), work_days_per_week[w])
-                    if w == 7656:
-                        print("7676")
-                        print(f"{sorted(worker_holiday[w])}")
-                        if 249 in worker_holiday[w]:
-                            print("aqui tb devia estar")
                     working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
                     logger.info(f"Worker {w} working days after processing: {working_days[w]}")
                 else:
@@ -617,8 +596,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
 
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-                #week_compensation_limit[w] = int(worker_row.get('N_Sem_A_Folga', 2))
-                week_compensation_limit[w] = 2 #para testes assumir sempre 2
+                week_compensation_limit[w] = int(worker_row.get('N_Sem_A_Folga', 2))
                 logger.info(f"Worker {w} contract information extracted: "
                             f"Contract Type: {contract_type[w]}, "
                             f"Total L: {total_l[w]}, "

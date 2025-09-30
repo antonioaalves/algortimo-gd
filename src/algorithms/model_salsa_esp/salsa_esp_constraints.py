@@ -170,23 +170,22 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
             max_days = contract_type.get(w, 0)
             if max_days == 8:
                 max_days = work_days_per_week[w][week - 1]
-                if w == 7656:
-                    print(f"1: {w}, week {week}, days worked {work_days_per_week[w][week - 1]}")
             model.Add(total_shifts <= max_days)
 
-def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, maxi):
+def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days):
     #limits maximum continuous working days
     for w in workers:
-        for d in range(1, max(days_of_year) - maxi + 1):  # Start from the first day and check each possible 7-day window
+        max = max_days.get(w, 6)
+        for d in range(1, max(days_of_year) - max + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
             consecutive_days = sum(
                 shift[(w, d + i, s)] 
-                for i in range(maxi + 1)  # Check contract_maximum + 1 consecutive days
+                for i in range(max + 1)  # Check contract_maximum + 1 consecutive days
                 for s in working_shift
                 if (w, d + i, s) in shift  # Make sure the day exists in our model
             )
             # If all 11 days have a working shift, that would exceed our limit of 10 consecutive days
-            model.Add(consecutive_days <= maxi)
+            model.Add(consecutive_days <= max)
 
 def LQ_attribution(model, shift, workers, working_days, c2d):
     # #constraint for maximum of LD days in a year
