@@ -250,26 +250,43 @@ def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> T
         return pd.DataFrame(), [], pd.DataFrame()
 
 def convert_types_in(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert WFM types to TRADS - simple mapping."""
+    """
+    Convert WFM types to TRADS - creates 'horario' column based on type and subtype mapping.
+    
+    Args:
+        df: DataFrame with 'type' and 'subtype' columns
+        
+    Returns:
+        DataFrame with new 'horario' column containing mapped values
+    """
+    # Mapping from (type, subtype) combinations to horario values
     type_map = {
-        ('T', 'M'): 'M', 
-        ('T', 'T'): 'T', 
-        ('T', 'H'): 'MoT', 
-        ('T', 'P'): 'P',
-        ('F', None): 'L', 
-        ('F', 'D'): 'LD', 
-        ('F', 'Q'): 'LQ',
-        ('F', 'C'): 'C',
-        ('R', None): 'F', 
-        ('N', None): '-', 
-        ('T', 'A'): 'V',
+        ('T', 'M'): 'M',      # Trabajo Mañana -> M
+        ('T', 'T'): 'T',      # Trabajo Tarde -> T
+        ('T', 'H'): 'MoT',    # Trabajo Horas -> MoT (Mañana or Tarde)
+        ('T', 'P'): 'P',      # Trabajo Partido -> P
+        ('F', None): 'L',     # Libre -> L
+        ('F', 'D'): 'LD',     # Libre Domingo -> LD
+        ('F', 'Q'): 'LQ',     # Libre Quincenal -> LQ
+        ('F', 'C'): 'C',      # Libre Compensatorio -> C
+        ('R', None): 'F',     # Rotativo -> F
+        ('N', None): '-',     # No definido -> -
+        ('T', 'A'): 'V',      # Trabajo Ausencia -> V (Vacaciones)
     }
     
-    df['sched_subtype'] = df.apply(
-        lambda row: type_map.get((row.get('type'), row.get('subtype')), '-'), axis=1
+    # Create a copy to avoid modifying the original DataFrame
+    df_result = df.copy()
+    
+    # Create the horario column using vectorized operation for better performance
+    df_result['horario'] = df_result.apply(
+        lambda row: type_map.get((row['type'], row['subtype']), '-'), 
+        axis=1
     )
-    df['ind'] = 'P'
-    return df
+    
+    # Set indicator column
+    df_result['ind'] = 'P'
+    
+    return df_result
 
 def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> Tuple[pd.DataFrame, List[str]]:
     """

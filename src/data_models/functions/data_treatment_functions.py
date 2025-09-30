@@ -161,7 +161,7 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_i
             df_calendario_passado = convert_types_in(df_calendario_passado)
         except Exception as e:
             logger.warning(f"Type conversion failed: {e}")
-            # Continue with original data
+            return False, pd.DataFrame(), f"Type conversion failed: {e}"
 
         # Clean up columns
         try:
@@ -177,14 +177,15 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_i
             df_calendario_passado = df_calendario_passado.rename(columns={'schedule_day': 'data'})
         except Exception as e:
             logger.warning(f"Column cleanup failed: {e}")
-            # Continue with current state
+            return False, pd.DataFrame(), f"Column cleanup failed: {e}"
 
         # OUTPUT VALIDATION - Allow empty DataFrame as valid result
         return True, df_calendario_passado, ""
         
     except Exception as e:
-        logger.error(f"Error in treat_df_calendario_passado: {str(e)}", exc_info=True)
-        return False, pd.DataFrame(), ""
+        error_msg = f"Error in treat_df_calendario_passado: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
 
 def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
@@ -198,7 +199,9 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame) -> Tuple[bool, 
         required_columns = ['data_ini', 'data_fim']
         missing_columns = [col for col in required_columns if col not in df_ausencias_ferias.columns]
         if missing_columns:
-            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_columns}"
+            error_msg = f"Input validation failed: missing columns {missing_columns}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
 
         # TREATMENT LOGIC
         if not df_ausencias_ferias['data_ini'].equals(df_ausencias_ferias['data_fim']):
@@ -1339,23 +1342,60 @@ def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_
 
 def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Add df_calendario_passado to df_calendario.
+    Fill missing horario values in df_calendario using historical data from df_calendario_passado.
+    Matches records by fk_colaborador and data fields.
     """
     try:
         # INPUT VALIDATION
         if df_calendario.empty:
             return False, pd.DataFrame(), "Input validation failed: empty calendario DataFrame"
             
+        if df_calendario_passado.empty:
+            logger.info("df_calendario_passado is empty, returning original df_calendario")
+            return True, df_calendario, ""
+            
+        # Check required columns exist
+        required_cols = ['fk_colaborador', 'data', 'horario']
+        for col in required_cols:
+            if col not in df_calendario.columns:
+                return False, pd.DataFrame(), f"Missing required column '{col}' in df_calendario"
+            if col not in df_calendario_passado.columns:
+                return False, pd.DataFrame(), f"Missing required column '{col}' in df_calendario_passado"
+        
         # TREATMENT LOGIC
-        logger.info(f"Adding df_calendario_passado to df_calendario. Not implemented yet.")
-        # TODO: Add implementation when business logic is defined
+        df_result = df_calendario.copy()
+        
+        # Create merge keys for matching
+        merge_cols = ['fk_colaborador', 'data']
+        
+        # Merge with df_calendario_passado to get historical horario values
+        # Use left join to preserve all records from df_calendario
+        merged = df_result.merge(
+            df_calendario_passado[merge_cols + ['horario']], 
+            on=merge_cols, 
+            how='left', 
+            suffixes=('', '_passado')
+        )
+        
+        # Fill missing horario values with historical data
+        # Only fill where current horario is null/empty and historical data exists
+        mask_missing = (df_result['horario'].isnull()) | (df_result['horario'] == '') | (df_result['horario'] == '-')
+        mask_has_historical = merged['horario_passado'].notna() & (merged['horario_passado'] != '') & (merged['horario_passado'] != '-')
+        
+        df_result.loc[mask_missing & mask_has_historical, 'horario'] = merged.loc[mask_missing & mask_has_historical, 'horario_passado']
+        
+        filled_count = (mask_missing & mask_has_historical).sum()
+        logger.info(f"Filled {filled_count} missing horario values using df_calendario_passado")
         
         # OUTPUT VALIDATION
-        return True, df_calendario, ""
+        if df_result.empty:
+            return False, pd.DataFrame(), "Result DataFrame is empty after processing"
+            
+        return True, df_result, f"Successfully filled {filled_count} horario values from historical data"
         
     except Exception as e:
         logger.error(f"Error in add_calendario_passado: {str(e)}", exc_info=True)
-        return False, pd.DataFrame(), ""
+        return False, pd.DataFrame(), f"Error processing calendario data: {str(e)}"
 
 def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
