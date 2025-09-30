@@ -142,10 +142,6 @@ def compensation_days(model, shift, workers, working_days, holidays, start_weekd
         # Total compensation days used
         total_comp_days_used = sum(comp_day_usage[w].values())
         # Enforce equality: number of LDs == number of worked holidays
-        if w == 7656:
-            print(total_worked_holidays)
-            print(total_comp_days_used)
-            print("ola")
         model.Add(total_comp_days_used == total_worked_holidays)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
@@ -175,17 +171,16 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
 def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days):
     #limits maximum continuous working days
     for w in workers:
-        max = max_days.get(w, 6)
-        for d in range(1, max(days_of_year) - max + 1):  # Start from the first day and check each possible 7-day window
+        for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
             consecutive_days = sum(
                 shift[(w, d + i, s)] 
-                for i in range(max + 1)  # Check contract_maximum + 1 consecutive days
+                for i in range(max_days + 1)  # Check contract_maximum + 1 consecutive days
                 for s in working_shift
                 if (w, d + i, s) in shift  # Make sure the day exists in our model
             )
             # If all 11 days have a working shift, that would exceed our limit of 10 consecutive days
-            model.Add(consecutive_days <= max)
+            model.Add(consecutive_days <= max_days)
 
 def LQ_attribution(model, shift, workers, working_days, c2d):
     # #constraint for maximum of LD days in a year
@@ -499,8 +494,6 @@ def salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, wo
                 #           f", Required Free Days = {required_free_days}")
             
             else:
-                if week_work_days[0] > 243 and w == 7656:
-                    print(f"ai os dias {week_work_days} e descansos {work_days_per_week[w][week - 1]} dias fixos {fixed_days_week} {fixed_lqs_week}")
                 if contract_type.get(w, 0) == 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1:
                     required_free_days = 1
                 elif actual_days_in_week >= 2:
@@ -513,9 +506,6 @@ def salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, wo
                      required_free_days = 0
                 #logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
                 #           f"Required Free Days = {required_free_days}")
-            if w == 7656:
-                print(f"2: {w}, week {week}, days worked {work_days_per_week[w][week - 1]}")
-
             if required_free_days < (len(fixed_days_week) + len(fixed_lqs_week)):
                 required_free_days = len(fixed_days_week) + len(fixed_lqs_week)
                 logger.info(f" Worker {w} - Adjusted Required Free Days to {required_free_days} due to fixed days off: {fixed_days_week} on week {week}")
@@ -534,10 +524,6 @@ def salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, wo
                         model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 1:
                     if (len(week_work_days) >= 1):
-                        #logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
-                        #if week_work_days[0] > 243 and w == 7656:
-                        #    model.Add(free_shift_sum >= required_free_days)
-                        #else:
                         model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 0:
                     model.Add(free_shift_sum == 0)

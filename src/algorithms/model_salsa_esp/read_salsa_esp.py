@@ -36,7 +36,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
 
         required_parameters = ['admissao_proporcional']
-        missing_parameters = [param for param in required_parameters if param not in algorithm_treatment_params ]
+        missing_parameters = [param for param in required_parameters if param not in algorithm_treatment_params['treatment_params'] ]
         
         if missing_dataframes:
             raise ValueError(f"Missing required DataFrames: {missing_dataframes}")
@@ -54,7 +54,8 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
-        admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
+        admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
+        num_dias_cons = algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS']
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
@@ -67,6 +68,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
 
         logger.info("Parameters:")
         logger.info(f"  - admissao_proportional: {admissao_proporcional}")
+        logger.info(f"  - numero de dias consecutivos de trabalho: {num_dias_cons}")
 
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
@@ -871,7 +873,8 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
             # week_cut
             work_day_hours,
             work_days_per_week,
-            week_compensation_limit
+            week_compensation_limit,
+            num_dias_cons
         )
         
     except Exception as e:

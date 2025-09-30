@@ -61,7 +61,6 @@ class SalsaEspAlgorithm(BaseAlgorithm):
         """
         # Default parameters for the SALSA algorithm
         default_parameters = {
-            "max_continuous_working_days": 7,
             "shifts": ['M', 'T', 'L', 'LQ', 'LD', 'F', 'A', 'V', '-'],
             "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
             "working_shifts": ['M', 'T', 'LD'],
@@ -223,7 +222,8 @@ class SalsaEspAlgorithm(BaseAlgorithm):
                     # 'week_cut': processed_data[34]
                     'work_day_hours': processed_data[43],
                     'work_days_per_week': processed_data[44],
-                    'week_compensation_limit': processed_data[45]
+                    'week_compensation_limit': processed_data[45],
+                    'num_dias_cons': processed_data[46] 
                 }
 
             except IndexError as e:
@@ -328,12 +328,12 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             work_day_hours = adapted_data['work_day_hours']
             work_days_per_week = adapted_data['work_days_per_week']
             week_compensation_limit = adapted_data['week_compensation_limit']
+            max_continuous_days = adapted_data["num_dias_cons"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
             check_shift = self.parameters["check_shifts"]
             working_shift = self.parameters["working_shifts"]
-            max_continuous_days = self.parameters["max_continuous_working_days"]
             
             # Extract settings
             settings = self.parameters["settings"]
