@@ -907,13 +907,60 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
             df_pre_ger['ind'] == 'P'
         ].drop('ind', axis=1)
         
-        # Pivot wider
-        reshaped = df_pre_ger_filtered.pivot_table(
-            index='employee_id', 
-            columns='schedule_dt', 
-            values='sched_subtype', 
-            aggfunc='first'
-        ).reset_index()
+        # Check for duplicates before pivot to understand why they exist
+        initial_rows = len(df_pre_ger_filtered)
+        duplicates_check = df_pre_ger_filtered.groupby(['employee_id', 'schedule_dt']).size()
+        duplicate_combinations = duplicates_check[duplicates_check > 1]
+        
+        if len(duplicate_combinations) > 0:
+            logger.warning(f"Found {len(duplicate_combinations)} duplicate combinations of employee_id + schedule_dt:")
+            for (emp_id, schedule_dt), count in duplicate_combinations.head(10).items():
+                logger.warning(f"  Employee {emp_id}, Date {schedule_dt}: {count} occurrences")
+            
+            # Show sample duplicate rows for debugging
+            sample_duplicates = df_pre_ger_filtered[df_pre_ger_filtered.set_index(['employee_id', 'schedule_dt']).index.duplicated(keep=False)]
+            logger.warning(f"Sample duplicate rows (first 5):")
+            for idx, row in sample_duplicates.head(5).iterrows():
+                logger.warning(f"  Row {idx}: employee_id={row['employee_id']}, schedule_dt={row['schedule_dt']}, sched_subtype={row['sched_subtype']}")
+        else:
+            logger.info("No duplicate combinations found in df_pre_ger_filtered")
+        
+        # Remove duplicates before pivot to avoid reindexing errors
+        df_pre_ger_filtered = df_pre_ger_filtered.drop_duplicates(subset=['employee_id', 'schedule_dt'])
+        final_rows = len(df_pre_ger_filtered)
+        
+        if initial_rows != final_rows:
+            logger.warning(f"Removed {initial_rows - final_rows} duplicate rows (from {initial_rows} to {final_rows})")
+        
+        # Check data before pivot
+        logger.info(f"schedule_dt data type: {df_pre_ger_filtered['schedule_dt'].dtype}")
+        logger.info(f"schedule_dt sample values: {df_pre_ger_filtered['schedule_dt'].head().tolist()}")
+        logger.info(f"Unique employees: {len(df_pre_ger_filtered['employee_id'].unique())}")
+        logger.info(f"Unique dates: {len(df_pre_ger_filtered['schedule_dt'].unique())}")
+        
+        # Pivot wider with error handling
+        logger.info(f"Attempting pivot with {len(df_pre_ger_filtered)} rows")
+        try:
+            reshaped = df_pre_ger_filtered.pivot_table(
+                index='employee_id', 
+                columns='schedule_dt', 
+                values='sched_subtype', 
+                aggfunc='first'
+            ).reset_index()
+            logger.info(f"Pivot successful: {reshaped.shape}")
+        except Exception as pivot_error:
+            logger.error(f"Pivot failed: {pivot_error}")
+            # Try alternative approach - check for actual duplicate column names
+            logger.info("Checking for potential duplicate column names...")
+            unique_dates = df_pre_ger_filtered['schedule_dt'].unique()
+            logger.info(f"Number of unique dates: {len(unique_dates)}")
+            logger.info(f"Sample unique dates: {unique_dates[:5].tolist()}")
+            
+            # Try using unstack instead
+            logger.info("Attempting alternative pivot using unstack...")
+            df_indexed = df_pre_ger_filtered.set_index(['employee_id', 'schedule_dt'])['sched_subtype']
+            reshaped = df_indexed.unstack().reset_index()
+            logger.info(f"Unstack successful: {reshaped.shape}")
         
         # Create column names row
         column_names = pd.DataFrame([reshaped.columns.tolist()], columns=reshaped.columns)
@@ -929,11 +976,11 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
         first_col = reshaped_names.iloc[:, [0]]
         last_cols = reshaped_names.iloc[:, 1:]
         
-        # Duplicate last columns
-        duplicated_cols = pd.concat([last_cols, last_cols], axis=1)
+        # Sort columns BEFORE duplication to avoid duplicate column name issues
+        last_cols = last_cols.reindex(sorted(last_cols.columns), axis=1)
         
-        # Sort columns by name
-        duplicated_cols = duplicated_cols.reindex(sorted(duplicated_cols.columns), axis=1)
+        # Duplicate last columns (now with sorted column names)
+        duplicated_cols = pd.concat([last_cols, last_cols], axis=1)
         
         # Combine first column with duplicated columns
         reshaped_final = pd.concat([first_col, duplicated_cols], axis=1)
@@ -1021,7 +1068,9 @@ def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> T
         emp_pre_ger = df_pre_ger['employee_id'].unique().tolist()
         
         # Fill missing dates and pivot to matrix format
-        df_pre_ger['schedule_dt'] = pd.to_datetime(df_pre_ger['schedule_dt']).dt.strftime('%Y-%m-%d')
+        # Map schedule_day to schedule_dt for compatibility
+        if 'schedule_day' in df_pre_ger.columns:
+            df_pre_ger['schedule_dt'] = pd.to_datetime(df_pre_ger['schedule_day']).dt.strftime('%Y-%m-%d')
         df_pre_ger['sched_subtype'] = df_pre_ger['sched_subtype'].fillna('-')
         
         # Count days off
@@ -1035,7 +1084,7 @@ def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> T
         return reshaped_final_3, emp_pre_ger, df_count
         
     except Exception as e:
-        logger.error(f"Error in load_wfm_scheds: {str(e)}")
+        logger.error(f"Error in load_wfm_scheds: {str(e)}", exc_info=True)
         return pd.DataFrame(), [], pd.DataFrame()
 
 def convert_types_in(df: pd.DataFrame) -> pd.DataFrame:
@@ -2152,22 +2201,41 @@ def _create_export_info(process_id: int, ROOT_DIR) -> Dict[str, Any]:
 # Pass this function to the data_treatment_functions
 def get_colabs_passado(wfm_proc_colab: str, df_mpd_valid_employees: pd.DataFrame, fk_tipo_posto: str) -> Tuple[bool, List[int], str]:
     """
+    Get employees from the past (colabs_passado) for a specific job position type.
+    
+    Args:
+        wfm_proc_colab: The employee ID to exclude from the past employees list
+        df_mpd_valid_employees: DataFrame containing valid employees data
+        fk_tipo_posto: Job position type filter
+        
+    Returns:
+        Tuple of (success: bool, colabs_passado: List[int], message: str)
     """
 
     # Validate there is not multiple employees with expected conditions
     try:
         df = df_mpd_valid_employees[df_mpd_valid_employees['fk_tipo_posto'] == fk_tipo_posto]
-        mask = (df['gera_horario_ind'] == 'Y' & df['existe_horario_ind'] == 'N')
-        colabs_a_gerar = df[mask, 'fk_colaborador'].unique()
+        mask = (df['gera_horario_ind'] == 'Y') & (df['existe_horario_ind'] == 'N')
+        colabs_a_gerar = df[mask]['fk_colaborador'].unique()
+        
+        logger.info(f"DEBUG: colabs_a_gerar type: {type(colabs_a_gerar)}")
+        logger.info(f"DEBUG: wfm_proc_colab type: {type(wfm_proc_colab)}")
+        
+        wfm_proc_colab = int(wfm_proc_colab)
+        
+        if len(colabs_a_gerar) == 0:
+            return False, [], "No employees found with the expected conditions."
+            
         if len(colabs_a_gerar) > 1:
             return False, [], "There should be only one employee for allocation."
 
-        if colabs_a_gerar[0] != wfm_proc_colab:
-            return False, [], "The employee present in the df_mpd_valid_employees query."
+        if int(colabs_a_gerar[0]) != wfm_proc_colab:
+            return False, [], "The employee is not present in the df_mpd_valid_employees query."
 
-        colabs_passado = df['fk_colaborador'].unique().remove(wfm_proc_colab)
+        colabs_passado = [int(x) for x in df['fk_colaborador'].unique()]
+        colabs_passado.remove(wfm_proc_colab)
         logger.info(f"Created colabs_passado list: {colabs_passado}")
-        return colabs_passado
+        return True, colabs_passado, "Success"
     except Exception as e:
-        logger.error(f"", exc_info=True)
-        return False, [], "Error crating the colabs_passado_list"
+        logger.error(f"Error creating colabs_passado list: {e}", exc_info=True)
+        return False, [], "Error creating the colabs_passado_list"
