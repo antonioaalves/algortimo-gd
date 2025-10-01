@@ -141,7 +141,7 @@ CONFIG = {
         'alcampo_algorithm',
         'example_algorithm',
         'salsa_algorithm',
-        'salsa_esp_algorithm',
+        #'salsa_esp_algorithm',
         # Add your custom algorithms here
     ],
      

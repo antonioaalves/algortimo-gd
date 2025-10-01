@@ -3,6 +3,147 @@ from base_data_project.log_config import get_logger
 
 logger = get_logger('algoritmo_GD')
 
+def compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs):
+    #Define compensation days (LD) constraint for contract types 4, 5, 6
+    possible_compensation_days = {}
+    for w in workers:
+        possible_compensation_days[w] = {}
+        for d in holidays:
+            fixed = set(fixed_LQs[w])
+            off = set(fixed_days_off[w])
+            if d in working_days[w] - off - fixed:
+                # Determine the week of the special day
+                special_day_week = next((wk for wk, days in week_to_days.items() if d in days), None)
+            
+                if special_day_week is None:
+                    continue
+                
+                # Possible compensation weeks (current and next week)
+                if week_compensation_limit.get(w, 2) == 2:
+                    possible_weeks = [
+                        special_day_week + 1 if special_day_week < 52 else None, 
+                        special_day_week + 2 if special_day_week < 51 else special_day_week
+                    ]
+                else:
+                    possible_weeks = [
+                        special_day_week + 1 if special_day_week < 52 else None, 
+                        special_day_week + 2 if special_day_week < 51 else special_day_week,
+                        special_day_week + 3 if special_day_week < 50 else None,
+                        special_day_week + 4 if special_day_week < 49 else None
+                    ]
+                
+                # Collect potential compensation days
+                compensation_days = []
+                for week in filter(None, possible_weeks):
+                    compensation_days.extend([day for day in week_to_days.get(week, [])
+                        if (day in working_days[w] - off - fixed)
+                    ])
+                
+                # Store possible compensation days for this special day
+                possible_compensation_days[w][d] = compensation_days
+
+    # Dictionary to store all compensation day variables
+    all_comp_day_vars = {}
+
+    # Dictionary to track compensation day usage
+    comp_day_usage = {}
+
+    # Main optimization loop
+    for w in workers:
+        # Initialize the compensation day usage tracking for this worker
+        comp_day_usage[w] = {}
+    
+        # Track which special days were worked
+        worked_holidays = {}
+        fixed = set(fixed_LQs[w])
+        off = set(fixed_days_off[w])
+        
+        # First, create all the worked_special_day variables
+        # ONLY for special days in this worker's working days
+        for d in [day for day in holidays if day in working_days[w] - off - fixed]:
+            # Create a boolean variable to track if the worker worked on this special day
+            worked_special_day = model.NewBoolVar(f'worked_special_day_{w}_{d}')
+            worked_holidays[d] = worked_special_day
+            special_day_shift_vars = [shift.get((w, d, s)) for s in working_shift if (w, d, s) in shift]
+            
+            # If there are shift variables for this day, add a constraint
+            if special_day_shift_vars:
+                # worked_special_day is true if any shift is assigned
+                model.AddBoolOr(special_day_shift_vars).OnlyEnforceIf(worked_special_day)
+                model.Add(sum(special_day_shift_vars) == 0).OnlyEnforceIf(worked_special_day.Not())
+        
+        # Now collect all possible compensation days for this worker
+        all_possible_comp_days = set()
+        for d in worked_holidays.keys():  # Use keys from worked_holidays to ensure alignment
+            if d in possible_compensation_days[w]:
+                all_possible_comp_days.update(possible_compensation_days[w][d])
+        for d in working_days[w]:
+            if (w, d, 'LD') in shift:
+                if d not in all_possible_comp_days:
+                    model.Add(shift[(w, d, 'LD')] == 0)  # Never allow LD outside compensation
+
+        # For each possible compensation day, create a variable indicating if it's used as a compensation day
+        for comp_day in all_possible_comp_days:
+            # Create a variable to track if this compensation day is used
+            comp_day_used = model.NewBoolVar(f'comp_day_used_{w}_{comp_day}')
+            comp_day_usage[w][comp_day] = comp_day_used
+            
+            # Create variables for which special day this compensation day is for
+            special_day_assignment_vars = []
+            
+            # Only iterate through special days that exist in worked_holidays
+            for special_day in worked_holidays.keys():
+                # Check if this special day has this compensation day as an option
+                if comp_day in possible_compensation_days[w].get(special_day, []):
+                    # Create a variable indicating this compensation day is assigned to this special day
+                    assignment_var = model.NewBoolVar(f'comp_day_{w}_{special_day}_{comp_day}')
+                    special_day_assignment_vars.append((special_day, assignment_var))
+                    
+                    # Store for later reference
+                    if w not in all_comp_day_vars:
+                        all_comp_day_vars[w] = {}
+                    all_comp_day_vars[w][(special_day, comp_day)] = assignment_var
+                    
+                    # This compensation day is only assigned if the worker worked that special day
+                    # Now this is safe because we know special_day is in worked_holidays
+                    model.AddImplication(assignment_var, worked_holidays[special_day])
+                    
+                    # If this assignment is true, the compensation day is used
+                    model.AddImplication(assignment_var, comp_day_used)
+                    
+                    # Constraint: If assignment is true, this day must be a valid day off (LD)
+                    model.Add(shift[(w, comp_day, 'LD')] == comp_day_used)
+
+            # KEY CONSTRAINT: At most one special day can be assigned to this compensation day
+            if len(special_day_assignment_vars) > 1:
+                # Extract just the assignment variables
+                assignment_vars = [var for _, var in special_day_assignment_vars]
+                # At most one assignment can be true
+                model.Add(sum(assignment_vars) <= 1)
+
+        # For each special day, ensure it gets a compensation day if worked
+        for d in worked_holidays.keys():
+            # Get all variables for compensation days for this special day
+            comp_day_vars = [
+                all_comp_day_vars[w][(d, comp_day)] 
+                for comp_day in possible_compensation_days[w].get(d, [])
+                if (d, comp_day) in all_comp_day_vars[w]
+            ]
+
+            # If the worker worked this special day, ensure one compensation day is assigned
+            if comp_day_vars:
+                # Normal case: enforce exactly 1 comp day if worked
+                model.Add(sum(comp_day_vars) == 1).OnlyEnforceIf(worked_holidays[d])
+                model.Add(sum(comp_day_vars) == 0).OnlyEnforceIf(worked_holidays[d].Not())
+            else:
+                model.Add(worked_holidays[d] == 0)
+        # Total worked holidays
+        total_worked_holidays = sum(worked_holidays.values())
+        # Total compensation days used
+        total_comp_days_used = sum(comp_day_usage[w].values())
+        # Enforce equality: number of LDs == number of worked holidays
+        model.Add(total_comp_days_used == total_worked_holidays)
+
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
     for w in workers_complete:
@@ -14,7 +155,7 @@ def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
             if (total_shifts):
                 model.add_exactly_one(total_shifts)
 
-def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type):
+def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type, work_days_per_week):
     # Define working shifts
     # Add constraint to limit working days in a week to contract type
     for w in workers:
@@ -23,21 +164,23 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
             # Sum shifts across days and shift types
             total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift if (w, d, s) in shift)
             max_days = contract_type.get(w, 0)
+            if max_days == 8:
+                max_days = work_days_per_week[w][week - 1]
             model.Add(total_shifts <= max_days)
 
-def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, maxi):
+def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days):
     #limits maximum continuous working days
     for w in workers:
-        for d in range(1, max(days_of_year) - maxi + 1):  # Start from the first day and check each possible 7-day window
+        for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
             consecutive_days = sum(
                 shift[(w, d + i, s)] 
-                for i in range(maxi + 1)  # Check contract_maximum + 1 consecutive days
+                for i in range(max_days + 1)  # Check contract_maximum + 1 consecutive days
                 for s in working_shift
                 if (w, d + i, s) in shift  # Make sure the day exists in our model
             )
             # If all 11 days have a working shift, that would exceed our limit of 10 consecutive days
-            model.Add(consecutive_days <= maxi)
+            model.Add(consecutive_days <= max_days)
 
 
 
@@ -45,48 +188,6 @@ def LQ_attribution(model, shift, workers, working_days, c2d):
     # #constraint for maximum of LD days in a year
     for w in workers:
         model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if (w, d, "LQ") in shift) >= c2d.get(w, 0))
-
-def closed_holiday_attribution(model, shift, workers_complete, closed_holidays):
-    #assigns free day in holidays
-    for w in workers_complete:
-        for d in closed_holidays:
-            if (w, d, "F") in shift:
-                model.Add(shift[(w, d, "F")] == 1)
-            else:
-                logger.info(f"Missing shift for worker {w}, day {d}, shift F")
-
-def holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle):
-    # Assigns worker holidays, missing days and empty days in holidays
-    for w in workers_complete:
-        '''
-        for d in worker_holiday[w]:
-
-            if (w, d, "A") in shift:
-                model.Add(shift[(w, d, "A")] == 1)
-            else:
-                logger.info(f"Missing shift for worker {w}, day {d}, shift A")
-
-        for d in missing_days[w]:
-
-            if (w, d, "V") in shift:
-                model.Add(shift[(w, d, "V")] == 1)
-            else:
-                logger.info(f"Missing shift for worker {w}, day {d}, shift V")
-        '''
-
-        for d in empty_days[w]:
-
-            if (w, d, "V") in shift:
-                model.Add(shift[(w, d, "V")] == 1)
-            else:
-                logger.info(f"Missing shift for worker {w}, day {d}, shift V")
-        
-        for d in free_day_complete_cycle[w]:
-            if (w, d, "L") in shift:
-                model.Add(shift[(w, d, "L")] == 1)
-            else:
-                logger.info(f"Missing shift for worker {w}, day {d}, shift L")
-
 
 def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift):
     # Contraint for workers shifts taking into account the worker_week_shift (each week a worker can either be )

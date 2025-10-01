@@ -18,10 +18,9 @@ from src.config import PROJECT_NAME, ROOT_DIR
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    LQ_attribution,closed_holiday_attribution, holiday_missing_day_attribution,
-    assign_week_shift, working_day_shifts,
-    salsa_2_consecutive_free_days, salsa_2_day_quality_weekend, 
-    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days
+    LQ_attribution, compensation_days, assign_week_shift, working_day_shifts, salsa_2_consecutive_free_days,
+    salsa_2_day_quality_weekend, salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free,
+    free_days_special_days
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -62,10 +61,9 @@ class SalsaAlgorithm(BaseAlgorithm):
         """
         # Default parameters for the SALSA algorithm
         default_parameters = {
-            "max_continuous_working_days": 6,
-            "shifts": ["M", "T", "L", "LQ", "F", "A", "V", "-"],
-            "check_shifts": ['M', 'T', 'L', 'LQ'],
-            "working_shifts": ["M", "T"],
+            "shifts": ["M", "T", "L", "LQ", 'LD', "F", "A", "V", "-"],
+            "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
+            "working_shifts": ['M', 'T', 'LD'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -279,12 +277,15 @@ class SalsaAlgorithm(BaseAlgorithm):
             # week_cut = adapted_data['week_cut']
             proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
+            work_days_per_week = adapted_data['work_days_per_week']
+            week_compensation_limit = adapted_data['week_compensation_limit']
+            max_continuous_days = adapted_data["num_dias_cons"]
+            country = adapted_data["country"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
             check_shift = self.parameters["check_shifts"]
             working_shift = self.parameters["working_shifts"]
-            max_continuous_days = self.parameters["max_continuous_working_days"]
             
             # Extract settings
             settings = self.parameters["settings"]
@@ -336,7 +337,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
             
             # Week working days constraint based on contract type
-            week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type)
+            week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week)
             
             # Maximum continuous working days constraint
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
@@ -350,20 +351,21 @@ class SalsaAlgorithm(BaseAlgorithm):
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
             
             # SALSA specific constraints
-            salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type)
+            salsa_2_consecutive_free_days(model, shift, workers, working_days)
             
             self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type)
+            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
-            
+            if country == "spain":
+                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs)
                         
             self.logger.info("All SALSA constraints applied")
             

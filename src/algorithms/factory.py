@@ -45,9 +45,9 @@ class AlgorithmFactory:
         elif decision.lower() == 'salsa_algorithm':
             logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
             return SalsaAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date)
-        elif decision.lower() == 'salsa_esp_algorithm':
-            logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
-            return SalsaAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date)
+        #elif decision.lower() == 'salsa_esp_algorithm':
+        #    logger.info(f"Creating {decision.lower()} algorithm with parameters: {parameters}")
+        #    return SalsaAlgorithm(algo_name=decision.lower(), parameters=parameters, project_name=PROJECT_NAME, process_id=process_id, start_date=start_date, end_date=end_date)
         else:
             error_msg = f"Unsupported algorithm type: {decision}"
             logger.error(error_msg)
