@@ -519,7 +519,11 @@ def salsa_esp_2_free_days_week(model, shift, workers, week_to_days_salsa_esp, wo
                     for shift_type in ["L", "LQ"]
                 )
 
-                if required_free_days == 2:
+                if required_free_days == 3:
+                    if (len(week_work_days) >= 3):
+                        model.Add(free_shift_sum == required_free_days)
+                        logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
+                elif required_free_days == 2:
                     if (len(week_work_days) >= 2):
                         model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 1:

@@ -280,12 +280,10 @@ def solve(
                         ld_count += 1
                     elif day_assignment in ['T']:
                         if d in special_days:
-                            print(f"{w} worked special day {d}")
                             special_days_count += 1
                         time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
                     elif day_assignment in ['M']:
                         if d in special_days:
-                            print(f"{w} worked special day {d}")
                             special_days_count += 1
                         time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
 

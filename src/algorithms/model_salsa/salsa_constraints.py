@@ -170,6 +170,7 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
 
 def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days):
     #limits maximum continuous working days
+    print(max_days)
     for w in workers:
         for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
@@ -230,8 +231,10 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
     for w in workers: 
         # Get all working days for this worker
         all_work_days = sorted(working_days[w])
-
-        max_continuous_free_days = 7 - contract_type.get(w, 0)
+        if contract_type.get(w, 0) == 8:
+            max_continuous_free_days = 2
+        else:
+            max_continuous_free_days = 7 - contract_type.get(w, 0)
 
         # Create boolean variables for each day indicating if it's a free day (L, F, or LQ)
         free_day_vars = {}
@@ -458,7 +461,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
 
-def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type):
+def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -488,44 +491,59 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             # Check if admissao or demissao day falls within this week
             is_admissao_week = (worker_admissao > 0 and worker_admissao in days)
             is_demissao_week = (worker_demissao > 0 and worker_demissao in days)
-            
+
+            tipo_contrato = contract_type.get(w, 0)
+            actual_days_in_week = len(week_work_days)  # Total days in this week
             # If this is an admissao or demissao week, apply proportional calculation
             if is_admissao_week or is_demissao_week:
                 # Calculate proportional requirement based on actual days in the week
                 # Standard week has 7 days and requires 2 free days
                 # Proportion: (actual_days / 7) * 2
-
-                actual_days_in_week = len(week_work_days)  # Total days in this week
-                proportion = actual_days_in_week / 7.0
-                free_days_weekly = 7 - contract_type.get(w, 0)
-                proportion_days = proportion * free_days_weekly
-
-                # Apply the rounding strategy for admissao/demissao weeks
-                if admissao_proporcional == 'floor':
-                    required_free_days = max(0, int(floor(proportion_days)))
-                        
-                elif admissao_proporcional == 'ceil':
-                    required_free_days = max(0, int(ceil(proportion_days)))
-                        
+                
+                if tipo_contrato >= 5:
+                    if 4 <= actual_days_in_week <= 5:
+                        required_free_days = 1
+                    elif actual_days_in_week < 4:
+                        required_free_days = 0
+                    else:
+                        if tipo_contrato == 8 and work_days_per_week[w][week - 1] == 6:
+                            required_free_days = 1
+                        else:
+                            required_free_days = 2
                 else:
-                    required_free_days = max(0, int(floor(proportion_days)))
+                    free_days_weekly = 7 - tipo_contrato
+                    proportion = actual_days_in_week / 7.0
+                    proportion_days = proportion * free_days_weekly
+                    if admissao_proporcional == 'floor':
+                        required_free_days = max(0, int(floor(proportion_days)))
 
+                    elif admissao_proporcional == 'ceil':
+                        required_free_days = max(0, int(ceil(proportion_days)))
+
+                    else:
+                        required_free_days = max(0, int(floor(proportion_days)))
                 logger.info(f"Worker {w}, Week {week} (Admissao/Demissao week), Days {week_work_days}: "
-                            f"Proportion = {proportion_days:.2f}, Required Free Days = {required_free_days}")
+                            f" Required Free Days = {required_free_days}")
             
             else:
-                if len(week_work_days) >= 7- contract_type.get(w, 0):
-                    required_free_days = 7 - contract_type.get(w, 0)
-                elif len(week_work_days) == 2:
-                        # Partial week with 4+ days: require 1 free day
-                        required_free_days = 2
-
-                elif len(week_work_days) == 1:
-                        # Very short week: no requirement
+                if tipo_contrato >= 5:
+                    if tipo_contrato== 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1:
                         required_free_days = 1
+                    elif actual_days_in_week >= 2:
+                        required_free_days = 2
+                    elif actual_days_in_week == 1:
+                        required_free_days = 1
+                    else:
+                         required_free_days = 0
                 else:
-                     # Very short week: no requirement
-                     required_free_days = 0
+                    if len(week_work_days) >= 7 - tipo_contrato:
+                        required_free_days = 7 - tipo_contrato
+                    elif len(week_work_days) == 2:
+                            required_free_days = 2
+                    elif len(week_work_days) == 1:
+                            required_free_days = 1
+                    else:
+                         required_free_days = 0
             
                 # logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
                 #            f"Required Free Days = {required_free_days}")
@@ -544,8 +562,6 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                     for d in week_work_days 
                     for shift_type in ["L", "LQ"]
                 )
-                
-
 
                 if required_free_days == 2:
                     if (len(week_work_days) >= 2):

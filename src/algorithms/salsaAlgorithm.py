@@ -288,9 +288,11 @@ class SalsaAlgorithm(BaseAlgorithm):
             working_shift = self.parameters["working_shifts"]
             
             if country != "spain":
-                shifts.pop("LD")
-                check_shift.pop("LD")
-                working_shift.pop("LD")
+                shifts.remove("LD")
+                check_shift.remove("LD")
+                working_shift.remove("LD")
+                if max_continuous_days == None:
+                    max_continuous_days = 6
 
             # Extract settings
             settings = self.parameters["settings"]
@@ -356,7 +358,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
             
             # SALSA specific constraints
-            salsa_2_consecutive_free_days(model, shift, workers, working_days)
+            salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type)
             
             self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)

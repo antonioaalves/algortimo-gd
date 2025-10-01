@@ -55,7 +55,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
-        num_dias_cons = algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS']
+        num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
@@ -547,7 +547,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         first_week_5_6 = {}
         work_days_per_week = {}
         week_compensation_limit = {}
-        has_5_6_contract = False
         has_week_compensation_limit = False
         has_max_work_days_7 = False
 
@@ -577,6 +576,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
+                total_l_dom[w] = int(worker_row.get('l_dom_salsa', 0))
                 c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
@@ -585,8 +585,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
 
                 first_week_5_6[w] = int(worker_row.get('SEED_5_6', 0))
-                if (has_5_6_contract == False and contract_type[w] == 8):
-                    has_5_6_contract = True
 
                 week_compensation_limit[w] = int(worker_row.get('N_Sem_A_Folga', 0))
                 if (has_week_compensation_limit == False and week_compensation_limit[w] != 0):
@@ -823,10 +821,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # 13. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
 
-        if (has_5_6_contract == True and has_max_work_days_7 == True and has_week_compensation_limit == True):
+        if (has_max_work_days_7 == True and has_week_compensation_limit == True):
            country = "spain"
            logger.info("Detected country to be spain")
-        elif (has_5_6_contract == False and has_max_work_days_7 == False and has_week_compensation_limit == False):
+        elif (has_max_work_days_7 == False and has_week_compensation_limit == False):
             country = "portugal"
             logger.info("Detected country to be portugal")
 
