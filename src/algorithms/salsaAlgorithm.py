@@ -205,25 +205,30 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'pess_obj': processed_data[26],
                     'min_workers': processed_data[27],
                     'max_workers': processed_data[28],
-                    'working_shift_2': processed_data[29],  # Adjusted for SALSA
-                    'workers_complete': processed_data[30],  # Adjusted for SALSA
-                    'workers_complete_cycle': processed_data[31],  # Adjusted for SALSA
-                    'free_day_complete_cycle': processed_data[32],  # Adjusted for SALSA
-                    'week_to_days_salsa': processed_data[33],  # Adjusted for SALSA
-                    'first_registered_day': processed_data[34],
-                    'admissao_proporcional': processed_data[35],
-                    'role_by_worker': processed_data[36],  # New role mapping
+                    'working_shift_2': processed_data[29],  
+                    'workers_complete': processed_data[30],  
+                    'workers_complete_cycle': processed_data[31],  
+                    'workers_past': processed_data[32],  
+                    'free_day_complete_cycle': processed_data[33],  
+                    'week_to_days_salsa': processed_data[34],  
+                    'first_registered_day': processed_data[35],
+                    'admissao_proporcional': processed_data[36],
+                    'role_by_worker': processed_data[37],  # New role mapping
                     #'managers': processed_data[37],  # New managers list
                     #'keyholders': processed_data[38],  # New keyholders list
-                    'data_admissao': processed_data[37],
-                    'data_demissao': processed_data[38],
-                    'last_registered_day': processed_data[39],
-                    'fixed_days_off': processed_data[40],
-                    'proportion': processed_data[41],
-                    'fixed_LQs' : processed_data[42],
+                    'data_admissao': processed_data[38],
+                    'data_demissao': processed_data[39],
+                    'last_registered_day': processed_data[40],
+                    'fixed_days_off': processed_data[41],
+                    'proportion': processed_data[42],
+                    'fixed_LQs' : processed_data[43],
                     # 'week_cut': processed_data[34]
-                    'work_day_hours': processed_data[43],
+                    'work_day_hours': processed_data[44],
+                    'fixed_M': processed_data[45],
+                    'fixed_T': processed_data[46],
+                    'partial_workers_complete': processed_data[47]
                 }
+
 
             except IndexError as e:
                 self.logger.error(f"Error unpacking processed data: {e}")
@@ -310,6 +315,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             max_workers = adapted_data['max_workers']
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
+            workers_past = adapted_data['workers_past']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
             first_day = adapted_data['first_registered_day']
@@ -319,12 +325,15 @@ class SalsaAlgorithm(BaseAlgorithm):
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
             fixed_LQs = adapted_data['fixed_LQs']
+            fixed_M = adapted_data['fixed_M']
+            fixed_T = adapted_data['fixed_T']
             role_by_worker = adapted_data['role_by_worker']
             #managers = adapted_data['managers']
             #keyholders = adapted_data['keyholders']
             # week_cut = adapted_data['week_cut']
             proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
+            partial_workers_complete = adapted_data['partial_workers_complete']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -337,6 +346,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             F_special_day = settings["F_special_day"]
             free_sundays_plus_c2d = settings["free_sundays_plus_c2d"]
             missing_days_afect_free_days = settings["missing_days_afect_free_days"]
+
+
+            logger.info(f"Valid workers after processing: {workers}")
+            logger.info(f"Valid past workers after processing: {workers_past}")
 
             #   # === TEST: remover totalmente um worker problemático ===
             # DROP_W = 80001744
@@ -369,7 +382,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             logger.info(f"workers_complete: {workers_complete}")
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, start_weekday)
+            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, fixed_M, fixed_T, start_weekday, workers_past)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -436,7 +449,47 @@ class SalsaAlgorithm(BaseAlgorithm):
                               output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
                                                          f'salsa_schedule_{self.process_id}.xlsx'))
             
+            # =================================================================
+            # FILTER BY PARTIAL WORKERS IF REQUESTED
+            # =================================================================
+            # Check if we need to filter by partial workers
+            if partial_workers_complete and len(partial_workers_complete) > 0:
+                logger.info(f"Filtering schedule by partial_workers_complete: {partial_workers_complete}")
+                
+                if isinstance(schedule_df, pd.DataFrame) and not schedule_df.empty:
+                    # Keep the first row (header/metadata) and rows for specific workers
+                    if 'Worker' in schedule_df.columns:
+                        # Filter to keep first row and rows with workers in partial_workers_complete
+                        first_row = schedule_df.iloc[:1]  # First row
+                        worker_rows = schedule_df[schedule_df['Worker'].isin(partial_workers_complete)]
+                        
+                        # Combine first row with filtered worker rows
+                        schedule_df = pd.concat([first_row, worker_rows], ignore_index=True)
+                        
+                        logger.info(f"Filtered schedule: kept first row + {len(worker_rows)} worker rows for workers {partial_workers_complete}")
+                    
+                    elif 'colaborador' in schedule_df.columns:
+                        # Alternative column name
+                        first_row = schedule_df.iloc[:1]  # First row
+                        worker_rows = schedule_df[schedule_df['colaborador'].isin(partial_workers_complete)]
+                        
+                        # Combine first row with filtered worker rows
+                        schedule_df = pd.concat([first_row, worker_rows], ignore_index=True)
+                        
+                        logger.info(f"Filtered schedule: kept first row + {len(worker_rows)} worker rows for workers {partial_workers_complete}")
+                    
+                    else:
+                        # If no worker column found, try to filter by index or other method
+                        logger.warning("No 'Worker' or 'colaborador' column found. Cannot filter by partial workers.")
+                
+                else:
+                    logger.warning("Schedule DataFrame is empty or not a DataFrame. Cannot filter by partial workers.")
+
+            else:
+                logger.info("No partial workers specified or partial_workers_complete is empty. Using full schedule.")
+
             self.final_schedule = pd.DataFrame(schedule_df).copy()
+            logger.info(f"Final schedule shape: {self.final_schedule.shape}")
             
     # Capture solver statistics if available
             if hasattr(model, 'solver_stats'):

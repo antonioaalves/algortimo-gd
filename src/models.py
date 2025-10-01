@@ -3922,7 +3922,8 @@ class DescansosDataModel(BaseDataModel):
                     'colabs_passado_list': colabs_passado_list,
                 }
                 algorithm_treatment_params.update(new_params)
-                self.logger.info(f"DEBUG: algorithm_treatment_params: {algorithm_treatment_params}")
+                self.algorithm_treatment_params = algorithm_treatment_params
+                self.logger.info(f"DEBUG: algorithm_treatment_params: {self.algorithm_treatment_params}")
                 results = algorithm.run(data=self.medium_data, algorithm_treatment_params=self.algorithm_treatment_params)
 
                 if not results:
