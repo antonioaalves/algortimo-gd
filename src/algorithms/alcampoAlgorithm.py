@@ -64,7 +64,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
         """
         # Default parameters for the algorithm
         default_parameters = {
-            "shifts": ["M", "T", "L", "LQ", "F", "V", "LD", "A", "TC"],
+            "shifts": ["M", "T", "L", "LQ", "F", "V", "LD", "A", "TC", "-"],
             "check_shifts": ['M', 'T', 'L', 'LQ', "LD", "TC"],
             "check_shift_special": ['M', 'T', 'L', "TC"],
             "working_shifts": ["M", "T", "TC"],
@@ -213,7 +213,10 @@ class AlcampoAlgorithm(BaseAlgorithm):
                     'working_shift_2': processed_data[30],
                     'workers_complete': processed_data[31],
                     'workers_complete_cycle': processed_data[32],
-                    'free_day_complete_cycle': processed_data[33]
+                    'free_day_complete_cycle': processed_data[33],
+                    'first_day' : processed_data[34],
+                    'last_day' : processed_data[35],
+                    'fixed_days_off': processed_data[36]
                 }
 
             except IndexError as e:
@@ -311,6 +314,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
+            first_day = adapted_data['first_day']
+            last_day = adapted_data['last_day']
+            fixed_days_off = adapted_data['fixed_days_off']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -325,8 +331,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
 
             # === TEST: remover totalmente um worker problemático ===
             logger.info(f"[TEST] Before dropping workers, total workers: {len(workers_complete)}, len(workers): {len(workers)}")
-            DROP_W = [ 5037935]
-            #4402488
+            DROP_W = [ 157601 ] #187487, 5022777, 5037733 
             logger.warning(f"[TEST] Dropping worker {DROP_W} for feasibility test")
 
             # 1) listas de workers
@@ -358,7 +363,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             self.logger.info("Model initialized for Stage 1")
 
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers_complete, shifts)
+            shift = decision_variables(model, days_of_year, workers, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, start_weekday)
 
             self.logger.info("Decision variables created for Stage 1")
             
@@ -376,14 +381,17 @@ class AlcampoAlgorithm(BaseAlgorithm):
             self.logger.info("Constraints applied for Stage 1")
             
             # Set up optimization objective
-            optimization_prediction(
+            debug_vars = optimization_prediction(
                 model, days_of_year, workers_complete, workers_complete_cycle, working_shift, shift, pessObj, 
-                min_workers, closed_holidays, week_to_days, working_days, contract_type
+                min_workers, closed_holidays, week_to_days, working_days, contract_type, special_days
             )
             
+            logger.info(f"Optimization variables for Stage 1: {debug_vars}")
+
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'))
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'),
+                                debug_vars=debug_vars)
             self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
@@ -395,7 +403,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             self.model_stage2 = new_model
             
             # Create new decision variables
-            new_shift = decision_variables(new_model, days_of_year, workers_complete, shifts)
+            new_shift = decision_variables(new_model, days_of_year, workers, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, start_weekday)
             
             # Apply Stage 2 constraints
             self._apply_stage2_constraints(new_model, new_shift, days_of_year, workers, shifts,
@@ -403,15 +411,16 @@ class AlcampoAlgorithm(BaseAlgorithm):
                                  contract_type, closed_holidays, workers_complete, workers_complete_cycle)
             
             # Apply optimization (reusing from Stage 1)
-            optimization_prediction(
+            debug_vars = optimization_prediction(
                 new_model, days_of_year, workers_complete, workers_complete_cycle,working_shift, new_shift, pessObj,
-                min_workers, closed_holidays, week_to_days, working_days, contract_type
+                min_workers, closed_holidays, week_to_days, working_days, contract_type, special_days
             )
             
             
             # Solve Stage 2
             self.logger.info("Solving Stage 2 model")
-            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'))
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'),
+                                       debug_vars=debug_vars)
             #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
             self.final_schedule = pd.DataFrame(final_schedule_df).copy()
             
@@ -436,7 +445,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
         shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
         
         # Constraint to limit working days in a week based on contract type
-        week_working_days_constraint(model, shift, week_to_days, workers, working_shift_2, contract_type)
+        week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type)
         
         # Constraint to limit maximum continuous working days
         maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
@@ -451,9 +460,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
         free_days_special_days(model, shift, special_days, workers, working_days, total_l_dom)
         
         # TC attribution constraint
-        tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days)
+        tc_atribution(model, shift, workers, tc, special_days, working_days)
         
-        # # Working days special days constraint
+        # Working days special days constraint
         working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type)
         
         # LQ attribution constraint
@@ -461,22 +470,20 @@ class AlcampoAlgorithm(BaseAlgorithm):
         
         # LD attribution constraint
         LD_attribution(model, shift, workers, working_days, l_d)
-        
-        # Closed holiday attribution
-        # closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
-        
-        # # Holiday, missing days and empty days attribution
-        # holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
+
+        #closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
+
+        #holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
         
         # Worker week shift assignments #####
         assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
         
         # Working day shifts constraint
-        for w in workers:
-            logger.info(f"Applying working day shifts constraint for worker {w}: shifts: {working_shift} and check shifts: {check_shift}")  
-            logger.info(f"Worker {w}, working days: {working_days[w]}, special days: {special_days}, \
-                        worker empty days: {empty_days[w]}, worker missing days: {missing_days[w]}, worker holiday: {worker_holiday[w]} \
-                        fixed free days: {free_day_complete_cycle[w]}")
+        # for w in workers:
+        #     logger.info(f"Applying working day shifts constraint for worker {w}: shifts: {working_shift} and check shifts: {check_shift}")  
+        #     logger.info(f"Worker {w}, working days: {working_days[w]}, special days: {special_days}, \
+        #                 worker empty days: {empty_days[w]}, worker missing days: {missing_days[w]}, worker holiday: {worker_holiday[w]} \
+        #                 fixed free days: {free_day_complete_cycle[w]}")
         working_day_shifts(model, shift, workers, working_days, check_shift)
         
         # Special day shifts constraint 
@@ -498,17 +505,16 @@ class AlcampoAlgorithm(BaseAlgorithm):
         space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
         
         # # Priority 2-3 workers constraint
-        prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, 
-                       week_to_days, contract_type, working_shift)
+        prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, week_to_days, contract_type, working_shift)
         
         # Compensation days constraint
         compensation_days(model, shift, workers, working_days, special_days, start_weekday, 
-                    week_to_days, contract_type, working_shift)
+                  week_to_days, contract_type, working_shift)
         
-        # # Limits LDs per week
+        # Limits LDs per week
         limits_LDs_week(model, shift, week_to_days, workers, special_days)
     
-        # # One free day weekly
+        # One free day weekly
         one_free_day_weekly(model, shift, week_to_days, workers, working_days, contract_type, closed_holidays)
 
     def _apply_stage2_constraints(self, new_model, new_shift, days_of_year, workers, shifts,

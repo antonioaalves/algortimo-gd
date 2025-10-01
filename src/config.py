@@ -46,9 +46,9 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 317091,#253762,# 249468,
+        'current_process_id': 322137,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 317091,
+        'wfm_proc_id': 322137,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
@@ -79,7 +79,7 @@ CONFIG = {
         'maxRetries': 3,
         'sleepTime': 1000,
         'test_param_scheduling_threshold': 0.75,
-        #'GD_algorithmName': '',
+        'GD_algorithmName': 'alcampo_algorithm',
         'GD_consideraFestivos': 1,
         'GD_convenioBD': 'ALCAMPO',
     },
@@ -184,7 +184,7 @@ CONFIG = {
                 #    'parameters': {}
                 #},
                 'insertions': {
-                    'insert_results': True
+                    'insert_results': False
                 }
             },
             'substages': {

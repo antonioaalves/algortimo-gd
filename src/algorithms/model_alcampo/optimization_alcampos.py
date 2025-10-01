@@ -1,10 +1,19 @@
-def optimization_prediction(model,days_of_year, workers, workers_complete_cycle, working_shift, shift, pessObj, min_workers, closed_holidays, week_to_days,  working_days, contract_type):
+from base_data_project.log_config import get_logger
+from src.config import PROJECT_NAME
+
+# Set up logger
+logger = get_logger(PROJECT_NAME)
+
+
+def optimization_prediction(model,days_of_year, workers, workers_complete_cycle, working_shift, shift, pessObj, min_workers, closed_holidays, week_to_days,  working_days, contract_type, special_days):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
     no_workers_penalties = {}
     min_workers_penalties = {}
     inconsistent_shift_penalties = {}
+    consecutive_special_vars = {}  # Add this to store the consecutive special variables
+    debug_vars = {}
 
     # Create the objective function with heavy penalties
     objective_terms = []
@@ -23,7 +32,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] for w in workers)
+            assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
             
             # Create variables to represent the positive and negative deviations from the target
             pos_diff = model.NewIntVar(0, len(workers), f"pos_diff_{d}_{s}")
@@ -50,7 +59,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
             for s in working_shift:
                 if pessObj.get((d, s), 0) > 0:  # Only penalize when pessObj exists
                     # Calculate the number of assigned workers for this day and shift
-                    assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                    assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
                     
                     # Create a boolean variable to indicate if there are no workers
                     no_workers = model.NewBoolVar(f"no_workers_{d}_{s}")
@@ -69,7 +78,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
@@ -176,6 +185,8 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
                     objective_terms.append(ADJACENT_FREE_SHIFTS_PENALTY * adjacent_free_shifts)
 
 
-
-
     model.Minimize(sum(objective_terms))
+
+
+    # Return the variables so they can be accessed after solving
+    return debug_vars

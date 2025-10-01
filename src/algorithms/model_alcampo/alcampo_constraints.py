@@ -14,7 +14,12 @@ def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
     for w in workers_complete:
         for d in days_of_year:
-           model.add_exactly_one(shift[(w, d, s)] for s in shifts)
+            total_shifts = []
+            for s in shifts:
+                if (w, d, s) in shift:
+                    total_shifts.append(shift[(w, d, s)])
+            if (total_shifts):
+                model.add_exactly_one(total_shifts)
 
 
 def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type):
@@ -22,12 +27,14 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
     working_shift = ["M", "T"]
     # Add constraint to limit working days in a week to contract type
     for w in workers:
+        logger.info(f"week_working_days_constraint: worker {w}, contract_type {contract_type.get(w, 0)}, working_shift {working_shift}")
         for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
             days_in_week = week_to_days[week]
             # Sum shifts across days and shift types
-            total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift)
+            total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift if (w, d, s) in shift)
             max_days = contract_type.get(w, 0)
             model.Add(total_shifts <= max_days)
+        
 
 def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, maxi):
     #limits maximum continuous working days
@@ -47,6 +54,8 @@ def maximum_continuous_working_special_days(model, shift, special_days, workers,
     #limits maximum continuous working sundays and holidays
 
     for w in workers:
+        if w == 5016794:
+            continue
         if contract_type[w] in [4,5,6]:  # Check contract type for worker w
             for d in range(len(special_days) - 3):  # Look at each set of 4 consecutive special days
                 # Get the next 4 special days
@@ -65,7 +74,19 @@ def maximum_continuous_working_special_days(model, shift, special_days, workers,
 def maximum_free_days(model, shift, days_of_year, workers, total_l, c3d):
     #constraint for maximum of free days in a year
     for w in workers:
-        model.Add(sum(shift[(w, d, "L")] + shift[(w, d, "LQ")] + shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0) - c3d.get(w, 0))
+        logger.info(f"maximum_free_days: workers {w}, total_l {total_l[w]}, c3d {c3d[w]}")
+        # Build the sum by checking each shift type separately and only including existing keys
+        free_day_shifts = []
+        for d in days_of_year:
+            if (w, d, "L") in shift:
+                free_day_shifts.append(shift[(w, d, "L")])
+            if (w, d, "LQ") in shift:
+                free_day_shifts.append(shift[(w, d, "LQ")])
+            if (w, d, "LD") in shift:
+                free_day_shifts.append(shift[(w, d, "LD")])
+        
+        if free_day_shifts:  # Only add constraint if there are free day shifts
+            model.Add(sum(free_day_shifts) == total_l.get(w, 0) - c3d.get(w, 0))
 
 def free_days_special_days(model, shift, special_days, workers, working_days, total_l_dom):
     for w in workers:
@@ -74,26 +95,49 @@ def free_days_special_days(model, shift, special_days, workers, working_days, to
         model.Add(sum(shift[(w, d, "L")] for d in worker_special_days) == total_l_dom.get(w, 0) )
 
 
-def tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days):
+def tc_atribution(model, shift, workers, tc, special_days, working_days):
     # Constraint for TC shifts: only on special days and total equals tc[w]
     
     for w in workers:
-        # Create a list of all TC shift variables for this worker on special days
-        for d in days_of_year:
+        
+        # Force TC = 0 on all non-special working days
+        for d in working_days[w]:
             if d not in special_days:
-                model.Add(shift[(w, d, "TC")] == 0)
-    
-        worker_special_days = [d for d in special_days if d in working_days[w]]
-        model.Add(sum(shift[(w, d, "TC")] for d in worker_special_days) == tc.get(w, 0))  
+                if (w, d, "TC") in shift:
+                    model.Add(shift[(w, d, "TC")] == 0)
+
+
+        # Get special days that are in this worker's working days AND have TC variables
+        worker_special_days = [
+            d for d in special_days 
+            if d in working_days[w] and (w, d, "TC") in shift
+        ]
+        
+        tc_required = tc.get(w, 0)
+        logger.info(f"Worker {w}: tc_required={tc_required}, worker_special_days={worker_special_days}")
+        
+        # Only add constraint if there are TC variables for special days
+        if worker_special_days:
+            if tc_required == 0:
+                # If no TC required, force all TC on special days to 0
+                for d in worker_special_days:
+                    model.Add(shift[(w, d, "TC")] == 0)
+            else:
+                # If TC required > 0, sum must equal tc_required
+                model.Add(sum(shift[(w, d, "TC")] for d in worker_special_days) == tc_required)
+        elif tc_required > 0:
+            # If TC required but no variables exist, this is infeasible
+            logger.error(f"Worker {w} requires {tc_required} TC shifts but no TC variables exist on special days")
+            model.Add(0 == 1)  # This will make the model infeasible
 
 def working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type):
     for w in workers:
-        worker_special_days = [d for d in special_days if d in working_days[w]]    
-        if contract_type[w] in [4,5]:
+        worker_special_days = [d for d in special_days if d in working_days[w]]
+        if contract_type[w] in [4, 5]:
             # Only consider special days that are in this worker's working days
-            model.Add(sum(shift[(w, d, "M")] + shift[(w, d, "T")] for d in worker_special_days) == l_d.get(w, 0))
+            model.Add(sum(shift[(w, d, "M")] + shift[(w, d, "T")] for d in worker_special_days if (w, d, "M") in shift or (w, d, "T") in shift) == l_d.get(w, 0))
         elif contract_type[w] == 6:
-            model.Add(sum(shift[(w, d, "M")] + shift[(w, d, "T")] + shift[(w, d, "TC")] for d in worker_special_days) == l_d.get(w, 0))
+            model.Add(sum(shift[(w, d, "M")] + shift[(w, d, "T")] + shift[(w, d, "TC")] for d in worker_special_days if (w, d, "M") in shift or (w, d, "T") in shift or (w, d, "TC") in shift) == l_d.get(w, 0))
 
 def LQ_attribution(model, shift, workers, working_days, l_q, c2d):
     # #constraint for maximum of LQ days in a year
@@ -702,13 +746,13 @@ def maxi_free_days_c3d(new_model, new_shift, workers, days_of_year, total_l):
         # if contract_type[w] == 6:
         #     new_model.Add(sum(new_shift[(w, d, "L")] + new_shift[(w, d, "LQ")] + new_shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0) - 1)
         # else:
-            new_model.Add(sum(new_shift[(w, d, "L")] + new_shift[(w, d, "LQ")] + new_shift[(w, d, "LD")]  for d in days_of_year) == total_l.get(w, 0))
+            new_model.Add(sum(new_shift[(w, d, "L")] + new_shift[(w, d, "LQ")] + new_shift[(w, d, "LD")]  for d in days_of_year if (w, d, "L") in new_shift or (w, d, "LQ") in new_shift or (w, d, "LD") in new_shift) == total_l.get(w, 0))
 #--------------------------------------------------------------------------------------------------------------------------------------
 def maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d):
 #constraint for maximum of LQ days in a year
     for w in workers:
         for d in working_days[w]:
-            new_model.Add(sum(new_shift[(w, d, "LQ")] for d in working_days[w]) == l_q.get(w, 0) + c2d.get(w, 0) + c3d.get(w, 0))
+            new_model.Add(sum(new_shift[(w, d, "LQ")] for d in working_days[w] if (w, d, "LQ") in new_shift) == l_q.get(w, 0) + c2d.get(w, 0) + c3d.get(w, 0))
 
 
 #--------------------------------------------------------------------------------------------------------------------------------------
@@ -816,15 +860,15 @@ def assigns_solution_days(new_model, new_shift, workers_complete, workers_comple
                 # Normal days - enforce the assigned shift
                 if assigned_shift == 'N':
                     # For 'N' (no shift), ensure all shifts are set to 0
-                    for s in shifts:
+                    for s in shifts and (w, d, s) in new_shift:
                         new_model.Add(new_shift[(w, d, s)] == 0)
-                elif assigned_shift in shift_mapping:
+                elif assigned_shift in shift_mapping and (w, d, assigned_shift) in new_shift:
                     # Enforce the assigned shift
                     new_model.Add(new_shift[(w, d, assigned_shift)] == 1)
                 #    print(f"Worker {w} on day {d} has assigned shift: {assigned_shift}")
                     # Make sure all other shifts are not assigned
                     for s in shifts:
-                        if s != assigned_shift:
+                        if s != assigned_shift and (w, d, s) in new_shift:
                             new_model.Add(new_shift[(w, d, s)] == 0)
                 else:
                     logger.warning(f"Warning: Assigned shift '{assigned_shift}' for worker {w} on day {d} is not in the shift mapping.")

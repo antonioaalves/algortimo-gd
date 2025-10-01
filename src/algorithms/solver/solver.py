@@ -112,7 +112,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 1200  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -195,7 +195,7 @@ def solve(
         # NEW: PRINT COULD_BE_QUALITY_WEEKEND VALUES
         # =================================================================
         if debug_vars:
-            logger.info("Printing could_be_quality_weekend values:")
+            logger.info("Printing debug variables:")
             for var_name, var in debug_vars.items():
                 if "could_be_quality_weekend" in var_name:
                     try:
@@ -203,8 +203,16 @@ def solve(
                         logger.info(f"  {var_name} = {var_value}")
                     except Exception as e:
                         logger.warning(f"  Could not get value for {var_name}: {e}")
+                elif "works_4_consecutive_special" in var_name:
+                    try:
+                        var_value = solver.Value(var)
+                        logger.info(f"  {var_name} = {var_value}")
+                        if var_value == 1:
+                            logger.warning(f"  ⚠️  Worker 5016794 has 4+ consecutive special working days!")
+                    except Exception as e:
+                        logger.warning(f"  Could not get value for {var_name}: {e}")
         else:
-            logger.info("No debug variables provided for could_be_quality_weekend")
+            logger.info("No debug variables provided")
         
         # =================================================================
         # 5. PROCESS SOLUTION AND CREATE SCHEDULE
@@ -226,9 +234,7 @@ def solve(
         
         logger.info(f"Shift mapping: {shift_mapping}")
 
-        # Prepare the data for the DataFrame
-        table_data = []  # List to store each worker's data as a row
-        worker_stats = {}  # Dictionary to track L, LQ, LD counts for each worker
+
         
         logger.info(f"Processing schedule for {len(workers)} workers across {len(days_of_year)} days")
         # Prepare the data for the DataFrame
