@@ -287,6 +287,11 @@ class SalsaAlgorithm(BaseAlgorithm):
             check_shift = self.parameters["check_shifts"]
             working_shift = self.parameters["working_shifts"]
             
+            if country != "spain":
+                shifts.pop("LD")
+                check_shift.pop("LD")
+                working_shift.pop("LD")
+
             # Extract settings
             settings = self.parameters["settings"]
             F_special_day = settings["F_special_day"]
