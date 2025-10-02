@@ -28,6 +28,7 @@ def solve(
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
     work_day_hours: Dict[int, List[int]],
+    pessOBJ: Dict[int, int],
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
@@ -240,8 +241,10 @@ def solve(
         # Loop through each worker
         processed_workers = 0
         days_of_year_sorted = sorted(days_of_year)
-        time_worked_day_M = [0] * len(days_of_year_sorted)
-        time_worked_day_T = [0] * len(days_of_year_sorted)
+        time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) for d in days_of_year_sorted]
+        time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
+        special_days_worked = {}
+        compensation_days_off = {}
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
@@ -250,6 +253,8 @@ def solve(
                 ld_count = 0
                 special_days_count = 0
                 unassigned_days = 0
+                special_days_worked[w] = []
+                compensation_days_off[w] = []
 
 
                 logger.debug(f"Processing worker {w}")
@@ -277,18 +282,22 @@ def solve(
                     elif day_assignment == 'LQ':
                         lq_count += 1
                     elif day_assignment == 'LD':
+                        compensation_days_off[w].append(d)
                         ld_count += 1
                     elif day_assignment in ['T']:
                         if d in special_days:
+                            special_days_worked[w].append(d)
                             special_days_count += 1
                         time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
+                            special_days_worked[w].append(d)
                         time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
 
-
                     day_counter += 1
+                logger.info(f"days worked: {special_days_worked[w]}"
+                            f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {

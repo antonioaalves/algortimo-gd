@@ -285,7 +285,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
 
     for w in workers:
 
-        if contract_type[w] in [4, 5, 6]:
+        if contract_type[w] in [4, 5, 6, 8]:
             quality_2weekend_vars = []
             
             if F_special_day == False:
@@ -605,6 +605,6 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
     for w in workers:
         # Only consider special days that are in this worker's working days
         worker_sundays = [d for d in sundays if d in working_days[w]]
-        logger.info(f"Worker {w}, Special Days {worker_sundays}")
+        logger.info(f"Worker {w}, Sundays {worker_sundays}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
 
