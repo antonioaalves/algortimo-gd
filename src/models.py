@@ -1984,6 +1984,22 @@ class DescansosDataModel(BaseDataModel):
                         self.logger.warning(f"Employee {cc['matricula'].iloc[0]}: negative l_total ({cc['l_total'].iloc[0]}) from SABECO holidays calc (coh[1]:{coh[1]} - coh[0]:{coh[0]})")
                     # Preserve dofhc value
                     cc['dofhc'] = cc['dofhc']
+                    
+                # Default case for contract types not handled above (e.g., tipo_contrato == 8)
+                else:
+                    # Initialize missing columns with default values
+                    if 'ld' not in cc.columns:
+                        cc['ld'] = 0
+                    if 'l_dom' not in cc.columns:
+                        cc['l_dom'] = 0
+                    if 'l_total' not in cc.columns:
+                        cc['l_total'] = 0
+                    if 'lq_og' not in cc.columns:
+                        cc['lq_og'] = 0
+                    if 'l_dom_salsa' not in cc.columns:
+                        cc['l_dom_salsa'] = 0
+                    
+                    self.logger.info(f"Employee {cc['matricula'].iloc[0]} with tipo_contrato {tipo_contrato} using default processing (no special contract logic applied)")
                 
                 processed_rows.append(cc)
 
@@ -2867,6 +2883,7 @@ class DescansosDataModel(BaseDataModel):
             
             # Process 4/5 day contracts - count different types of rest days
             colabs_45d = matrizA_og[matrizA_og['tipo_contrato'].isin([4, 5])]['matricula'].tolist()
+            self.logger.info(f"Found {len(colabs_45d)} employees with contract types 4 or 5: {colabs_45d}")
             
             count_ldt_45d_data = []
             for colab in colabs_45d:
@@ -2915,6 +2932,7 @@ class DescansosDataModel(BaseDataModel):
             
             # Process 6 day contracts
             colabs_6d = matrizA_og[matrizA_og['tipo_contrato'] == 6]['matricula'].tolist()
+            self.logger.info(f"Found {len(colabs_6d)} employees with contract type 6: {colabs_6d}")
             
             count_ldt_6d_data = []
             for colab in colabs_6d:
@@ -2961,6 +2979,12 @@ class DescansosDataModel(BaseDataModel):
             
             # Combine all collaborators
             count_ldt = pd.DataFrame(count_ldt_45d_data + count_ldt_6d_data)
+            
+            # Handle case where no employees have contract types 4, 5, or 6
+            if count_ldt.empty:
+                # Create an empty DataFrame with the expected columns
+                count_ldt = pd.DataFrame(columns=['COLABORADOR', 'LD_at', 'LQ_at', 'LRES_at', 'CXX_at'])
+                self.logger.info("No employees found with contract types 4, 5, or 6. Created empty count_ldt DataFrame.")
             
             # Calculate consecutive day patterns (C2D and C3D)
             
@@ -3029,6 +3053,11 @@ class DescansosDataModel(BaseDataModel):
             
             # Merge C2D and C3D
             c_at = pd.merge(c2d_at, c3d_at, on='COLABORADOR', how='outer').fillna(0)
+            
+            # Handle case where c_at is empty (no consecutive day patterns found)
+            if c_at.empty:
+                c_at = pd.DataFrame(columns=['COLABORADOR', 'C2D_at', 'C3D_at'])
+                self.logger.info("No consecutive day patterns found. Created empty c_at DataFrame.")
             
             # Merge with count_ldt
             count_ldt = pd.merge(count_ldt, c_at, on='COLABORADOR', how='left').fillna(0)
