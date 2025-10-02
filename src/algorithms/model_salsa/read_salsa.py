@@ -831,9 +831,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         else:
             country = "undefined"
             logger.error(f"Some variables are true and others false, something is not being correctly received:"
-                         "\n5_6 day contract -> {has_5_6_contract},"
-                         "\n7  work days in a row  -> {has_max_work_days_7},"
-                         "\nweek compensation limit -> {has_week_compensation_limit}."
+                         f"\n\t\t\t7 work days in a row  -> {has_max_work_days_7},"
+                         f"\n\t\t\tweek compensation limit -> {has_week_compensation_limit}."
                          )
         logger.info("[OK] Data processing completed successfully")
         
@@ -900,9 +899,9 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_wee
     for week, days in week_to_days_salsa.items():
         if (len(days) <= 6):
             continue
+        days_set = set(days)
+        holiday_days_in_week = days_set.intersection(worker_holiday)
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
-            days_set = set(days)
-            holiday_days_in_week = days_set.intersection(worker_holiday)
 
             if len(list(holiday_days_in_week)) >= 5:
 
@@ -921,9 +920,11 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_wee
                     worker_holiday -= {l2,l1}
                     fixed_days_off |= {l2,l1}
         else:
-            days_set = set(days)
-            holiday_days_in_week = days_set.intersection(worker_holiday)
-
+            days_off_in_week = days_set.intersection(fixed_days_off)
+            if (len(days_off_in_week) > 1):
+                logger.error(f"for week {week} this worker has {days_off_in_week} when should only have 1 day off")
+            else:
+                print("normal")
             if len(list(holiday_days_in_week)) >= 5:
 
                 atributing_days = list(sorted(days_set - closed_holidays))

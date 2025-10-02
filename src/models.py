@@ -1721,7 +1721,7 @@ class DescansosDataModel(BaseDataModel):
             params_contrato = pd.DataFrame({
                 'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
                 'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
-                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 6, 6]
+                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
             })
             
             # Check if matriz_ma is empty
@@ -1806,9 +1806,11 @@ class DescansosDataModel(BaseDataModel):
             matriz_ma = pd.merge(matriz_ma, params_lq, on='seq_turno', how='left')
             
             # Merge with params_contrato
+            self.logger.info(f"debuging: {matriz_ma.columns}")
             matriz_ma = pd.merge(matriz_ma, params_contrato, 
                             left_on=['min_dia_trab', 'max_dia_trab'], 
                             right_on=['min', 'max'], how='left')
+            self.logger.info(f"debuging: {matriz_ma.columns}")
 
             # Merge with valid_emp to get PRIORIDADE_FOLGAS
             matriz_ma = pd.merge(matriz_ma, valid_emp[['fk_colaborador', 'prioridade_folgas']], on='fk_colaborador', how='left')
