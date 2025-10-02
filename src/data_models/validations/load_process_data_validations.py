@@ -66,11 +66,11 @@ def validate_df_valid_emp(df_valid_emp: pd.DataFrame) -> bool:
     return True
 
 # Be careful with this one, it may end up being a list of strings
-def validate_past_employee_id_list(past_employee_id_list: List[int]) -> bool:
+def validate_past_employee_id_list(past_employee_id_list: List[int], case_type: int) -> bool:
     """
     Validate past_employee_id_list.
     """
-    if len(past_employee_id_list) == 0:
+    if len(past_employee_id_list) == 0 and case_type == 4:
         return False
     return True
 
@@ -131,17 +131,17 @@ def validate_df_core_pro_emp_horario_det(df_core_pro_emp_horario_det):
 
     return True
 
-def validate_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[int]):
+def validate_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[int]) -> bool:
     """
     Validate df_colaborador.
     """
     if df_colaborador.empty:
         return False
 
-    needed_columns = ['fk_colaborador', 'fk_unidade', 'fk_secao', 'fk_tipo_posto', 'prioridade_folgas', 'tipo_contrato', 'convenio']
-    if needed_columns not in df_colaborador.columns:
+    needed_columns = ['codigo', 'loja', 'secao', 'fk_tipo_posto', 'convenio']
+    if not all(col in df_colaborador.columns for col in needed_columns):
         return False
-    if not df_colaborador['fk_colaborador'].isin(employees_id_list).all():
+    if not df_colaborador['codigo'].isin(employees_id_list).all():
         return False
     return True
 

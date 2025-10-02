@@ -46,13 +46,13 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 4322,#253762,# 249468,
+        'current_process_id': 4640,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 4322,
+        'wfm_proc_id': 4640,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
-        'wfm_proc_colab': None, 
+        'wfm_proc_colab': '1178', 
     }, # TODO: create the default values to run locally
 
     # Params names and defaults - understand why they are here
@@ -108,7 +108,7 @@ CONFIG = {
         'df_messages': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_algo': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_lq': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_params_LQ.sql'),
-        'df_festivos':  os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_festivos.sql'),
+        'df_feriados': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetFeriados.sql'),
         'df_closed_days': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_closed_days.sql'),
         'df_params': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAlgoParameters.sql'),
         'parameters_cfg': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetParametersCFG.sql'),
@@ -119,7 +119,7 @@ CONFIG = {
         'df_ausencias_ferias': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAusencias.sql'),
         'df_ciclos_90': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGet90CyclesInfo.sql'),
         'df_estrutura_wfm': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEstruturaWFM.sql'),
-        'df_feriados': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetFeriadosAbertos.sql'),
+        'df_feriados': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetFeriados.sql'),
         'df_faixa_horario': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscFaixaHorario.sql'),
         'df_orcamento': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscOrcamento.sql'),
         'df_calendario_passado': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreSchedule.sql'),

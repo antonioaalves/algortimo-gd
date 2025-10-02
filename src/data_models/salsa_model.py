@@ -93,7 +93,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 - secao_id: Section ID
                 - posto_id_list: List of posto IDs
                 - current_posto_id: Current posto ID
-                - df_festivos: Holiday information
+                - df_feriados: Holiday information
                 - df_closed_days: Closed days information
                 - df_turnos: Shift information
                 - df_calendario_passado: Past calendar information
@@ -115,7 +115,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             'df_messages': pd.DataFrame(), # df containing messages to set process errors
             'df_valid_emp': None, # valid employees filtered for processing
             'df_params_lq': None, # LQ parameters
-            'df_festivos': None, # holiday information dataframe
+            'df_feriados': None, # holiday information dataframe
             'df_closed_days': None, # closed days information dataframe
             'df_params': None, # algorithm parameters
             'parameters_cfg': None, # parameters configuration
@@ -334,20 +334,20 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # Load festivos information
             try:
-                self.logger.info(f"Loading df_festivos from data manager")
+                self.logger.info(f"Loading df_feriados from data manager")
                 # TODO: join the other query and make only one df
-                query_path = entities_dict['df_festivos']
+                query_path = entities_dict['df_feriados']
                 unit_id_str = "'" + str(unit_id) + "'"
-                df_festivos = data_manager.load_data('df_festivos', query_file=query_path, unit_id=unit_id_str)
-                self.logger.info(f"df_festivos shape (rows {df_festivos.shape[0]}, columns {df_festivos.shape[1]}): {df_festivos.columns.tolist()}")
+                df_feriados = data_manager.load_data('df_feriados', query_file=query_path, unit_id=unit_id_str, start_date=start_date, end_date=end_date)
+                self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
             except Exception as e:
-                self.logger.error(f"Error loading df_festivos: {e}", exc_info=True)
+                self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
             num_feriados_abertos, num_feriados_fechados = count_holidays_in_period(
                 start_date_str=first_year_date,
                 end_date_str=last_year_date,
-                df_festivos=df_festivos,
+                df_feriados=df_feriados,
                 use_case=0 # TODO: this should be defined in params
             )
 
@@ -422,7 +422,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
                 self.auxiliary_data['df_params'] = df_params.copy()
-                self.auxiliary_data['df_festivos'] = df_festivos.copy()
+                self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_closed_days'] = df_closed_days.copy()
                 self.auxiliary_data['unit_id'] = unit_id 
                 self.auxiliary_data['secao_id'] = secao_id
@@ -560,7 +560,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_colaborador info from data source: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador)
+            success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador=df_colaborador, employees_id_list=employees_id_list)
             if not success:
                 self.logger.error(f"Colaborador treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
@@ -601,7 +601,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             past_employee_id_list = get_past_employee_id_list(past_employee_id_list, case_type, wfm_proc_colab)
 
             # Quick validations
-            if not validate_past_employee_id_list(past_employee_id_list):
+            if not validate_past_employee_id_list(past_employee_id_list, case_type):
                 self.logger.error(f"past_employee_id_list is empty: {past_employee_id_list}")
                 return False, "errSubproc", "past_employee_id_list is empty"
 
@@ -677,7 +677,6 @@ class SalsaDataModel(BaseDescansosDataModel):
         
             # Get needed data
             try:
-                self.logger.info("Loading tipo_contrato info from df_colaborador")
                 employees_id_list = self.auxiliary_data['employees_id_list']
                 matriculas_list = self.auxiliary_data['matriculas_list']
                 employees_id_90_list = self.auxiliary_data['employees_id_90_list']
@@ -1027,7 +1026,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Dataframes
                 df_params_lq = self.auxiliary_data['df_params_lq']
                 df_valid_emp = self.auxiliary_data['df_valid_emp']
-                df_festivos = self.auxiliary_data['df_festivos']
+                df_feriados = self.auxiliary_data['df_feriados']
                 df_colaborador = self.raw_data['df_colaborador']
                 # External call data
                 start_date_str = self.external_call_data['start_date']
@@ -1107,7 +1106,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Add L_DOM (weekend/holiday days) calculations
                 success, df_colaborador, error_msg = add_l_dom_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    df_festivos=df_festivos,
+                    df_feriados=df_feriados,
                     convenio_bd=convenio_bd,
                     num_fer_dom=num_sundays_year,
                     fer_fechados=num_feriados_fechados,
@@ -1134,7 +1133,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Add L_TOTAL (total leave) calculations
                 success, df_colaborador, error_msg = add_l_total_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    df_festivos=df_festivos,
+                    df_feriados=df_feriados,
                     convenio_bd=convenio_bd,
                     num_sundays=num_sundays_year,
                     num_fer_dom=num_sundays_year,

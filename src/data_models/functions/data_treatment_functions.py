@@ -308,14 +308,14 @@ def treat_df_ciclos_90(df_ciclos_90: pd.DataFrame) -> Tuple[bool, pd.DataFrame, 
         logger.error(f"Error in treat_df_ciclos_90: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), ""
 
-def treat_df_colaborador(df_colaborador: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[int]) -> Tuple[bool, pd.DataFrame, str]:
     """
     Treat df_colaborador dataframe.
     """
     try:
         # INPUT VALIDATION
         # TODO: add validations
-        if not validate_df_colaborador(df_colaborador):
+        if not validate_df_colaborador(df_colaborador=df_colaborador, employees_id_list=employees_id_list):
             return False, pd.DataFrame(), "Input validation failed: empty DataFrame"
             
         # Rename columns LOGIC
@@ -340,6 +340,19 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame) -> Tuple[bool, pd.DataFra
             logger.warning(f"Column renaming failed: {e}")
             # Continue with original column names
 
+        # Map database column names to expected business logic names
+        column_mapping = {
+            'min_dias_trabalhados': 'min_dia_trab',
+            'max_dias_trabalhados': 'max_dia_trab', 
+            'fds_cal_2d': 'c2d',
+            'fds_cal_3d': 'c3d',
+            'd_cal_xx': 'cxx',
+            'lq': 'lqs'  # if needed, otherwise keep as 'lq'
+        }
+        
+        # Apply column renaming
+        df_colaborador = df_colaborador.rename(columns=column_mapping)
+        
         # Convert data types logic
         try:
             df_colaborador['convenio'] = df_colaborador['convenio'].str.upper()
@@ -357,6 +370,8 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame) -> Tuple[bool, pd.DataFra
             logger.error(error_msg, exc_info=True)
             return False, pd.DataFrame(), error_msg
 
+        #logger.info(f"DEBUG df_colaborador:\n {df_colaborador}")
+
         # Fill missing values
         non_date_columns = [col for col in df_colaborador.columns if col not in ['data_admissao', 'data_demissao']]
         df_colaborador[non_date_columns] = df_colaborador[non_date_columns].fillna(0)
@@ -369,10 +384,17 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame) -> Tuple[bool, pd.DataFra
             logger.error(error_msg)
             return False, pd.DataFrame(), error_msg
 
-        contrato_zeros = bool((df_colaborador['tipo_contrato'] == 0).any())
-        contrato_nulls = bool(df_colaborador['tipo_contrato'].isna().any())
-        if contrato_zeros or contrato_nulls:
-            error_msg = f"contrato=0 or null - TIPO_CONTRATO column not valid: {df_colaborador['seq_turno'] == 0}"
+        # Validate min_dia_trab and max_dia_trab instead of tipo_contrato (which is created later)
+        min_zeros = bool((df_colaborador['min_dia_trab'] == 0).any())
+        min_invalid = bool((df_colaborador['min_dia_trab'] > 8).any())
+        min_nulls = bool(df_colaborador['min_dia_trab'].isna().any())
+        max_zeros = bool((df_colaborador['max_dia_trab'] == 0).any())
+        max_invalid = bool((df_colaborador['max_dia_trab'] > 8).any())
+        max_nulls = bool(df_colaborador['max_dia_trab'].isna().any())
+        invalid_values = bool((df_colaborador['max_dia_trab'] < df_colaborador['min_dia_trab']).any())
+        
+        if min_zeros or min_invalid or min_nulls or max_zeros or max_invalid or max_nulls or invalid_values:
+            error_msg = f"min_dia_trab or max_dia_trab contains 0 or null values - contract data not valid"
             logger.error(error_msg)
             return False, pd.DataFrame(), error_msg
             
@@ -925,7 +947,7 @@ def add_l_d_to_df_colaborador(
 
 def add_l_dom_to_df_colaborador(
     df_colaborador: pd.DataFrame,
-    df_festivos: pd.DataFrame,
+    df_feriados: pd.DataFrame,
     convenio_bd: str,
     start_date_str: str,
     end_date_str: str,
@@ -979,12 +1001,12 @@ def add_l_dom_to_df_colaborador(
             # Third mask
             mask_32_bd = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == convenio_bd)
             if mask_32_bd.any():
-                if df_festivos is not None and len(df_festivos) > 0:
+                if df_feriados is not None and len(df_feriados) > 0:
                     # Process each contract type separately for holiday calculations
                     for tipo_contrato in [3, 2]:
                         tipo_mask = mask_32_bd & (df_result['tipo_contrato'] == tipo_contrato)
                         if tipo_mask.any():
-                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            coh = count_open_holidays(df_feriados, tipo_contrato)
                             df_result.loc[tipo_mask, 'l_dom'] = coh[0]
                 else:
                     df_result.loc[mask_32_bd, 'l_dom'] = 0
@@ -1003,12 +1025,12 @@ def add_l_dom_to_df_colaborador(
             # Process contract types 3,2 with convenio_bd
             mask_32_bd = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == convenio_bd)
             if mask_32_bd.any():
-                if df_festivos is not None and len(df_festivos) > 0:
+                if df_feriados is not None and len(df_feriados) > 0:
                     # Process each contract type separately for holiday calculations
                     for tipo_contrato in [3, 2]:
                         tipo_mask = mask_32_bd & (df_result['tipo_contrato'] == tipo_contrato)
                         if tipo_mask.any():
-                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            coh = count_open_holidays(df_feriados, tipo_contrato)
                             df_result.loc[tipo_mask, 'l_dom'] = coh[0]
                 else:
                     df_result.loc[mask_32_bd, 'l_dom'] = 0
@@ -1025,12 +1047,12 @@ def add_l_dom_to_df_colaborador(
             # Process contract types 3,2 with SABECO
             mask_32_sabeco = (df_result['tipo_contrato'].isin([3, 2])) & (df_result['convenio'] == 'SABECO')
             if mask_32_sabeco.any():
-                if df_festivos is not None and len(df_festivos) > 0:
+                if df_feriados is not None and len(df_feriados) > 0:
                     # Process each contract type separately for holiday calculations
                     for tipo_contrato in [3, 2]:                
                         tipo_mask = mask_32_sabeco & (df_result['tipo_contrato'] == tipo_contrato)
                         if tipo_mask.any():
-                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            coh = count_open_holidays(df_feriados, tipo_contrato)
                             df_result.loc[tipo_mask, 'l_dom'] = coh[0]
                 else:
                     df_result.loc[mask_32_bd, 'l_dom'] = 0
@@ -1190,7 +1212,7 @@ def add_l_q_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, us
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), f"Processing l_dom for df_colaborador failed: {str(e)}"    
 
-def add_l_total_to_df_colaborador(df_colaborador: pd.DataFrame, df_festivos: pd.DataFrame, convenio_bd: str, num_sundays: int, num_fer_dom: int, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
+def add_l_total_to_df_colaborador(df_colaborador: pd.DataFrame, df_feriados: pd.DataFrame, convenio_bd: str, num_sundays: int, num_fer_dom: int, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
     """
     """
 
@@ -1212,12 +1234,12 @@ def add_l_total_to_df_colaborador(df_colaborador: pd.DataFrame, df_festivos: pd.
 
             mask_32_bd = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == convenio_bd)
             if mask_32_bd.any():
-                if df_festivos is not None and len(df_festivos) > 0:
+                if df_feriados is not None and len(df_feriados) > 0:
                     # Process each contract type separately for holiday calculations
                     for tipo_contrato in [3, 2]:
                         tipo_mask = mask_32_bd & (df_colaborador['tipo_contrato'] == tipo_contrato)
                         if tipo_mask.any():
-                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            coh = count_open_holidays(df_feriados, tipo_contrato)
                             df_colaborador.loc[tipo_mask, 'l_total'] = coh[1]
                 else:
                     df_colaborador.loc[mask_32_bd, 'l_total'] = 0
@@ -1233,12 +1255,12 @@ def add_l_total_to_df_colaborador(df_colaborador: pd.DataFrame, df_festivos: pd.
             # Process contract types 3,2 with SABECO
             mask_32_sabeco = (df_colaborador['tipo_contrato'].isin([3, 2])) & (df_colaborador['convenio'] == 'SABECO')
             if mask_32_sabeco.any():
-                if df_festivos is not None and len(df_festivos) > 0:
+                if df_feriados is not None and len(df_feriados) > 0:
                     # Process each contract type separately for holiday calculations
                     for tipo_contrato in [3, 2]:                
                         tipo_mask = mask_32_sabeco & (df_colaborador['tipo_contrato'] == tipo_contrato)
                         if tipo_mask.any():
-                            coh = count_open_holidays(df_festivos, tipo_contrato)
+                            coh = count_open_holidays(df_feriados, tipo_contrato)
                             df_colaborador.loc[tipo_mask, 'l_total'] = coh[1]
                 else:
                     df_colaborador.loc[mask_32_bd, 'l_total'] = 0       

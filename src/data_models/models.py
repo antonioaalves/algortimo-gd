@@ -1668,7 +1668,7 @@ class DescansosDataModel(BaseDataModel):
             params_contrato = pd.DataFrame({
                 'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
                 'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
-                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 6, 6]
+                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
             })
             
             # Check if matriz_ma is empty
@@ -2842,6 +2842,10 @@ class DescansosDataModel(BaseDataModel):
             
             # Combine all collaborators
             count_ldt = pd.DataFrame(count_ldt_45d_data + count_ldt_6d_data)
+            
+            # If no employees with contract types 4, 5, or 6, create empty DataFrame with proper columns
+            if count_ldt.empty:
+                count_ldt = pd.DataFrame(columns=['COLABORADOR', 'LD_at', 'LQ_at', 'LRES_at', 'CXX_at'])
             
             # Calculate consecutive day patterns (C2D and C3D)
             

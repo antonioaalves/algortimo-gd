@@ -558,10 +558,13 @@ def get_past_employee_id_list(past_employee_id_list: List[int], case_type: int, 
     Get the past employee id list based on the case type.
     """
     try:
-        if case_type == 0:
+        if case_type in (0, 1, 2, 3, 5, 6, 7, 8):
             result = []
         elif case_type == 4:
             result = past_employee_id_list.remove(wfm_proc_colab)
+        else:
+            logger.warning(f"use_case provided not accepted, returning empty list")
+            return []
     except Exception as e:
         logger.error(f"Error in get_past_employee_id_list: {str(e)}")
         return []
@@ -585,7 +588,7 @@ def create_employee_query_string(employee_id_list: List[str]) -> str:
         logger.error()
         return ''
 
-def count_holidays_in_period(start_date_str: str, end_date_str: str, df_festivos: pd.DataFrame, use_case: int) -> Tuple[int, int]:
+def count_holidays_in_period(start_date_str: str, end_date_str: str, df_feriados: pd.DataFrame, use_case: int) -> Tuple[int, int]:
     """
     Count holidays in a period.
     """
@@ -595,13 +598,13 @@ def count_holidays_in_period(start_date_str: str, end_date_str: str, df_festivos
             num_feriados_abertos = 0
             num_feriados_fechados = 0
         else:
-            df_festivos['data'] = pd.to_datetime(df_festivos['data'])
+            df_feriados['data'] = pd.to_datetime(df_feriados['data'])
             # Case 1: count the number of feriados from tipo 3
             if use_case == 1:
                 tipo_feriado = [2, 3]
-                df_festivos = df_festivos[df_festivos['tipo'] in tipo_feriado]
-                num_feriados_abertos = len(df_festivos['tipo' == 2])
-                num_feriados_fechados = len(df_festivos['tipo' == 3])
+                df_feriados = df_feriados[df_feriados['tipo'] in tipo_feriado]
+                num_feriados_abertos = len(df_feriados['tipo' == 2])
+                num_feriados_fechados = len(df_feriados['tipo' == 3])
 
             # Case 2: count the number of feriados from tipo 2
             elif use_case == 2:
