@@ -224,15 +224,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         special_days = sorted(set(holidays))
         
-        logger.info(f"Special days identified:")
-        logger.info(f"  - Sundays: {len(sundays)} days")
-        logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
-        logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
-        logger.info(f"  - Total special days: {len(special_days)} days")
-        logger.info(f"  - Special days: {sorted(matriz_calendario_gd[
-            (matriz_calendario_gd['wd'] != 'Sun') & 
-            (matriz_calendario_gd["dia_tipo"] == "domYf")
-        ]['data'].unique().tolist())} days")
+        #logger.info(f"Special days identified:")
+        #logger.info(f"  - Sundays: {len(sundays)} days")
+        #logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
+        #logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
+        #logger.info(f"  - Total special days: {len(special_days)} days")
+        #logger.info(f"  - Special days: {sorted(matriz_calendario_gd[
+        #    (matriz_calendario_gd['wd'] != 'Sun') & 
+        #    (matriz_calendario_gd["dia_tipo"] == "domYf")
+        #]['data'].unique().tolist())} days")
         
         # =================================================================
         # 8. CALCULATE ADDITIONAL PARAMETERS
