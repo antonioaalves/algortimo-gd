@@ -117,8 +117,13 @@ class DescansosDataModel(BaseDataModel):
         }
         
         # Algorithm treatment params - data to be sent to the algorithm for treatment purposes
-        self.algorithm_treatment_params = {
-            'admissao_proporcional': None,
+        self.algorithm_data_params = {
+            'treatment_params': {
+                'admissao_proporcional': None,
+            },
+            'constraint_params': {
+                'NUM_DIAS_CONS': None,
+            },
         }
         # Data first stage - See data lifecycle to understand what this data is
         self.raw_data: Dict[str, Any] = {
@@ -372,9 +377,15 @@ class DescansosDataModel(BaseDataModel):
                 
                 # ALGORITHM TREATMENT PARAMS
                 # TODO: remove comment from query line
-                self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
+                if parameters_cfg:
+                    #self.algorithm_data_params['algorithm_treatment_params']['admissao_proporcional'] = parameters_cfg
+                    self.algorithm_data_params.update({
+                        'algorithm_treatment_params': {
+                            'admissao_proporcional': parameters_cfg,
+                        }
+                    })
                 #self.algorithm_treatment_params['admissao_proporcional'] = 'floor'
-                self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
+                self.logger.info(f"algorithm_treatment_params: {self.algorithm_data_params}")
 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
@@ -423,6 +434,26 @@ class DescansosDataModel(BaseDataModel):
                 params_names_list=params_names_list
             ) or {}
 
+            # Save data into variables
+            try:
+                num_dias_cons = retrieved_params['NUM_DIAS_CONS']
+                if num_dias_cons:
+                    #self.algorithm_data_params['constraint_params']['NUM_DIAS_CONS'] = num_dias_cons
+                    self.algorithm_data_params.update({
+                        'constraint_params': {
+                            'NUM_DIAS_CONS': num_dias_cons
+                        }
+                    })
+            except KeyError as e:
+                self.logger.error(f"KeyError when saving dataframes: {e}", exc_info=True)
+                return False
+            except ValueError as e:
+                self.logger.error(f"ValueError when saving dataframes: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error saving dataframes to auxiliary_data and raw_data: {e}", exc_info=True)
+                return False
+
             self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)
             for param_name in params_names_list:
@@ -433,6 +464,7 @@ class DescansosDataModel(BaseDataModel):
                 # Workaround feito para registar o nome do algoritmo - assim usa-se uma funcionalidade base do base-data-project
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
+
             self.logger.info(f"Treating parameters completed successfully")
             return {'success': True, 'algorithm_name': algorithm_name}
         except Exception as e:
@@ -1689,7 +1721,7 @@ class DescansosDataModel(BaseDataModel):
             params_contrato = pd.DataFrame({
                 'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
                 'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
-                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 6, 6]
+                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
             })
             
             # Check if matriz_ma is empty
@@ -1709,7 +1741,7 @@ class DescansosDataModel(BaseDataModel):
                 "fk_colaborador", "unidade", "secao", "posto", "convenio", "nome", "matricula",
                 "min_dia_trab", "max_dia_trab", "tipo_turno", "seq_turno", "t_total", "l_total",
                 "dyf_max_t", "lqs", "q", "c2d", "c3d", "cxx", "semana_1", "out", "ciclo", 
-                "data_admissao", "data_demissao", "dofhc"
+                "data_admissao", "data_demissao", "dofhc", "seed_5_6", "n_sem_a_folga"
             ]
             
             # Map current columns to expected columns if they differ
@@ -1774,9 +1806,11 @@ class DescansosDataModel(BaseDataModel):
             matriz_ma = pd.merge(matriz_ma, params_lq, on='seq_turno', how='left')
             
             # Merge with params_contrato
+            self.logger.info(f"debuging: {matriz_ma.columns}")
             matriz_ma = pd.merge(matriz_ma, params_contrato, 
                             left_on=['min_dia_trab', 'max_dia_trab'], 
                             right_on=['min', 'max'], how='left')
+            self.logger.info(f"debuging: {matriz_ma.columns}")
 
             # Merge with valid_emp to get PRIORIDADE_FOLGAS
             matriz_ma = pd.merge(matriz_ma, valid_emp[['fk_colaborador', 'prioridade_folgas']], on='fk_colaborador', how='left')
@@ -1950,6 +1984,22 @@ class DescansosDataModel(BaseDataModel):
                         self.logger.warning(f"Employee {cc['matricula'].iloc[0]}: negative l_total ({cc['l_total'].iloc[0]}) from SABECO holidays calc (coh[1]:{coh[1]} - coh[0]:{coh[0]})")
                     # Preserve dofhc value
                     cc['dofhc'] = cc['dofhc']
+                    
+                # Default case for contract types not handled above (e.g., tipo_contrato == 8)
+                else:
+                    # Initialize missing columns with default values
+                    if 'ld' not in cc.columns:
+                        cc['ld'] = 0
+                    if 'l_dom' not in cc.columns:
+                        cc['l_dom'] = 0
+                    if 'l_total' not in cc.columns:
+                        cc['l_total'] = 0
+                    if 'lq_og' not in cc.columns:
+                        cc['lq_og'] = 0
+                    if 'l_dom_salsa' not in cc.columns:
+                        cc['l_dom_salsa'] = 0
+                    
+                    self.logger.info(f"Employee {cc['matricula'].iloc[0]} with tipo_contrato {tipo_contrato} using default processing (no special contract logic applied)")
                 
                 processed_rows.append(cc)
 
@@ -2833,6 +2883,7 @@ class DescansosDataModel(BaseDataModel):
             
             # Process 4/5 day contracts - count different types of rest days
             colabs_45d = matrizA_og[matrizA_og['tipo_contrato'].isin([4, 5])]['matricula'].tolist()
+            self.logger.info(f"Found {len(colabs_45d)} employees with contract types 4 or 5: {colabs_45d}")
             
             count_ldt_45d_data = []
             for colab in colabs_45d:
@@ -2881,6 +2932,7 @@ class DescansosDataModel(BaseDataModel):
             
             # Process 6 day contracts
             colabs_6d = matrizA_og[matrizA_og['tipo_contrato'] == 6]['matricula'].tolist()
+            self.logger.info(f"Found {len(colabs_6d)} employees with contract type 6: {colabs_6d}")
             
             count_ldt_6d_data = []
             for colab in colabs_6d:
@@ -2927,6 +2979,12 @@ class DescansosDataModel(BaseDataModel):
             
             # Combine all collaborators
             count_ldt = pd.DataFrame(count_ldt_45d_data + count_ldt_6d_data)
+            
+            # Handle case where no employees have contract types 4, 5, or 6
+            if count_ldt.empty:
+                # Create an empty DataFrame with the expected columns
+                count_ldt = pd.DataFrame(columns=['COLABORADOR', 'LD_at', 'LQ_at', 'LRES_at', 'CXX_at'])
+                self.logger.info("No employees found with contract types 4, 5, or 6. Created empty count_ldt DataFrame.")
             
             # Calculate consecutive day patterns (C2D and C3D)
             
@@ -2995,6 +3053,11 @@ class DescansosDataModel(BaseDataModel):
             
             # Merge C2D and C3D
             c_at = pd.merge(c2d_at, c3d_at, on='COLABORADOR', how='outer').fillna(0)
+            
+            # Handle case where c_at is empty (no consecutive day patterns found)
+            if c_at.empty:
+                c_at = pd.DataFrame(columns=['COLABORADOR', 'C2D_at', 'C3D_at'])
+                self.logger.info("No consecutive day patterns found. Created empty c_at DataFrame.")
             
             # Merge with count_ldt
             count_ldt = pd.merge(count_ldt, c_at, on='COLABORADOR', how='left').fillna(0)
@@ -3074,7 +3137,8 @@ class DescansosDataModel(BaseDataModel):
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
                 'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao', 'prioridade_folgas',
-                'l_dom_salsa' # TODO: Remove this in next big release
+                'l_dom_salsa', # TODO: Remove this in next big release
+                 "seed_5_6", "n_sem_a_folga"
             ]].copy()
             
             # Rename columns to match R output
@@ -3461,7 +3525,7 @@ class DescansosDataModel(BaseDataModel):
             for col in existing_cols:
                 self.logger.info(f"DEBUG: {col} before reset: {matrizA_bk[col].tolist()}")
             
-            if algorithm_name == 'salsa_algorithm':
+            if algorithm_name == 'salsa_algorithm' or algorithm_name == 'salsa_esp_algorithm':
                 self.logger.info("DEBUG: Condition met - applying salsa_algorithm zeros")
                 if 'l_res' in matrizA_bk.columns:
                     matrizA_bk.loc[:, 'l_res'] = 0
@@ -3796,6 +3860,7 @@ class DescansosDataModel(BaseDataModel):
         try:
             self.logger.info(f"Starting allocation_cycle processing")
             
+            # Get and treat algorithm name
             try:
                 self.logger.info("Validating input parameters for allocation cycle")
                 if not algorithm_name or not isinstance(algorithm_name, str):
@@ -3811,11 +3876,27 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error validating allocation cycle input parameters: {e}", exc_info=True)
                 return False
 
+            # Get the algorithm_params from data
+            try:
+                algorithm_params = self.algorithm_data_params
+                self.logger.info(f"algorithm_params:\n{algorithm_params}")
+
+            except KeyError as e:
+                self.logger.error(f"KeyError when getting algorithm params: {e}", exc_info=True)
+                return False
+            except ValueError as e:
+                self.logger.error(f"ValueError when getting algorithm params: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error when getting algorithm params: {e}", exc_info=True)
+                return False
+
+
             try:
                 self.logger.info(f"Creating algorithm instance for: {algorithm_name}")
                 algorithm = AlgorithmFactory.create_algorithm(
                     decision=algorithm_name,
-                    parameters=algorithm_params,
+                    parameters={},
                     process_id=self.external_call_data.get("current_process_id", 0),
                     start_date=self.external_call_data.get("start_date", ''),
                     end_date=self.external_call_data.get("end_date", '')
@@ -3849,7 +3930,7 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info(f"Running algorithm {algorithm_name}")
-                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=self.algorithm_treatment_params)
+                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=algorithm_params)
 
                 if not results:
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")
