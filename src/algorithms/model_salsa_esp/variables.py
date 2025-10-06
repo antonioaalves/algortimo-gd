@@ -15,7 +15,7 @@ def add_var(model, shift, w, days, code, start_weekday):
             model.Add(shift[(w, d, code)] == 1)
 
 
-def decision_variables(model, days_of_year, workers, shifts, first_day, last_day, absences, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, fixed_M, fixed_T, start_weekday, past_workers):
+def decision_variables(model, days_of_year, workers, shifts, first_day, last_day, absences, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, start_weekday):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
     shifts2 = shifts.copy()
@@ -23,7 +23,6 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
     shifts2.remove('V')
     shifts2.remove('F')
     shifts2.remove('-')
-
  
     closed_set = set(closed_holidays)
     for w in workers:
@@ -34,41 +33,28 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         fixed_LQs_set = set(fixed_LQs[w])- missing_set - closed_set
         fixed_days_set = set(fixed_days_off[w]) - missing_set - closed_set - fixed_LQs_set
         absence_set = set(absences[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set
-        fixed_M_set = set(fixed_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set
-        fixed_T_set = set(fixed_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - fixed_M_set
-
-        logger.info(f"DEBUG fixed M {fixed_M_set}")
-        logger.info(f"DEBUG fixed T {fixed_T_set}")
-        logger.info(f"For worker {w}:")
-        logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
-        logger.info(f"\tDEBUG missing {sorted(missing_set)}")
-        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
-        logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
-        logger.info(f"\tDEBUG absence {sorted(absence_set)}")
-        logger.info(f"\tDEBUG fixed M {sorted(fixed_M_set)}")
-        logger.info(f"\tDEBUG fixed T {sorted(fixed_T_set)}")
- 
-        blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set | fixed_M_set | fixed_T_set
-
-        if w in past_workers:
-            if len(blocked_days) == (last_day[w] - first_day[w] + 1):
-                logger.info(f"Worker {w} is a past worker and has all days blocked. Skipping variable creation.")
-            else:
-                logger.warning(f"Worker {w} is a past worker but does not have all days blocked. Please check the data.")
-                
+        logger.info(f"DEBUG worker {w}")
+        logger.info(f"DEBUG empty days {sorted(empty_days_set)}")
+        logger.info(f"DEBUG missing {sorted(missing_set)}")
+        logger.info(f"DEBUG fixed days {sorted(fixed_days_set)}")
+        logger.info(f"DEBUG fixed lqs {sorted(fixed_LQs_set)}")
+        logger.info(f"DEBUG absence {sorted(absence_set)}")
+        blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set
 
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
 
-        add_var(model, shift, w, fixed_T_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set - missing_set - fixed_M_set, 'T', start_weekday)
-        add_var(model, shift, w, fixed_M_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set - missing_set, 'M', start_weekday)
         add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'V', start_weekday)
+        if ( 249 in absence_set and w == 7656):
+            print("\n\n\nestou dentrooooooooooooooooooooooooooooooo")
+            if ( 249 in (absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set) and w == 7656):
+                print("ainda estou dentro")
+
         add_var(model, shift, w, absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'A', start_weekday)
         add_var(model, shift, w, fixed_days_set - closed_set - fixed_LQs_set - empty_days_set, 'L', start_weekday)
         add_var(model, shift, w, fixed_LQs_set - closed_set - empty_days_set, 'LQ', start_weekday)
         add_var(model, shift, w, closed_set - empty_days_set, 'F', start_weekday)
         add_var(model, shift, w, empty_days_set, '-', start_weekday)
-    #52332 vs 31555 vs 25489
     return shift

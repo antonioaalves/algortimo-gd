@@ -68,6 +68,7 @@ CONFIG = {
         'GD_algorithmName',
         'GD_consideraFestivos',
         'GD_convenioBD',
+        'NUM_DIAS_CONS'
     ],
 
     'parameters_defaults': {
@@ -141,6 +142,7 @@ CONFIG = {
         'alcampo_algorithm',
         'example_algorithm',
         'salsa_algorithm',
+        #'salsa_esp_algorithm',
         # Add your custom algorithms here
     ],
      
