@@ -262,7 +262,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             max_workers = adapted_data['max_workers']
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
-            workers_past = adapted_data['workers_past']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
             first_day = adapted_data['first_registered_day']
@@ -285,6 +284,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             max_continuous_days = adapted_data["num_dias_cons"]
             country = adapted_data["country"]
             partial_workers_complete = adapted_data['partial_workers_complete']
+            workers_past = adapted_data['workers_past']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -398,7 +398,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, 
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, pessObj,
                               output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
                                                          f'salsa_schedule_{self.process_id}.xlsx'))
             

@@ -31,14 +31,12 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         
         empty_days_set = set(empty_days[w])
         missing_set = (set(missing_days[w]) | empty_days_set) - closed_set
-        fixed_LQs_set = set(fixed_LQs[w])- missing_set - closed_set
+        fixed_LQs_set = set(fixed_LQs[w]) - missing_set - closed_set
         fixed_days_set = set(fixed_days_off[w]) - missing_set - closed_set - fixed_LQs_set
         absence_set = set(absences[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set
         fixed_M_set = set(fixed_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set
         fixed_T_set = set(fixed_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - fixed_M_set
 
-        logger.info(f"DEBUG fixed M {fixed_M_set}")
-        logger.info(f"DEBUG fixed T {fixed_T_set}")
         logger.info(f"For worker {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
         logger.info(f"\tDEBUG missing {sorted(missing_set)}")

@@ -548,7 +548,7 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
                 new_row.extend(['-'] * abs(elements_to_drop))
             
             logger.info(f"Employee {emp}: Final new_row length: {len(new_row)}")
-            logger.info(f"Employee {emp}: Final new_row: {new_row}")
+            #logger.info(f"Employee {emp}: Final new_row: {new_row}")
             
             # Add row to matrix
             new_row_df = pd.DataFrame([new_row], columns=reshaped_final_3.columns)

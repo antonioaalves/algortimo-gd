@@ -886,11 +886,9 @@ class DescansosDataModel(BaseDataModel):
                 df_mpd_valid_employees = self.auxiliary_data['df_mpd_valid_employees'].copy()
 
                 # Fixed: Added proper error handling
-                if wfm_proc_colab == '':
-                    colabs_passado = df_colaborador[
-                        pd.to_datetime(df_colaborador['data_admissao']) < start_date_dt
-                    ]['fk_colaborador'].tolist()
-                    self.logger.info(f"Found {len(colabs_passado)} employees with past admission dates: {colabs_passado}")
+                if wfm_proc_colab == '' or wfm_proc_colab is None or wfm_proc_colab == "None":
+                    colabs_passado = []
+                    #self.logger.info(f"Found {len(colabs_passado)} employees with past admission dates: {colabs_passado}")
                 else:
                     self.logger.info(f"wfm_proc_colab: {wfm_proc_colab}, df_mpd_valid_employees: {df_mpd_valid_employees}, fk_tipo_posto: {posto_id}")
                     success, colabs_passado, error_message = get_colabs_passado(wfm_proc_colab=wfm_proc_colab, df_mpd_valid_employees=df_mpd_valid_employees, fk_tipo_posto=posto_id)
@@ -3996,7 +3994,9 @@ class DescansosDataModel(BaseDataModel):
                 colabs_id_list = self.auxiliary_data.get('colabs_id_list', [])
                 wfm_proc_colab = self.external_call_data.get('wfm_proc_colab', '')
                 colabs_passado_list = self.auxiliary_data.get('colabs_passado_list', [])
-                algorithm_treatment_params = self.algorithm_treatment_params.copy()
+                print(colabs_passado_list)
+                exit(0)
+                algorithm_treatment_params = self.algorithm_data_params.copy()
                 new_params = {
                     'colabs_id_list': colabs_id_list,
                     'wfm_proc_colab': wfm_proc_colab,
@@ -4005,7 +4005,7 @@ class DescansosDataModel(BaseDataModel):
                 algorithm_treatment_params.update(new_params)
                 self.algorithm_treatment_params = algorithm_treatment_params
                 self.logger.info(f"DEBUG: algorithm_treatment_params: {self.algorithm_treatment_params}")
-                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=algorithm_params)
+                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=algorithm_treatment_params)
 
                 if not results:
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")
