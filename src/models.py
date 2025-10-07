@@ -3994,8 +3994,6 @@ class DescansosDataModel(BaseDataModel):
                 colabs_id_list = self.auxiliary_data.get('colabs_id_list', [])
                 wfm_proc_colab = self.external_call_data.get('wfm_proc_colab', '')
                 colabs_passado_list = self.auxiliary_data.get('colabs_passado_list', [])
-                print(colabs_passado_list)
-                exit(0)
                 algorithm_treatment_params = self.algorithm_data_params.copy()
                 new_params = {
                     'colabs_id_list': colabs_id_list,

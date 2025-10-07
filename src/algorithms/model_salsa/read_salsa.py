@@ -57,9 +57,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
 
-        partial_workers = algorithm_treatment_params['colabs_id_list']
-        print(partial_workers)
-        exit(0)
+        wfm_proc = algorithm_treatment_params['wfm_proc_colab']
+        if wfm_proc not in (None, 'None', ''):
+            partial_generation = True 
+            partial_workers = algorithm_treatment_params['colabs_id_list']
+            logger.debug(f"wfm_proc {wfm_proc}, {type(wfm_proc)}")
+        else:
+            partial_generation = False
+            partial_workers = []
         num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
@@ -74,7 +79,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Parameters:")
         logger.info(f"  - admissao_proportional: {admissao_proporcional}")
         logger.info(f"  - numero de dias consecutivos de trabalho: {num_dias_cons}")
-        logger.info(f"  - partial_workers: {partial_workers} workers")
+        logger.info(f"  - wfm_proc_colab: {wfm_proc}, if it has value, its a partial generation -> {partial_generation}.")
+        if partial_generation == True:
+            logger.info(f"  - partial_workers: {partial_workers} workers")
 
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
@@ -161,15 +168,16 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Get unique workers from each DataFrame
         workers_colaborador_complete = set(matriz_colaborador_gd['matricula'].dropna().astype(int))
         workers_calendario_complete = set(matriz_calendario_gd['colaborador'].dropna().astype(int))
-        if partial_workers:
+        if partial_generation == True:
             for w in partial_workers:
                 partial_workers_complete = set(matriz_colaborador_gd['matricula'][matriz_colaborador_gd['fk_colaborador'] == w].dropna().astype(int))
+                logger.info(f"Unique workers found:")
+                logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador_complete)} workers")
+                logger.info(f"  - In matriz_calendario_complete: {len(workers_calendario_complete)} workers")
+                logger.info(f"  - In partial_workers_complete: {len(partial_workers_complete)} workers")
         else:
             partial_workers_complete = set()
-        logger.info(f"Unique workers found:")
-        logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador_complete)} workers")
-        logger.info(f"  - In matriz_calendario_complete: {len(workers_calendario_complete)} workers")
-        logger.info(f"  - In partial_workers_complete: {len(partial_workers_complete)} workers")
+        
 
         workers_colaborador = set(matriz_colaborador_gd[matriz_colaborador_gd['ciclo'] != 'Completo']['matricula'].dropna().astype(int))
         
@@ -180,7 +188,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"  - In matriz_colaborador (ciclo != 'Completo'): {len(workers_colaborador)} workers")
 
 
-        if partial_workers_complete:
+        if partial_generation == True:
             valid_workers = set(partial_workers_complete).intersection(workers_calendario_complete)
             past_workers = workers_calendario_complete - set(partial_workers_complete)
             valid_workers_complete = partial_workers_complete | past_workers
@@ -529,8 +537,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
             #logger.info(f"Worker {w} missing days after removing closed holidays: {missing_days[w]}")
             free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
-           
-            if matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w].iloc[0].get('tipo_contrato', 'Contract Error') != 8:
+            worker_info = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
+
+            if not worker_info.empty:
+                tipo_contrato = worker_info.iloc[0].get('tipo_contrato', 'Contract Error')
+            else:
+                logger.warning(f"No collaborator data found for worker {w}")
+                tipo_contrato = 'Contract Error'
+            if tipo_contrato != 8:
                 if w not in workers_past:
                     worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), None)
                 working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
