@@ -12,6 +12,7 @@ from .system_config import SystemConfig
 from .database_config import DatabaseConfig
 from .paths_config import PathsConfig
 from .parameters_config import ParametersConfig
+from .algorithm_config import AlgorithmConfig
 from .stages_config import StagesConfig
 
 
@@ -84,6 +85,9 @@ class ConfigurationManager:
         # Load parameters config
         self.parameters = ParametersConfig(project_name=project_name)
         
+        # Load algorithm component config (algorithm/restrictions/solver)
+        self.algorithm = AlgorithmConfig(project_name=project_name)
+
         # Load stages config
         self.stages = StagesConfig(project_name=project_name)
         
@@ -271,6 +275,8 @@ class ConfigurationManager:
             
             # Parameters config summary
             "parameters": self.parameters.export_config_summary(),
+            # Algorithm component summary
+            "algorithm": self.algorithm.export_config_summary(),
             
             # Stages config summary
             "stages": self.stages.export_workflow_summary()
@@ -332,6 +338,7 @@ class ConfigurationManager:
             )
             
             self.parameters = ParametersConfig(project_name=project_name)
+            self.algorithm = AlgorithmConfig(project_name=project_name)
             self.stages = StagesConfig(project_name=project_name)
             
             # Validate reloaded configuration

@@ -7,7 +7,7 @@ import os
 from src.settings.log_parameters import log_parameters
 
 system_configs = {
-    "environment": "alcampo_tst", # Options: development, production
+    "environment": "salsa_tst", # Options: development, production
     "use_db": True, # Options: True, False
     "override_parameter_defaults": False, # Options: True, False
     
