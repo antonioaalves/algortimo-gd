@@ -1,0 +1,217 @@
+# Release notes (changelog approach - keepachangelog.com):
+
+All notable changes to this project will be documented in this file.
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- New feature X
+
+### Changed
+
+- Modified behavior of Y
+
+### Fixed
+
+- Bug fix for Z
+
+
+## [1.1] - (planned to release)
+
+### Added
+
+- (STRSOL-849) Integração do configuration manager:
+ 	- Agora a configuração passa a ser feita através de um conjunto de ficheiros na pasta src\settings\;
+ 	- Foram criados 6 componentes:
+ 		- System config: configurações do sistema como nome do projeto, versão, ambiente, project_root_dir;
+ 		- Stages config: igual ao seu correspondente no método anterior;
+ 		- paths_config: validação da existência de pastas fundamentais e construção de paths absolutas;
+ 		- parameters: algum parâmetro que o developer possa querer forçar;
+ 		- database: acessos aos ambientes necessários. Devem ser definidos de acordo com os nomes usados nas configs de sistema;
+
+- (STRSOL-850) Integração das funções set_process_errors e bulk_insert_with_query nas componentes da framework;
+
+- (STRSOL-852) Garantir que o processo não morre se o resultado do solver for infeasable/unknown;
+
+- (STRSOL-855) Reestruturação do orquestrador e suas funções para garantir consistência na arquitetura;
+
+- (STRSOL- 931) Reestruturação da componente algoritmos:
+ 	- Adaptação dos nomes de restrições e variáveis para que melhor se relacionem com a realidade;
+ 	- Mapeamento das restrições para ser possível configurá-las;
+ 	- Configuração de restrições;
+ 	- Alteração da estrutura que melhor se adeque à realidade;
+
+- (STRSOL-921) Organização de logs na componente algorithms;
+
+- (STRSOL-922) Organização de logs na componente service, data_model, orquestrador;
+
+- (STRSOL-924) Organização da informação disponibilizada pelo OR-tools no format_results;
+
+- (STRSOL-925) Parâmetros do Solver passam a ser definidos nas configurações do projeto (config_manager);
+
+- (STRSOL-931) Restrições passam a ser definidos nas configurações do projeto (config_manager);
+
+- (STRSOL-944) Desenvolvimento de um modelo de tratamento de dados especifico para a Salsa;
+
+- (STRSOL-938) Desenvolvimento de uma factory que permite parametrizar qual o modelo de tratamento de dados a usar;
+
+### Fixed
+
+
+## [1.0.-] - (planned to release)
+
+### Added:
+
+- (STRSOL-919) ID 33: Atribuição dinâmica de dias vazios a colaboradores com tipo contrato < 5;
+
+- (STRSOL- 920) Converter tupple retornada pelo read_salsa em dicionário com keys;
+
+### Fixed:
+
+- (STRSOL-871) ID 3: Corrigido o bug de mapeamento pretendido para o tipo de folgas para SALSA PT (FC e FO);
+
+## [1.0.12] - 10/09/2025
+
+### Added:
+
+- (STRSOL-950) Considera-se a carga diária máxima do contrato de cada colaborador na matriz calendário, que por sua vez permite ao algoritmo conhecer a capacidade de contribuição em horas de cada um dos colaboradores para atingir o objetivo (agora medido em horas também);
+
+### Fixed:
+
+- (STRSOL-947) Removeu-se a validação que não permitia gerações caso todos os colaboradores tivessem a data de admissão dentro do período de geração;
+
+- (STRSOL-939) Corrigida a criação do calendário para colaboradores com tipo de contrato de 2 dias (agora é considerada uma semana completa);
+
+- Ausências na semana de admissão (@João Neves Soares é toda a informação que tenho, sem jira nem maior descrição vai assim);
+
+
+## [1.0.11] - 03/09/2025
+
+### Added:
+
+### Fixed:
+
+- (STRSOL-945) Fix para querys à tabela core_pro_emp_horario_det que retornem vazias;
+
+
+## [1.0.10] - 27/08/2025
+
+### Added:
+
+- Correção das ponderações para os níveis de prioridades das folgas (manager e keyholder);
+
+
+## [1.0.9] - 27/08/2025
+
+### Added:
+
+### Fixed:
+
+- (STRSOL-936) Coluna PRIORIDADE_FOLGAS não considerada no select do df_colaborador;
+
+
+## [1.0.8] - 26/08/2025
+
+### Fixed:
+
+- (STRSOL-935) Bugfix: Soluções infeasable nas lojas de teste [jira sem comentários];
+
+
+## [1.0.7] - 26/08/2025
+
+### Added:
+
+- (STRSOL-934) Algoritmo só olha para ausências do tipo "A" (ausências de posto, "AP" ficam de fora)
+
+### Fixed:
+
+- (STRSOL-909) Aponta para o ficheiro correto de Connection (orquestrador)
+
+
+## [1.0.6] - 25/08/2025
+
+### Added:
+
+### Fixed:
+
+- (Hotfix) Corrigido bug que introduzia folgas (LQ) a mais;
+
+
+## [1.0.5] - 22/08/2025
+
+### Added:
+
+- (STRSOL-879) Alteração da query que traz o df valid_emp para trazer a informação de prioridade, passa a vir considerado no df_colaborador; [falta parte correspondente ao algoritmo]
+
+- (STRSOL-876) Considera uma nova entidade ao modelo de dados, e passa a existir um dicionário algorithm_treatment_params passado ao algoritmo; [falta parte correspondente ao algoritmo]
+
+- (STRSOL-877) Foi alterada a forma de criação das variáveis do solver, privilegiando a não criação daquelas que se sabe à partida que não serão utilizadas; No caso de ausências, dias livres, férias e, sobretudo, destas folgas mistas, estas são transmitidas ao solver como condições fixas, sendo a solução construída em torno delas; O algoritmo já consegue receber algumas folgas pré-definidas e gerar as restantes;
+
+- (STRSOL-912) [jira sem comentários] 
+
+### Fixed:
+
+- (STRSOL-911) Corrige a lógica de reconexão à base de dados para ambos os conectores;
+
+- (STRSOL-909) Para funções workaround do orquestrador, aponta para o ficheiro de acessos correto;
+
+
+## [1.0.4] - 20/08/2025
+
+### Added: 
+
+- (STRSOL-892) Foi implementado (1) um cálculo de proporcionalidade (para cada colaborador calculámos uma proporção temporal que reflete quanto do período de planeamento esteve realmente ativo - do primeiro dia registado até ao último, face ao período total) e (2) otimizações com restrições soft para penalizar divergências, para garantir uma equidade “proporcional” tanto nos Domingos como nos LQ (contamos, por colaborador, os Domingos de folga  e os LQ. Em seguida, comparamos pares de colaboradores e aplicamos penalizações suaves sempre que existam diferenças ajustadas pelas proporções de exposição do ponto 1. Na prática, o modelo é empurrado a reduzir divergências nos totais de Domingos e de LQ entre os colaboradores);
+
+### Fixed:
+
+- (STRSOL-847) Resultado inserido na BD é filtrado também pela data de demissão de cada colaborador;
+
+- (STRSOL-897) Conexão à BD "morta" por inserts muito longos é reconectada. Antes esta lógica só tinha sido desenvolvida para todos os outros casos;
+
+- (STRSOL-873) Revisto: Alterado comportamento para casos de semanas de trabalho menores que 7 dias (ex: ausências). Agora também se garante um máximo de 2 folgas para essas semanas;
+
+
+## [1.0.3] - 13/08/2025
+
+### Added:
+
+- (STRSOL-872) Variável  ‘default_parameters = {"max_continuous_working_days"}’ estava hardcoded para 5, alteração para 6 resolveu o problema;
+
+- (STRSOL-873) A regra de atribuição de folgas foi alterada para ter de dar 2 folgas (previamente eram 2 ou mais) numa semana. Neste momento a atribuição de folgas a semanas com menos de 7 dias é feito através de um processo de arredondamento normal.
+
+- (STRSOL-874) Criado um novo campo temporário com o tratamento desejado para o número de domingos a folgar pelo colaborador ao longo do período de geração, com proporcionais, "l_dom_salsa"; Criada a restrição que o algoritmo usa para garantir este número de folgas;
+
+- (STRSOL-875) Foi adicionada uma regra que não permite a colaboradores que entrem a meio do ano terem um folga no seu primeiro dia. Contudo, permite a atribuição de folgas no primeiro dia (ex: se forem gerados horários de julho a setembro, pode ser atríbuida uma folga no dia 1 de julho);
+
+- (STRSOL-878) Gerar para matriculas com menos de oito dígitos: sem desenvolvimentos, apenas testado com sucesso;
+
+### Fixed:
+
+- (STRSOL-872) Colaboradores podem agora ter 6 dias seguidos sem folga;
+
+- (STRSOL-873) Colaboradores têm duas folgas por semana;
+
+- (STRSOL-874) Colaboradores com o número certo de folgas aplicadas ao Domingo
+
+- (STRSOL-875) Colaboradores sem folga no dia de admissão;
+
+
+## [1.0.2] - 05/08/2025
+
+### Added:
+
+- (STRSOL-848) Definida uma nova regra para aplicar folgas em semanas com 5 ausências (comportamento esperado pelo cliente). Trata-se de um workaround, propõe-se revisão do conceito;
+
+- (STRSOL- ) Criada lógica de fallback para tentar criar uma nova conexão caso a primeira tentativa falhe;
+
+
+### Fixed:
+
+- (STRSOL-848) Corrigido um bug na criação da variável week_to_days_salsa, na função read_salsa (read_salsa.py) na componente do algoritmo Salsa. Este bug não criava o dicionário com listas vazias, e não era introduzida a restrição week_working_days_constraint;
+
+- (STRSOL- ) Bug: funções bulk_insert_with_query e set_process_errors não tentavam reconectar à base de dados caso a ligação morre-se por excesso de tempo do ciclo de alocação de folgas (solver)
+
+- Bug: Soma duplicada da 

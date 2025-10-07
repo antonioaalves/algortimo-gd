@@ -31,7 +31,7 @@ from src.orquestrador_functions.Classes.Connection.connect import ensure_connect
 #     Returns:
 #         int: 1 if successful, 0 otherwise.
 #     """
-#     connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+#     connection = ensure_connection(connection, os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection"))
 #     query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_errors.sql')
 #     print(fk_process)
 #     try:
@@ -71,7 +71,7 @@ def set_process_param_status(connection, pathOS, user, process_id, new_status):
     Returns:
         int: 1 if successful, 0 otherwise.
     """
-    connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+    connection = ensure_connection(connection, os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection"))
     query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_parameter_status.sql')
     try:
         # Load the query from file
@@ -108,7 +108,7 @@ def set_process_status(connection, pathOS, user, process_id, status='P'):
     Returns:
         int: 1 if successful, 0 otherwise.
     """
-    connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+    connection = ensure_connection(connection, os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection"))
     query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_status.sql')
     
     try:

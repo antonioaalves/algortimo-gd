@@ -97,6 +97,8 @@ class AlgoritmoGDService(BaseService):
         self.logger.info(f"project_name in service init: {project_name}")
         
         # Setup database connection for error logging - needed to pass as argument
+        self.external_raw_connection = external_raw_connection
+        self.logger.info(f"DEBUG INIT: external_raw_connection = {external_raw_connection}, type = {type(external_raw_connection)}")
         self.raw_connection = None
         if external_raw_connection is not None:
             # Use the provided external connection (from orquestrador)
@@ -119,6 +121,40 @@ class AlgoritmoGDService(BaseService):
             self.logger.info("Database error logging disabled in configuration")
         
         self.logger.info("AlgoritmoGDService initialized")
+
+    def _refresh_raw_connection(self):
+        """Get a working raw connection from data_manager engine"""
+        # If external connection available, use it
+        if self.external_raw_connection:
+            self.raw_connection = self.external_raw_connection
+            return
+        
+        # Check if current connection is valid before creating new one
+        if self.raw_connection:
+            try:
+                # Test connection based on type (same logic as helpers.py)
+                if hasattr(self.raw_connection, 'ping') and callable(getattr(self.raw_connection, 'ping')):
+                    # Direct cx_Oracle connection - use ping
+                    self.raw_connection.ping()
+                    self.logger.debug("Existing cx_Oracle connection is valid, reusing it")
+                    return
+                elif hasattr(self.raw_connection, 'connection'):
+                    # SQLAlchemy raw connection - test with simple query
+                    with self.raw_connection.connection.cursor() as cursor:
+                        cursor.execute("SELECT 1 FROM DUAL")
+                        cursor.fetchone()
+                    self.logger.debug("Existing SQLAlchemy connection is valid, reusing it")
+                    return
+            except Exception as e:
+                self.logger.debug(f"Existing connection failed test: {e}, will create new one")
+                self.raw_connection = None
+            
+        # Get fresh connection from data_manager's engine
+        if hasattr(self.data_manager, 'engine'):
+            self.raw_connection = self.data_manager.engine.raw_connection()
+            self.logger.debug("Got fresh raw connection from data_manager engine")
+        else:
+            self.raw_connection = None
 
     def _register_decision_points(self):
         """Register decision points from config with the process manager"""
@@ -209,6 +245,7 @@ class AlgoritmoGDService(BaseService):
                         {"valid_process_loading": valid_process_loading}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         #pathOS=ROOT_DIR,
@@ -244,6 +281,7 @@ class AlgoritmoGDService(BaseService):
                         {'valid_raw_data': valid_raw_data}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -283,6 +321,7 @@ class AlgoritmoGDService(BaseService):
             
             # Set process errors completition for process data loading
             if self.raw_connection and not messages_df.empty:
+                self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
                     pathOS=self.config_manager.system.project_root_dir,
@@ -309,6 +348,7 @@ class AlgoritmoGDService(BaseService):
                     message=error_msg
                 )
             if self.raw_connection and not messages_df.empty:
+                self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
                     pathOS=self.config_manager.system.project_root_dir,
@@ -379,13 +419,13 @@ class AlgoritmoGDService(BaseService):
                 #    self.logger.error("No algorithm name provided in decisions")
                 #    return False
 
-                if algorithm_params is None:
-                    self.logger.error("No algorithm parameters provided in decisions")
-                    return False
+                #if algorithm_params is None:
+                #    self.logger.error("No algorithm parameters provided in decisions")
+                #    return False
 
                 # Type assertions to help type checker
                 #assert isinstance(algorithm_name, str)
-                assert isinstance(algorithm_params, dict)
+                #assert isinstance(algorithm_params, dict)
 
             # Log start of the process to database
             #self.logger.info(f"DEBUG set_process_errors condition BEFORE LOOP: raw_connection={self.raw_connection is not None}, messages_df_empty={messages_df.empty}, messages_df_len={len(messages_df)}")
@@ -550,8 +590,8 @@ class AlgoritmoGDService(BaseService):
                 self.logger.info(f"DEBUG: Algorithm name before calling allocation_cycle substage: {algorithm_name}")
                 self.logger.info(f"DEBUG: Retrieved from current_decisions[2]: {self.process_manager.current_decisions.get(2, {}) if self.process_manager else 'No process_manager'}")
                 assert isinstance(algorithm_name, str)
-                assert isinstance(algorithm_params, dict)
-                valid_allocation_cycle = self._execute_allocation_cycle_substage(algorithm_params=algorithm_params, stage_name=stage_name, algorithm_name=algorithm_name)
+                #assert isinstance(algorithm_params, dict)
+                valid_allocation_cycle = self._execute_allocation_cycle_substage(algorithm_params={}, stage_name=stage_name, algorithm_name=algorithm_name)
                 if not valid_allocation_cycle:
                     if self.stage_handler:
                         self.stage_handler.track_progress(
@@ -654,6 +694,7 @@ class AlgoritmoGDService(BaseService):
                     message="Finnished processing stage with success. Returnig True."
                 )
             if self.raw_connection and not messages_df.empty:
+                self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
                     pathOS=self.config_manager.system.project_root_dir,
@@ -672,6 +713,7 @@ class AlgoritmoGDService(BaseService):
             self.logger.error(f"Error in processing stage: {str(e)}", exc_info=True)
             # TODO: add progress tracking
             if self.raw_connection and not messages_df.empty:
+                self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
                     pathOS=self.config_manager.system.project_root_dir,
@@ -857,6 +899,7 @@ class AlgoritmoGDService(BaseService):
                 if not valid_load_colaborador_info:
                     # Set process error for colaborador loading failure
                     if self.raw_connection and not messages_df.empty:
+                        self._refresh_raw_connection()
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -890,6 +933,7 @@ class AlgoritmoGDService(BaseService):
                 if not valid_colaborador_info_data:
                     # Set process error for colaborador validation failure
                     if self.raw_connection and not messages_df.empty:
+                        self._refresh_raw_connection()
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -921,6 +965,7 @@ class AlgoritmoGDService(BaseService):
                         message="Valid colaborador info data"
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -950,6 +995,7 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -1046,6 +1092,7 @@ class AlgoritmoGDService(BaseService):
                         )
                     return False
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -1069,6 +1116,7 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -1162,6 +1210,7 @@ class AlgoritmoGDService(BaseService):
                         )
                     return False
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -1185,6 +1234,7 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -1241,6 +1291,7 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -1297,6 +1348,7 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,
@@ -1353,6 +1405,7 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not messages_df.empty:
+                    self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
                         pathOS=self.config_manager.system.project_root_dir,

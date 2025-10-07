@@ -67,7 +67,8 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         # Only call ensure_connection for direct cx_Oracle connections
         # SQLAlchemy connections manage their own lifecycle
         if hasattr(connection, 'ping') and callable(getattr(connection, 'ping')):
-            connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+            connection_path = os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection")
+            connection = ensure_connection(connection, connection_path)
             logger.info(f"DEBUG: ensured cx_Oracle connection")
         else:
             logger.info(f"DEBUG: using SQLAlchemy connection as-is")
@@ -127,7 +128,7 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         return 1
         
     except Exception as e:
-        logger.info(f"Error in set_process_errors: {e}")
+        logger.error(f"Error in set_process_errors: {e}", exc_info=True)
         return 0
 
 def replace_placeholders(template, values_dict):
@@ -310,6 +311,98 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
         logger.error(f"Error in insert_holidays_absences: {str(e)}")
         return reshaped_final_3
 
+def insert_dayoffs_override(df_core_pro_emp_horario_det: pd.DataFrame, 
+                           reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
+    """
+    Override schedule matrix with day-offs from df_core_pro_emp_horario_det.
+    Applies 'F' for EVERY day-off found in df_core_pro_emp_horario_det, regardless of 
+    what's currently in the matrix for that employee and day.
+    
+    Args:
+        df_core_pro_emp_horario_det: DataFrame with day-off data (columns: employee_id, schedule_day, tipo_dia)
+        reshaped_final_3: Schedule matrix DataFrame
+        
+    Returns:
+        Updated schedule matrix with day-offs applied for all matching employee/day combinations
+    """
+    try:
+        logger.info(f"Starting insert_dayoffs_override with df_core_pro_emp_horario_det shape: {df_core_pro_emp_horario_det.shape}")
+        
+        if df_core_pro_emp_horario_det.empty:
+            logger.info("df_core_pro_emp_horario_det is empty, returning unchanged matrix")
+            return reshaped_final_3
+            
+        # Filter for day-offs only (tipo_dia = 'F')
+        df_core_dayoffs = df_core_pro_emp_horario_det[
+            df_core_pro_emp_horario_det['tipo_dia'] == 'F'
+        ].copy()
+        
+        logger.info(f"Filtered day-offs: {len(df_core_dayoffs)} records")
+        
+        if df_core_dayoffs.empty:
+            logger.info("No day-off records found, returning unchanged matrix")
+            return reshaped_final_3
+            
+        # Convert schedule_day to string format (YYYY-MM-DD)
+        df_core_dayoffs['schedule_day_str'] = pd.to_datetime(df_core_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
+        
+        logger.info(f"Processing {len(df_core_dayoffs)} day-off records")
+        
+        # Process each day-off record
+        for _, dayoff_row in df_core_dayoffs.iterrows():
+            employee_id = str(dayoff_row['employee_id'])
+            matricula = str(dayoff_row['matricula']) if 'matricula' in dayoff_row else None
+            schedule_day = dayoff_row['schedule_day_str']
+            
+            # Find employee row index in reshaped_final_3 - use matricula for matching
+            # since reshaped_final_3 uses matricula values, not fk_colaborador
+            employee_row_idx = None
+            search_value = matricula if matricula else employee_id
+            
+            for row_idx, row_data in reshaped_final_3.iterrows():
+                # Check if matricula exists as exact value in this row
+                if search_value in row_data.values:
+                    employee_row_idx = row_idx
+                    break
+            
+            if employee_row_idx is None:
+                logger.warning(f"Employee {employee_id} (matricula: {matricula}) not found in schedule matrix")
+                continue
+                
+            # Find column indices for this date - use exact value matching
+            col_indices = []
+            for col_idx, col_data in reshaped_final_3.items():
+                # Check if schedule_day exists as exact value in this column
+                if schedule_day in col_data.values:
+                    col_indices.append(col_idx)
+            
+            if len(col_indices) >= 2:
+                # Current behavior: Override EVERY F found in df_core_pro_emp_horario_det
+                # regardless of what's currently in the matrix
+                reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "L"
+                reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "L"
+                
+                # Previous logic (commented for potential future use):
+                # Only override if there's already an absence (V, A, or other non-shift values)
+                # Exclude normal shift values like M, T, MT, etc. and empty values like '-'
+                #absence_indicators = ['V', 'A', 'F']  # Common absence types
+                #
+                #if (current_morning in absence_indicators or current_afternoon in absence_indicators):
+                #    logger.info(f"Overriding absence with day-off (F) for employee {employee_id} (matricula: {matricula}) on {schedule_day}")
+                #    # Override with day-off (F) for both morning and afternoon shifts
+                #    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "F"
+                #    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "F"
+                #else:
+                #    logger.info(f"No absence found to override for employee {employee_id} (matricula: {matricula}) on {schedule_day} (current: {current_morning}, {current_afternoon})")
+            
+        
+        logger.info("Completed insert_dayoffs_override processing")
+        return reshaped_final_3
+        
+    except Exception as e:
+        logger.error(f"Error in insert_dayoffs_override: {str(e)}", exc_info=True)
+        return reshaped_final_3
+
 def create_m0_0t(reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
     """
     Convert R create_M0_0T function to Python.
@@ -354,6 +447,12 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
         Updated schedule matrix with MT/MTT cycles
     """
     try:
+        logger.info(f"=== CALENDAR CREATION DEBUG START ===")
+        logger.info(f"Initial reshaped_final_3 shape: {reshaped_final_3.shape}")
+        logger.info(f"df_alg_variables_filtered shape: {df_alg_variables_filtered.shape}")
+        logger.info(f"df_alg_variables_filtered columns: {df_alg_variables_filtered.columns.tolist()}")
+        logger.info(f"df_alg_variables_filtered:\n{df_alg_variables_filtered}")
+        
         # Reset column names and row names
         reshaped_final_3.columns = range(reshaped_final_3.shape[1])
         reshaped_final_3.reset_index(drop=True, inplace=True)
@@ -361,16 +460,22 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
         # Select required columns
         df_alg_variables_filtered = df_alg_variables_filtered[['emp', 'seq_turno', 'semana_1']].copy()
         
-        for _, emp_row in df_alg_variables_filtered.iterrows():
+        for idx, emp_row in df_alg_variables_filtered.iterrows():
             emp = emp_row['emp']
             seq_turno = emp_row['seq_turno']
             
+            logger.info(f"--- Processing employee {emp} (row {idx}) ---")
+            logger.info(f"Raw seq_turno value: {seq_turno} (type: {type(seq_turno)})")
+            logger.info(f"pd.isna(seq_turno): {pd.isna(seq_turno)}")
+            logger.info(f"seq_turno is None: {seq_turno is None}")
+            
             # Handle missing seq_turno
             if pd.isna(seq_turno) or seq_turno is None:
-                logger.warning(f"No seq_turno defined for employee: {emp}")
+                logger.warning(f"No seq_turno defined for employee: {emp}, setting to 'T'")
                 seq_turno = "T"
             
             semana1 = emp_row['semana_1']
+            logger.info(f"Employee {emp}: seq_turno='{seq_turno}', semana_1='{semana1}'")
             
             # Calculate days in week (simplified - you may need to adjust)
             if len(reshaped_final_3.columns) > 1:
@@ -379,75 +484,95 @@ def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final
             else:
                 eachrep = 14
             
-            #logger.info(f"DEBUG: eachrep: {eachrep}")
-            #logger.info(f"DEBUG: seq_turno: {seq_turno}")
-            #logger.info(f"DEBUG: semana1: {semana1}")
+            logger.info(f"Employee {emp}: eachrep={eachrep}, matrix width={reshaped_final_3.shape[1]}")
 
             # Generate shift patterns based on seq_turno and semana1
             if seq_turno == "MT" and semana1 in ["T", "T1"]:
+                logger.info(f"Employee {emp}: Using MT pattern with T/T1 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['M'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 2 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MT" and semana1 in ["M", "M1"]:
+                logger.info(f"Employee {emp}: Using MT pattern with M/M1 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['T'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 2 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MTT" and semana1 in ["M", "M1"]:
+                logger.info(f"Employee {emp}: Using MTT pattern with M/M1 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['T'] * 14 + ['T'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MTT" and semana1 == "T1":
+                logger.info(f"Employee {emp}: Using MTT pattern with T1 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['T'] * 14 + ['M'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MTT" and semana1 == "T2":
+                logger.info(f"Employee {emp}: Using MTT pattern with T2 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['M'] * 14 + ['T'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MMT" and semana1 == "M1":
+                logger.info(f"Employee {emp}: Using MMT pattern with M1 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['M'] * 14 + ['T'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MMT" and semana1 == "M2":
+                logger.info(f"Employee {emp}: Using MMT pattern with M2 start")
                 new_row = ['M'] * eachrep
                 new_row2 = (['T'] * 14 + ['M'] * 14 + ['M'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             elif seq_turno == "MMT" and semana1 in ["T", "T1"]:
+                logger.info(f"Employee {emp}: Using MMT pattern with T/T1 start")
                 new_row = ['T'] * eachrep
                 new_row2 = (['M'] * 14 + ['M'] * 14 + ['T'] * 14) * ((reshaped_final_3.shape[1] // 3 // 14) + 1)
                 new_row = [emp] + new_row + new_row2
                 
             else:
                 # Default case
+                logger.info(f"Employee {emp}: Using DEFAULT case with seq_turno='{seq_turno}'")
                 new_row = [seq_turno] * reshaped_final_3.shape[1]
                 new_row = [emp] + new_row[1:]
 
-            #logger.info(f"DEBUG: new_row: {new_row}")
+            logger.info(f"Employee {emp}: Created new_row with length {len(new_row)}")
+            logger.info(f"Employee {emp}: new_row first 10 elements: {new_row[:10]}")
+            logger.info(f"Employee {emp}: new_row last 10 elements: {new_row[-10:]}")
 
             
             # Trim to match matrix width
             elements_to_drop = len(new_row) - reshaped_final_3.shape[1]
+            logger.info(f"Employee {emp}: elements_to_drop={elements_to_drop}")
+            
             if elements_to_drop > 0:
+                logger.info(f"Employee {emp}: Trimming {elements_to_drop} elements from new_row")
                 new_row = new_row[:len(new_row) - elements_to_drop]
             elif elements_to_drop < 0:
+                logger.info(f"Employee {emp}: Extending new_row with {abs(elements_to_drop)} '-' elements")
                 new_row.extend(['-'] * abs(elements_to_drop))
+            
+            logger.info(f"Employee {emp}: Final new_row length: {len(new_row)}")
+            logger.info(f"Employee {emp}: Final new_row: {new_row}")
             
             # Add row to matrix
             new_row_df = pd.DataFrame([new_row], columns=reshaped_final_3.columns)
             reshaped_final_3 = pd.concat([reshaped_final_3, new_row_df], ignore_index=True)
-            #logger.info(f"DEBUG: new_row after concat: {new_row}")
-            #logger.info(f"DEBUG: elements_to_drop after concat: {elements_to_drop}")
+            
+            logger.info(f"Employee {emp}: Matrix shape after adding row: {reshaped_final_3.shape}")
         
         # Reset column and row names
         reshaped_final_3.columns = range(reshaped_final_3.shape[1])
         reshaped_final_3.reset_index(drop=True, inplace=True)
+        
+        logger.info(f"=== CALENDAR CREATION DEBUG END ===")
+        logger.info(f"Final reshaped_final_3 shape: {reshaped_final_3.shape}")
+        logger.info(f"Final matrix first column (employee IDs): {reshaped_final_3.iloc[:, 0].tolist()}")
         
         return reshaped_final_3
         
@@ -1514,90 +1639,132 @@ def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def bulk_insert_with_query(data_manager: DBDataManager, 
-                          data: pd.DataFrame, 
-                          query_file: str, 
+def bulk_insert_with_query(data_manager: DBDataManager,
+                          data: pd.DataFrame,
+                          query_file: str,
                           **kwargs) -> bool:
     """
-    Execute bulk insert using a parameterized query file.
-    
-    Args:
-        data_manager: Database data manager instance
-        data: DataFrame with data to insert
-        query_file: Path to SQL insert query file
-        **kwargs: Additional parameters for query execution
-        
-    Returns:
-        bool: True if successful, False otherwise
-        
-    Example:
-        # SQL file content: INSERT INTO table (col1, col2) VALUES (?, ?)
-        success = bulk_insert_with_query(
-            data_manager=db_manager,
-            data=results_df,
-            query_file='queries/insert_results.sql',
-            fk_processo=123  # Additional parameter
-        )
+    Execute bulk insert using a parameterized query file with connection handling.
     """
     
     # Validate inputs
     if not hasattr(data_manager, 'session') or data_manager.session is None:
         logger.error("No database session available")
         return False
-    
+   
     if not os.path.exists(query_file):
         logger.error(f"Query file not found: {query_file}")
         return False
-    
+   
     if data.empty:
         logger.warning("Empty DataFrame provided, no records to insert")
         return True
-    
-    try:
-        from sqlalchemy import text
-        
-        # Read the insert query
-        with open(query_file, 'r', encoding='utf-8') as f:
-            insert_query = f.read().strip()
-        
-        if not insert_query:
-            logger.error(f"Query file is empty: {query_file}")
-            return False
-        
-        logger.info(f"Executing bulk insert of {len(data)} rows using query: {query_file}")
-        
-        # Convert DataFrame to list of dictionaries for parameter binding
-        records = data.to_dict('records')
-        
-        # Execute the insert for each record
-        for i, record in enumerate(records):
-            try:
-                # Merge additional kwargs with record data
-                params = {**kwargs, **record}
-                data_manager.session.execute(text(insert_query), params)
-                
-                # Log progress for large datasets
-                if (i + 1) % 1000 == 0:
-                    logger.info(f"Processed {i + 1}/{len(records)} records")
-                    
-            except Exception as record_error:
-                logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
-                logger.debug(f"Failed record data: {record}")
-                raise
-        
-        # Commit all inserts
-        data_manager.session.commit()
-        
-        logger.info(f"Successfully inserted {len(records)} records")
-        return True
-        
-    except Exception as e:
-        # Rollback on error
-        if hasattr(data_manager, 'session') and data_manager.session:
-            data_manager.session.rollback()
-        logger.error(f"Error during bulk insert: {str(e)}")
-        return False
-    
+ 
+    # Simple retry loop for connection issues
+    max_retries = 2
+   
+    for attempt in range(max_retries + 1):
+        try:
+            from sqlalchemy import text
+           
+            # If this is a retry attempt, recreate the session completely
+            if attempt > 0:
+                logger.info(f"Recreating session for retry attempt {attempt + 1}")
+                try:
+                    # Close the old session
+                    data_manager.session.close()
+                   
+                    # Create a completely new session
+                    from sqlalchemy.orm import sessionmaker
+                    Session = sessionmaker(bind=data_manager.engine)
+                    data_manager.session = Session()
+                   
+                    # Test the new session
+                    data_manager.session.execute(text("SELECT 1 FROM DUAL")).fetchone()
+                    logger.info("New session created and tested successfully")
+                   
+                except Exception as recreate_error:
+                    logger.error(f"Failed to recreate session: {recreate_error}")
+                    if attempt == max_retries:
+                        return False
+                    continue
+           
+            # Read the insert query
+            with open(query_file, 'r', encoding='utf-8') as f:
+                insert_query = f.read().strip()
+           
+            if not insert_query:
+                logger.error(f"Query file is empty: {query_file}")
+                return False
+           
+            logger.info(f"Executing bulk insert of {len(data)} rows (attempt {attempt + 1})")
+           
+            # Convert DataFrame to list of dictionaries for parameter binding
+            records = data.to_dict('records')
+           
+            # Execute the insert for each record
+            for i, record in enumerate(records):
+                try:
+                    # Merge additional kwargs with record data
+                    params = {**kwargs, **record}
+                    # Remove pathOS from params if it exists (it's for connection handling only)
+                    params.pop('pathOS', None)
+                   
+                    data_manager.session.execute(text(insert_query), params)
+                   
+                    # Log progress for large datasets
+                    if (i + 1) % 1000 == 0:
+                        logger.info(f"Processed {i + 1}/{len(records)} records")
+                       
+                except Exception as record_error:
+                    logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
+                    logger.debug(f"Failed record data: {record}")
+                    raise
+           
+            # Commit all inserts
+            data_manager.session.commit()
+           
+            logger.info(f"Successfully inserted {len(records)} records")
+            return True
+           
+        except Exception as e:
+            error_str = str(e).lower()
+           
+            # Check if this is a connection-related error
+            connection_errors = [
+                'not connected', 'dpi-1010', 'connection', 'timeout', 'closed',
+                'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
+            ]
+           
+            is_connection_error = any(err_keyword in error_str for err_keyword in connection_errors)
+           
+            if is_connection_error and attempt < max_retries:
+                logger.warning(f"Connection error detected (attempt {attempt + 1}): {e}")
+               
+                # Rollback current transaction
+                try:
+                    data_manager.session.rollback()
+                except Exception as rollback_error:
+                    logger.debug(f"Rollback failed (expected): {rollback_error}")
+               
+                logger.info(f"Will retry with new session (attempt {attempt + 2})")
+                continue
+            else:
+                # Not a connection error or max retries reached
+                logger.error(f"Bulk insert failed: {e}")
+               
+                # Rollback on error
+                try:
+                    data_manager.session.rollback()
+                except:
+                    pass
+               
+                return False
+   
+    # Should not reach here
+    logger.error(f"Bulk insert failed after {max_retries + 1} attempts")
+    return False
+
 def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
     """Create empty results structure when no data is available."""
     return {
@@ -1636,6 +1803,7 @@ def _create_empty_results(algo_name: str, process_id: int, start_date: str, end_
             'key_metrics': {}
         }
     }
+
 
 def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: str, end_date: str, data_processed: Dict[str, Any] = None) -> Dict[str, Any]:
     """Calculate comprehensive statistics from algorithm results in wide format."""
@@ -1990,4 +2158,3 @@ def _create_export_info(process_id: int, ROOT_DIR) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error creating export info: {e}")
         return {}
-        

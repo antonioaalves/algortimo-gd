@@ -122,20 +122,74 @@ class AlcampoAlgorithm(BaseAlgorithm):
         self.logger.info(f"Algorithm {algo_name} initialized successfully")
         self.logger.debug(f"Parameters: {self.parameters}")
 
-    def adapt_data(self, data=None):
+    def adapt_data(self, data: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Adapt data for the Alcampo algorithm.
         
         Args:
-            data: Input data (DataFrames dictionary or similar)
-            
+            data: Dictionary containing DataFrames:
+                - Should contain medium_dataframes with 'matrizA_bk', 'matrizB_bk', 'matriz2_bk'
+            algorithm_treatment_params: Optional dictionary containing algorithm-specific
+                                      data treatment parameters (ignored by AlcampoAlgorithm)
+                
         Returns:
             Adapted data ready for algorithm processing
         """
-        self.logger.info("Starting data adaptation for Alcampo algorithm")
-        
         try:
-            # Import the read function here to avoid circular imports
+            self.logger.info("Starting data adaptation for Alcampo algorithm")
+            
+            # AlcampoAlgorithm doesn't use treatment parameters, but accepts them for interface consistency
+            if algorithm_treatment_params:
+                self.logger.debug(f"AlcampoAlgorithm received treatment parameters but ignores them: {list(algorithm_treatment_params.keys())}")
+            
+            # =================================================================
+            # 1. VALIDATE INPUT DATA STRUCTURE
+            # =================================================================
+            if data is None:
+                raise ValueError("No data provided to adapt_data method. Expected dictionary with DataFrames.")
+            
+            if not isinstance(data, dict):
+                raise TypeError(f"Expected dictionary, got {type(data)}")
+            
+            # Log the data structure for debugging
+            self.logger.info(f"Input data structure: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+            
+            # Extract medium dataframes
+            if 'medium_dataframes' in data:
+                medium_dataframes = data['medium_dataframes']
+                self.logger.info("Found nested medium_dataframes structure")
+            else:
+                medium_dataframes = data
+                self.logger.info("Using direct DataFrame structure")
+            
+            if not isinstance(medium_dataframes, dict):
+                raise TypeError(f"Expected medium_dataframes to be dictionary, got {type(medium_dataframes)}")
+            
+            # =================================================================
+            # 2. VALIDATE REQUIRED DATAFRAMES
+            # =================================================================
+            # required_dataframes = ['matrizA_bk', 'matrizB_bk', 'matriz2_bk']
+            # missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
+            
+            # if missing_dataframes:
+            #     self.logger.error(f"Missing required DataFrames: {missing_dataframes}")
+            #     raise ValueError(f"Missing required DataFrames: {missing_dataframes}")
+            
+            # # Check if DataFrames are not empty
+            # for df_name in required_dataframes:
+            #     df = medium_dataframes[df_name]
+            #     if df.empty:
+            #         self.logger.error(f"DataFrame {df_name} is empty")
+            #         raise ValueError(f"DataFrame {df_name} is empty")
+                
+            #     self.logger.info(f"✅ {df_name}: {df.shape} - {df.memory_usage(deep=True).sum()/1024/1024:.2f} MB")
+            
+            # =================================================================
+            # 3. PROCESS DATA USING ENHANCED FUNCTION
+            # =================================================================
+            self.logger.info("Calling enhanced data processing function")
+            
+            # Import the enhanced function
             from src.algorithms.model_alcampo.read_alcampos import read_data_alcampo
             
             # Read and adapt the data using the specific function

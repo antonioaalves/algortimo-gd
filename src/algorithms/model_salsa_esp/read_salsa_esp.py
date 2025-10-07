@@ -5,39 +5,29 @@ from typing import Dict, Any, List, Tuple, Optional
 from datetime import date, datetime
 import logging
 from base_data_project.log_config import get_logger
-from src.configuration_manager.manager import ConfigurationManager
-
-# Get configuration manager instance
-_config_manager = None
-
-def get_config_manager():
-    """Get or create the global configuration manager instance."""
-    global _config_manager
-    if _config_manager is None:
-        _config_manager = ConfigurationManager()
-    return _config_manager
+from src.config import PROJECT_NAME
 
 
 
 # Set up logger
-logger = get_logger(get_config_manager().system.project_name)
+logger = get_logger(PROJECT_NAME)
 
-def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Tuple[Any, ...]:
     """
-    Enhanced version of read_data_salsa with comprehensive logging and error checks.
+    Enhanced version of read_data_salsa_esp with comprehensive logging and error checks.
     
     Args:
         medium_dataframes: Dictionary containing the required DataFrames
         
     Returns:
-        Dictonary containing all processed data elements for the algorithm
+        Tuple containing all processed data elements for the algorithm
         
     Raises:
         ValueError: If required DataFrames are missing or invalid
         KeyError: If required columns are missing from DataFrames
     """
     try:
-        logger.info("Starting enhanced data reading for salsa algorithm")
+        logger.info("Starting enhanced data reading for salsa_esp algorithm")
         
         # =================================================================
         # 1. VALIDATE INPUT data
@@ -57,15 +47,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
     
         
         # Extract DataFrames
-        #matriz_colaborador_gd = pd.read_csv('src/algorithms/model_salsa/data/matriz_colaborador_salsa.csv', engine='python')
-        #matriz_estimativas_gd = pd.read_csv('src/algorithms/model_salsa/data/matriz_estimativas_salsa.csv', index_col=0)
-        #matriz_calendario_gd = pd.read_csv('src/algorithms/model_salsa/data/matriz_calendario_salsa.csv', index_col=0)
+        #matriz_colaborador_gd = pd.read_csv('src/algorithms/model_salsa_esp/data/matriz_colaborador_salsa_esp.csv', engine='python')
+        #matriz_estimativas_gd = pd.read_csv('src/algorithms/model_salsa_esp/data/matriz_estimativas_salsa_esp.csv', index_col=0)
+        #matriz_calendario_gd = pd.read_csv('src/algorithms/model_salsa_esp/data/matriz_calendario_salsa_esp.csv', index_col=0)
 
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
-        num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
+        num_dias_cons = algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS']
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
@@ -83,7 +73,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
         # =================================================================
-        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2', 'seed_5_6', 'n_sem_a_folga']
+        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2', 'SEED_5_6', 'N_Sem_A_Folga']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
         required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno', 'carga_diaria']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
@@ -95,8 +85,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         missing_estima_cols = [col for col in required_estimativas_cols if col not in matriz_estimativas_gd.columns]
 
                 
-        if missing_colab_cols:
-            logger.error(f"Missing required columns in matriz_colaborador: {missing_colab_cols}")
+        # if missing_colab_cols:
+        #     raise KeyError(f"Missing required columns in matriz_colaborador: {missing_colab_cols}")
         # if missing_cal_cols:
         #     raise KeyError(f"Missing required columns in matriz_calendario: {missing_cal_cols}")
         # if missing_estima_cols:
@@ -232,17 +222,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             matriz_calendario_gd['tipo_turno'] == "F"
         ]['data'].dt.dayofyear.unique().tolist())
         
-        special_days = sorted(set(holidays))
+        special_days = sorted(list(set(holidays)))
         
-        #logger.info(f"Special days identified:")
-        #logger.info(f"  - Sundays: {len(sundays)} days")
-        #logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
-        #logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
-        #logger.info(f"  - Total special days: {len(special_days)} days")
-        #logger.info(f"  - Special days: {sorted(matriz_calendario_gd[
-        #    (matriz_calendario_gd['wd'] != 'Sun') & 
-        #    (matriz_calendario_gd["dia_tipo"] == "domYf")
-        #]['data'].unique().tolist())} days")
+        logger.info(f"Special days identified:")
+        logger.info(f"  - Sundays: {len(sundays)} days")
+        logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
+        logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
+        logger.info(f"  - Total special days: {len(special_days)} days")
         
         # =================================================================
         # 8. CALCULATE ADDITIONAL PARAMETERS
@@ -275,7 +261,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             
             # Create week to days mapping using WW column and day of year
             week_to_days = {}
-            week_to_days_salsa = {}
+            week_to_days_salsa_esp = {}
             
             # Process each unique date in the calendar (remove duplicates by date)
             unique_calendar_dates = matriz_calendario_gd.drop_duplicates(['data']).sort_values('data')
@@ -288,11 +274,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 if week_number not in week_to_days:
                     week_to_days[week_number] = []
                 
-                if week_number not in week_to_days_salsa:
-                    week_to_days_salsa[week_number] = []
+                if week_number not in week_to_days_salsa_esp:
+                    week_to_days_salsa_esp[week_number] = []
                 
-                if day_of_year not in week_to_days_salsa[week_number]:
-                    week_to_days_salsa[week_number].append(day_of_year)
+                if day_of_year not in week_to_days_salsa_esp[week_number]:
+                    week_to_days_salsa_esp[week_number].append(day_of_year)
                 # Add the day to its corresponding week (avoid duplicates)
                 if day_of_year not in week_to_days[week_number] and day_of_year in non_holidays:
                     week_to_days[week_number].append(day_of_year)
@@ -301,8 +287,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             for week in week_to_days:
                 week_to_days[week].sort()
             
-            for week in week_to_days_salsa:
-                week_to_days_salsa[week].sort()
+            for week in week_to_days_salsa_esp:
+                week_to_days_salsa_esp[week].sort()
 
 
                         
@@ -369,6 +355,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
             worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
             w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
+
             worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
             worker_work_day_hours = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
@@ -377,7 +364,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             # Days where worker should potentially appear but doesn't
             days_not_in_calendar = set(days_of_year) - worker_present_days
-            logger.info(f" ERROR Worker {w} days not in calendar data: {sorted(list(days_not_in_calendar))}")
+        
             # Add these missing days to empty_days
             #worker_empty.extend(list(days_not_in_calendar))
 
@@ -491,14 +478,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
            
             if matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w].iloc[0].get('tipo_contrato', 'Contract Error') != 8:
-                worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), None)
+                worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa_esp, start_weekday, set(closed_holidays), None)
                 working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
                 logger.info(f"Worker {w} working days after processing: {working_days[w]}")
 
                 if not working_days[w]:
                     logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-
-
 
 
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
@@ -561,9 +546,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         first_week_5_6 = {}
         work_days_per_week = {}
         week_compensation_limit = {}
-        has_week_compensation_limit = False
-        has_max_work_days_7 = False
-
+        
         for w in workers:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
             
@@ -591,30 +574,31 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
                 total_l_dom[w] = int(worker_row.get('l_dom_salsa', 0))
+                if (total_l_dom[w] != 0):
+                    logger.error(f"Wrong number of sundays off for worker {w}, should be 0, and received {total_l_dom[w]}")
+                    total_l_dom[w] = 0
                 c2d[w] = int(worker_row.get('c2d', 0))
+                if (c2d[w] != 0):
+                    logger.error(f"Wrong quality weekend data for worker {w}, should be 0, and received {c2d[w]}")
+                    c2d[w] = 0
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
                 l_q[w] = int(worker_row.get('l_q', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
-
-                first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
-
-                week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
-                if (has_week_compensation_limit == False and week_compensation_limit[w] != 0):
-                    has_week_compensation_limit = True
+                first_week_5_6[w] = int(worker_row.get('SEED_5_6', 5))
 
                 if contract_type[w] == 8:
-                    work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa) #passar aqui dados do ano passado do trabalhador
-                    #if w in [5851,7656,7919,80000509,80000686,80000937,80001237,80001331,80001366,80001489,80001568,80001578,80001586,80001630,80001675,80001684,80001709,80001710]:
-                    #    contract_type[w] = 5
-                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), work_days_per_week[w])
+                    work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa_esp) #passar aqui dados do ano passado do trabalhador
+                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa_esp, start_weekday, set(closed_holidays), work_days_per_week[w])
                     working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
                     logger.info(f"Worker {w} working days after processing: {working_days[w]}")
                 else:
                     work_days_per_week[w] = [5] * 52
-                if not working_days[w]:
-                    logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
+
+            if not working_days[w]:
+                logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
+                week_compensation_limit[w] = int(worker_row.get('N_Sem_A_Folga', 2))
                 logger.info(f"Worker {w} contract information extracted: "
                             f"Contract Type: {contract_type[w]}, "
                             f"Total L: {total_l[w]}, "
@@ -630,18 +614,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             f"Data Demissao: {data_demissao[w]}")
         
         for w in workers:
-            if contract_type[w] == 8:
-                print(w, first_week_5_6[w])
-
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-            if total_l[w] < 0:
+            if total_l[w] <= 0:
                 logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
 
-        if (has_max_work_days_7 == False and num_dias_cons == 7):
-            has_max_work_days_7 = True
+
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
 
@@ -705,6 +685,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Adjusting worker parameters based on last registered days")
         proportion = {}
         for w in workers:
+            logger.info(f"Adjusting parameters for worker {w} with first registered day {first_registered_day[w]} and last registered day {last_registered_day[w]}")
             if (last_registered_day[w] > 0 and last_registered_day[w] < 364):
                 proportion[w] = (last_registered_day[w]- first_registered_day[w])  / (days_of_year[-1] - first_registered_day[w])
                 logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion[w] {proportion[w]:.2f}")
@@ -836,91 +817,79 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
 
         working_shift_2 = ["M", "T"]
-        # =================================================================
-        # 13. DEFINITION OF ALGORITHM COUNTRY 
-        # =================================================================
 
-        if (has_max_work_days_7 == True and has_week_compensation_limit == True):
-           country = "spain"
-           logger.info("Detected country to be spain")
-        elif (has_max_work_days_7 == False and has_week_compensation_limit == False):
-            country = "portugal"
-            logger.info("Detected country to be portugal")
 
-        else:
-            country = "undefined"
-            logger.error(f"Some variables are true and others false, something is not being correctly received:"
-                         f"\n\t\t\t7 work days in a row  -> {has_max_work_days_7},"
-                         f"\n\t\t\tweek compensation limit -> {has_week_compensation_limit}."
-                         )
         logger.info("[OK] Data processing completed successfully")
         
         # =================================================================
-        # 14. RETURN ALL PROCESSED data
+        # 13. RETURN ALL PROCESSED data
         # =================================================================
-        return {
-            "matriz_calendario_gd": matriz_calendario_gd,       # 0
-            "days_of_year": days_of_year,                       # 1
-            "sundays": sundays,                                 # 2
-            "holidays": holidays,                               # 3
-            "special_days": special_days,                       # 4
-            "closed_holidays": closed_holidays,                 # 5
-            "empty_days": empty_days,                           # 6
-            "worker_holiday": worker_holiday,                   # 7
-            "missing_days": missing_days,                       # 8
-            "working_days": working_days,                       # 9
-            "non_holidays": non_holidays,                       # 10
-            "start_weekday": start_weekday,                     # 11
-            "week_to_days": week_to_days,                       # 12
-            "worker_week_shift": worker_week_shift,             # 13
-            "matriz_colaborador_gd": matriz_colaborador_gd,     # 14
-            "workers": workers,                                 # 15
-            "contract_type": contract_type,                     # 16
-            "total_l": total_l,                                 # 17
-            "total_l_dom": total_l_dom,                         # 18
-            "c2d": c2d,                                         # 19
-            "c3d": c3d,                                         # 20
-            "l_d": l_d,                                         # 21
-            "l_q": l_q,                                         # 22
-            "cxx": cxx,                                         # 23
-            "t_lq": t_lq,                                       # 24
-            "matriz_estimativas_gd": matriz_estimativas_gd,     # 25
-            "pess_obj": pess_obj,                               # 26
-            "min_workers": min_workers,                         # 27
-            "max_workers": max_workers,                         # 28
-            "working_shift_2": working_shift_2,                 # 29
-            "workers_complete": workers_complete,               # 30
-            "workers_complete_cycle": workers_complete_cycle,   # 31
-            "free_day_complete_cycle": free_day_complete_cycle, # 32
-            "week_to_days_salsa": week_to_days_salsa,           # 33
-            "first_registered_day": first_registered_day,       # 34
-            "admissao_proporcional": admissao_proporcional,     # 35
-            "role_by_worker": role_by_worker,                   # 36
-            "data_admissao": data_admissao,                     # 37
-            "data_demissao": data_demissao,                     # 38
-            "last_registered_day": last_registered_day,         # 39
-            "fixed_days_off": fixed_days_off,                   # 40
-            "proportion": proportion,                           # 41
-            "fixed_LQs": fixed_LQs,                             # 42
-            "work_day_hours": work_day_hours,                   # 43
-            "work_days_per_week": work_days_per_week,           # 44
-            "week_compensation_limit": week_compensation_limit, # 45
-            "num_dias_cons": num_dias_cons,                     # 46
-            "country": country                                  # 47
-            }
+        return (
+            matriz_calendario_gd,    # 0x
+            days_of_year,           # 1x
+            sundays,                # 2x
+            holidays,               # 3x
+            special_days,           # 4x
+            closed_holidays,        # 5x
+            empty_days,             # 6x
+            worker_holiday,         # 7x
+            missing_days,           # 8x
+            working_days,           # 9x
+            non_holidays,           # 10x
+            start_weekday,          # 11x
+            week_to_days,           # 12x
+            worker_week_shift,      # 13x
+            matriz_colaborador_gd,  # 14x
+            workers,                # 15x
+            contract_type,          # 16x
+            total_l,                # 17x
+            total_l_dom,            # 18x
+            c2d,                    # 19x
+            c3d,                    # 20x
+            l_d,                    # 21x
+            l_q,                    # 22x
+            cxx,                    # 23x
+            t_lq,                   # 24x                   # 25
+            matriz_estimativas_gd,  # 26x
+            pess_obj,                # 27x
+            min_workers,            # 28x
+            max_workers,            # 29x
+            working_shift_2,         # 30
+            workers_complete,       # 31
+            workers_complete_cycle,  # 32
+            free_day_complete_cycle,  # 33
+            week_to_days_salsa_esp,     # 34x
+            first_registered_day,
+            admissao_proporcional,   # 35x
+            role_by_worker,        # 37x
+            #managers,               # 38x
+            #keyholders,             # 39x
+            data_admissao,
+            data_demissao,
+            last_registered_day,
+            fixed_days_off,             # 36x
+            proportion,
+            fixed_LQs,          # 36x
+            # week_cut
+            work_day_hours,
+            work_days_per_week,
+            week_compensation_limit,
+            num_dias_cons
+        )
         
     except Exception as e:
-        logger.error(f"Error in read_data_salsa: {e}", exc_info=True)
+        logger.error(f"Error in read_data_salsa_esp: {e}", exc_info=True)
         raise
 
-def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_weekday, closed_holidays, work_days_per_week):
+#def data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa_esp):
+def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa_esp, start_weekday, closed_holidays, work_days_per_week):
     fixed_LQs = []
-    for week, days in week_to_days_salsa.items():
+    for week, days in week_to_days_salsa_esp.items():
         if (len(days) <= 6):
             continue
-        days_set = set(days)
-        holiday_days_in_week = days_set.intersection(worker_holiday)
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
+            days_set = set(days)
+            holiday_days_in_week = days_set.intersection(worker_holiday)
 
             if len(list(holiday_days_in_week)) >= 5:
 
@@ -939,9 +908,8 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_wee
                     worker_holiday -= {l2,l1}
                     fixed_days_off |= {l2,l1}
         else:
-            days_off_in_week = days_set.intersection(fixed_days_off)
-            if (len(days_off_in_week) > 1):
-                logger.error(f"for week {week} this worker has {days_off_in_week} when they should only have 1 day off")
+            days_set = set(days)
+            holiday_days_in_week = days_set.intersection(worker_holiday)
 
             if len(list(holiday_days_in_week)) >= 5:
 
