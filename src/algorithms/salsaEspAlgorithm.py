@@ -12,7 +12,7 @@ from base_data_project.algorithms.base import BaseAlgorithm
 from base_data_project.log_config import get_logger
 
 # Import project-specific components
-from src.config import PROJECT_NAME, ROOT_DIR
+from src.configuration_manager.manager import ConfigurationManager
 
 # Import shift scheduler components
 from src.algorithms.model_salsa_esp.variables import decision_variables
@@ -31,8 +31,9 @@ from src.helpers import (_create_empty_results, _calculate_comprehensive_stats,
                         _create_export_info)
 
 
-# Set up logger
-logger = get_logger(PROJECT_NAME)
+# Create configuration manager and set up logger
+_config_manager = ConfigurationManager()
+logger = get_logger(_config_manager.project_name)
 
 class SalsaEspAlgorithm(BaseAlgorithm):
     """
@@ -47,7 +48,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
     worker contracts, labor laws, and SALSA-specific operational requirements.
     """
 
-    def __init__(self, parameters=None, algo_name: str = 'salsa_esp_algorithm', project_name: str = PROJECT_NAME, process_id: int = 0, start_date: str = '', end_date: str = ''):
+    def __init__(self, parameters=None, algo_name: str = 'salsa_esp_algorithm', project_name: str = None, process_id: int = 0, start_date: str = '', end_date: str = ''):
         """
         Initialize the SALSA Algorithm.
         
@@ -59,6 +60,10 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             start_date: Start date for scheduling
             end_date: End date for scheduling
         """
+        # Set default project name if not provided
+        if project_name is None:
+            project_name = _config_manager.project_name
+            
         # Default parameters for the SALSA algorithm
         default_parameters = {
             "shifts": ['M', 'T', 'L', 'LQ', 'LD', 'F', 'A', 'V', '-'],
@@ -431,7 +436,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             self.logger.info("Solving SALSA model")
             
             schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, 
-                              output_filename=os.path.join(ROOT_DIR, 'data', 'output', 
+                              output_filename=os.path.join(_config_manager.system.project_root_dir, 'data', 'output', 
                                                          f'salsa_esp_schedule_{self.process_id}.xlsx'))
             
             self.final_schedule = pd.DataFrame(schedule_df).copy()
@@ -580,7 +585,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
                 'constraint_validation': constraint_validation,
                 'quality_metrics': quality_metrics,
                 'validation': _validate_solution(algorithm_results),
-                'export_info': _create_export_info(self.process_id, ROOT_DIR),
+                'export_info': _create_export_info(self.process_id, _config_manager.system.project_root_dir),
                 'summary': {
                     'status': 'completed',
                     'message': f'Successfully scheduled {stats["workers"]["total_workers"]} workers over {stats["time_coverage"]["total_days"]} days using SALSA algorithm',

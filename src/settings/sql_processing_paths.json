@@ -1,7 +1,7 @@
 {
   "hierarchy": ["data", "Queries", "sql"],
   "entities": {
-    "valid_emp": "get_process_valid_employess.sql",
+    "valid_emp": "queryGetValidEmployees_v2.sql",
     "df_messages": "",
     "params_algo": "",
     "params_lq": "qry_params_LQ.sql",

@@ -529,7 +529,7 @@ class DescansosDataModel(BaseDataModel):
                 return False
             
             try:
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_contratos')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_contratos')
                 df_contratos = data_manager.load_data('df_contratos', query_file=query_path, colabs_id=colabs_str, start_date=start_date, end_date=end_date, process_id=process_id)
                 self.logger.info(f"df_contratos shape (rows {df_contratos.shape[0]}, columns {df_contratos.shape[1]}): {df_contratos.columns.tolist()}")
                 self.logger.info(f"Saving df_contratos in auxiliary_data")
@@ -981,7 +981,7 @@ class DescansosDataModel(BaseDataModel):
             # DF_CORE_PRO_EMP_HORARIO_DET - pre folgas do ciclo
             try:
                 self.logger.info("Loading df_core_pro_emp_horario_det from data manager")
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_core_pro_emp_horario_det', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_core_pro_emp_horario_det', '')
                 if query_path:
                     df_core_pro_emp_horario_det = data_manager.load_data(
                         'df_core_pro_emp_horario_det', 
@@ -3954,7 +3954,7 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info(f"Running algorithm {algorithm_name}")
-                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=algorithm_params)
+                results = algorithm.run(data=self.medium_data, algorithm_params_dict=algorithm_params)
 
                 if not results:
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")

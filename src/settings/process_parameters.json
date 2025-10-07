@@ -11,7 +11,8 @@
             "test_param_scheduling_threshold",
             "GD_algorithmName",
             "GD_consideraFestivos",
-            "GD_convenioBD"
+            "GD_convenioBD",
+            "NUM_DIAS_CONS"
         ],
 
         "parameters_defaults": {

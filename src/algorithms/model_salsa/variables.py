@@ -1,7 +1,8 @@
-from src.config import PROJECT_NAME
+from src.configuration_manager.manager import ConfigurationManager
 from base_data_project.log_config import get_logger
 
-logger = get_logger(PROJECT_NAME)
+_config_manager = ConfigurationManager()
+logger = get_logger(_config_manager.project_name)
 
 #----------------------------------------DECISION VARIABLES----------------------------------------
 
