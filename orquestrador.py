@@ -15,16 +15,19 @@ import datetime
 from base_data_project.log_config import setup_logger, get_logger
 from base_data_project.utils import create_components
 from batch_process import run_batch_process
-from src.config import CONFIG, PROJECT_NAME
+from src.configuration_manager.manager import ConfigurationManager
+
+# Create configuration manager
+config_manager = ConfigurationManager()
 
 # Initialize logger
 setup_logger(
-    project_name=PROJECT_NAME,
-    log_level=CONFIG.get('log_level', 'INFO'),
-    log_dir=CONFIG.get('log_dir', 'logs'),
-    console_output=CONFIG.get('console_output', True)
+    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD'),
+    log_level=config_manager.system_config.get('logging', {}).get('log_level', 'INFO'),
+    log_dir=config_manager.system_config.get('logging', {}).get('log_dir', 'logs'),
+    console_output=True
 )
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'))
 
 # SET INITIAL PATH -----------------------------------
 import platform
@@ -176,8 +179,8 @@ if not sec_to_proc.empty:
                                 data_manager, process_manager = create_components(
                                     use_db=True,  # Always use database 
                                     no_tracking=False,
-                                    config=CONFIG,
-                                    project_name=PROJECT_NAME
+                                    config=config_manager,
+                                    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
                                 )
                                 
                                 # Build external call dict with same parameters

@@ -195,6 +195,7 @@ reports/
 *.xlsx
 *.xls
 *.json
+!src/settings/*.json
 *.parquet
 *.pickle
 *.pkl

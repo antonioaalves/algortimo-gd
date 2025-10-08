@@ -9,30 +9,44 @@ from openpyxl.styles import PatternFill
 import logging
 from typing import Dict, Any, List, Tuple, Optional, Callable
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
-from src.config import ROOT_DIR
+from src.configuration_manager.manager import ConfigurationManager
+
+# Get configuration manager instance
+_config_manager = None
+
+def get_config_manager():
+    """Get or create the global configuration manager instance."""
+    global _config_manager
+    if _config_manager is None:
+        _config_manager = ConfigurationManager()
+    return _config_manager
 import os
 import psutil
 from src.algorithms.solver.solver_callback import SolutionCallback
+from src.algorithms.helpers_algorithm import analyze_optimization_results
 
-# Set up logger
-logger = get_logger(PROJECT_NAME)
+# Get project name and set up logger
+project_name = get_config_manager().system.project_name
+logger = get_logger(project_name)
 
 #----------------------------------------SOLVER-----------------------------------------------------------
 def solve(
     model: cp_model.CpModel, 
     days_of_year: List[int], 
     workers: List[int], 
-    special_days: List[int], 
+    special_days: List[int],    
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
+    work_day_hours: Dict[int, List[int]],
+    pessOBJ: Dict[int, int],
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = 0,
     log_callback: Optional[Callable[[str], None]] = None,
-    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx'),
-    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None  # Add this parameter
+    output_filename: str = os.path.join(get_config_manager().paths.get_output_dir(), 'working_schedule.xlsx'),
+    debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter
+    optimization_details: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
@@ -111,7 +125,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 120  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -148,6 +162,9 @@ def solve(
 
 
         status = solver.Solve(model, solution_callback)
+        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+            results = analyze_optimization_results(solver, optimization_details)
+    
 
         solve_end = time.time()
         actual_duration = solve_end - solve_start
@@ -219,15 +236,12 @@ def solve(
             'A'     : 'A',  # Missing shift
             'L'     : 'L',  # Free day
             'LQ'    : 'LQ', # Free days semester
+            'LD'    : 'LD',
             'TC'    : 'TC',
             '-'     : '-'
         }
         
         logger.info(f"Shift mapping: {shift_mapping}")
-
-        # Prepare the data for the DataFrame
-        table_data = []  # List to store each worker's data as a row
-        worker_stats = {}  # Dictionary to track L, LQ, LD counts for each worker
         
         logger.info(f"Processing schedule for {len(workers)} workers across {len(days_of_year)} days")
         # Prepare the data for the DataFrame
@@ -236,20 +250,26 @@ def solve(
 
         # Loop through each worker
         processed_workers = 0
+        days_of_year_sorted = sorted(days_of_year)
+        time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) for d in days_of_year_sorted]
+        time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
+        special_days_worked = {}
+        compensation_days_off = {}
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
-                # Initialize counters for this worker
                 l_count = 0
                 lq_count = 0
                 ld_count = 0
-                tc_count = 0
-                special_days_count = 0  # Counter for special days with M or T shifts
+                special_days_count = 0
                 unassigned_days = 0
-                
+                special_days_worked[w] = []
+                compensation_days_off[w] = []
+
+
                 logger.debug(f"Processing worker {w}")
 
-                days_of_year_sorted = sorted(days_of_year)
+                day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -271,26 +291,42 @@ def solve(
                         l_count += 1
                     elif day_assignment == 'LQ':
                         lq_count += 1
-                    elif day_assignment in ['M', 'T'] and d in special_days:
-                        special_days_count += 1
+                    elif day_assignment == 'LD':
+                        compensation_days_off[w].append(d)
+                        ld_count += 1
+                    elif day_assignment in ['T']:
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
+                    elif day_assignment in ['M']:
+                        if d in special_days:
+                            special_days_count += 1
+                            special_days_worked[w].append(d)
+                        time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
+
+                    day_counter += 1
+                logger.info(f"days worked: {special_days_worked[w]}"
+                            f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {
                     'L_count': l_count,
                     'LQ_count': lq_count,
+                    'LD_count': ld_count,
                     'special_days_work': special_days_count,
                     'unassigned_days': unassigned_days
                 }
                 
                 table_data.append(worker_row)
                 processed_workers += 1
-                
-                logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
-                           f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
-                
+                                    
+                #logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
+                #    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
+                                    
             except Exception as e:
                 logger.error(f"Error processing worker {w}: {str(e)}")
-                continue
+                continue                  
         
         logger.info(f"Successfully processed {processed_workers} workers")
         
@@ -309,7 +345,16 @@ def solve(
         # Save to Excel
         try:
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
-            df.to_excel(output_filename, index=False)
+            days_of_year_sorted = sorted(days_of_year)
+
+            time_worked_M_row = ["Time_Worked_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
+            time_worked_T_row = ["Time_Worked_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
+
+            # Append rows to DataFrame
+            df2 = df.copy()
+            df2.loc[len(df2)] = time_worked_M_row
+            df2.loc[len(df2)] = time_worked_T_row
+            df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:
             logger.warning(f"Could not save to Excel: {str(e)}")
@@ -322,7 +367,7 @@ def solve(
             logger.info(f"  Worker {worker_id}: {stats}")
         
         logger.info("[OK] Solver completed successfully")
-        return df
+        return df , results
         
     except Exception as e:
         logger.error(f"Error in solver: {str(e)}", exc_info=True)

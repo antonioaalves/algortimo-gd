@@ -1,0 +1,50 @@
+{
+    "production": {
+        "host": "10.175.28.20",
+        "port": 1525,
+        "service_name": "WFM_ALCAMPO_TST01.private.database.oraclevcn.com",
+        "username": "ANTONIO_ALVES",
+        "password": "4dB>(fUU77P?/",
+        "schema": "wfm"
+    },
+    "development": {
+        "host": "10.175.23.29",
+        "port": 1526,
+        "service_name": "stardard_pdb1.database.backbone.oraclevcn.com",
+        "username": "EDUARDO_DIREITO",
+        "password": "52CV3cP[z8s}",
+        "schema": "wfm"
+    },
+    "alcampo_tst": {
+        "host": "10.175.28.20",
+        "port": 1523,
+        "service_name": "WFM_ALCAMPO_TST01.private.database.oraclevcn.com",
+        "username": "MIGUEL_TEIXEIRA",
+        "password": "9=^5mW7MDVJn",
+        "schema": "wfm"
+    },
+    "alcampo_prd": {
+        "host": "",
+        "port": 1525,
+        "service_name": "",
+        "username": "",
+        "password": "",
+        "schema": ""
+    },
+    "salsa_tst": {
+        "host": "10.175.23.29",
+        "port": 1526,
+        "service_name": "standard_salsa.database.backbone.oraclevcn.com",
+        "username": "ANTONIO_ALVES",
+        "password": "TL}nt]c.2043",
+        "schema": "wfm"
+    },  
+    "salsa_prd": {
+        "host": "",
+        "port": 1525,
+        "service_name": "",
+        "username": "",
+        "password": "",
+        "schema": ""
+    }
+}

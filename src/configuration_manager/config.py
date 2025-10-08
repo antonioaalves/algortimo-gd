@@ -46,13 +46,13 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 4640,#253762,# 249468,
+        'current_process_id': 249468,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 4640,
+        'wfm_proc_id': 249468,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
-        'wfm_proc_colab': '1178', 
+        'wfm_proc_colab': None, 
     }, # TODO: create the default values to run locally
 
     # Params names and defaults - understand why they are here
@@ -79,7 +79,7 @@ CONFIG = {
         'maxRetries': 3,
         'sleepTime': 1000,
         'test_param_scheduling_threshold': 0.75,
-        #'GD_algorithmName': '',
+        'GD_algorithmName': 'alcampo_algorithm',
         'GD_consideraFestivos': 1,
         'GD_convenioBD': 'ALCAMPO',
     },
@@ -104,14 +104,13 @@ CONFIG = {
     },
     
     'available_entities_processing': {
-        'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetValidEmployees_v2.sql'),
+        'valid_emp': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'get_process_valid_employess.sql'),
         'df_messages': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_algo': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
         'params_lq': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_params_LQ.sql'),
-        'df_feriados': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetFeriados.sql'),
+        'df_festivos':  os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_festivos.sql'),
         'df_closed_days': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_closed_days.sql'),
-        'df_params': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAlgoParameters.sql'),
-        'parameters_cfg': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetParametersCFG.sql'),
+        'params_df': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAlgoParameters.sql'),
     },
 
     'available_entities_aux': {
@@ -119,13 +118,12 @@ CONFIG = {
         'df_ausencias_ferias': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetAusencias.sql'),
         'df_ciclos_90': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGet90CyclesInfo.sql'),
         'df_estrutura_wfm': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEstruturaWFM.sql'),
-        'df_feriados': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetFeriados.sql'),
+        'df_feriados': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetFeriadosAbertos.sql'),
         'df_faixa_horario': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscFaixaHorario.sql'),
         'df_orcamento': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscOrcamento.sql'),
         'df_calendario_passado': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreSchedule.sql'),
         'df_granularidade': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetEscEstimado.sql'),
-        'df_days_off': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetDaysOff.sql'),
-        'df_core_pro_emp_horario_det': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetCoreProEmpHorarioDet.sql')
+        'df_days_off': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'queryGetDaysOff.sql')
     },
 
     'available_entities_raw': {
@@ -183,7 +181,7 @@ CONFIG = {
                 #    'parameters': {}
                 #},
                 'insertions': {
-                    'insert_results': True
+                    'insert_results': False
                 }
             },
             'substages': {
@@ -210,7 +208,7 @@ CONFIG = {
                     'description': 'Allocation cycle for all the required days.',
                     'required': True,
                     'decisions': {
-                        # Very important define the algorithms here
+                        # Very important define the algorithms here if you want to define as a decision point
                         #'algorithms': ['salsa_algorithm']
                     }                     
                 },

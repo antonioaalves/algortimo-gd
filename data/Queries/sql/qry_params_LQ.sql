@@ -1,0 +1,1 @@
+select sys_p_name, numbervalue from wfm.CORE_ALG_PARAMETERS where sys_p_name in ('SQ_TURNO_M', 'SQ_TURNO_T', 'SQ_TURNO_MT', 'SQ_TURNO_MMT', 'SQ_TURNO_MTT')

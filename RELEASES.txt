@@ -38,13 +38,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - (STRSOL-855) Reestruturação do orquestrador e suas funções para garantir consistência na arquitetura;
 
-- () Reestruturação da componente algoritmos:
+- (STRSOL- 931) Reestruturação da componente algoritmos:
  	- Adaptação dos nomes de restrições e variáveis para que melhor se relacionem com a realidade;
  	- Mapeamento das restrições para ser possível configurá-las;
  	- Configuração de restrições;
  	- Alteração da estrutura que melhor se adeque à realidade;
 
+- (STRSOL-921) Organização de logs na componente algorithms;
+
+- (STRSOL-922) Organização de logs na componente service, data_model, orquestrador;
+
+- (STRSOL-924) Organização da informação disponibilizada pelo OR-tools no format_results;
+
+- (STRSOL-925) Parâmetros do Solver passam a ser definidos nas configurações do projeto (config_manager);
+
+- (STRSOL-931) Restrições passam a ser definidos nas configurações do projeto (config_manager);
+
+- (STRSOL-944) Desenvolvimento de um modelo de tratamento de dados especifico para a Salsa;
+
+- (STRSOL-938) Desenvolvimento de uma factory que permite parametrizar qual o modelo de tratamento de dados a usar;
+
 ### Fixed
+
+
+## [1.0.-] - (planned to release)
+
+### Added:
+
+- (STRSOL-919) ID 33: Atribuição dinâmica de dias vazios a colaboradores com tipo contrato < 5;
+
+- (STRSOL- 920) Converter tupple retornada pelo read_salsa em dicionário com keys;
+
+### Fixed:
+
+- (STRSOL-871) ID 3: Corrigido o bug de mapeamento pretendido para o tipo de folgas para SALSA PT (FC e FO);
+
+## [1.0.12] - 10/09/2025
+
+### Added:
+
+- (STRSOL-950) Considera-se a carga diária máxima do contrato de cada colaborador na matriz calendário, que por sua vez permite ao algoritmo conhecer a capacidade de contribuição em horas de cada um dos colaboradores para atingir o objetivo (agora medido em horas também);
+
+### Fixed:
+
+- (STRSOL-947) Removeu-se a validação que não permitia gerações caso todos os colaboradores tivessem a data de admissão dentro do período de geração;
+
+- (STRSOL-939) Corrigida a criação do calendário para colaboradores com tipo de contrato de 2 dias (agora é considerada uma semana completa);
+
+- Ausências na semana de admissão (@João Neves Soares é toda a informação que tenho, sem jira nem maior descrição vai assim);
+
+
+## [1.0.11] - 03/09/2025
+
+### Added:
+
+### Fixed:
+
+- (STRSOL-945) Fix para querys à tabela core_pro_emp_horario_det que retornem vazias;
+
+
+## [1.0.10] - 27/08/2025
+
+### Added:
+
+- Correção das ponderações para os níveis de prioridades das folgas (manager e keyholder);
+
+
+## [1.0.9] - 27/08/2025
+
+### Added:
+
+### Fixed:
+
+- (STRSOL-936) Coluna PRIORIDADE_FOLGAS não considerada no select do df_colaborador;
+
+
+## [1.0.8] - 26/08/2025
+
+### Fixed:
+
+- (STRSOL-935) Bugfix: Soluções infeasable nas lojas de teste [jira sem comentários];
+
+
+## [1.0.7] - 26/08/2025
+
+### Added:
+
+- (STRSOL-934) Algoritmo só olha para ausências do tipo "A" (ausências de posto, "AP" ficam de fora)
+
+### Fixed:
+
+- (STRSOL-909) Aponta para o ficheiro correto de Connection (orquestrador)
 
 
 ## [1.0.6] - 25/08/2025

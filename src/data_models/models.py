@@ -14,7 +14,7 @@ from isoweek import Week
 import json
 
 # Import project-specific components
-from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
+#from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
 from src.helpers import (
     calcular_max, count_open_holidays, 
     insert_feriados, insert_closed_days, insert_holidays_absences,
@@ -26,6 +26,7 @@ from src.helpers import (
 )
 from src.load_csv_functions.load_valid_emp import load_valid_emp_csv
 from src.algorithms.factory import AlgorithmFactory
+from src.configuration_manager.base import BaseConfig 
 from base_data_project.data_manager.managers.base import BaseDataManager
 from base_data_project.data_manager.managers.managers import CSVDataManager, DBDataManager
 from base_data_project.storage.models import BaseDataModel
@@ -44,7 +45,7 @@ class DescansosDataModel(BaseDataModel):
     - Tracking data lineage and operations
     """
     
-    def __init__(self, data_container: BaseDataContainer, project_name: str = PROJECT_NAME, external_data: Dict[str, Any] = CONFIG.get('defaults_external_data', {})):
+    def __init__(self, data_container: BaseDataContainer, project_name: str = 'algoritmo_GD', config_manager: BaseConfig = None):
         """Initialize the DescansosDataModel with data dictionaries for storing dataframes.
         
         Args:
@@ -87,6 +88,9 @@ class DescansosDataModel(BaseDataModel):
             formatted_data: Dictionary containing final results
                 - df_final: Final output DataFrame
         """
+
+        self.config_manager = config_manager
+        
         super().__init__(data_container=data_container, project_name=project_name)
         # Static data, doesn't change during the process run but are essential for data model treatments - See data lifecycle to understand what this data is
         self.auxiliary_data = {
@@ -117,8 +121,13 @@ class DescansosDataModel(BaseDataModel):
         }
         
         # Algorithm treatment params - data to be sent to the algorithm for treatment purposes
-        self.algorithm_treatment_params = {
-            'admissao_proporcional': None,
+        self.algorithm_data_params = {
+            'treatment_params': {
+                'admissao_proporcional': None,
+            },
+            'constraint_params': {
+                'NUM_DIAS_CONS': None,
+            },
         }
         # Data first stage - See data lifecycle to understand what this data is
         self.raw_data: Dict[str, Any] = {
@@ -144,8 +153,9 @@ class DescansosDataModel(BaseDataModel):
             'stage1_schedule': None,
             'stage2_schedule': None,
         }
-        # External call data coming from the product - See data lifecycle to understand what this data is
-        self.external_call_data = external_data
+        # External call data coming from the product
+        self.logger.info(f"DEBUGGING: config_manager: {self.config_manager}")
+        self.external_call_data = self.config_manager.parameters.external_call_data if self.config_manager else {}
         
         self.logger.info("DescansosDataModel initialized")
     
@@ -167,7 +177,8 @@ class DescansosDataModel(BaseDataModel):
         error_message = None
         try:
             self.logger.info(f"DEBUGGING: Loading messages_df from CSV file")
-            messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
+            #messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
+            messages_path = self.config_manager.paths.dummy_data_filepaths.get('df_messages', '')
             messages_df = pd.read_csv(messages_path)
             self.logger.info(f"DEBUGGING: messages_df loaded successfully with {len(messages_df)} rows")
         except Exception as e:
@@ -197,7 +208,9 @@ class DescansosDataModel(BaseDataModel):
                     # valid emp info
                     self.logger.info(f"Loading valid_emp from database")
                     query_path = entities_dict['valid_emp']
-                    process_id_str = "'" + str(self.external_call_data['current_process_id']) + "'"
+                    self.logger.info(f"DEBUGGING: external_call_data: {self.external_call_data}")
+                    process_id = self.external_call_data['current_process_id']
+                    process_id_str = "'" + str(process_id) + "'"
                     valid_emp = data_manager.load_data('valid_emp', query_file=query_path, process_id=process_id_str)
                 else:
                     self.logger.error(f"No instance found for data_manager: {data_manager.__name__}")
@@ -372,9 +385,15 @@ class DescansosDataModel(BaseDataModel):
                 
                 # ALGORITHM TREATMENT PARAMS
                 # TODO: remove comment from query line
-                self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
+                if parameters_cfg:
+                    #self.algorithm_data_params['algorithm_treatment_params']['admissao_proporcional'] = parameters_cfg
+                    self.algorithm_data_params.update({
+                        'algorithm_treatment_params': {
+                            'admissao_proporcional': parameters_cfg,
+                        }
+                    })
                 #self.algorithm_treatment_params['admissao_proporcional'] = 'floor'
-                self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
+                self.logger.info(f"algorithm_treatment_params: {self.algorithm_data_params}")
 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
@@ -410,8 +429,11 @@ class DescansosDataModel(BaseDataModel):
             # Treat params
             self.logger.info(f"Treating parameters in load_process_data")
             params_df = self.auxiliary_data['params_df'].copy()
-            params_names_list = CONFIG.get('parameters_names', [])
-            params_defaults = CONFIG.get('parameters_defaults', {})
+            #params_names_list = CONFIG.get('parameters_names', [])
+            #params_defaults = CONFIG.get('parameters_defaults', {})
+            params_names_list = self.config_manager.parameters.get_parameter_names()
+            params_defaults = self.config_manager.parameters.get_parameter_defaults()
+            
             self.logger.info(f"params_df before treatment:\n{params_df}")
 
             # Get all parameters in one call
@@ -423,6 +445,26 @@ class DescansosDataModel(BaseDataModel):
                 params_names_list=params_names_list
             ) or {}
 
+            # Save data into variables
+            try:
+                num_dias_cons = retrieved_params['NUM_DIAS_CONS']
+                if num_dias_cons:
+                    #self.algorithm_data_params['constraint_params']['NUM_DIAS_CONS'] = num_dias_cons
+                    self.algorithm_data_params.update({
+                        'constraint_params': {
+                            'NUM_DIAS_CONS': num_dias_cons
+                        }
+                    })
+            except KeyError as e:
+                self.logger.error(f"KeyError when saving dataframes: {e}", exc_info=True)
+                return False
+            except ValueError as e:
+                self.logger.error(f"ValueError when saving dataframes: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error saving dataframes to auxiliary_data and raw_data: {e}", exc_info=True)
+                return False
+
             self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)
             for param_name in params_names_list:
@@ -433,6 +475,7 @@ class DescansosDataModel(BaseDataModel):
                 # Workaround feito para registar o nome do algoritmo - assim usa-se uma funcionalidade base do base-data-project
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
+
             self.logger.info(f"Treating parameters completed successfully")
             return {'success': True, 'algorithm_name': algorithm_name}
         except Exception as e:
@@ -459,6 +502,10 @@ class DescansosDataModel(BaseDataModel):
                 # TODO: check if this is need since it also is loaded in load_process_data
                 colabs_id_list = valid_emp['fk_colaborador'].tolist()
                 self.logger.info(f"Loaded information from valid_emp into colabs_id_list: {colabs_id_list}")
+
+                start_date = self.external_call_data['start_date']
+                end_date = self.external_call_data['end_date']
+                process_id = self.external_call_data['current_process_id']
             except Exception as e:
                 self.logger.error(f"Error loading colaborador info: {e}", exc_info=True)
                 return False
@@ -482,9 +529,21 @@ class DescansosDataModel(BaseDataModel):
                 return False
             
             try:
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_contratos')
+                df_contratos = data_manager.load_data('df_contratos', query_file=query_path, colabs_id=colabs_str, start_date=start_date, end_date=end_date, process_id=process_id)
+                self.logger.info(f"df_contratos shape (rows {df_contratos.shape[0]}, columns {df_contratos.shape[1]}): {df_contratos.columns.tolist()}")
+                self.logger.info(f"Saving df_contratos in auxiliary_data")
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+            except Exception as e:
+                self.logger.error(f"Error loading df_contratos: {e}", exc_info=True)
+                return False
+            
+            try:
                 # colaborador info
                 self.logger.info(f"Loading df_colaborador info from data manager")
-                query_path = CONFIG.get('available_entities_raw', {}).get('df_colaborador')
+                #query_path = CONFIG.get('available_entities_raw', {}).get('df_colaborador')
+                query_path = self.config_manager.paths.sql_raw_paths.get('df_colaborador')
+
                 df_colaborador = data_manager.load_data('df_colaborador', query_file=query_path, colabs_id=colabs_str)
                 df_colaborador = df_colaborador.rename(columns={'ec.codigo': 'fk_colaborador', 'codigo': 'fk_colaborador'})
                 self.logger.info(f"df_colaborador shape (rows {df_colaborador.shape[0]}, columns {df_colaborador.shape[1]}): {df_colaborador.columns.tolist()}")
@@ -580,7 +639,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_estrutura_wfm from data manager")
                 # Estrutura wfm information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_estrutura_wfm', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_estrutura_wfm', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_estrutura_wfm', '')
                 if not query_path:
                     self.logger.warning("df_estrutura_wfm query path not found in config")
                 df_estrutura_wfm = data_manager.load_data('df_estrutura_wfm', query_file=query_path)
@@ -592,7 +652,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_feriados from data manager")
                 # feriados information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_feriados', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_feriados', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_feriados', '')
                 if not query_path:
                     self.logger.warning("df_feriados query path not found in config")
                 df_feriados = data_manager.load_data('df_feriados', query_file=query_path)
@@ -604,7 +665,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_faixa_horario from data manager")
                 # faixa horario information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_faixa_horario', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_faixa_horario', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
                 if not query_path:
                     self.logger.warning("df_faixa_horario query path not found in config")
                 df_faixa_horario = data_manager.load_data('df_faixa_horario', query_file=query_path)
@@ -616,7 +678,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_orcamento from data manager")
                 # orcamento information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_orcamento', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_orcamento', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_orcamento', '')
                 if not query_path:
                     self.logger.warning("df_orcamento query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
@@ -630,7 +693,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_granularidade from data manager")
                 # granularidade information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_granularidade', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_granularidade', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_granularidade', '')
                 if not query_path:
                     self.logger.warning("df_granularidade query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
@@ -833,10 +897,10 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Treating colabs_passado str")
                 self.logger.info(f"Creating colabs_str to be used in df_colaborador query.")
-                if len(colabs_passado) == 0:
-                    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
-                    return False
-                elif len(colabs_passado) == 1:
+                #if len(colabs_passado) == 0:
+                #    self.logger.error(f"Error in load_colaborador_info method: colabs_passado provided is empty (invalid): {colabs_passado}")
+                #    return False
+                if len(colabs_passado) == 1:
                     self.logger.info(f"colabs_passado has only one value: {colabs_passado[0]}")
                     colabs_str = str(colabs_passado[0])
                 elif len(colabs_passado) > 1:
@@ -852,7 +916,8 @@ class DescansosDataModel(BaseDataModel):
                 # Only query if we have employees and the date range makes sense
                 if len(colabs_passado) > 0 and start_date_dt != pd.to_datetime(first_date_passado):
                     self.logger.info("Loading df_calendario_passado since conditions are met")
-                    query_path = CONFIG.get('available_entities_aux', {}).get('df_calendario_passado', '')
+                    #query_path = CONFIG.get('available_entities_aux', {}).get('df_calendario_passado', '')
+                    query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_calendario_passado', '')
                     if not query_path:
                         self.logger.warning("df_calendario_passado query path not found in config")
                         df_calendario_passado = pd.DataFrame()
@@ -896,7 +961,8 @@ class DescansosDataModel(BaseDataModel):
             try:
                 self.logger.info("Loading df_ausencias_ferias from data manager")
                 # Ausencias ferias information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_ausencias_ferias', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_ausencias_ferias', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_ausencias_ferias', '')
                 if query_path:
                     colabs_id="'" + "','".join([str(x) for x in colaborador_list]) + "'"
                     df_ausencias_ferias = data_manager.load_data(
@@ -915,7 +981,7 @@ class DescansosDataModel(BaseDataModel):
             # DF_CORE_PRO_EMP_HORARIO_DET - pre folgas do ciclo
             try:
                 self.logger.info("Loading df_core_pro_emp_horario_det from data manager")
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_core_pro_emp_horario_det', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_core_pro_emp_horario_det', '')
                 if query_path:
                     df_core_pro_emp_horario_det = data_manager.load_data(
                         'df_core_pro_emp_horario_det', 
@@ -930,11 +996,19 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error loading df_core_pro_emp_horario_det: {e}", exc_info=True)
                 df_core_pro_emp_horario_det = pd.DataFrame()
 
+            # TODO: Validate if df_core_pro_emp_horario_det is empty here, shoould be in another places
+            if df_core_pro_emp_horario_det.empty:
+                self.logger.info("df_core_pro_emp_horario_det is empty, creating with default columns")
+                df_core_pro_emp_horario_det = pd.DataFrame(
+                    columns=['employee_id', 'schedule_day', 'tipo_dia']
+                )
+
             try:
                 self.logger.info("Loading df_ciclos_90 from data manager")
                 # Ciclos de 90
                 if len(colaborador_90_list) > 0:
-                    query_path = CONFIG.get('available_entities_aux', {}).get('df_ciclos_90', '')
+                    #query_path = CONFIG.get('available_entities_aux', {}).get('df_ciclos_90', '')
+                    query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_ciclos_90', '')
                     if query_path:
                         df_ciclos_90 = data_manager.load_data(
                             'df_ciclos_90', 
@@ -957,7 +1031,8 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info("Loading df_days_off from data manager")
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_days_off', '')
+                #query_path = CONFIG.get('available_entities_aux', {}).get('df_days_off', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_days_off', '')
                 if query_path:
                     colabs_id="'" + "','".join([str(x) for x in colaborador_list]) + "'"
                     df_days_off = data_manager.load_data(
@@ -1688,7 +1763,7 @@ class DescansosDataModel(BaseDataModel):
                 "fk_colaborador", "unidade", "secao", "posto", "convenio", "nome", "matricula",
                 "min_dia_trab", "max_dia_trab", "tipo_turno", "seq_turno", "t_total", "l_total",
                 "dyf_max_t", "lqs", "q", "c2d", "c3d", "cxx", "semana_1", "out", "ciclo", 
-                "data_admissao", "data_demissao", "dofhc"
+                "data_admissao", "data_demissao", "dofhc", "seed_5_6", "n_sem_a_folga"
             ]
             
             # Map current columns to expected columns if they differ
@@ -1753,9 +1828,11 @@ class DescansosDataModel(BaseDataModel):
             matriz_ma = pd.merge(matriz_ma, params_lq, on='seq_turno', how='left')
             
             # Merge with params_contrato
+            self.logger.info(f"debuging: {matriz_ma.columns}")
             matriz_ma = pd.merge(matriz_ma, params_contrato, 
                             left_on=['min_dia_trab', 'max_dia_trab'], 
                             right_on=['min', 'max'], how='left')
+            self.logger.info(f"debuging: {matriz_ma.columns}")
 
             # Merge with valid_emp to get PRIORIDADE_FOLGAS
             matriz_ma = pd.merge(matriz_ma, valid_emp[['fk_colaborador', 'prioridade_folgas']], on='fk_colaborador', how='left')
@@ -1929,6 +2006,22 @@ class DescansosDataModel(BaseDataModel):
                         self.logger.warning(f"Employee {cc['matricula'].iloc[0]}: negative l_total ({cc['l_total'].iloc[0]}) from SABECO holidays calc (coh[1]:{coh[1]} - coh[0]:{coh[0]})")
                     # Preserve dofhc value
                     cc['dofhc'] = cc['dofhc']
+                    
+                # Default case for contract types not handled above (e.g., tipo_contrato == 8)
+                else:
+                    # Initialize missing columns with default values
+                    if 'ld' not in cc.columns:
+                        cc['ld'] = 0
+                    if 'l_dom' not in cc.columns:
+                        cc['l_dom'] = 0
+                    if 'l_total' not in cc.columns:
+                        cc['l_total'] = 0
+                    if 'lq_og' not in cc.columns:
+                        cc['lq_og'] = 0
+                    if 'l_dom_salsa' not in cc.columns:
+                        cc['l_dom_salsa'] = 0
+                    
+                    self.logger.info(f"Employee {cc['matricula'].iloc[0]} with tipo_contrato {tipo_contrato} using default processing (no special contract logic applied)")
                 
                 processed_rows.append(cc)
 
@@ -1944,11 +2037,36 @@ class DescansosDataModel(BaseDataModel):
             if len(matriz_ma_final) > 0 and 'l_dom' in matriz_ma_final.columns and (matriz_ma_final['l_dom'] < 0).any():
                 self.logger.error("l_dom < 0 - columna DyF_MAX_T mal parametrizada")
                 return False
+
+            # TREAT df_contratos
+            try:
+                self.logger.info("Treating df_contratos")
+                df_contratos = self.auxiliary_data['df_contratos'].copy()
+                df_contratos['maximumworkload'] = pd.to_timedelta(df_contratos['maximumworkload']).dt.total_seconds() / 3600
+                df_contratos['maximumworkday'] = pd.to_timedelta(df_contratos['maximumworkday']).dt.total_seconds() / 3600
+                df_contratos['maximumdaysperweek'] = pd.to_timedelta(df_contratos['maximumdaysperweek']).dt.total_seconds() / 3600
+                
+                df_contratos['carga_diaria'] = np.where(
+                    np.trunc(df_contratos['maximumworkload']/df_contratos['maximumdaysperweek']) < df_contratos['maximumworkday'],
+                    np.trunc(df_contratos['maximumworkload']/df_contratos['maximumdaysperweek']),
+                    df_contratos['maximumworkday']
+                )
+                df_contratos['carga_diaria'] = np.where(
+                    df_contratos['carga_diaria'] < 0,
+                    0,
+                    df_contratos['carga_diaria']
+                )
+                self.logger.info(f"DEBUG: df_contratos=\n{df_contratos}")
+            except Exception as e:
+                self.logger.error(f"Error treating df_contratos: {e}", exc_info=True)
+                return False
             
             try:
                 self.logger.info("Storing final results")
                 # Store result in raw_data
                 self.raw_data['df_colaborador'] = matriz_ma_final.copy()
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
                 self.auxiliary_data['num_fer_doms'] = num_fer_dom
                 #self.logger.info(f"DEBUG: matriz_ma_final columns: {matriz_ma_final.columns.tolist()}")
                 #self.logger.info(f"DEBUG: matriz_ma_final dtypes:\n{matriz_ma_final.dtypes}")
@@ -2008,6 +2126,7 @@ class DescansosDataModel(BaseDataModel):
                 df_ausencias_ferias = self.auxiliary_data['df_ausencias_ferias'].copy()
                 df_days_off = self.auxiliary_data['df_days_off'].copy()
                 df_core_pro_emp_horario_det = self.auxiliary_data['df_core_pro_emp_horario_det'].copy()
+                df_contratos = self.auxiliary_data['df_contratos'].copy()
                 start_date2 = self.auxiliary_data['start_date2']
                 end_date2 = self.auxiliary_data['end_date2']
                 current_year = pd.to_datetime(end_date2, format="%Y-%m-%d").year
@@ -2039,14 +2158,16 @@ class DescansosDataModel(BaseDataModel):
                     #self.logger.error("DEBUG: Neither 'emp' nor 'matricula' found")
                     return False
 
-            # Treat df_core_pro_emp_horario_det
+            # Treat df_core_pro_emp_horario_det and df_contratos
             try:
                 self.logger.info("Treating df_core_pro_emp_horario_det")
                 # TODO: add fk_colaborador
                 df_colaboradores = matriz_ma[['matricula', 'fk_colaborador']].dropna(subset=['fk_colaborador'])
                 df_colaboradores.columns = ['matricula', 'fk_colaborador']
                 df_core_pro_emp_horario_det = df_core_pro_emp_horario_det.merge(df_colaboradores, left_on='employee_id', right_on='fk_colaborador', how='left')
+                df_contratos = df_contratos.merge(df_colaboradores, left_on='employee_id', right_on='fk_colaborador', how='left')
                 self.logger.info(f"DEBUG: df_core_pro_emp_horario_det={df_core_pro_emp_horario_det}")
+                self.logger.info(f"DEBUG: df_contratos={df_contratos}")
 
 
             except Exception as e:
@@ -2297,7 +2418,8 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info("Storing final results")
                 # Store result
                 self.raw_data['df_calendario'] = reshaped_final_3.copy()
-                
+                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+
                 if not self.raw_data:
                     self.logger.warning("Data storage verification failed")
                     return False
@@ -2394,6 +2516,7 @@ class DescansosDataModel(BaseDataModel):
                 matrizB_og = self.raw_data['df_estimativas'].copy() 
                 matrizA_og = self.raw_data['df_colaborador'].copy()
                 algorithm_name = self.auxiliary_data['GD_algorithmName']
+                df_contratos = self.auxiliary_data['df_contratos'].copy()
 
                 #DEBUG - TODO: remove
                 #matrizB_og.to_csv(os.path.join('data', 'output', f'df_estimativas_debug_inicializa-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
@@ -2425,6 +2548,12 @@ class DescansosDataModel(BaseDataModel):
                     return False
                 if len(matrizA_og) == 0:
                     self.logger.error("matrizA_og has 0 rows")
+                    return False
+                if df_contratos.empty:
+                    self.logger.error("df_contratos is empty")
+                    return False
+                if len(df_contratos) == 0:
+                    self.logger.error("df_contratos has 0 rows")
                     return False
             except Exception as e:
                 self.logger.error(f"Error validating dataframe structures: {e}", exc_info=True)
@@ -2495,7 +2624,7 @@ class DescansosDataModel(BaseDataModel):
             #self.logger.info(f"DEBUG: matriz2_og: {matriz2_og}")
             # Melt the dataframe
             matriz2_ini = pd.melt(matriz2_og, id_vars='DIA_TURNO', 
-                                var_name='DATA', value_name='TIPO_TURNO')
+                                  var_name='DATA', value_name='TIPO_TURNO')
             matriz2_ini.columns = ['COLABORADOR', 'DATA', 'TIPO_TURNO']
 
             #self.logger.info(f"DEBUG: matriz2_ini tail after melt: {matriz2_ini.tail(40)}")
@@ -2543,6 +2672,34 @@ class DescansosDataModel(BaseDataModel):
             matriz2['ID'] = range(len(matriz2))
             matriz2['WW'] = matriz2['DATA'].apply(adjusted_isoweek)
             matriz2['WD'] = matriz2['DATA'].dt.day_name().str[:3]
+            
+            # Merge with contract information (df_contratos)
+            try:
+                self.logger.info("Merging matriz2 with df_contratos")
+                
+                # Ensure DATA column is datetime in df_contratos for merging
+                if 'schedule_day' in df_contratos.columns:
+                    df_contratos['DATA'] = pd.to_datetime(df_contratos['schedule_day'])
+                    
+                # Merge on employee_id (COLABORADOR) and schedule_day (DATA)
+                # The merge will duplicate contract info for each shift but that's expected
+                matriz2 = matriz2.merge(
+                    df_contratos[['employee_id', 'DATA', 'matricula', 'contract_id', 'carga_diaria']],
+                    left_on=['COLABORADOR', 'DATA'],
+                    right_on=['matricula', 'DATA'],
+                    how='left'
+                )
+                
+                # Drop duplicate DATA column and rename employee_id
+                matriz2 = matriz2.drop(columns=['employee_id', 'matricula', 'matricula_x', 'matricula_y'], errors='ignore')
+                
+                self.logger.info(f"Successfully merged df_contratos with matriz2. New shape: {matriz2.shape}")
+                self.logger.info(f"Contract columns added: {[col for col in matriz2.columns if col in ['contract_id', 'maximumworkload', 'maximumdaysperweek', 'maximumworkday', 'carga_diaria']]}")
+                
+            except Exception as e:
+                self.logger.error(f"Error merging df_contratos with matriz2: {e}", exc_info=True)
+                # Continue without contract data if merge fails
+                self.logger.warning("Continuing without contract data merge")
             
             #self.logger.info(f"DEBUG: matriz2 before assign_dia_tipo: {matriz2}")
             # Calculate DIA_TIPO
@@ -2748,6 +2905,7 @@ class DescansosDataModel(BaseDataModel):
             
             # Process 4/5 day contracts - count different types of rest days
             colabs_45d = matrizA_og[matrizA_og['tipo_contrato'].isin([4, 5])]['matricula'].tolist()
+            self.logger.info(f"Found {len(colabs_45d)} employees with contract types 4 or 5: {colabs_45d}")
             
             count_ldt_45d_data = []
             for colab in colabs_45d:
@@ -2796,6 +2954,7 @@ class DescansosDataModel(BaseDataModel):
             
             # Process 6 day contracts
             colabs_6d = matrizA_og[matrizA_og['tipo_contrato'] == 6]['matricula'].tolist()
+            self.logger.info(f"Found {len(colabs_6d)} employees with contract type 6: {colabs_6d}")
             
             count_ldt_6d_data = []
             for colab in colabs_6d:
@@ -2843,9 +3002,11 @@ class DescansosDataModel(BaseDataModel):
             # Combine all collaborators
             count_ldt = pd.DataFrame(count_ldt_45d_data + count_ldt_6d_data)
             
-            # If no employees with contract types 4, 5, or 6, create empty DataFrame with proper columns
+            # Handle case where no employees have contract types 4, 5, or 6
             if count_ldt.empty:
+                # Create an empty DataFrame with the expected columns
                 count_ldt = pd.DataFrame(columns=['COLABORADOR', 'LD_at', 'LQ_at', 'LRES_at', 'CXX_at'])
+                self.logger.info("No employees found with contract types 4, 5, or 6. Created empty count_ldt DataFrame.")
             
             # Calculate consecutive day patterns (C2D and C3D)
             
@@ -2914,6 +3075,11 @@ class DescansosDataModel(BaseDataModel):
             
             # Merge C2D and C3D
             c_at = pd.merge(c2d_at, c3d_at, on='COLABORADOR', how='outer').fillna(0)
+            
+            # Handle case where c_at is empty (no consecutive day patterns found)
+            if c_at.empty:
+                c_at = pd.DataFrame(columns=['COLABORADOR', 'C2D_at', 'C3D_at'])
+                self.logger.info("No consecutive day patterns found. Created empty c_at DataFrame.")
             
             # Merge with count_ldt
             count_ldt = pd.merge(count_ldt, c_at, on='COLABORADOR', how='left').fillna(0)
@@ -2993,7 +3159,8 @@ class DescansosDataModel(BaseDataModel):
                 'unidade', 'secao', 'posto', 'fk_colaborador', 'matricula', 'out',
                 'tipo_contrato', 'ciclo', 'l_total', 'l_dom', 'ld', 'lq', 'q', 
                 'c2d', 'c3d', 'cxx', 'descansos_atrb', 'dyf_max_t', 'LRES_at', 'lq_og', 'dofhc', 'vz', 'data_admissao', 'data_demissao', 'prioridade_folgas',
-                'l_dom_salsa' # TODO: Remove this in next big release
+                'l_dom_salsa', # TODO: Remove this in next big release
+                 "seed_5_6", "n_sem_a_folga"
             ]].copy()
             
             # Rename columns to match R output
@@ -3044,38 +3211,80 @@ class DescansosDataModel(BaseDataModel):
                 contract_info = pd.DataFrame(matrizA[pd.Series(matrizA['tipo_contrato']).isin([2, 3])][['matricula', 'tipo_contrato']])
                 matriz2_3d = matriz2_3d.merge(contract_info, left_on='COLABORADOR', right_on='matricula', how='left')
                 
-                # Filter out unwanted HORARIO types and group by week/employee
-                matriz2_3d = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                # Keep ALL calendar entries (don't filter matriz2_3d)
+                self.logger.info(f"DEBUG: matriz2_3d before processing shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts:\n{matriz2_3d['HORARIO'].value_counts()}")
                 
-                # Count work days per week per employee (divide by 2 for morning/afternoon)
-                week_counts = (pd.DataFrame(matriz2_3d)
+                # But count only work days for NL2D/NL3D assignment
+                work_days_only = matriz2_3d[~matriz2_3d['HORARIO'].isin(['-', 'V', 'F'])].copy()
+                self.logger.info(f"DEBUG: work_days_only shape: {work_days_only.shape}")
+
+                week_counts = (pd.DataFrame(work_days_only)
                              .groupby(['COLABORADOR', 'WW'])
                              .agg(count=('COLABORADOR', 'size'))
                              .reset_index())
                 week_counts['count'] = week_counts['count'] / 2
-                
-                # Merge back with matriz2_3d
-                matriz2_3d = matriz2_3d.merge(week_counts, on=['COLABORADOR', 'WW'], how='left')
-                
-                # Update HORARIO based on count and contract type
+                self.logger.info(f"DEBUG: week_counts shape: {week_counts.shape}")
+                self.logger.info(f"DEBUG: week_counts sample:\n{week_counts.head(10)}")
+
+                # Apply NL2D/NL3D only to work days
                 def update_horario_3d(row):
-                    if row['count'] == 3 and row['tipo_contrato'] == 3:
-                        return 'NL3D'
-                    elif row['count'] == 2 and row['tipo_contrato'] == 2:
-                        return 'NL2D'
-                    else:
-                        return row['HORARIO']
-                
+                    # Only change work days, leave rest days unchanged
+                    if row['HORARIO'] in ['-', 'V', 'F']:
+                        return row['HORARIO']  # Keep rest days as-is
+                    
+                    # Get work day count for this employee/week
+                    emp_week_count = week_counts[
+                        (week_counts['COLABORADOR'] == row['COLABORADOR']) & 
+                        (week_counts['WW'] == row['WW'])
+                    ]
+                    
+                    if not emp_week_count.empty:
+                        count = emp_week_count['count'].iloc[0]
+                        if count == 3 and row['tipo_contrato'] == 3:
+                            return 'NL3D'
+                        elif count == 2 and row['tipo_contrato'] == 2:
+                            return 'NL2D'
+                    
+                    return row['HORARIO']
+
                 matriz2_3d['HORARIO'] = matriz2_3d.apply(update_horario_3d, axis=1)
+                
+                self.logger.info(f"DEBUG: matriz2_3d after HORARIO update shape: {matriz2_3d.shape}")
+                self.logger.info(f"DEBUG: matriz2_3d HORARIO value counts after update:\n{matriz2_3d['HORARIO'].value_counts()}")
+                
+                # Log sample of NL2D/NL3D assignments
+                nl_assignments = matriz2_3d[matriz2_3d['HORARIO'].isin(['NL2D', 'NL3D'])]
+                if not nl_assignments.empty:
+                    self.logger.info(f"DEBUG: NL2D/NL3D assignments count: {len(nl_assignments)}")
+                    self.logger.info(f"DEBUG: NL2D/NL3D sample:\n{nl_assignments[['COLABORADOR', 'DATA', 'HORARIO', 'tipo_contrato']].head(10)}")
+                else:
+                    self.logger.warning("DEBUG: No NL2D/NL3D assignments were made")
                 
                 # Remove unnecessary columns
                 matriz2_3d = matriz2_3d.drop(['count', 'tipo_contrato_y'], axis=1, errors='ignore')
                 
                 # Merge back with main matriz2
+                self.logger.info(f"DEBUG: Before merge - main matriz2 shape: {matriz2.shape}")
+                self.logger.info(f"DEBUG: Before merge - matriz2_3d final shape: {matriz2_3d.shape}")
+                
                 # First remove the employees that were processed
+                matriz2_before_removal = matriz2.shape[0]
                 matriz2 = matriz2[~matriz2['COLABORADOR'].isin(contract_23_employees)].copy()
+                self.logger.info(f"DEBUG: After removing contract 2/3 employees: {matriz2_before_removal} -> {matriz2.shape[0]} rows")
+                
                 # Then add back the processed data
                 matriz2 = pd.concat([matriz2, matriz2_3d], ignore_index=True)
+                self.logger.info(f"DEBUG: After concat - final matriz2 shape: {matriz2.shape}")
+                
+                # Verify contract 2/3 employees have complete calendars
+                for emp in contract_23_employees[:3]:  # Check first 3 employees
+                    emp_data = matriz2[matriz2['COLABORADOR'] == emp]
+                    unique_dates = emp_data['DATA'].nunique() if not emp_data.empty else 0
+                    self.logger.info(f"DEBUG: Employee {emp} has {len(emp_data)} calendar entries, {unique_dates} unique dates")
+                    if not emp_data.empty:
+                        horario_counts = emp_data['HORARIO'].value_counts()
+                        self.logger.info(f"DEBUG: Employee {emp} HORARIO distribution: {dict(horario_counts.head(5))}")
             
             # Convert DATA back to string
             matriz2['DATA'] = matriz2['DATA'].astype(str)
@@ -3338,7 +3547,7 @@ class DescansosDataModel(BaseDataModel):
             for col in existing_cols:
                 self.logger.info(f"DEBUG: {col} before reset: {matrizA_bk[col].tolist()}")
             
-            if algorithm_name == 'salsa_algorithm':
+            if algorithm_name == 'salsa_algorithm' or algorithm_name == 'salsa_esp_algorithm':
                 self.logger.info("DEBUG: Condition met - applying salsa_algorithm zeros")
                 if 'l_res' in matrizA_bk.columns:
                     matrizA_bk.loc[:, 'l_res'] = 0
@@ -3673,6 +3882,7 @@ class DescansosDataModel(BaseDataModel):
         try:
             self.logger.info(f"Starting allocation_cycle processing")
             
+            # Get and treat algorithm name
             try:
                 self.logger.info("Validating input parameters for allocation cycle")
                 if not algorithm_name or not isinstance(algorithm_name, str):
@@ -3688,14 +3898,32 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error validating allocation cycle input parameters: {e}", exc_info=True)
                 return False
 
+            # Get the algorithm_params from data
+            try:
+                algorithm_params = self.algorithm_data_params
+                self.logger.info(f"algorithm_params:\n{algorithm_params}")
+
+            except KeyError as e:
+                self.logger.error(f"KeyError when getting algorithm params: {e}", exc_info=True)
+                return False
+            except ValueError as e:
+                self.logger.error(f"ValueError when getting algorithm params: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error when getting algorithm params: {e}", exc_info=True)
+                return False
+
+
             try:
                 self.logger.info(f"Creating algorithm instance for: {algorithm_name}")
                 algorithm = AlgorithmFactory.create_algorithm(
+                    project_name=self.config_manager.system.project_name,
                     decision=algorithm_name,
-                    parameters=algorithm_params,
+                    parameters={},
                     process_id=self.external_call_data.get("current_process_id", 0),
                     start_date=self.external_call_data.get("start_date", ''),
-                    end_date=self.external_call_data.get("end_date", '')
+                    end_date=self.external_call_data.get("end_date", ''),
+                    config_manager=self.config_manager
                 )
 
                 if not algorithm:
@@ -3726,7 +3954,7 @@ class DescansosDataModel(BaseDataModel):
 
             try:
                 self.logger.info(f"Running algorithm {algorithm_name}")
-                results = algorithm.run(data=self.medium_data, algorithm_treatment_params=self.algorithm_treatment_params)
+                results = algorithm.run(data=self.medium_data, algorithm_params_dict=algorithm_params)
 
                 if not results:
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")
@@ -3892,12 +4120,13 @@ class DescansosDataModel(BaseDataModel):
             self.logger.error(f"Error validating format_results from data manager: {str(e)}")
             return False
         
-    def insert_results(self, data_manager: BaseDataManager, query_path: str = os.path.join(ROOT_DIR, 'src', 'sql_querys', 'insert_results.sql')) -> bool:
+    def insert_results(self, data_manager: BaseDataManager, query_path: str = os.path.join('C:\\ALCAMPO\\python-algorithms\\algortimo-gd', 'src', 'sql_querys', 'insert_results.sql')) -> bool:
         """
         Method for inserting results in the data source.
         """
         try:
             self.logger.info("Entered insert_results method.")
+            query_path = self.config_manager.paths.sql_processing_paths.get('insert_results_df', '')
             final_df = self.formatted_data['df_final'].copy()
 
             # Adding validation to fall gracefully
