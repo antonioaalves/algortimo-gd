@@ -17,15 +17,14 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     HEAVY_PENALTY = 300  # Penalty for days with no workers
     MIN_WORKER_PENALTY = 60  # Penalty for breaking minimum worker requirements
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
-    hours_scale = 8
-
+    hours_scale = 1000
 
     # 1. Penalize deviations from pessObj
     day_counter = 0
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w][day_counter] for w in workers if (w, d, s) in shift)
+            assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in workers if (w, d, s) in shift)
             
             # Create variables to represent the positive and negative deviations from the target
             pos_diff = model.NewIntVar(0, len(workers) * hours_scale, f"pos_diff_{d}_{s}")
