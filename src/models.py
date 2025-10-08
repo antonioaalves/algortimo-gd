@@ -913,7 +913,7 @@ class DescansosDataModel(BaseDataModel):
                     # Fix: Create a proper comma-separated list of numbers without any quotes
                     self.logger.info(f"colabs_passado has more than one value: {colabs_passado}")
                     colabs_str = ','.join(str(x) for x in colabs_passado)
-                self.logger.info(f"colabs_str: {colabs_str}")
+                    self.logger.info(f"colabs_str: {colabs_str}")
             except Exception as e:
                 self.logger.error(f"Error treating colabs_passado str: {e}", exc_info=True)
                 colabs_str = ''

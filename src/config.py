@@ -46,13 +46,13 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 4921,#253762,# 249468,
+        'current_process_id': 4984,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 4921,
+        'wfm_proc_id': 4984,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
-        'wfm_proc_colab': None, 
+        'wfm_proc_colab': 2412, 
     }, # TODO: create the default values to run locally
 
     # Params names and defaults - understand why they are here

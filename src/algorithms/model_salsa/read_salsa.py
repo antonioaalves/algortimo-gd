@@ -56,6 +56,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
+        num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
 
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
@@ -65,7 +66,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         else:
             partial_generation = False
             partial_workers = []
-        num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
@@ -181,23 +181,17 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         workers_colaborador = set(matriz_colaborador_gd[matriz_colaborador_gd['ciclo'] != 'Completo']['matricula'].dropna().astype(int))
         
-
-        logger.info(f"Workers found:")
-        logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador_complete)} workers")
-        logger.info(f"  - In matriz_calendario: {len(workers_calendario_complete)} workers")
         logger.info(f"  - In matriz_colaborador (ciclo != 'Completo'): {len(workers_colaborador)} workers")
 
 
         if partial_generation == True:
             valid_workers = set(partial_workers_complete).intersection(workers_calendario_complete)
             past_workers = workers_calendario_complete - set(partial_workers_complete)
-            valid_workers_complete = partial_workers_complete | past_workers
+            valid_workers_complete = workers_colaborador_complete.intersection(workers_calendario_complete)
         else:
             past_workers = set()
             valid_workers = workers_colaborador.intersection(workers_calendario_complete)
             valid_workers_complete = workers_colaborador_complete.intersection(workers_calendario_complete)
-
-
 
         if not valid_workers_complete:
             raise ValueError("No workers found that are present in all required DataFrames")
@@ -258,16 +252,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         ]['data'].dt.dayofyear.unique().tolist())
         
         special_days = sorted(set(holidays))
-        
-        #logger.info(f"Special days identified:")
-        #logger.info(f"  - Sundays: {len(sundays)} days")
-        #logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
-        #logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
-        #logger.info(f"  - Total special days: {len(special_days)} days")
-        #logger.info(f"  - Special days: {sorted(matriz_calendario_gd[
-        #    (matriz_calendario_gd['wd'] != 'Sun') & 
-        #    (matriz_calendario_gd["dia_tipo"] == "domYf")
-        #]['data'].unique().tolist())} days")
+
+        logger.info(f"Special days identified:")
+        logger.info(f"  - Sundays: {len(sundays)} days")
+        logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
+        logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
+        logger.info(f"  - Total special days: {len(special_days)} days")
+
         
         # =================================================================
         # 8. CALCULATE ADDITIONAL PARAMETERS
@@ -377,6 +368,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         fixed_M = {}
         fixed_T = {}
         
+        if partial_generation == True:
+            valid_workers_complete = partial_workers_complete | valid_workers
+            workers_complete = sorted(list(valid_workers_complete))
+            workers_complete_cycle = sorted(set(workers_complete)-set(workers))
+
         # Process each worker
         for w in workers_complete:
             worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
