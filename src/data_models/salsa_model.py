@@ -1179,3 +1179,31 @@ class SalsaDataModel(BaseDescansosDataModel):
         except Exception as e:
             self.logger.error(f"Error in load_colaborador_transformations method: {e}", exc_info=True)
             return False, "", ""
+
+    def func_inicializa(self) -> Tuple[bool, str, str]:
+        """
+        """
+
+        try: 
+            self.logger.info("Starting func_inicializa processing.")
+
+            try:
+                # Load the 3 transformed dataframes
+                df_calendario = self.raw_data['df_calendario'].copy()
+                df_colaborador = self.raw_data['df_colaborador'].copy()
+                df_estimativas = self.raw_data['df_estimativas'].copy()
+
+                main_year = self.auxiliary_data['main_year']
+
+            except KeyError as e:
+                self.logger.error(f"Missing required DataFrame in func_inicializa: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+            except Exception as e:
+                self.logger.error(f"Error loading DataFrame in func_inicializa: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            # df_estimativas special days adjustment
+
+        except Exception as e:
+            self.logger.error(f"Error in func_inicializa method: {e}", exc_info=True)
+            return False, "", ""
