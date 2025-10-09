@@ -936,6 +936,11 @@ class DescansosDataModel(BaseDataModel):
                             colabs=colabs_str
                         )
                         self.logger.info(f"df_calendario_passado shape (rows {df_calendario_passado.shape[0]}, columns {df_calendario_passado.shape[1]}): {df_calendario_passado.columns.tolist()}")
+                        self.logger.info(f"df_calendario_passado RAW DATA (first 10 rows):\n{df_calendario_passado.head(10)}")
+                        if 'TYPE' in df_calendario_passado.columns and 'SUBTYPE' in df_calendario_passado.columns:
+                            self.logger.info(f"TYPE/SUBTYPE combinations found in raw data:\n{df_calendario_passado[['TYPE', 'SUBTYPE']].value_counts().head(20)}")
+                        elif 'type' in df_calendario_passado.columns and 'subtype' in df_calendario_passado.columns:
+                            self.logger.info(f"type/subtype combinations found in raw data:\n{df_calendario_passado[['type', 'subtype']].value_counts().head(20)}")
                 else:
                     self.logger.info("Conditions not met for loading df_calendario_passado")
                     df_calendario_passado = pd.DataFrame()
@@ -953,11 +958,17 @@ class DescansosDataModel(BaseDataModel):
                     emp_pre_ger = []
                     df_count = pd.DataFrame()
                 else:
+                    self.logger.info(f"Calling load_wfm_scheds with df_calendario_passado shape: {df_calendario_passado.shape}")
                     reshaped_final_3, emp_pre_ger, df_count = load_wfm_scheds(
                         df_calendario_passado,  # Your DataFrame with historical schedule data
                         df_calendario_passado['employee_id'].unique().tolist()  # List of employee IDs
                     )
                     self.logger.info(f"Successfully processed historical calendar data - reshaped_final_3: {reshaped_final_3.shape}, emp_pre_ger: {len(emp_pre_ger)}, df_count: {df_count.shape}")
+                    self.logger.info(f"reshaped_final_3 AFTER load_wfm_scheds (first 5 rows, first 10 cols):\n{reshaped_final_3.iloc[:5, :10]}")
+                    if reshaped_final_3.shape[0] > 1:
+                        self.logger.info(f"TURNO row (row 1): {reshaped_final_3.iloc[1, :15].tolist()}")
+                    if reshaped_final_3.shape[0] > 2:
+                        self.logger.info(f"First employee data (row 2): {reshaped_final_3.iloc[2, :15].tolist()}")
             except Exception as e:
                 self.logger.error(f"Error in load_wfm_scheds: {e}", exc_info=True)
                 reshaped_final_3 = pd.DataFrame()
@@ -2535,7 +2546,8 @@ class DescansosDataModel(BaseDataModel):
                     df_calendario_passado = self.auxiliary_data.get('df_calendario_passado', pd.DataFrame())
                     if not df_calendario_passado.empty:
                         self.logger.info(f"Integrating historical calendar data - shape: {df_calendario_passado.shape}")
-                        self.logger.info(f"Historical data sample:\n{df_calendario_passado.head()}")
+                        self.logger.info(f"Historical data sample (first 5 rows, first 10 cols):\n{df_calendario_passado.iloc[:5, :10]}")
+                        self.logger.info(f"matriz2_og BEFORE integration (first 5 rows, first 10 cols):\n{matriz2_og.iloc[:5, :10]}")
                         
                         # Check for empty/NaN values in historical data
                         empty_cells = df_calendario_passado.isnull().sum().sum()
@@ -2548,10 +2560,14 @@ class DescansosDataModel(BaseDataModel):
                         # The historical data is already in the correct matrix format from load_wfm_scheds
                         if matriz2_og.shape[1] == df_calendario_passado.shape[1]:
                             # Same number of columns, can concatenate directly
+                            self.logger.info(f"Column counts match ({matriz2_og.shape[1]} == {df_calendario_passado.shape[1]}), concatenating...")
                             matriz2_og = pd.concat([matriz2_og, df_calendario_passado], ignore_index=True)
                             self.logger.info(f"Successfully integrated historical calendar data - new shape: {matriz2_og.shape}")
+                            self.logger.info(f"matriz2_og AFTER integration (last 5 rows, first 10 cols):\n{matriz2_og.iloc[-5:, :10]}")
                         else:
                             self.logger.warning(f"Historical calendar data has different structure - matriz2_og: {matriz2_og.shape[1]} cols, historical: {df_calendario_passado.shape[1]} cols")
+                            self.logger.warning(f"matriz2_og column 0-5: {matriz2_og.iloc[0, :5].tolist()}")
+                            self.logger.warning(f"df_calendario_passado column 0-5: {df_calendario_passado.iloc[0, :5].tolist()}")
                     else:
                         self.logger.info("No historical calendar data to integrate")
                 except Exception as e:

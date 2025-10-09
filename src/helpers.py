@@ -972,15 +972,22 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
         # Combine column names with data
         reshaped_names = pd.concat([column_names, reshaped], ignore_index=True)
         
-        # Duplicate columns to get M/T shifts
+        # Duplicate columns to get M/T shifts - INTERLEAVED to match main calendario structure
         first_col = reshaped_names.iloc[:, [0]]
         last_cols = reshaped_names.iloc[:, 1:]
         
         # Sort columns BEFORE duplication to avoid duplicate column name issues
         last_cols = last_cols.reindex(sorted(last_cols.columns), axis=1)
         
-        # Duplicate last columns (now with sorted column names)
-        duplicated_cols = pd.concat([last_cols, last_cols], axis=1)
+        # Interleave columns: date1, date1, date2, date2, date3, date3, ...
+        # This matches the main calendario structure where each date appears twice (M shift, T shift)
+        duplicated_cols_list = []
+        for col in last_cols.columns:
+            duplicated_cols_list.append(last_cols[[col]])  # Add column once
+            duplicated_cols_list.append(last_cols[[col]])  # Add column twice (duplicate)
+        
+        duplicated_cols = pd.concat(duplicated_cols_list, axis=1)
+        logger.info(f"Duplicated columns interleaved - original dates: {len(last_cols.columns)}, after duplication: {duplicated_cols.shape[1]}")
         
         # Combine first column with duplicated columns
         reshaped_final = pd.concat([first_col, duplicated_cols], axis=1)
@@ -988,6 +995,9 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
         # Reset column and row names
         reshaped_final.columns = range(reshaped_final.shape[1])
         reshaped_final.reset_index(drop=True, inplace=True)
+        
+        # Log the date structure to verify interleaving
+        logger.info(f"Date row after interleaving (first 15 cols): {reshaped_final.iloc[0, :15].tolist()}")
         
         # Create TURNO row
         new_row = ['M' if i % 2 == 1 else 'T' for i in range(reshaped_final.shape[1])]
@@ -1005,6 +1015,13 @@ def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> T
         
         reshaped_final_3 = pd.concat([reshaped_final_1, new_row_df, reshaped_final_2], ignore_index=True)
         reshaped_final_3.columns = range(reshaped_final_3.shape[1])
+        
+        # Log final structure to verify it matches main calendario format
+        logger.info(f"Final matrix structure (first 2 rows, first 15 cols):")
+        logger.info(f"  Row 0 (Dates): {reshaped_final_3.iloc[0, :15].tolist()}")
+        logger.info(f"  Row 1 (TURNO): {reshaped_final_3.iloc[1, :15].tolist()}")
+        if reshaped_final_3.shape[0] > 2:
+            logger.info(f"  Row 2 (First employee): {reshaped_final_3.iloc[2, :15].tolist()}")
         
         return reshaped_final_3, emp_pre_ger
         
@@ -1061,16 +1078,35 @@ def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> T
         
         # Basic processing
         df_pre_ger = df_pre_ger.copy()
+        logger.info(f"load_wfm_scheds - Input df_pre_ger shape: {df_pre_ger.shape}, columns: {df_pre_ger.columns.tolist()}")
+        logger.info(f"load_wfm_scheds - First 5 rows BEFORE column rename:\n{df_pre_ger.head()}")
+        
         df_pre_ger.columns = ['employee_id'] + list(df_pre_ger.columns[1:])
+        
+        # Check if TYPE and SUBTYPE columns exist before conversion
+        if 'TYPE' in df_pre_ger.columns or 'type' in df_pre_ger.columns:
+            logger.info(f"load_wfm_scheds - TYPE/SUBTYPE found, will convert via convert_types_in()")
+            if 'TYPE' in df_pre_ger.columns:
+                logger.info(f"TYPE/SUBTYPE combinations:\n{df_pre_ger[['TYPE', 'SUBTYPE']].value_counts().head(20)}")
+            elif 'type' in df_pre_ger.columns:
+                logger.info(f"type/subtype combinations:\n{df_pre_ger[['type', 'subtype']].value_counts().head(20)}")
         
         # Convert WFM types to TRADS and get unique employees
         df_pre_ger = convert_types_in(df_pre_ger)
+        logger.info(f"load_wfm_scheds - AFTER convert_types_in, first 5 rows:\n{df_pre_ger.head()}")
+        if 'sched_subtype' in df_pre_ger.columns:
+            logger.info(f"sched_subtype value counts after conversion:\n{df_pre_ger['sched_subtype'].value_counts()}")
+        
         emp_pre_ger = df_pre_ger['employee_id'].unique().tolist()
         
         # Fill missing dates and pivot to matrix format
         # Map schedule_day to schedule_dt for compatibility
-        if 'schedule_day' in df_pre_ger.columns:
-            df_pre_ger['schedule_dt'] = pd.to_datetime(df_pre_ger['schedule_day']).dt.strftime('%Y-%m-%d')
+        schedule_day_col = 'SCHEDULE_DAY' if 'SCHEDULE_DAY' in df_pre_ger.columns else 'schedule_day'
+        if schedule_day_col in df_pre_ger.columns:
+            logger.info(f"load_wfm_scheds - Converting {schedule_day_col} to schedule_dt")
+            df_pre_ger['schedule_dt'] = pd.to_datetime(df_pre_ger[schedule_day_col]).dt.strftime('%Y-%m-%d')
+        else:
+            logger.warning(f"load_wfm_scheds - Neither 'SCHEDULE_DAY' nor 'schedule_day' found in columns: {df_pre_ger.columns.tolist()}")
         df_pre_ger['sched_subtype'] = df_pre_ger['sched_subtype'].fillna('-')
         
         # Count days off
@@ -1079,7 +1115,11 @@ def load_wfm_scheds(df_pre_ger: pd.DataFrame, employees_tot_pad: List[str]) -> T
         ).reset_index(name='days_off_count')
         
         # Use the same reshaping logic as load_pre_ger_scheds
+        logger.info(f"load_wfm_scheds - Calling load_pre_ger_scheds with df shape: {df_pre_ger.shape}")
         reshaped_final_3, _ = load_pre_ger_scheds(df_pre_ger, employees_tot_pad)
+        logger.info(f"load_wfm_scheds - AFTER load_pre_ger_scheds, reshaped_final_3 shape: {reshaped_final_3.shape}")
+        if not reshaped_final_3.empty:
+            logger.info(f"Reshaped matrix (first 5 rows, first 10 cols):\n{reshaped_final_3.iloc[:5, :10]}")
         
         return reshaped_final_3, emp_pre_ger, df_count
         
@@ -1095,10 +1135,25 @@ def convert_types_in(df: pd.DataFrame) -> pd.DataFrame:
         ('R', None): 'F', ('N', None): '-', ('T', 'A'): 'V'
     }
     
+    # Check if columns are uppercase or lowercase
+    type_col = 'TYPE' if 'TYPE' in df.columns else 'type'
+    subtype_col = 'SUBTYPE' if 'SUBTYPE' in df.columns else 'subtype'
+    
+    logger.info(f"convert_types_in - Using columns: {type_col}, {subtype_col}")
+    logger.info(f"convert_types_in - Sample raw values before mapping (first 10):")
+    for idx, row in df.head(10).iterrows():
+        type_val = row.get(type_col)
+        subtype_val = row.get(subtype_col)
+        mapped_val = type_map.get((type_val, subtype_val), '-')
+        logger.info(f"  Row {idx}: ({type_val}, {subtype_val}) -> {mapped_val}")
+    
     df['sched_subtype'] = df.apply(
-        lambda row: type_map.get((row.get('type'), row.get('subtype')), '-'), axis=1
+        lambda row: type_map.get((row.get(type_col), row.get(subtype_col)), '-'), axis=1
     )
     df['ind'] = 'P'
+    
+    logger.info(f"convert_types_in - Conversion complete. sched_subtype value counts:\n{df['sched_subtype'].value_counts()}")
+    
     return df
 
 def count_dates_per_year(start_date_str: str, end_date_str: str) -> str:
