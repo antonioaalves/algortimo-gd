@@ -17,11 +17,11 @@ from base_data_project.log_config import setup_logger
 from base_data_project.utils import create_components
 
 # Import project-specific components
-from src.configuration_manager.manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 from src.services.example_service import ExampleService
 
-# Create configuration manager
-config_manager = ConfigurationManager()
+# Get shared configuration manager instance
+config_manager = get_config()
 
 # Set up logger
 logger = setup_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'), log_level=logging.INFO)

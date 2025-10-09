@@ -705,17 +705,8 @@ def maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d)
 def assigns_solution_days(new_model, new_shift, workers_complete, workers_complete_cycle, days_of_year, schedule_df, working_days, start_weekday, shifts):
     # Import logger
     from base_data_project.log_config import get_logger
-    from src.configuration_manager.manager import ConfigurationManager
-
-# Get configuration manager instance
-_config_manager = None
-
-def get_config_manager():
-    """Get or create the global configuration manager instance."""
-    global _config_manager
-    if _config_manager is None:
-        _config_manager = ConfigurationManager()
-    return _config_manager
+    from src.configuration_manager.instance import get_config as get_config_manager
+    
     logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
     
     day_changed = []

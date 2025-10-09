@@ -12,7 +12,7 @@ from base_data_project.algorithms.base import BaseAlgorithm
 from base_data_project.log_config import get_logger
 
 # Import project-specific components
-from src.configuration_manager.manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 
 # Import shift scheduler components
 from src.algorithms.model_salsa_esp.variables import decision_variables
@@ -32,7 +32,7 @@ from src.helpers import (_create_empty_results, _calculate_comprehensive_stats,
 
 
 # Create configuration manager and set up logger
-_config_manager = ConfigurationManager()
+_config_manager = get_config()
 logger = get_logger(_config_manager.project_name)
 
 class SalsaEspAlgorithm(BaseAlgorithm):

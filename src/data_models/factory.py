@@ -8,14 +8,15 @@ from base_data_project.log_config import get_logger
 from base_data_project.storage.containers import BaseDataContainer
 
 # Local stuff
-from src.config import PROJECT_NAME
+from src.configuration_manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 from src.data_models.base import BaseDescansosDataModel
 from src.data_models.models import DescansosDataModel
 from src.data_models.salsa_model import SalsaDataModel
 from src.data_models.alcampo_model import AlcampoDataModel
-from src.config import CONFIG
 
-logger = get_logger(PROJECT_NAME)
+config_manager = get_config()
+logger = get_logger(config_manager.project_name)
 
 class DataModelFactory:
     """
@@ -43,22 +44,34 @@ class DataModelFactory:
         if decision.lower() == 'salsa_data_model':
             logger.info(f"Creating {decision.lower()}")
             return SalsaDataModel(
-                    data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
-                    project_name=PROJECT_NAME,
+                    data_container=BaseDataContainer(
+                        config=config_manager.get_storage_config(),
+                        project_name=config_manager.project_name
+                    ),
+                    project_name=config_manager.project_name,
+                    config_manager=config_manager,
                     external_data=external_data if external_data else {}
             )
         elif decision.lower() == 'alcampo_data_model':
             logger.info(f"Creating {decision.lower()}")
             return AlcampoDataModel(
-                    data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
-                    project_name=PROJECT_NAME,
+                    data_container=BaseDataContainer(
+                        config=config_manager.get_storage_config(),
+                        project_name=config_manager.project_name
+                    ),
+                    project_name=config_manager.project_name,
+                    config_manager=config_manager,
                     external_data=external_data if external_data else {}
                 )
         elif decision.lower() == 'default_data_model':
             logger.info(f"Creating {decision.lower()}")
             return DescansosDataModel(
-                    data_container=BaseDataContainer(config=CONFIG, project_name=PROJECT_NAME),
-                    project_name=PROJECT_NAME,
+                    data_container=BaseDataContainer(
+                        config=config_manager.get_storage_config(),
+                        project_name=config_manager.project_name
+                    ),
+                    project_name=config_manager.project_name,
+                    config_manager=config_manager,
                     external_data=external_data if external_data else {}
                 )
         else:

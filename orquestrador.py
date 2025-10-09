@@ -15,10 +15,10 @@ import datetime
 from base_data_project.log_config import setup_logger, get_logger
 from base_data_project.utils import create_components
 from batch_process import run_batch_process
-from src.configuration_manager.manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 
-# Create configuration manager
-config_manager = ConfigurationManager()
+# Get shared configuration manager instance
+config_manager = get_config()
 
 # Initialize logger
 setup_logger(

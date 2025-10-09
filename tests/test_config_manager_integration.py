@@ -17,13 +17,13 @@ def test_configuration_manager():
     print("🔧 Testing Configuration Manager...")
     
     try:
-        from src.configuration_manager import ConfigurationManager
+        from src.configuration_manager import get_config
         
-        # Test singleton pattern - use get_config_manager, not direct instantiation
-        from src.algorithms.factory import get_config_manager
-        config1 = get_config_manager()
-        config2 = get_config_manager()
-        assert config1 is config2, "Singleton pattern failed"
+        # Test singleton pattern - get_config should return same instance
+        config1 = get_config()
+        config2 = get_config()
+        assert config1 is config2, "Singleton pattern failed - different instances returned"
+        assert id(config1) == id(config2), "Singleton pattern failed - different memory addresses"
         
         # Test basic properties
         assert hasattr(config1, 'project_name'), "Missing project_name"
@@ -45,28 +45,33 @@ def test_singleton_pattern():
     print("🔄 Testing Singleton Pattern Consistency...")
     
     try:
-        # Import get_config_manager from different modules
+        # Import get_config from various modules to ensure they all use the singleton
+        from src.configuration_manager.instance import get_config as core_config
         from src.algorithms.factory import get_config_manager as factory_config
         from src.algorithms.alcampoAlgorithm import get_config_manager as alcampo_config
-        from src.models import get_config_manager as models_config
+        from src.data_models.factory import get_config as models_config
         from src.helpers import get_config_manager as helpers_config
-        from src.services.example_service import get_config_manager as service_config
         
-        # Get instances
-        config1 = factory_config()
-        config2 = alcampo_config()
-        config3 = models_config()
-        config4 = helpers_config()
-        config5 = service_config()
+        # Get instances from different modules
+        config1 = core_config()
+        config2 = factory_config()
+        config3 = alcampo_config()
+        config4 = models_config()
+        config5 = helpers_config()
         
         # Test they are all the same instance
-        assert config1 is config2, "Factory and Alcampo configs are different instances"
-        assert config2 is config3, "Alcampo and Models configs are different instances"
-        assert config3 is config4, "Models and Helpers configs are different instances"
-        assert config4 is config5, "Helpers and Service configs are different instances"
+        assert config1 is config2, "Core and Factory configs are different instances"
+        assert config2 is config3, "Factory and Alcampo configs are different instances"
+        assert config3 is config4, "Alcampo and Models configs are different instances"
+        assert config4 is config5, "Models and Helpers configs are different instances"
+        
+        # Verify memory addresses are identical
+        addresses = [id(config1), id(config2), id(config3), id(config4), id(config5)]
+        assert len(set(addresses)) == 1, f"Different memory addresses found: {addresses}"
         
         print("   ✅ All modules share the same configuration instance")
         print(f"   ✅ Shared project name: {config1.project_name}")
+        print(f"   ✅ All instances at memory address: {hex(id(config1))}")
         
         return True, None
         
@@ -79,8 +84,9 @@ def test_algorithm_factory():
     
     try:
         from src.algorithms.factory import AlgorithmFactory, get_config_manager
+        from src.configuration_manager.instance import get_config
         
-        config = get_config_manager()
+        config = get_config()
         available_algorithms = config.system.available_algorithms
         
         if not available_algorithms:
@@ -150,7 +156,10 @@ def test_data_model():
         config = get_config_manager()
         
         # Create a basic data container
-        data_container = BaseDataContainer()
+        data_container = BaseDataContainer(
+            config=config.get_storage_config(),
+            project_name=config.project_name
+        )
         
         # Create data model
         data_model = DescansosDataModel(
@@ -225,7 +234,10 @@ def test_service():
         config = get_config_manager()
         
         # Create a basic data manager for testing
-        data_container = BaseDataContainer()
+        data_container = BaseDataContainer(
+            config=config.get_storage_config(),
+            project_name=config.project_name
+        )
         data_manager = CSVDataManager(data_container=data_container)
         
         # Create service

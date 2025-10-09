@@ -21,8 +21,12 @@ from typing import List, Tuple, Dict
 from base_data_project.log_config import get_logger
 
 # Local stuff
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config
 from src.data_models.functions.helper_functions import convert_types_in
+
+# Get configuration singleton
+_config = get_config()
+PROJECT_NAME = _config.project_name
 from src.data_models.validations.load_process_data_validations import (
     validate_df_colaborador
 )

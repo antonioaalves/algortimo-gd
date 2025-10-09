@@ -11,17 +11,7 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 
 # Local stuff
-from src.configuration_manager.manager import ConfigurationManager
-
-# Get configuration manager instance
-_config_manager = None
-
-def get_config_manager():
-    """Get or create the global configuration manager instance."""
-    global _config_manager
-    if _config_manager is None:
-        _config_manager = ConfigurationManager()
-    return _config_manager
+from src.configuration_manager.instance import get_config as get_config_manager
 from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager

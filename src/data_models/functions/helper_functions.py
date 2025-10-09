@@ -9,7 +9,11 @@ from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers import DBDataManager
 
 # Local stuff
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config
+
+# Get configuration singleton
+_config = get_config()
+PROJECT_NAME = _config.project_name
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)

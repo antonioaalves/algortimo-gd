@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import  List, Dict, Any, Optional, Tuple
 
 # Local stuff
-from src.configuration_manager.manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 from base_data_project.log_config import get_logger
 
-_config_manager = ConfigurationManager()
+_config_manager = get_config()
 
 logger = get_logger(_config_manager.project_name)
 

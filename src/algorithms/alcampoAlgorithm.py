@@ -13,24 +13,7 @@ from base_data_project.log_config import get_logger
 
 # Import project-specific components
 from src.configuration_manager import ConfigurationManager
-
-# Global configuration manager instance (singleton pattern)
-_config_manager = None
-
-def get_config_manager() -> ConfigurationManager:
-    """
-    Get or create the global configuration manager instance.
-    
-    This function implements the singleton pattern - creates the config manager
-    once and reuses it across all calls, ensuring consistency and performance.
-    
-    Returns:
-        ConfigurationManager: Shared configuration manager instance
-    """
-    global _config_manager
-    if _config_manager is None:
-        _config_manager = ConfigurationManager()
-    return _config_manager
+from src.configuration_manager.instance import get_config as get_config_manager
 
 # Import shift scheduler components
 from src.algorithms.model_alcampo.variables import decision_variables

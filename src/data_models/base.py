@@ -15,8 +15,13 @@ from base_data_project.data_manager.managers.base import BaseDataManager
 from base_data_project.data_manager.managers.managers import CSVDataManager, DBDataManager
 
 # Local stuff
-from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
+from src.configuration_manager.instance import get_config
 from src.helpers import calcular_max
+
+# Get configuration singleton
+_config = get_config()
+project_name = _config.project_name
+root_dir = _config.system.project_root_dir
 from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.functions.helper_functions import (
     count_dates_per_year,
@@ -30,7 +35,7 @@ from src.algorithms.factory import AlgorithmFactory
 
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(project_name)
 
 
 class BaseDescansosDataModel(ABC):
@@ -139,7 +144,7 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Loading df_estrutura_wfm from data manager")
                 # Estrutura wfm information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_estrutura_wfm', '')
+                query_path = _config.paths.sql_auxiliary_paths.get('df_estrutura_wfm', '')
                 if query_path == '':
                     self.logger.warning("df_estrutura_wfm query path not found in config")
                 df_estrutura_wfm = data_manager.load_data('df_estrutura_wfm', query_file=query_path)
@@ -151,7 +156,7 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Loading df_feriados from data manager")
                 # feriados information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_feriados', '')
+                query_path = _config.paths.sql_auxiliary_paths.get('df_feriados', '')
                 if query_path == '':
                     self.logger.warning("df_feriados query path not found in config")
                 df_feriados = data_manager.load_data('df_feriados', query_file=query_path)
@@ -163,7 +168,7 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Loading df_faixa_horario from data manager")
                 # faixa horario information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_faixa_horario', '')
+                query_path = _config.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
                 if query_path == '':
                     self.logger.warning("df_faixa_horario query path not found in config")
                 df_faixa_horario = data_manager.load_data('df_faixa_horario', query_file=query_path)
@@ -175,7 +180,7 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Loading df_orcamento from data manager")
                 # orcamento information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_orcamento', '')
+                query_path = _config.paths.sql_auxiliary_paths.get('df_orcamento', '')
                 if query_path == '':
                     self.logger.warning("df_orcamento query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
@@ -189,7 +194,7 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Loading df_granularidade from data manager")
                 # granularidade information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_granularidade', '')
+                query_path = _config.paths.sql_auxiliary_paths.get('df_granularidade', '')
                 if query_path == '':
                     self.logger.warning("df_granularidade query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
@@ -1041,7 +1046,7 @@ class BaseDescansosDataModel(ABC):
             self.logger.error(f"Error validating format_results from data manager: {str(e)}")
             return False
         
-    def insert_results(self, data_manager: BaseDataManager, query_path: str = os.path.join(ROOT_DIR, 'src', 'sql_querys', 'insert_results.sql')) -> bool:
+    def insert_results(self, data_manager: BaseDataManager, query_path: str = os.path.join(root_dir, 'src', 'sql_querys', 'insert_results.sql')) -> bool:
         """
         Method for inserting results in the data source.
         """

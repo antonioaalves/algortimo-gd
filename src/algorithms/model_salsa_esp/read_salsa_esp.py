@@ -5,9 +5,9 @@ from typing import Dict, Any, List, Tuple, Optional
 from datetime import date, datetime
 import logging
 from base_data_project.log_config import get_logger
-from src.configuration_manager.manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 
-_config_manager = ConfigurationManager()
+_config_manager = get_config()
 
 # Set up logger
 logger = get_logger(_config_manager.project_name)

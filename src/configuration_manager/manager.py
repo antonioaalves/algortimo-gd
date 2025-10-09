@@ -109,26 +109,26 @@ class ConfigurationManager:
         """
         return self.system.project_name
     
-    def get_base_data_project_config(self) -> Dict[str, Any]:
+    def get_storage_config(self) -> Dict[str, Any]:
         """
-        Create a dictionary-style config for base_data_project compatibility.
+        Get storage configuration for data containers.
         
-        This method transforms our clean object-based configuration into the
-        dictionary format expected by base_data_project components.
+        Extracts storage-specific settings needed by BaseDataContainer and its subclasses.
+        Includes storage_dir, cleanup_policy, and db_url (if database is enabled).
         
         Returns:
-            Dict[str, Any]: Dictionary config compatible with base_data_project
+            Dict[str, Any]: Storage config with keys: storage_dir, cleanup_policy, db_url (optional)
         """
-        return {
-            'stages': self.stages.stages['stages'],  # Extract just the stages, not the wrapper
-            'system': {
-                'use_db': self.system.use_db,
-                'project_version': self.system.project_version,
-                'project_name': self.system.project_name,
-                'environment': self.system.environment,
-                'project_root_dir': self.system.project_root_dir
-            }
+        storage_config = {
+            'storage_dir': self.system.storage_strategy.get('storage_dir', 'data/intermediate'),
+            'cleanup_policy': self.system.storage_strategy.get('cleanup_policy', 'keep_latest'),
         }
+        
+        # Add database URL if database is enabled
+        if self.is_database_enabled:
+            storage_config['db_url'] = self.get_database_url()
+        
+        return storage_config
     
     @property
     def is_database_enabled(self) -> bool:

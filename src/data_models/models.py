@@ -14,7 +14,8 @@ from isoweek import Week
 import json
 
 # Import project-specific components
-#from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
+# Legacy config import replaced by ConfigurationManager singleton
+# from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
 from src.helpers import (
     calcular_max, count_open_holidays, 
     insert_feriados, insert_closed_days, insert_holidays_absences,

@@ -16,10 +16,10 @@ from base_data_project.utils import create_components
 from base_data_project.process_management.manager import ProcessManager
 
 # Import project-specific components
-from src.configuration_manager.manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 
-# Create configuration manager
-config_manager = ConfigurationManager()
+# Get shared configuration manager instance
+config_manager = get_config()
 
 # Initialize logger with configuration first
 setup_logger(

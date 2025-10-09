@@ -11,6 +11,8 @@ from base_data_project.data_manager.managers.managers import CSVDataManager, DBD
 from base_data_project.data_manager.managers.base import BaseDataManager
 from base_data_project.log_config import get_logger
 from src.data_models.base import BaseDescansosDataModel
+from src.configuration_manager.base import BaseConfig
+from src.configuration_manager.instance import get_config
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
     get_param_for_posto, 
@@ -58,20 +60,18 @@ from src.data_models.validations.load_process_data_validations import (
     validate_df_ausencias_ferias,
     validate_df_core_pro_emp_horario_det
 )
-from src.config import PROJECT_NAME, ROOT_DIR, CONFIG
-
-# Set up logger
-logger = get_logger(PROJECT_NAME)
+#from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
 
 class SalsaDataModel(BaseDescansosDataModel):
     """"""
 
-    def __init__(self, data_container: BaseDataContainer, project_name: str = PROJECT_NAME, external_data: Dict[str, Any] = CONFIG.get('defaults_external_data', {})):
+    def __init__(self, data_container: BaseDataContainer, project_name: str = 'algoritmo_GD', config_manager: BaseConfig = None, external_data: Dict[str, Any] = None):
         """Initialize the DescansosDataModel with data dictionaries for storing dataframes.
         
         Args:
             data_container: Container for storing intermediate data
             project_name: Name of the project
+            config_manager: Configuration manager instance (uses singleton if None)
             external_data: External data dictionary with process parameters
             
         Data Structures:
@@ -109,6 +109,10 @@ class SalsaDataModel(BaseDescansosDataModel):
             formatted_data: Dictionary containing final results
                 - df_final: Final output DataFrame
         """
+
+        # Use provided config_manager or get singleton instance
+        self.config_manager = config_manager if config_manager is not None else get_config()
+        
         super().__init__(data_container=data_container, project_name=project_name)
         # Static data, doesn't change during the process run but are essential for data model treatments - See data lifecycle to understand what this data is
         self.auxiliary_data = {
@@ -168,7 +172,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             'stage2_schedule': None,
         }
         # External call data coming from the product - See data lifecycle to understand what this data is
-        self.external_call_data = external_data
+        self.logger.info(f"DEBUGGING: config_manager: {self.config_manager}")
+        self.external_call_data = self.config_manager.parameters.external_call_data if self.config_manager else {}
         
         self.logger.info("SalsaDescansosDataModel initialized")
 
@@ -190,7 +195,7 @@ class SalsaDataModel(BaseDescansosDataModel):
         error_message = None
         try:
             self.logger.info(f"DEBUGGING: Loading df_messages from CSV file")
-            messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'df_messages.csv')
+            messages_path = self.config_manager.paths.dummy_data_filepaths.get('df_messages', '')
             df_messages = pd.read_csv(messages_path)
             self.logger.info(f"DEBUGGING: df_messages loaded successfully with {len(df_messages)} rows")
         except Exception as e:
@@ -220,6 +225,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     # valid emp info
                     self.logger.info(f"Loading df_valid_emp from database")
                     query_path = entities_dict['valid_emp']
+                    self.logger.info(f"DEBUGGING: external_call_data: {self.external_call_data}")
                     process_id_str = "'" + str(self.external_call_data['current_process_id']) + "'"
                     df_valid_emp = data_manager.load_data('valid_emp', query_file=query_path, process_id=process_id_str)
                 else:
@@ -483,8 +489,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Treat params
             self.logger.info(f"Treating parameters in load_process_data")
             df_params = self.auxiliary_data['df_params'].copy()
-            params_names_list = CONFIG.get('parameters_names', [])
-            params_defaults = CONFIG.get('parameters_defaults', {})
+            params_names_list = self.config_manager.parameters.get_parameter_names()
+            params_defaults = self.config_manager.parameters.get_parameter_defaults()
             self.logger.info(f"df_params before treatment:\n{df_params}")
 
             # Get all parameters in one call
@@ -548,7 +554,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 # colaborador info
                 self.logger.info(f"Loading df_colaborador info from data manager")
-                query_path = CONFIG.get('available_entities_raw', {}).get('df_colaborador')
+                query_path = self.config_manager.paths.sql_raw_paths.get('df_colaborador')
                 df_colaborador = data_manager.load_data(
                     entity='df_colaborador', 
                     query_file=query_path, 
@@ -706,7 +712,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 start_date_dt = pd.to_datetime(start_date)
                 if len(past_employee_id_list) > 0 and start_date_dt != pd.to_datetime(first_date_passado):
                     self.logger.info("Loading df_calendario_passado since conditions are met")
-                    query_path = CONFIG.get('available_entities_aux', {}).get('df_calendario_passado', '')
+                    query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_calendario_passado', '')
                     if not query_path:
                         self.logger.warning("df_calendario_passado query path not found in config")
                         df_calendario_passado = pd.DataFrame()
@@ -749,7 +755,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 self.logger.info("Loading df_ausencias_ferias from data manager")
                 # Ausencias ferias information
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_ausencias_ferias', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_ausencias_ferias', '')
                 if query_path != '':
                     colabs_id="'" + "','".join([str(x) for x in matriculas_list]) + "'"
                     df_ausencias_ferias = data_manager.load_data(
@@ -782,7 +788,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # DF_CORE_PRO_EMP_HORARIO_DET - pre folgas do ciclo
             try:
                 self.logger.info("Loading df_core_pro_emp_horario_det from data manager")
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_core_pro_emp_horario_det', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_core_pro_emp_horario_det', '')
                 if query_path != '':
                     df_core_pro_emp_horario_det = data_manager.load_data(
                         'df_core_pro_emp_horario_det', 
@@ -804,7 +810,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info("Loading df_ciclos_90 from data manager")
                 # Ciclos de 90
                 if len(employees_id_90_list) > 0:
-                    query_path = CONFIG.get('available_entities_aux', {}).get('df_ciclos_90', '')
+                    query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_ciclos_90', '')
                     if query_path != '':
                         df_ciclos_90 = data_manager.load_data(
                             'df_ciclos_90', 
@@ -827,7 +833,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             try:
                 self.logger.info("Loading df_days_off from data manager")
-                query_path = CONFIG.get('available_entities_aux', {}).get('df_days_off', '')
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_days_off', '')
                 if query_path != '':
                     colabs_id="'" + "','".join([str(x) for x in matriculas_list]) + "'"
                     df_days_off = data_manager.load_data(

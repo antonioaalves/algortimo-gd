@@ -7,10 +7,15 @@ from typing import Optional
 from base_data_project.log_config import get_logger
 
 # Local stuff
-from src.config import PROJECT_NAME, CONFIG, ROOT_DIR
+from src.configuration_manager.instance import get_config
+
+# Get configuration singleton
+_config = get_config()
+project_name = _config.project_name
+root_dir = _config.system.project_root_dir
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(project_name)
 
 def load_valid_emp_csv() -> pd.DataFrame:
     """
@@ -32,7 +37,7 @@ def load_valid_emp_csv() -> pd.DataFrame:
     """
     
     # Get and validate file path from config
-    file_path = CONFIG.get('dummy_data_filepaths', {}).get('valid_emp', '')
+    file_path = _config.csv_filepaths.get('valid_emp', '')
     
     try:
         # Load CSV with robust parsing options

@@ -68,6 +68,7 @@ from .database_config import DatabaseConfig
 from .paths_config import PathsConfig
 from .parameters_config import ParametersConfig
 from .stages_config import StagesConfig
+from .instance import get_config, reset_config, is_initialized
 
 # Version info
 __version__ = "1.0.0"
@@ -77,6 +78,11 @@ __author__ = "Strategic Solutions Team - António Alves"
 __all__ = [
     # Main class - primary entry point
     'ConfigurationManager',
+    
+    # RECOMMENDED: Singleton access functions
+    'get_config',      # Get shared configuration instance
+    'reset_config',    # Reset singleton (for testing)
+    'is_initialized',  # Check if config is initialized
     
     # Individual config classes - for advanced usage
     'SystemConfig',
@@ -91,16 +97,27 @@ def create_config_manager() -> ConfigurationManager:
     """
     Factory function to create a ConfigurationManager instance.
     
+    ⚠️ DEPRECATED: Use get_config() instead for singleton pattern.
+    
+    This function creates a NEW instance each time it's called. For most use cases,
+    you should use get_config() to get the shared singleton instance instead.
+    
     This is equivalent to ConfigurationManager() but provides a more explicit API.
-    Useful for dependency injection or when you want to make config creation explicit.
+    Only use this when you explicitly need a separate instance (rare).
     
     Returns:
-        ConfigurationManager: Fully initialized configuration manager
+        ConfigurationManager: A NEW configuration manager instance
         
     Raises:
         FileNotFoundError: If configuration files are missing
         ValueError: If configuration validation fails
     """
+    import warnings
+    warnings.warn(
+        "create_config_manager() is deprecated. Use get_config() for singleton pattern.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     return ConfigurationManager()
 
 

@@ -21,6 +21,7 @@ from base_data_project.log_config import get_logger
 
 # Import project-specific components
 from src.configuration_manager.manager import ConfigurationManager
+from src.configuration_manager.instance import get_config
 from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.data_models.factory import DataModelFactory
@@ -48,9 +49,9 @@ class AlgoritmoGDService(BaseService):
             process_manager: Optional process manager for tracking
         """
 
-        # Import CONFIG if not provided
+        # Use provided config_manager or get singleton instance
         if config_manager is None:
-            config_manager = ConfigurationManager()
+            config_manager = get_config()
         
         self.config_manager = config_manager
 
@@ -226,7 +227,7 @@ class AlgoritmoGDService(BaseService):
             #data_model_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
 
             # Create data model instance
-            self.data = DataModelFactory.create_data_model(
+            self.data_model = DataModelFactory.create_data_model(
                 decision=data_model_name,
                 external_data=self.external_data if self.external_data else {}
             )
@@ -789,8 +790,7 @@ class AlgoritmoGDService(BaseService):
 
             # Establish connection to data source
             valid_params, error_code, error_msg = self.data_model.treat_params()
-            self.logger.info(f"DEBUG SUBSTAGE: params: {params}")
-            algorithm_name = self.data.auxiliary_data.get('algorithm_name', '')
+            algorithm_name = self.data_model.auxiliary_data.get('algorithm_name', '')
             #self.logger.info(f"DEBUG: Algorithm name: {algorithm_name}, type: {type(algorithm_name)}")
 
             # TODO: Add data_model method for overriding
