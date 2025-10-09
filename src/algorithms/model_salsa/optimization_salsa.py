@@ -4,7 +4,7 @@ from src.config import PROJECT_NAME
 logger = get_logger(PROJECT_NAME)
 
 
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours): #role_by_worker):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -76,18 +76,18 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         }
     }
 
-    print(workers)
-    exit(0)
+    all_workers = workers + workers_past
+
     # 1. Penalize deviations from pessObj
     day_counter = 0
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w][day_counter] for w in workers if (w, d, s) in shift)
-            
+            assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift)
+            logger.info(f"day {d}, shift {s} assigned workers {assigned_workers}")
             # Create variables to represent the positive and negative deviations from the target
-            pos_diff = model.NewIntVar(0, len(workers) * hours_scale, f"pos_diff_{d}_{s}")
-            neg_diff = model.NewIntVar(0, len(workers) * hours_scale, f"neg_diff_{d}_{s}")
+            pos_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"pos_diff_{d}_{s}")
+            neg_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"neg_diff_{d}_{s}")
             
             # Store the variables in dictionaries
             pos_diff_dict[(d, s)] = pos_diff
@@ -171,7 +171,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             for s in working_shift:
                 if pessObj.get((d, s), 0) > 0:  # Only penalize when pessObj exists
                     # Calculate the number of assigned workers for this day and shift
-                    assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
+                    assigned_workers = sum(shift[(w, d, s)] for w in all_workers if (w, d, s) in shift)
                     
                     # Create a boolean variable to indicate if there are no workers
                     no_workers = model.NewBoolVar(f"no_workers_{d}_{s}")
@@ -197,7 +197,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w][day_counter] for w in workers if (w, d, s) in shift)
+                assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w][day_counter] for w in all_workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
@@ -219,7 +219,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # 5.1 Balance sundays free days 
     sunday_balance_penalties = []
-    
     
     for w in workers:
         worker_sundays = [d for d in sundays if d in working_days[w]]
@@ -432,7 +431,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     sunday_free_worker_vars = {}
     workers_with_sundays = [] 
 
-    for w in workers:
+    for w in all_workers:
         worker_sundays = [d for d in sundays if d in working_days[w]]
         
         if len(worker_sundays) == 0:
@@ -529,7 +528,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     workers_with_lq = []
     saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
 
-    for w in workers:
+    for w in all_workers:
         # Only consider weekends where the worker is actually exposed:
         # both Saturday and the following Sunday exist in their working_days.
         eligible_saturdays = [s for s in saturdays if (s in working_days[w] and (s + 1) in working_days[w])]
@@ -638,11 +637,11 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     closed = set(closed_holidays)
 
     # Pré-listas (assume que já tens role_by_worker)
-    for w in workers:
+    for w in all_workers:
         logger.info(f"Worker: {w}, Role: {role_by_worker.get(w, 'normal')}")
 
-    managers   = [w for w in workers if role_by_worker.get(w, "normal") == "manager"]
-    keyholders = [w for w in workers if role_by_worker.get(w, "normal") == "keyholder"]
+    managers   = [w for w in all_workers if role_by_worker.get(w, "normal") == "manager"]
+    keyholders = [w for w in all_workers if role_by_worker.get(w, "normal") == "keyholder"]
     logger.info(f"Managers: {managers}, Keyholders: {keyholders}")
 
     debug_vars = {}

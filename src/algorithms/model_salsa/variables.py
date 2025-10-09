@@ -26,9 +26,7 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
 
  
     closed_set = set(closed_holidays)
-    for w in workers:
- 
-        
+    for w in past_workers:
         empty_days_set = set(empty_days[w])
         missing_set = (set(missing_days[w]) | empty_days_set) - closed_set
         fixed_LQs_set = set(fixed_LQs[w]) - missing_set - closed_set
@@ -37,7 +35,7 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         fixed_M_set = set(fixed_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set
         fixed_T_set = set(fixed_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - fixed_M_set
 
-        logger.info(f"For worker {w}:")
+        logger.info(f"For PAST WORKER {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
         logger.info(f"\tDEBUG missing {sorted(missing_set)}")
         logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
@@ -48,12 +46,10 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
  
         blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set | fixed_M_set | fixed_T_set
 
-        if w in past_workers:
-            if len(blocked_days) == (last_day[w] - first_day[w] + 1):
-                logger.info(f"Worker {w} is a past worker and has all days blocked. Skipping variable creation.")
-            else:
-                logger.warning(f"Worker {w} is a past worker but does not have all days blocked. Please check the data.")
-                
+        if len(blocked_days) == (last_day[w] - first_day[w] + 1):
+            logger.info(f"Worker {w} is a past worker and has all days blocked. Skipping variable creation.")
+        else:
+            logger.warning(f"Worker {w} is a past worker but does not have all days blocked. Please check the data.")
 
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
@@ -68,5 +64,33 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         add_var(model, shift, w, fixed_LQs_set - closed_set - empty_days_set, 'LQ', start_weekday)
         add_var(model, shift, w, closed_set - empty_days_set, 'F', start_weekday)
         add_var(model, shift, w, empty_days_set, '-', start_weekday)
-    #52332 vs 31555 vs 25489
+
+    for w in workers:
+ 
+        empty_days_set = set(empty_days[w])
+        missing_set = (set(missing_days[w]) | empty_days_set) - closed_set
+        fixed_LQs_set = set(fixed_LQs[w]) - missing_set - closed_set
+        fixed_days_set = set(fixed_days_off[w]) - missing_set - closed_set - fixed_LQs_set
+        absence_set = set(absences[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set
+
+        logger.info(f"For worker {w}:")
+        logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
+        logger.info(f"\tDEBUG missing {sorted(missing_set)}")
+        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
+        logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
+        logger.info(f"\tDEBUG absence {sorted(absence_set)}")
+ 
+        blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set
+
+        for d in range(first_day[w], last_day[w] + 1):
+            if d not in blocked_days:
+                for s in shifts2:
+                    shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
+
+        add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'V', start_weekday)
+        add_var(model, shift, w, absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'A', start_weekday)
+        add_var(model, shift, w, fixed_days_set - closed_set - fixed_LQs_set - empty_days_set, 'L', start_weekday)
+        add_var(model, shift, w, fixed_LQs_set - closed_set - empty_days_set, 'LQ', start_weekday)
+        add_var(model, shift, w, closed_set - empty_days_set, 'F', start_weekday)
+        add_var(model, shift, w, empty_days_set, '-', start_weekday)
     return shift

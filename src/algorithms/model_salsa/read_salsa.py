@@ -55,6 +55,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
+        #test com alteraçoes minimas ao calendario
+        matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()    
+        matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd["colaborador"] != "TIPO_DIA"]
+        matriz_calendario_gd['colaborador'] = pd.to_numeric(matriz_calendario_gd['colaborador'], errors='coerce')
+        matriz_calendario_gd['colaborador'] = matriz_calendario_gd['colaborador'].astype(int)
+        logger.info(matriz_calendario_gd[matriz_calendario_gd['colaborador'] == 80000487].to_string(index=False))
+        exit(0)
+
         admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
 
@@ -69,7 +77,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
-        matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()       
+        matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()    
 
         logger.info(f"Input DataFrames loaded:")
         logger.info(f"  - matriz_colaborador: {matriz_colaborador_gd.shape}")
@@ -108,6 +116,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("[OK] All required columns present in DataFrames")
         
         matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd["colaborador"] != "TIPO_DIA"]
+        #logger.info(matriz_calendario_gd[matriz_calendario_gd["colaborador"] == 2666])
         matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd["matricula"] != "TIPO_DIA"]
 
         # =================================================================
@@ -216,6 +225,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_calendario_gd['colaborador'] = matriz_calendario_gd['colaborador'].astype(int)
         
         matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd['matricula'].isin(workers_complete)]
+        matriz_nao_alterada = matriz_calendario_gd.copy()
         matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd['colaborador'].isin(workers_complete)]
 
         
@@ -368,12 +378,37 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         fixed_M = {}
         fixed_T = {}
         
-        if partial_generation == True:
-            valid_workers_complete = partial_workers_complete | valid_workers
-            workers_complete = sorted(list(valid_workers_complete))
-            workers_complete_cycle = sorted(set(workers_complete)-set(workers))
+        #if partial_generation == True:
+        #    valid_workers_complete = partial_workers_complete | valid_workers
+        #    workers_complete = sorted(list(valid_workers_complete))
+        #    workers_complete_cycle = sorted(set(workers_complete)-set(workers))
 
         # Process each worker
+
+        for w in workers_past:
+            worker_calendar = matriz_nao_alterada[matriz_nao_alterada['colaborador'] == w]
+            logger.info(worker_calendar.to_string(index=False))
+
+            if worker_calendar.empty:
+                logger.warning(f"PAST WORKERS: No calendar data found for worker {w}")
+                continue
+            else:
+                logger.info(f"PAST WORKERS: Calendar data found for worker {w}")
+            fixed_M[w] = worker_calendar[worker_calendar['tipo_turno'] == 'M']['data'].dt.dayofyear.tolist()
+            fixed_T[w] = worker_calendar[worker_calendar['tipo_turno'] == 'T']['data'].dt.dayofyear.tolist()
+            fixed_LQs[w] = worker_calendar[worker_calendar['tipo_turno'] == 'LQ']['data'].dt.dayofyear.tolist()
+            fixed_days_off[w] = worker_calendar[worker_calendar['tipo_turno'] == 'L']['data'].dt.dayofyear.tolist()
+            empty_days[w] = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
+            missing_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
+            worker_holiday[w] = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
+            work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
+            logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
+
+            first_registered_day[w] = worker_calendar['data'].dt.dayofyear.min()
+            last_registered_day[w] = worker_calendar['data'].dt.dayofyear.max()
+            working_days[w] = set(fixed_T[w]) | set(fixed_days_off[w]) | set(fixed_M[w]) | set(fixed_LQs[w])
+
+
         for w in workers_complete:
             worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
             
@@ -399,14 +434,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_work_day_hours = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
             logger.info(f"worker hours {w},\n{worker_work_day_hours}\nlen {len(worker_work_day_hours)}")
             worker_present_days = set(worker_calendar['data'].dt.dayofyear.tolist())
-            if w in workers_past:
-                M_fixed   = worker_calendar[worker_calendar['tipo_turno'] == 'M']['data'].dt.dayofyear.tolist()
-                T_fixed   = worker_calendar[worker_calendar['tipo_turno'] == 'T']['data'].dt.dayofyear.tolist()
-                LQ_fixed = worker_calendar[worker_calendar['tipo_turno'] == 'LQ']['data'].dt.dayofyear.tolist()
-            else:
-                M_fixed = []
-                T_fixed = []
-                LQ_fixed = []
 
             # Days where worker should potentially appear but doesn't
             days_not_in_calendar = set(days_of_year) - worker_present_days
@@ -421,9 +448,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_days_off[w] = worker_fixed_days_off
             free_day_complete_cycle[w] = f_day_complete_cycle
             work_day_hours[w] = worker_work_day_hours
-            fixed_M[w] = M_fixed
-            fixed_T[w] = T_fixed
-            fixed_LQs[w] = LQ_fixed
 
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
