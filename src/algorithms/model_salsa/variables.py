@@ -15,7 +15,9 @@ def add_var(model, shift, w, days, code, start_weekday):
             model.Add(shift[(w, d, code)] == 1)
 
 
-def decision_variables(model, days_of_year, workers, shifts, first_day, last_day, absences, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, fixed_M, fixed_T, start_weekday, past_workers):
+def decision_variables(model, workers, shifts, first_day, last_day, absences, missing_days, 
+                       empty_days, closed_holidays, fixed_days_off, fixed_LQs, fixed_M, fixed_T,
+                       start_weekday, past_workers, fixed_compensation_days):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
     shifts2 = shifts.copy()
@@ -34,6 +36,7 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         absence_set = set(absences[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set
         fixed_M_set = set(fixed_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set
         fixed_T_set = set(fixed_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - fixed_M_set
+        fixed_comp_set = set(fixed_compensation_days[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - fixed_M_set - fixed_T_set
 
         logger.info(f"For PAST WORKER {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
@@ -43,19 +46,16 @@ def decision_variables(model, days_of_year, workers, shifts, first_day, last_day
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
         logger.info(f"\tDEBUG fixed M {sorted(fixed_M_set)}")
         logger.info(f"\tDEBUG fixed T {sorted(fixed_T_set)}")
+        logger.info(f"\tDEBUG fixed T {sorted(fixed_comp_set)}")
  
-        blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set | fixed_M_set | fixed_T_set
-
-        if len(blocked_days) == (last_day[w] - first_day[w] + 1):
-            logger.info(f"Worker {w} is a past worker and has all days blocked. Skipping variable creation.")
-        else:
-            logger.warning(f"Worker {w} is a past worker but does not have all days blocked. Please check the data.")
+        blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set | fixed_M_set | fixed_T_set | fixed_comp_set
 
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
 
+        add_var(model, shift, w, fixed_comp_set - fixed_T_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set - missing_set - fixed_M_set, 'LD', start_weekday)
         add_var(model, shift, w, fixed_T_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set - missing_set - fixed_M_set, 'T', start_weekday)
         add_var(model, shift, w, fixed_M_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set - missing_set, 'M', start_weekday)
         add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'V', start_weekday)

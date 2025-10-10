@@ -55,13 +55,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
-        #test com alteraçoes minimas ao calendario
-        matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()    
-        matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd["colaborador"] != "TIPO_DIA"]
-        matriz_calendario_gd['colaborador'] = pd.to_numeric(matriz_calendario_gd['colaborador'], errors='coerce')
-        matriz_calendario_gd['colaborador'] = matriz_calendario_gd['colaborador'].astype(int)
-        logger.info(matriz_calendario_gd[matriz_calendario_gd['colaborador'] == 80000487].to_string(index=False))
-        exit(0)
 
         admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
@@ -377,7 +370,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         work_day_hours = {}
         fixed_M = {}
         fixed_T = {}
-        
+        fixed_compensation_days = {}
         #if partial_generation == True:
         #    valid_workers_complete = partial_workers_complete | valid_workers
         #    workers_complete = sorted(list(valid_workers_complete))
@@ -387,7 +380,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         for w in workers_past:
             worker_calendar = matriz_nao_alterada[matriz_nao_alterada['colaborador'] == w]
-            logger.info(worker_calendar.to_string(index=False))
+            #logger.info(worker_calendar.to_string(index=False))
 
             if worker_calendar.empty:
                 logger.warning(f"PAST WORKERS: No calendar data found for worker {w}")
@@ -398,6 +391,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_T[w] = worker_calendar[worker_calendar['tipo_turno'] == 'T']['data'].dt.dayofyear.tolist()
             fixed_LQs[w] = worker_calendar[worker_calendar['tipo_turno'] == 'LQ']['data'].dt.dayofyear.tolist()
             fixed_days_off[w] = worker_calendar[worker_calendar['tipo_turno'] == 'L']['data'].dt.dayofyear.tolist()
+            fixed_compensation_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'LD']['data'].dt.dayofyear.tolist()
             empty_days[w] = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
             missing_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
             worker_holiday[w] = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
@@ -984,7 +978,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "fixed_M": fixed_M,                                   # 48
             "fixed_T": fixed_T,                                   # 49
             "partial_workers_complete": partial_workers_complete, # 50
-            "workers_past": workers_past                          # 51
+            "workers_past": workers_past,                         # 51
+            "fixed_compensation_days": fixed_compensation_days,   # 52
             }
         
     except Exception as e:

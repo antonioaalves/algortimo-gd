@@ -285,6 +285,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             country = adapted_data["country"]
             partial_workers_complete = adapted_data['partial_workers_complete']
             workers_past = adapted_data['workers_past']
+            fixed_compensation_days = adapted_data['fixed_compensation_days']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -339,7 +340,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.model = model
             
             # Create decision variables
-            shift = decision_variables(model, days_of_year, workers_complete, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, fixed_M, fixed_T, start_weekday, workers_past)
+            shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_holiday,
+                                       missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
+                                       fixed_M, fixed_T, start_weekday, workers_past, fixed_compensation_days)
             
             self.logger.info("Decision variables created for SALSA")
             
