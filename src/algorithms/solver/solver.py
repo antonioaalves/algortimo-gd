@@ -246,94 +246,7 @@ def solve(
         time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
         special_days_worked = {}
         compensation_days_off = {}
-        for w in workers:
-            try:
-                worker_row = [w]  # Start with the worker's name
-                l_count = 0
-                lq_count = 0
-                ld_count = 0
-                special_days_count = 0
-                unassigned_days = 0
-                special_days_worked[w] = []
-                compensation_days_off[w] = []
 
-
-                logger.debug(f"Processing worker {w}")
-
-                day_counter = 0
-                for d in days_of_year_sorted:
-                    day_assignment = None
-                    
-                    # Check each shift type for this day
-                    for s in shifts:
-                        if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
-                            day_assignment = shift_mapping.get(s, s)
-                            break
-                    
-                    # If no specific assignment found, mark as unassigned
-                    if day_assignment is None:
-                        day_assignment = '-'
-                        unassigned_days += 1
-                    
-                    worker_row.append(day_assignment)
-                    
-                    # Count different shift types
-                    if day_assignment == 'L':
-                        l_count += 1
-                    elif day_assignment == 'LQ':
-                        lq_count += 1
-                    elif day_assignment == 'LD':
-                        compensation_days_off[w].append(d)
-                        ld_count += 1
-                    elif day_assignment in ['T']:
-                        if d in special_days:
-                            special_days_worked[w].append(d)
-                            special_days_count += 1
-                        time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
-                    elif day_assignment in ['M']:
-                        if d in special_days:
-                            special_days_count += 1
-                            special_days_worked[w].append(d)
-                        time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
-
-                    day_counter += 1
-                logger.info(f"days worked: {special_days_worked[w]}"
-                            f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
-                
-                # Store statistics for this worker
-                worker_stats[w] = {
-                    'L_count': l_count,
-                    'LQ_count': lq_count,
-                    'LD_count': ld_count,
-                    'special_days_work': special_days_count,
-                    'unassigned_days': unassigned_days
-                }
-                
-                table_data.append(worker_row)
-                processed_workers += 1
-                                    
-                #logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
-                #    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
-                                    
-            except Exception as e:
-                logger.error(f"Error processing worker {w}: {str(e)}")
-                continue                  
-        
-        logger.info(f"Successfully processed {processed_workers} workers")
-        
-        # =================================================================
-        # 6. CREATE DATAFRAME AND SAVE TO EXCEL
-        # =================================================================
-        logger.info("Creating DataFrame and saving to Excel")
-        
-        # Create DataFrame
-        columns = ['Worker'] + [f'Day_{d}' for d in sorted(days_of_year)]
-        df = pd.DataFrame(table_data, columns=columns)
-        
-        logger.info(f"DataFrame created with shape: {df.shape}")
-        logger.info(f"DataFrame columns: {len(df.columns)} columns")
-        
-        # Save to Excel
         table_data_past = []  # List to store each worker's data as a row
         for w in workers_past:
             try:
@@ -407,22 +320,118 @@ def solve(
             except Exception as e:
                 logger.error(f"Error processing past worker {w}: {str(e)}")
                 continue
+
+        time_worked_day_M_after = time_worked_day_M.copy()
+        time_worked_day_T_after = time_worked_day_T.copy()
+        for w in workers:
+            try:
+                worker_row = [w]  # Start with the worker's name
+                l_count = 0
+                lq_count = 0
+                ld_count = 0
+                special_days_count = 0
+                unassigned_days = 0
+                special_days_worked[w] = []
+                compensation_days_off[w] = []
+
+
+                logger.debug(f"Processing worker {w}")
+
+                day_counter = 0
+                for d in days_of_year_sorted:
+                    day_assignment = None
+                    
+                    # Check each shift type for this day
+                    for s in shifts:
+                        if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
+                            day_assignment = shift_mapping.get(s, s)
+                            break
+                    
+                    # If no specific assignment found, mark as unassigned
+                    if day_assignment is None:
+                        day_assignment = '-'
+                        unassigned_days += 1
+                    
+                    worker_row.append(day_assignment)
+                    
+                    # Count different shift types
+                    if day_assignment == 'L':
+                        l_count += 1
+                    elif day_assignment == 'LQ':
+                        lq_count += 1
+                    elif day_assignment == 'LD':
+                        compensation_days_off[w].append(d)
+                        ld_count += 1
+                    elif day_assignment in ['T']:
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        time_worked_day_T_after[day_counter] += work_day_hours[w][day_counter]
+                    elif day_assignment in ['M']:
+                        if d in special_days:
+                            special_days_count += 1
+                            special_days_worked[w].append(d)
+                        time_worked_day_M_after[day_counter] += work_day_hours[w][day_counter]
+
+                    day_counter += 1
+                logger.info(f"days worked: {special_days_worked[w]}"
+                            f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
+                
+                # Store statistics for this worker
+                worker_stats[w] = {
+                    'L_count': l_count,
+                    'LQ_count': lq_count,
+                    'LD_count': ld_count,
+                    'special_days_work': special_days_count,
+                    'unassigned_days': unassigned_days
+                }
+                
+                table_data.append(worker_row)
+                processed_workers += 1
+                                    
+                #logger.debug(f"Worker {w} processed: L={l_count}, LQ={lq_count}, LD={ld_count}, "
+                #    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
+                                    
+            except Exception as e:
+                logger.error(f"Error processing worker {w}: {str(e)}")
+                continue                  
+        
+        logger.info(f"Successfully processed {processed_workers} workers")
+        
+        # =================================================================
+        # 6. CREATE DATAFRAME AND SAVE TO EXCEL
+        # =================================================================
+        logger.info("Creating DataFrame and saving to Excel")
+        
+        # Create DataFrame
+        columns = ['Worker'] + [f'Day_{d}' for d in sorted(days_of_year)]
+        df = pd.DataFrame(table_data, columns=columns)
+        
+        logger.info(f"DataFrame created with shape: {df.shape}")
+        logger.info(f"DataFrame columns: {len(df.columns)} columns")
+        
+        # Save to Excel
+       
         try:
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
             days_of_year_sorted = sorted(days_of_year)
 
-            time_worked_M_row = ["Time_Worked_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
-            time_worked_T_row = ["Time_Worked_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
+            time_worked_M_row_after = ["Time_Worked_M"] + [time_worked_day_M_after[i] for i in range(len(days_of_year_sorted))]
+            time_worked_T_row_after = ["Time_Worked_T"] + [time_worked_day_T_after[i] for i in range(len(days_of_year_sorted))]
 
             # Append rows to DataFrame
             if workers_past:
                 df_past = pd.DataFrame(table_data_past, columns=columns)
                 df2 = pd.concat([df, df_past], ignore_index=True)
+                time_worked_M_row = ["Original_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
+                time_worked_T_row = ["Original_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
+                df2.loc[len(df2)] = time_worked_M_row
+                df2.loc[len(df2)] = time_worked_T_row
             else:
                 df2 = df.copy()
 
-            df2.loc[len(df2)] = time_worked_M_row
-            df2.loc[len(df2)] = time_worked_T_row
+            df2.loc[len(df2)] = time_worked_M_row_after
+            df2.loc[len(df2)] = time_worked_T_row_after
             df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:
