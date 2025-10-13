@@ -109,7 +109,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("[OK] All required columns present in DataFrames")
         
         matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd["colaborador"] != "TIPO_DIA"]
-        #logger.info(matriz_calendario_gd[matriz_calendario_gd["colaborador"] == 2666])
+
         matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd["matricula"] != "TIPO_DIA"]
 
         # =================================================================
@@ -217,8 +217,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd['matricula'] = matriz_colaborador_gd['matricula'].astype(int)
         matriz_calendario_gd['colaborador'] = matriz_calendario_gd['colaborador'].astype(int)
         
+        matriz_colaborador_nao_alterada = matriz_colaborador_gd.copy()
         matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd['matricula'].isin(workers_complete)]
-        matriz_nao_alterada = matriz_calendario_gd.copy()
+        matriz_calendario_nao_alterada = matriz_calendario_gd.copy()
         matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd['colaborador'].isin(workers_complete)]
 
         
@@ -379,7 +380,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Process each worker
 
         for w in workers_past:
-            worker_calendar = matriz_nao_alterada[matriz_nao_alterada['colaborador'] == w]
+            worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['colaborador'] == w]
             #logger.info(worker_calendar.to_string(index=False))
 
             if worker_calendar.empty:
@@ -734,6 +735,35 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         #else:
         logger.info("Usando coluna de nível: %s", role_col)
 
+        for w in workers_past:
+            row = matriz_colaborador_nao_alterada.loc[matriz_colaborador_nao_alterada['matricula'] == w]
+            if row.empty:
+                logger.info(f"calendario vazio {w}")
+                role = "normal"
+            else:
+                raw = row.iloc[0].get(role_col)
+
+                # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
+                # 1 → manager ; 2 → keyholder ; vazio/outros → normal
+                if pd.isna(raw):
+                    role = "normal"
+                else:
+                    s = str(raw).strip().lower()
+                    
+                    # fallback por texto
+                    if s == "manager":
+                        role = "manager"
+                    elif s == "keyholder":
+                        role = "keyholder"
+                    else:
+                        role = "normal"
+
+            role_by_worker[w] = role
+            if role == "manager":
+                managers.append(w)
+            elif role == "keyholder":
+                keyholders.append(w)
+
         for w in workers_complete:
             row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
 
@@ -765,8 +795,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         logger.info("Roles derived: managers=%d, keyholders=%d, normals=%d", len(managers), len(keyholders), len(workers_complete) - len(managers) - len(keyholders))
 
-        
-
         # =================================================================
         # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
         # =================================================================
@@ -794,25 +822,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             f"L_Q: {l_q[w]}, "
                             f"CXX: {cxx[w]}, "
                             f"T_LQ: {t_lq[w]}, ")
-
-
-        """
-        #i dont understand what this is doing
-        for w in workers:
-            worker_special_days = [d for d in special_days if d in working_days[w]]
-            if contract_type[w] == 6:
-                total_l_dom[w] = len(worker_special_days) - l_d[w] 
-            elif contract_type[w] in [4,5]:
-                total_l_dom[w] = len(worker_special_days) - l_d[w] 
-            logger.info(f"Worker {w} total L DOM adjusted: {total_l_dom[w]} based on special days and contract type {contract_type[w]}")
-
-        for w in workers:
-            if contract_type[w] == 6:
-                l_d[w] =  l_d[w] 
-            elif contract_type[w] in [4,5]:
-                total_l[w] = total_l[w]        
-            logger.info(f"Worker {w} L_D adjusted: {l_d[w]} based on contract type {contract_type[w]}")        
-        """
 
         logger.info("Worker parameters adjusted based on first and last registered days")
 
@@ -855,9 +864,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             logger.info(f"  - min_workers: {len(min_workers)} entries")
             logger.info(f"  - max_workers: {len(max_workers)} entries")
         else:
-            logger.warning("No estimativas data found, using default values for pess_obj, min_workers, max_workers, and working_shift_2")               
-
-
+            logger.warning("No estimativas data found, using default values for pess_obj, min_workers, max_workers, and working_shift_2")
 
         # =================================================================
         # 12. ADDITIONAL WORKER ASSIGNMENTS
@@ -900,8 +907,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
-            
-        
 
         working_shift_2 = ["M", "T"]
         # =================================================================

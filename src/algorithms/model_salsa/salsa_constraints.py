@@ -170,7 +170,6 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
 
 def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days):
     #limits maximum continuous working days
-    print(max_days)
     for w in workers:
         for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
@@ -192,22 +191,22 @@ def LQ_attribution(model, shift, workers, working_days, c2d):
 
 def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift):
     # Contraint for workers shifts taking into account the worker_week_shift (each week a worker can either be )
-        for w in workers:
-            for week in week_to_days.keys():  # Iterate over the 52 weeks
-                # Iterate through days of the week for the current week
-                for day in week_to_days[week]:
-                    if day in working_days[w]:
-                        # Morning shift constraint: worker can only be assigned to M if available for M
-                        if ((w, day, "M") in shift):
-                            model.Add(shift[(w, day, "M")] <= worker_week_shift[(w, week, 'M')])
-                        
-                        # Afternoon shift constraint: worker can only be assigned to T if available for T
-                        if ((w, day, "T") in shift):
-                            model.Add(shift[(w, day, "T")] <= worker_week_shift[(w, week, 'T')])
+    for w in workers:
+        for week in week_to_days.keys():  # Iterate over the 52 weeks
+            # Iterate through days of the week for the current week
+            for day in week_to_days[week]:
+                if day in working_days[w]:
+                    # Morning shift constraint: worker can only be assigned to M if available for M
+                    if ((w, day, "M") in shift):
+                        model.Add(shift[(w, day, "M")] <= worker_week_shift[(w, week, 'M')])
+                    
+                    # Afternoon shift constraint: worker can only be assigned to T if available for T
+                    if ((w, day, "T") in shift):
+                        model.Add(shift[(w, day, "T")] <= worker_week_shift[(w, week, 'T')])
 
 def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
-# Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
-  #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
+    # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
+    #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
     for w in workers:
         for d in working_days[w]:
             total_shifts = []
@@ -216,7 +215,6 @@ def working_day_shifts(model, shift, workers, working_days, check_shift, workers
                     total_shifts.append(shift[(w, d, s)])
             if total_shifts:
                 model.add_exactly_one(total_shifts)
-
     for w in workers_complete_cycle:
         for d in working_days[w]:
             # Ensure that the worker can only have M, T, L, LQ, LD and F in working days
@@ -279,10 +277,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
 
 def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays):
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
-    debug_vars = {}  # Store debug variables to return
-
-    
-
+    debug_vars = {}  # Store debug variables to return    
     for w in workers:
 
         if contract_type[w] in [4, 5, 6, 8]:
@@ -351,12 +346,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                             model.Add(could_be_quality_weekend == 0)
                         
                 #         # Final constraint: LQ can only be assigned if this day could be part of a quality weekend
-
-
                         model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
-                
-
-        
             else:
                 # First, identify all potential 2-day quality weekends (Saturday + Sunday)
                 for d in days_of_year:
@@ -465,8 +455,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
-        logger.info(f"Worker {w}, Admissao: {worker_admissao}, Demissao: {worker_demissao}, Working Days: {working_days[w]}, Week Days: {week_to_days_salsa}")
-
+        #logger.info(f"Worker {w}, Admissao: {worker_admissao}, Demissao: {worker_demissao}, Working Days: {working_days[w]}, Week Days: {week_to_days_salsa}")
 
         # Create variables for free days (L, F, LQ) by week
         for week, days in week_to_days_salsa.items():
@@ -569,10 +558,10 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 elif required_free_days == 3:
                     if (len(week_work_days) >= 3):
                         model.Add(free_shift_sum == required_free_days)
-                        logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
+                        #logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
                 elif required_free_days == 1:
                     if (len(week_work_days) >= 1):
-                        logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
+                        #logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
                         model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 0:
                     model.Add(free_shift_sum == 0)

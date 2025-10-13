@@ -84,7 +84,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
             assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift)
-            logger.info(f"day {d}, shift {s} assigned workers {assigned_workers}")
             # Create variables to represent the positive and negative deviations from the target
             pos_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"pos_diff_{d}_{s}")
             neg_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"neg_diff_{d}_{s}")
@@ -633,7 +632,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
 
     # OFF_LABELS consideradas como “folga”
-    OFF_LABELS = ("L", "LQ")
+    OFF_LABELS = ("L", "LQ", "LD")
     closed = set(closed_holidays)
 
     # Pré-listas (assume que já tens role_by_worker)
