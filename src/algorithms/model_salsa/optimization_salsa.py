@@ -633,7 +633,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
 
     # OFF_LABELS consideradas como “folga”
-    OFF_LABELS = ("L", "LQ")
+    OFF_LABELS = ("L", "LQ", "LD")
     closed = set(closed_holidays)
 
     # Pré-listas (assume que já tens role_by_worker)
