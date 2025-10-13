@@ -10,6 +10,7 @@ import signal
 import sys
 import time
 import datetime
+import pandas as pd
 
 # Import batch process components
 from base_data_project.log_config import setup_logger, get_logger
@@ -144,11 +145,16 @@ if not sec_to_proc.empty:
                         wfm_user = str(sec_to_proc.iloc[i]['USER_CRIACAO'])
                         data_ini = sec_to_proc.iloc[i]['DATA_INI'].strftime('%Y-%m-%d') 
                         data_fim = sec_to_proc.iloc[i]['DATA_FIM'].strftime('%Y-%m-%d')
-                        wfm_proc_colab = sec_to_proc.iloc[i]['FK_COLABORADOR']
+                        
+                        # Handle FK_COLABORADOR - if NaN from database (NULL), set to None
+                        wfm_proc_colab_raw = sec_to_proc.iloc[i]['FK_COLABORADOR']
+                        if pd.isna(wfm_proc_colab_raw):
+                            wfm_proc_colab = None
+                        else:
+                            wfm_proc_colab = int(wfm_proc_colab_raw)
+                        
                         res = set_process_status(connection,path_ficheiros_global, wfm_user, wfm_proc_id, status='P')
                         logger.info(f"res: {res}")
-                        if(wfm_proc_colab is not None):
-                            wfm_proc_colab = int(wfm_proc_colab)
                         if res == 1:
                             set_process_errors(
                                 connection,

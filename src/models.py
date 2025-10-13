@@ -886,7 +886,7 @@ class DescansosDataModel(BaseDataModel):
                 df_mpd_valid_employees = self.auxiliary_data['df_mpd_valid_employees'].copy()
 
                 # Fixed: Added proper error handling
-                if wfm_proc_colab == '' or wfm_proc_colab is None or wfm_proc_colab == "None":
+                if wfm_proc_colab is None or wfm_proc_colab == '' or wfm_proc_colab == "None":
                     colabs_passado = []
                     #self.logger.info(f"Found {len(colabs_passado)} employees with past admission dates: {colabs_passado}")
                 else:

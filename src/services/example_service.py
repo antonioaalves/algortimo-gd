@@ -74,7 +74,7 @@ class AlgoritmoGDService(BaseService):
             'wfm_user': external_call_dict.get('wfm_user', 0),                       # arg3
             'start_date': external_call_dict.get('start_date', 0),                   # arg4
             'end_date': external_call_dict.get('end_date', 0),                       # arg5
-            'wfm_proc_colab': external_call_dict.get('wfm_proc_colab', 0),           # arg6
+            'wfm_proc_colab': external_call_dict.get('wfm_proc_colab', None),        # arg6 - Changed default from 0 to None
             'child_number': external_call_dict.get('child_number', 1),               # arg7
         } if external_call_dict is not None else {}
 
