@@ -443,6 +443,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_days_off[w] = worker_fixed_days_off
             free_day_complete_cycle[w] = f_day_complete_cycle
             work_day_hours[w] = worker_work_day_hours
+            fixed_LQs[w] = []
 
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
@@ -677,8 +678,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     if (first_week_5_6[w] != 0):
                         work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa) #passar aqui dados do ano passado do trabalhador
                     else:
-                        work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa)
-                    check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days, work_days_per_week)
+                        work_days_per_week[w] = populate_week_fixed_days_off(set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days_salsa)
+                    check_5_6_pattern_consistency(w, set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days, work_days_per_week[w])
                     worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), work_days_per_week[w])
                     working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
                     logger.info(f"Worker {w} working days after processing: {working_days[w]}")
@@ -1069,7 +1070,7 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
         actual_days_off = len(days_set.intersection(fixed_days_off.union(fixed_LQs)))
         expected_days_off = 7 - work_days_per_week[week - 1]
 
-        if actual_days_off != expected_days_off:
+        if actual_days_off > expected_days_off:
             logger.error(f"For worker {w}, in week {week} by contract they're supposed to work "
-                         f"{work_days_per_week[week - 1]} days but have received {actual_days_off}"
-                         f"days off: {fixed_days_off.union(fixed_LQs)}. Process will be Infeasible!")
+                         f"{work_days_per_week[week - 1]} days but have received {actual_days_off} "
+                         f"days off: {days_set.intersection(fixed_days_off.union(fixed_LQs))}. Process will be Infeasible!")
