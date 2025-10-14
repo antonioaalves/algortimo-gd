@@ -560,8 +560,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 logger.warning(f"No collaborator data found for worker {w}")
                 tipo_contrato = 'Contract Error'
             if tipo_contrato != 8:
-                if w not in workers_past:
-                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), None)
+                worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), None)
                 working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
                 logger.info(f"Worker {w} working days after processing: {working_days[w]}")
 
@@ -675,9 +674,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     has_week_compensation_limit = True
 
                 if contract_type[w] == 8:
-                    work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa) #passar aqui dados do ano passado do trabalhador
-                    if w not in workers_past:
-                        worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), work_days_per_week[w])
+                    if (first_week_5_6[w] != 0):
+                        work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa) #passar aqui dados do ano passado do trabalhador
+                    else:
+                        work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa)
+                    check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days, work_days_per_week)
+                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), work_days_per_week[w])
                     working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
                     logger.info(f"Worker {w} working days after processing: {working_days[w]}")
                 else:
@@ -699,8 +701,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             f"Data Demissao: {data_demissao[w]}")
         
         for w in workers:
-            if contract_type[w] == 8:
-                print(w, first_week_5_6[w])
+            #if contract_type[w] == 8:
+            #    print(w, first_week_5_6[w])
 
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
@@ -1031,9 +1033,9 @@ def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_wee
     
     return worker_holiday, fixed_days_off, fixed_LQs
 
-def populate_every_week(first_week_5_6, data_admissao, week_to_days):
+def populate_week_seed_5_6(first_week_5_6, data_admissao, week_to_days):
     nbr_weeks = len(week_to_days)
-    work_days_per_week = np.full(nbr_weeks, 5)  # default all 5s
+    work_days_per_week = np.full(nbr_weeks, 5)
 
     # Find starting week, default to week 0 if not found
     week = next((wk for wk, val in week_to_days.items() if data_admissao in val), 1) - 1
@@ -1041,3 +1043,33 @@ def populate_every_week(first_week_5_6, data_admissao, week_to_days):
     work_days_per_week[week:] = np.tile(np.array([first_week_5_6, other]), (nbr_weeks // 2) + 1)[:nbr_weeks - week]
 
     return work_days_per_week.astype(int)
+
+def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days):
+    nbr_weeks = len(week_to_days)
+    work_days_per_week = np.full(nbr_weeks, 5)
+    week_5_days = 0
+    for week, days in week_to_days.items():
+        days_set = set(days)
+
+        if len(days_set.intersection(fixed_days_off.union(fixed_LQs))) > 1:
+            week_5_days = week - 1
+            break
+
+    if week_5_days % 2 == 0:
+        work_days_per_week= np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+    else:
+        work_days_per_week= np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+
+    return work_days_per_week.astype(int)
+
+def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, work_days_per_week):
+    for week, days in week_to_days.items():
+
+        days_set = set(days)
+        actual_days_off = len(days_set.intersection(fixed_days_off.union(fixed_LQs)))
+        expected_days_off = 7 - work_days_per_week[week - 1]
+
+        if actual_days_off != expected_days_off:
+            logger.error(f"For worker {w}, in week {week} by contract they're supposed to work "
+                         f"{work_days_per_week[week - 1]} days but have received {actual_days_off}"
+                         f"days off: {fixed_days_off.union(fixed_LQs)}. Process will be Infeasible!")
