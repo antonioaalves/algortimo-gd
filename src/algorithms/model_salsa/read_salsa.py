@@ -682,7 +682,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     check_5_6_pattern_consistency(w, set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days, work_days_per_week[w])
                     worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), work_days_per_week[w])
                     working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
-                    logger.info(f"Worker {w} working days after processing: {working_days[w]}")
                 else:
                     work_days_per_week[w] = [5] * 52
                 if not working_days[w]:
@@ -1057,8 +1056,10 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days):
             break
 
     if week_5_days % 2 == 0:
+        logger.debug(f"Found week that has to be of 5 working days in week {week_5_days + 1}, since its even, first week will start with 5")
         work_days_per_week= np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
     else:
+        logger.debug(f"Found week that has to be of 5 working days in week {week_5_days + 1}, since its odd, first week will start with 6")
         work_days_per_week= np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
 
     return work_days_per_week.astype(int)
