@@ -1202,8 +1202,78 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading DataFrame in func_inicializa: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # df_estimativas special days adjustment
+            # df_estimativas special days adjustment (2.)
+            try:
+                success, df_estimativas, error_msg = adjust_estimativas_special_days(
+                    df_estimativas=df_estimativas,
+                    main_year=main_year
+                )
+                if not success:
+                    self.logger.error(f"Adjusting estimativas for special days failed: {error_msg}")
+                    return False, "", error_msg
+            except Exception as e:
+                self.logger.error(f"Error in adjust_estimativas_special_days method: {e}", exc_info=True)
+                return False, "", str(e)
 
+            # Dateframe date filtering (3.b)
+            try:
+                pass
+            except Exception as e:
+                self.logger.error(f"Error in dataframe date filtering method: {e}", exc_info=True)
+                return False, "", str(e)
+
+            # Get unique tipo_turno list (3.e)
+            try:
+                success, tipos_turno_list, error_msg = get_tipos_turno_list(
+                    df_calendario=df_calendario
+                )
+                if not success:
+                    self.logger.error(f"Getting tipos turno list failed: {error_msg}")
+                    return False, "", error_msg
+            except Exception as e:
+                self.logger.error(f"Error in get_tipos_turno_list method: {e}", exc_info=True)
+                return False, "", str(e)
+
+            
+            # Process special tipo_turno (3.f)
+            if ['P', 'MoT'] in tipos_turno_list:
+                try:
+                    success, df_calendario, error_msg = process_special_tipo_turno(
+                        df_calendario=df_calendario,
+                        tipos_turno_list=tipos_turno_list
+                    )
+                    if not success:
+                        self.logger.error(f"Processing special tipo turno failed: {error_msg}")
+                        return False, "", error_msg
+                except Exception as e:
+                    self.logger.error(f"Error in process_special_tipo_turno method: {e}", exc_info=True)
+                    return False, "", str(e)
+
+            # Ensure all working shifts (não existem NL's no TIO_TURNO) (4a e b)
+            try:
+                success, df_calendario, error_msg = ensure_all_working_shifts(
+                    df_calendario=df_calendario
+                )
+                if not success:
+                    self.logger.error(f"Ensuring all working shifts failed: {error_msg}")
+                    return False, "", error_msg
+            except Exception as e:
+                self.logger.error(f"Error in ensure_all_working_shifts method: {e}", exc_info=True)
+                return False, "", str(e)
+
+            # Ensure all employees have the correct day off counters (5.b, d, e)
+
+            # Ensure all dataframe structure is as intended (5.f)
+
+            # Special cases (5.h)
+            # Ciclos não completos e não trabalha domingos (5.g 1)
+
+            # Ciclos completos (5.g 2)
+
+            # CXX para contratos 4 ou 5 dias (5.g 3)
+
+            
+            
         except Exception as e:
             self.logger.error(f"Error in func_inicializa method: {e}", exc_info=True)
             return False, "", ""
