@@ -383,7 +383,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
             if country == "spain":
-                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs)
+                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_holiday)
                         
             self.logger.info("All SALSA constraints applied")
             
