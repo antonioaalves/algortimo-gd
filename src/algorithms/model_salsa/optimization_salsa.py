@@ -193,10 +193,10 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     day_counter = 0
     for d in days_of_year:
         for s in working_shift:
-            min_req = min_workers.get((d, s), 0)
+            min_req = min_workers.get((d, s), 14)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w][day_counter] for w in all_workers if (w, d, s) in shift)
+                assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
