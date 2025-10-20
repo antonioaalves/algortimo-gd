@@ -474,8 +474,8 @@ class SalsaAlgorithm(BaseAlgorithm):
                     logger.info("Point 3 - No workers penalty: 0 penalty (all shifts properly covered)")
                 
                 # Point 4: Minimum workers penalty
-                if breakdown['point_4_min_workers'] > 0:
-                    logger.info(f"Point 4 - Minimum workers penalty: {breakdown['point_4_min_workers']} penalty")
+                if breakdown['point_4_1_min_workers'] > 0:
+                    logger.info(f"Point 4 - Minimum workers penalty: {breakdown['point_4_1_min_workers']} penalty")
                 else:
                     logger.info("Point 4 - Minimum workers penalty: 0 penalty (all minimum requirements met)")
                 

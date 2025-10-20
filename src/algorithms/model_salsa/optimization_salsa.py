@@ -9,7 +9,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     pos_diff_dict = {}
     neg_diff_dict = {}
     no_workers_penalties = {}
-    min_workers_penalties = {}
+    min_workers_penalties_shift = {}
+    min_workers_penalties_day = {}
     inconsistent_shift_penalties = {}
 
     # Create the objective function with heavy penalties
@@ -17,7 +18,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     PESS_OBJ_PENALTY = 1000  # Penalty for deviations from pessObj
     CONSECUTIVE_FREE_DAY = -1  # Bonus for consecutive free days
     HEAVY_PENALTY = 300  # Penalty for days with no workers
-    MIN_WORKER_PENALTY = 60  # Penalty for breaking minimum worker requirements
+    MIN_WORKER_PENALTY_SHIFT = 600  # Penalty for breaking minimum worker requirements per shift
+    MIN_WORKER_PENALTY_DAY = 6000  # Penalty for breaking minimum worker requirements per day
     SUNDAY_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced Sunday free days ALL YEAR
     C2D_YEAR_BALANCE_PENALTY = 8  # Penalty for unbalanced C2D free days ALL YEAR
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
@@ -42,9 +44,13 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             'variables': {},
             'penalty_weight': HEAVY_PENALTY
         },
-        'point_4_min_workers': {
+        'point_4_1_min_workers': {
             'variables': {},
-            'penalty_weight': MIN_WORKER_PENALTY
+            'penalty_weight': MIN_WORKER_PENALTY_SHIFT
+        },
+        'point_4_2_min_workers': {
+            'variables': {},
+            'penalty_weight': MIN_WORKER_PENALTY_DAY
         },
         'point_5_1_sunday_balance': {
             'variables': [],
@@ -189,36 +195,60 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     # Add a heavy penalty to the objective function
                     objective_terms.append(HEAVY_PENALTY * no_workers)
 
-    # 4. Penalize breaking minimum worker requirements
+    # 4.1 Penalize breaking minimum worker requirements per shift
     day_counter = 0
     for d in days_of_year:
         for s in working_shift:
-            min_req = min_workers.get((d, s), 14)
+            min_req = min_workers.get((d, s), 8)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
                 assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
-                shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
+                shortfall = model.NewIntVar(0, 1000, f"min_shortfall_{d}_{s}")
                 model.Add(shortfall >= min_req - assigned_workers)
                 model.Add(shortfall >= 0)
                 
                 # Store the variable
-                min_workers_penalties[(d, s)] = shortfall
+                min_workers_penalties_shift[(d, s)] = shortfall
 
-                optimization_details['point_4_min_workers']['variables'][(d, s)] = {
+                optimization_details['point_4_1_min_workers']['variables'][(d, s)] = {
                     'shortfall': shortfall,
                     'min_required': min_req
                 }
                 
                 # Add penalty to the objective function
-                objective_terms.append(MIN_WORKER_PENALTY * shortfall)
+                objective_terms.append(MIN_WORKER_PENALTY_SHIFT * shortfall)
         day_counter += 1
 
+    # 4.2 Penalize breaking minimum worker requirements per day
+    day_counter = 0
+    for d in days_of_year:
+        min_req = min_workers.get((d, 'M'), 8) + min_workers.get((d, 'T'), 8)
+        if min_req < 14:
+            min_req = 14
+
+        assigned_workers_total = []
+        for s in working_shift:
+            # Calculate the number of assigned workers for this day and shift
+            assigned_workers = [shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift]
+            assigned_workers_total.extend(assigned_workers)
+
+        # Create a variable to represent the shortfall from the minimum
+        shortfall = model.NewIntVar(0, 1000, f"min_shortfall_{d}_{s}")
+        model.Add(shortfall >= min_req - sum(assigned_workers_total))
+        model.Add(shortfall >= 0)
+        
+        # Store the variable
+        min_workers_penalties_day[d] = shortfall
+        optimization_details['point_4_2_min_workers']['variables'][d] = {'shortfall': shortfall, 'min_required': min_req}
+        
+        # Add penalty to the objective function
+        objective_terms.append(MIN_WORKER_PENALTY_DAY * shortfall)
+        day_counter += 1
 
     # 5.1 Balance sundays free days 
     sunday_balance_penalties = []
-    
     for w in workers:
         worker_sundays = [d for d in sundays if d in working_days[w]]
         
