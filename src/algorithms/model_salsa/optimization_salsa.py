@@ -83,6 +83,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     }
 
     all_workers = workers + workers_past
+    closed = set(closed_holidays)
 
     # 1. Penalize deviations from pessObj
     day_counter = 0
@@ -198,6 +199,10 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     # 4.1 Penalize breaking minimum worker requirements per shift
     day_counter = 0
     for d in days_of_year:
+        if d in closed:
+            day_counter += 1
+            logger.info(f"4.1: Skiping day {d}")
+            continue
         for s in working_shift:
             min_req = min_workers.get((d, s), 8)
             if min_req > 0:  # Only penalize when there's a minimum requirement
@@ -224,6 +229,10 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     # 4.2 Penalize breaking minimum worker requirements per day
     day_counter = 0
     for d in days_of_year:
+        if d in closed:
+            day_counter += 1
+            logger.info(f"4.2: Skiping day {d}")
+            continue
         min_req = min_workers.get((d, 'M'), 8) + min_workers.get((d, 'T'), 8)
         if min_req < 14:
             min_req = 14
@@ -663,7 +672,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # OFF_LABELS consideradas como “folga”
     OFF_LABELS = ("L", "LQ", "LD")
-    closed = set(closed_holidays)
 
     # Pré-listas (assume que já tens role_by_worker)
     for w in all_workers:

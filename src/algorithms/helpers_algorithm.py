@@ -95,8 +95,8 @@ def analyze_optimization_results(solver, optimization_details):
     
     results['point_3_no_workers'] = point_3_results
     
-    # Point 4: Minimum workers penalty
-    point_4_results = {
+    # Point 4.1: Minimum workers penalty
+    point_4_1_results = {
         'shortfalls': {},
         'total_penalty': 0
     }
@@ -107,14 +107,35 @@ def analyze_optimization_results(solver, optimization_details):
         shortfall_value = solver.Value(var_info['shortfall'])
         if shortfall_value > 0:
             penalty = shortfall_value * penalty_weight
-            point_4_results['shortfalls'][(d, s)] = {
+            point_4_1_results['shortfalls'][(d, s)] = {
                 'min_required': var_info['min_required'],
                 'shortfall': shortfall_value,
                 'penalty': penalty
             }
-            point_4_results['total_penalty'] += penalty
+            point_4_1_results['total_penalty'] += penalty
     
-    results['point_4_1_min_workers'] = point_4_results
+    results['point_4_1_min_workers'] = point_4_1_results
+
+    # Point 4.2: Minimum workers penalty
+    point_4_2_results = {
+        'shortfalls': {},
+        'total_penalty': 0
+    }
+    
+    penalty_weight = optimization_details['point_4_2_min_workers']['penalty_weight']
+    
+    for d, var_info in optimization_details['point_4_2_min_workers']['variables'].items():
+        shortfall_value = solver.Value(var_info['shortfall'])
+        if shortfall_value > 0:
+            penalty = shortfall_value * penalty_weight
+            point_4_2_results['shortfalls'][d] = {
+                'min_required': var_info['min_required'],
+                'shortfall': shortfall_value,
+                'penalty': penalty
+            }
+            point_4_2_results['total_penalty'] += penalty
+    
+    results['point_4_2_min_workers'] = point_4_2_results
     
     # Point 5.1: Sunday balance penalty
     point_5_1_results = {
@@ -311,7 +332,7 @@ def analyze_optimization_results(solver, optimization_details):
     total_penalty = sum([
         point_1_results['total_penalty'],
         point_3_results['total_penalty'],
-        point_4_results['total_penalty'],
+        point_4_1_results['total_penalty'],
         point_5_1_results['total_penalty'],
         point_5_2_results['total_penalty'],
         point_6_results['total_penalty'],
@@ -330,7 +351,8 @@ def analyze_optimization_results(solver, optimization_details):
             'point_1_pessobj_deviations': point_1_results['total_penalty'],
             'point_2_consecutive_free_days': -point_2_results['total_bonus'],  # negative because it's a bonus
             'point_3_no_workers': point_3_results['total_penalty'],
-            'point_4_1_min_workers': point_4_results['total_penalty'],
+            'point_4_1_min_workers': point_4_1_results['total_penalty'],
+            'point_4_2_min_workers': point_4_2_results['total_penalty'],
             'point_5_1_sunday_balance': point_5_1_results['total_penalty'],
             'point_5_2_c2d_balance': point_5_2_results['total_penalty'],
             'point_6_inconsistent_shifts': point_6_results['total_penalty'],
