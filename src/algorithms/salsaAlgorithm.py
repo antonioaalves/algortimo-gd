@@ -383,7 +383,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
             if country == "spain":
-                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs)
+                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_holiday)
                         
             self.logger.info("All SALSA constraints applied")
             
@@ -448,7 +448,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             
             # Log comprehensive optimization analysis
-            logger.info("=== OPTIMIZATION ANALYSIS ===")
+            logger.info("\n=== OPTIMIZATION ANALYSIS ===")
             if results is not None:
                 logger.info(f"Net objective value: {results['summary']['net_objective']}")
                 
@@ -474,10 +474,15 @@ class SalsaAlgorithm(BaseAlgorithm):
                     logger.info("Point 3 - No workers penalty: 0 penalty (all shifts properly covered)")
                 
                 # Point 4: Minimum workers penalty
-                if breakdown['point_4_min_workers'] > 0:
-                    logger.info(f"Point 4 - Minimum workers penalty: {breakdown['point_4_min_workers']} penalty")
+                if breakdown['point_4_1_min_workers'] > 0:
+                    logger.info(f"Point 4.1 - Minimum workers penalty: {breakdown['point_4_1_min_workers']} penalty")
                 else:
-                    logger.info("Point 4 - Minimum workers penalty: 0 penalty (all minimum requirements met)")
+                    logger.info("Point 4.1 - Minimum workers penalty: 0 penalty (all minimum requirements met)")
+
+                if breakdown['point_4_2_min_workers'] > 0:
+                    logger.info(f"Point 4.2 - Minimum workers penalty: {breakdown['point_4_2_min_workers']} penalty")
+                else:
+                    logger.info("Point 4.2 - Minimum workers penalty: 0 penalty (all minimum requirements met)")
                 
                 # Point 5.1: Sunday balance penalty
                 if breakdown['point_5_1_sunday_balance'] > 0:
@@ -499,15 +504,15 @@ class SalsaAlgorithm(BaseAlgorithm):
                 
                 # Point 7: Sunday balance across workers
                 if breakdown['point_7_sunday_balance_across_workers'] > 0:
-                    logger.info(f"Point 7 - Sunday balance across workers: {breakdown['point_7_sunday_balance_across_workers']} penalty")
+                    logger.info(f"Point 7.1 - Sunday balance across workers: {breakdown['point_7_sunday_balance_across_workers']} penalty")
                 else:
-                    logger.info("Point 7 - Sunday balance across workers: 0 penalty (proportional Sunday distribution)")
+                    logger.info("Point 7.1 - Sunday balance across workers: 0 penalty (proportional Sunday distribution)")
                 
                 # Point 7B: LQ balance across workers
                 if breakdown['point_7b_lq_balance_across_workers'] > 0:
-                    logger.info(f"Point 7B - LQ balance across workers: {breakdown['point_7b_lq_balance_across_workers']} penalty")
+                    logger.info(f"Point 7.2 - LQ balance across workers: {breakdown['point_7b_lq_balance_across_workers']} penalty")
                 else:
-                    logger.info("Point 7B - LQ balance across workers: 0 penalty (proportional quality weekend distribution)")
+                    logger.info("Point 7.2 - LQ balance across workers: 0 penalty (proportional quality weekend distribution)")
                 
                 # Point 8: Manager/Keyholder conflicts
                 if breakdown['point_8_manager_keyholder_conflicts'] > 0:

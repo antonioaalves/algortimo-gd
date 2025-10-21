@@ -3,7 +3,27 @@ from base_data_project.log_config import get_logger
 
 logger = get_logger('algoritmo_GD')
 
-def compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs):
+def possible_week(special_day_week, fixed_days_off, fixed_LQs, worker_holidays, week_to_days, week_compensation_limit):
+    possible_weeks = []
+    weeks_added = 0
+    current_week = special_day_week
+
+    while weeks_added < week_compensation_limit and current_week < 53:
+        current_week += 1
+
+        week_days = set(week_to_days.get(current_week, []))
+
+        all_days_off = worker_holidays.union(fixed_days_off).union(fixed_LQs)
+
+        available_days = week_days - all_days_off
+
+        if len(available_days) > 0:
+            weeks_added += 1
+            possible_weeks.append(current_week)
+
+    return possible_weeks
+
+def compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_holidays):
     #Define compensation days (LD) constraint for contract types 4, 5, 6
     possible_compensation_days = {}
     for w in workers:
@@ -19,26 +39,13 @@ def compensation_days(model, shift, workers, working_days, holidays, start_weekd
                     continue
                 
                 # Possible compensation weeks (current and next week)
-                if week_compensation_limit.get(w, 2) == 2:
-                    possible_weeks = [
-                        special_day_week + 1 if special_day_week < 52 else None, 
-                        special_day_week + 2 if special_day_week < 51 else special_day_week
-                    ]
-                else:
-                    possible_weeks = [
-                        special_day_week + 1 if special_day_week < 52 else None, 
-                        special_day_week + 2 if special_day_week < 51 else special_day_week,
-                        special_day_week + 3 if special_day_week < 50 else None,
-                        special_day_week + 4 if special_day_week < 49 else None
-                    ]
-                
+                possible_weeks = possible_week(special_day_week, fixed_days_off[w], fixed_LQs[w], worker_holidays[w], week_to_days, week_compensation_limit.get(w, 2))
                 # Collect potential compensation days
                 compensation_days = []
                 for week in filter(None, possible_weeks):
                     compensation_days.extend([day for day in week_to_days.get(week, [])
                         if (day in working_days[w] - off - fixed)
                     ])
-                
                 # Store possible compensation days for this special day
                 possible_compensation_days[w][d] = compensation_days
 
