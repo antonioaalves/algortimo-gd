@@ -675,6 +675,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     has_week_compensation_limit = True
 
                 if contract_type[w] == 8:
+                    if w == 81001475:
+                        worker_holiday[w] = [293, 294,295,297,298,299,302, 303, 304, 307, 309, 310, 311, 314, 316, 317, 318, 323, 324, 325, 326, 330, 331, 332, 333, 334, 338, 339, 340, 341, 342, 344, 345, 346, 348, 351, 353, 354, 355, 358, 360]
+                        fixed_days_off[w] = []
                     work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa) #passar aqui dados do ano passado do trabalhador
                     if w not in workers_past:
                         worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(w, set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days_salsa, set(closed_holidays), work_days_per_week[w])
@@ -988,6 +991,23 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
     except Exception as e:
         logger.error(f"Error in read_data_salsa: {e}", exc_info=True)
         raise
+def consecutive_days(holiday_days_in_week, nbr_holidays, cut_off, days):
+    if nbr_holidays <= 2:
+        #print("week too short")
+        return False
+    for i in range(nbr_holidays - 1):
+        if holiday_days_in_week[i + 1] != holiday_days_in_week[i] + 1:
+            #print("holidays not in a row")
+            return False
+    if cut_off == 5:
+        if holiday_days_in_week[-1] < days[4]:
+            #print("holidays end before friday")
+            return False
+    elif cut_off == 6:
+        if holiday_days_in_week[-1] < days[5]:
+            #print(f"holidays end before saturday {holiday_days_in_week[i]} {days[5]}")
+            return False
+    return True
 
 def data_treatment(w, worker_holiday, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week):
     fixed_LQs = []
@@ -997,75 +1017,62 @@ def data_treatment(w, worker_holiday, fixed_days_off, fixed_LQs, week_to_days_sa
 
         days_set = set(days)
         days_off = days_set.intersection(fixed_days_off.union(fixed_LQs))
-        holiday_days_in_week = days_set.intersection(worker_holiday)
-
+        holiday_days_in_week = days_set.intersection(worker_holiday.union(closed_holidays))
         nbr_holidays = len(holiday_days_in_week)
-        if nbr_holidays == 0:
-            continue
-        elif work_days_per_week is None or work_days_per_week[week - 1] == 5:
 
-            if len(days_off) > 1:
+        if work_days_per_week is None or work_days_per_week[week - 1] == 5:
+
+            if nbr_holidays <= 5:
+                if consecutive_days(sorted(holiday_days_in_week), nbr_holidays, 5, days) == False:
+                    continue
+
+            if len(days_off) >= 2:
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
-            elif len(days_off) == 1:
+
+            atributing_days = list(sorted(days_set - closed_holidays))
+            if len(days_off) == 1:
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off")
-
-            if all(day in holiday_days_in_week for day in days[2:5]) or nbr_holidays == 6:
-
-                if days[0] in holiday_days_in_week and days[1] not in holiday_days_in_week and nbr_holidays < 6:
-                    continue
-                elif days[6] in holiday_days_in_week and days[5] not in holiday_days_in_week and nbr_holidays < 6:
-                    continue
-
-                elif len(days_off) == 0:
-                    atributing_days = list(sorted(days_set - closed_holidays))
-
-                    l1 = atributing_days[-1]
+                only_day_off = sorted(days_off)[0]
+                if only_day_off == atributing_days[-1] and only_day_off == days[6]:
                     l2 = atributing_days[-2]
+                    worker_holiday -= {l2}
+                    fixed_LQs.append(l2)
 
-                    if l1 == days[6] and l2 == days[5]:
-
-                        worker_holiday -= {l2, l1}
-                        fixed_days_off |= {l1}
-                        fixed_LQs.append(l2)
-
-                    else:
-                        worker_holiday -= {l2,l1}
-                        fixed_days_off |= {l2,l1}
-                else:
-                    atributing_days = list(sorted(days_set - closed_holidays))
-                    only_day_off = sorted(days_off)[0]
-                    if only_day_off == atributing_days[-1]:
-                        l2 = atributing_days[-2]
-                        worker_holiday -= {l2}
-                        fixed_LQs.append(l2)
-
-                    elif only_day_off == atributing_days[-2]:
-                        l1 = atributing_days[-1]
-                        worker_holiday -= {l1}
-                        fixed_days_off |= {l1}
-                        fixed_days_off -= {only_day_off}
-                        fixed_LQs.append(only_day_off)
+                elif only_day_off == atributing_days[-2] and only_day_off == days[5]:
+                    l1 = atributing_days[-1]
+                    worker_holiday -= {l1}
+                    fixed_days_off |= {l1}
+                    fixed_days_off -= {only_day_off}
+                    fixed_LQs.append(only_day_off)
                     
-                    else:
-                        l1 = atributing_days[-1]
-                        worker_holiday -= {l1}
-                        fixed_days_off |= {l1}
+                else:
+                    l1 = atributing_days[-1]
+                    worker_holiday -= {l1}
+                    fixed_days_off |= {l1}
+            else:
+                l1 = atributing_days[-1]
+                l2 = atributing_days[-2]
 
+                if l1 == days[6] and l2 == days[5]:
+                    worker_holiday -= {l2, l1}
+                    fixed_days_off |= {l1}
+                    fixed_LQs.append(l2)
+                else:
+                    worker_holiday -= {l2,l1}
+                    fixed_days_off |= {l2,l1}
+                
         else:
             if len(days_off) > 0:
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
                 continue
-
-            if all(day in holiday_days_in_week for day in days[2:6]):
-                if days[0] in holiday_days_in_week and days[1] not in holiday_days_in_week:
+            if nbr_holidays < 6:
+                if consecutive_days(sorted(holiday_days_in_week), nbr_holidays, 6, days) == False:
                     continue
-
-                atributing_days = list(sorted(days_set - closed_holidays))
-
-                l1 = atributing_days[-1]
-                worker_holiday -= {l1}
-                fixed_days_off |= {l1}
+            atributing_days = list(sorted(days_set - closed_holidays))
+            l1 = atributing_days[-1]
+            worker_holiday -= {l1}
+            fixed_days_off |= {l1}
     
     return worker_holiday, fixed_days_off, fixed_LQs
 
