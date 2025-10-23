@@ -375,7 +375,7 @@ def solve(
 
                     day_counter += 1
                 logger.info(f"days worked: {special_days_worked[w]}"
-                            f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
+                            f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {
