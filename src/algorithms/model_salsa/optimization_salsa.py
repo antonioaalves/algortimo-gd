@@ -256,26 +256,73 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         objective_terms.append(MIN_WORKER_PENALTY_DAY * shortfall)
         day_counter += 1
 
+    # 6. Penalize inconsistent shift types within a week for each worker
+    for w in workers:
+        for week in week_to_days.keys():  # Iterate over all weeks
+            days_in_week = week_to_days[week]
+            working_days_in_week = [d for d in days_in_week if d in working_days.get(w, [])]
+            
+            if len(working_days_in_week) >= 2:  # Only if worker has at least 2 working days this week
+                # Create variables to track if the worker has M or T shifts this week
+                has_m_shift = model.NewBoolVar(f"has_m_shift_{w}_{week}")
+                has_t_shift = model.NewBoolVar(f"has_t_shift_{w}_{week}")
+                
+                # Create expressions for total M and T shifts this week
+                total_m = sum(shift.get((w, d, "M"), 0) for d in working_days_in_week)
+                total_t = sum(shift.get((w, d, "T"), 0) for d in working_days_in_week)
+                
+                # Worker has M shifts if total_m > 0
+                model.Add(total_m >= 1).OnlyEnforceIf(has_m_shift)
+                model.Add(total_m == 0).OnlyEnforceIf(has_m_shift.Not())
+                
+                # Worker has T shifts if total_t > 0
+                model.Add(total_t >= 1).OnlyEnforceIf(has_t_shift)
+                model.Add(total_t == 0).OnlyEnforceIf(has_t_shift.Not())
+                
+                # Create a variable to indicate inconsistent shifts
+                inconsistent_shifts = model.NewBoolVar(f"inconsistent_shifts_{w}_{week}")
+                
+                # Worker has inconsistent shifts if both M and T shifts exist
+                model.AddBoolAnd([has_m_shift, has_t_shift]).OnlyEnforceIf(inconsistent_shifts)
+                model.AddBoolOr([has_m_shift.Not(), has_t_shift.Not()]).OnlyEnforceIf(inconsistent_shifts.Not())
+            
+                # Store the variable
+                inconsistent_shift_penalties[(w, week)] = inconsistent_shifts
+
+                # Store in optimization details
+                optimization_details['point_6_inconsistent_shifts']['variables'][(w, week)] = {
+                    'inconsistent_variable': inconsistent_shifts,
+                    'has_m_shift': has_m_shift,
+                    'has_t_shift': has_t_shift,
+                    'working_days_in_week': working_days_in_week
+                }
+                
+                # Add penalty to the objective function
+                objective_terms.append(INCONSISTENT_SHIFT_PENALTY * inconsistent_shifts)
+
     # 5.1 Balance sundays free days 
     sunday_balance_penalties = []
+    worker_sundays = {}
+    sunday_free_vars = {}
+
     for w in workers:
-        worker_sundays = [d for d in sundays if d in working_days[w]]
+        worker_sundays[w] = [d for d in sundays if d in working_days[w]]
         
-        if len(worker_sundays) <= 1:
+        if len(worker_sundays[w]) <= 1:
             continue  # Skip if worker has 0 or 1 Sunday (no balancing needed)
         
         # Create variables for Sunday free days (L shifts)
-        sunday_free_vars = []
-        for sunday in worker_sundays:
+        sunday_free_vars[w] = []
+        for sunday in worker_sundays[w]:
             sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
             
             # Link to actual L shift assignment
             model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) >= 1).OnlyEnforceIf(sunday_free)
             model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
-            sunday_free_vars.append(sunday_free)
+            sunday_free_vars[w].append(sunday_free)
         
         # Calculate target spacing between Sunday free days
-        total_sunday_free = len(sunday_free_vars)
+        total_sunday_free = len(sunday_free_vars[w])
         
         # For even distribution, we want to minimize variance in spacing
         # We'll divide the year into segments and try to have roughly equal distribution
@@ -286,48 +333,122 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 start_idx = segment * segment_size
                 end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else total_sunday_free
                 
-                segment_sundays = sunday_free_vars[start_idx:end_idx]
+                segment_sundays = sunday_free_vars[w][start_idx:end_idx]
                 
-                if len(segment_sundays) > 0:
-                    # Create variables for deviation from ideal distribution
-                    segment_free_count = sum(segment_sundays)
+                # Create variables for deviation from ideal distribution
+                segment_free_count = sum(segment_sundays)
+                
+                # Handle remainder when total doesn't divide evenly
+                remainder = total_sunday_free % num_segments
+                # First 'remainder' segments get one extra
+                ideal_count = segment_size + (1 if segment < remainder else 0)
+                
+                # Maximum possible deviation bounds
+                max_over = len(segment_sundays)  # All Sundays in segment could be free
+                max_under = ideal_count  # Could have 0 instead of ideal_count
+                
+                # Create penalty variables for over/under allocation
+                over_penalty = model.NewIntVar(0, max_over, f"sunday_over_{w}_{segment}")
+                under_penalty = model.NewIntVar(0, max_under, f"sunday_under_{w}_{segment}")
+                
+                # Correctly calculate deviations (handling negative cases)
+                model.Add(over_penalty >= segment_free_count - ideal_count)
+                model.Add(over_penalty >= 0)  # Ensure non-negative
+                
+                model.Add(under_penalty >= ideal_count - segment_free_count)
+                model.Add(under_penalty >= 0)  # Ensure non-negative
+                
+                # Store in optimization details
+                optimization_details['point_5_1_sunday_balance']['variables'].append({
+                                    'worker': w,
+                                    'segment': segment,
+                                    'over_penalty': over_penalty,
+                                    'under_penalty': under_penalty,
+                                    'ideal_count': ideal_count,
+                                    'segment_sundays': [worker_sundays[w][i] for i in range(start_idx, min(end_idx, len(worker_sundays)))]
+                                    })
                     
-                    # Handle remainder when total doesn't divide evenly
-                    base_ideal = total_sunday_free // num_segments
-                    remainder = total_sunday_free % num_segments
-                    # First 'remainder' segments get one extra
-                    ideal_count = base_ideal + (1 if segment < remainder else 0)
-                    
-                    # Maximum possible deviation bounds
-                    max_over = len(segment_sundays)  # All Sundays in segment could be free
-                    max_under = ideal_count  # Could have 0 instead of ideal_count
-                    
-                    # Create penalty variables for over/under allocation
-                    over_penalty = model.NewIntVar(0, max_over, f"sunday_over_{w}_{segment}")
-                    under_penalty = model.NewIntVar(0, max_under, f"sunday_under_{w}_{segment}")
-                    
-                    # Correctly calculate deviations (handling negative cases)
-                    model.Add(over_penalty >= segment_free_count - ideal_count)
-                    model.Add(over_penalty >= 0)  # Ensure non-negative
-                    
-                    model.Add(under_penalty >= ideal_count - segment_free_count)
-                    model.Add(under_penalty >= 0)  # Ensure non-negative
-                    
-                    # Store in optimization details
-                    optimization_details['point_5_1_sunday_balance']['variables'].append({
-                    'worker': w,
-                    'segment': segment,
-                    'over_penalty': over_penalty,
-                    'under_penalty': under_penalty,
-                    'ideal_count': ideal_count,
-                    'segment_sundays': [worker_sundays[i] for i in range(start_idx, min(end_idx, len(worker_sundays)))]
-                })
-                    
-                    sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * over_penalty)
-                    sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * under_penalty)
+                sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * over_penalty)
+                sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * under_penalty)
     
     objective_terms.extend(sunday_balance_penalties)
 
+    # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
+    sunday_balance_across_workers_penalties = []
+
+    # Create constraint variables for each worker's total Sunday free days
+    sunday_free_worker_vars = {}
+    workers_with_sundays = [] 
+
+    for w in all_workers:
+        if len(worker_sundays[w]) == 0:
+            continue  # Skip workers with no Sundays
+        
+        workers_with_sundays.append(w)
+        # Create constraint variable for total Sunday free days
+        total_sunday_free_var = model.NewIntVar(0, len(worker_sundays), f"total_sunday_free_{w}")
+        model.Add(total_sunday_free_var == sum(sunday_free_vars[w]))
+        
+        sunday_free_worker_vars[w] = total_sunday_free_var
+
+    # STRATEGY: Pairwise proportional balance (simplest and most reliable)
+    if len(workers_with_sundays) > 1:
+        # For each pair of workers, ensure proportional fairness
+        for i, w1 in enumerate(workers_with_sundays):
+            for w2 in workers_with_sundays[i+1:]:
+                if last_day.get(w1, 0) == 0 :
+                    last_day[w1] = days_of_year[-1]
+                if last_day.get(w2, 0) == 0 :
+                    last_day[w2] = days_of_year[-1]
+                prop1 = (last_day.get(w1, 0) - first_day.get(w1, 0) + 1) / len(days_of_year)
+                prop1 = max(0.0, min(1.0, prop1))
+                prop2 = (last_day.get(w2, 0) - first_day.get(w2, 0) + 1) / len(days_of_year)
+                prop2 = max(0.0, min(1.0, prop2))
+                #logger.info(f"Worker {w1} proportion: {prop1}, first day: {first_day.get(w1, 0)}, last day: {last_day.get(w1, 0)}, Worker {w2} proportion: {prop2}, first day: {first_day.get(w2, 0)}, last day: {last_day.get(w2, 0)}")
+
+                if prop1 > 0 and prop2 > 0:
+                    # Calculate proportion ratio as integers (multiply by 100 for precision)
+                    prop1_int = int(prop1 * 100)
+                    prop2_int = int(prop2 * 100)
+                    
+                    # Calculate maximum possible difference
+                    max_sundays_w1 = len([d for d in sundays if d in working_days[w1]])
+                    max_sundays_w2 = len([d for d in sundays if d in working_days[w2]])
+                    max_diff = max(max_sundays_w1 * prop2_int, max_sundays_w2 * prop1_int)
+                    
+                    # Create variables for proportional difference
+                    proportional_diff_pos = model.NewIntVar(0, max_diff, f"prop_diff_pos_{w1}_{w2}")
+                    proportional_diff_neg = model.NewIntVar(0, max_diff, f"prop_diff_neg_{w1}_{w2}")
+                    
+                    # Proportional balance constraint:
+                    # sunday_free_worker_vars[w1] / prop1 should ≈ sunday_free_worker_vars[w2] / prop2
+                    # Rearranged: sunday_free_worker_vars[w1] * prop2_int should ≈ sunday_free_worker_vars[w2] * prop1_int
+                    
+                    model.Add(proportional_diff_pos >= sunday_free_worker_vars[w1] * prop2_int - sunday_free_worker_vars[w2] * prop1_int)
+                    model.Add(proportional_diff_pos >= 0)
+                    
+                    model.Add(proportional_diff_neg >= sunday_free_worker_vars[w2] * prop1_int - sunday_free_worker_vars[w1] * prop2_int)
+                    model.Add(proportional_diff_neg >= 0)
+
+                    # Store in optimization details
+                    optimization_details['point_7_sunday_balance_across_workers']['variables'].append({
+                        'worker1': w1,
+                        'worker2': w2,
+                        'proportional_diff_pos': proportional_diff_pos,
+                        'proportional_diff_neg': proportional_diff_neg,
+                        'prop1': prop1,
+                        'prop2': prop2,
+                        'total_sunday_free_w1': sunday_free_worker_vars[w1],
+                        'total_sunday_free_w2': sunday_free_worker_vars[w2]
+                    })
+                    
+                    # Add penalties for proportional imbalance
+                    weight = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 2  # Distribute penalty across pairs
+                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos)
+                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
+
+    # Add to objective
+    objective_terms.extend(sunday_balance_across_workers_penalties)
 
     # 5.2 Balance c2d free days
     c2d_balance_penalties = []
@@ -412,150 +533,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * over_penalty)
                     c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * under_penalty)
 
-
-
-
     objective_terms.extend(c2d_balance_penalties)
-
-    # 6. Penalize inconsistent shift types within a week for each worker
-    for w in workers:
-        for week in week_to_days.keys():  # Iterate over all weeks
-            days_in_week = week_to_days[week]
-            working_days_in_week = [d for d in days_in_week if d in working_days.get(w, [])]
-            
-            if len(working_days_in_week) >= 2:  # Only if worker has at least 2 working days this week
-                # Create variables to track if the worker has M or T shifts this week
-                has_m_shift = model.NewBoolVar(f"has_m_shift_{w}_{week}")
-                has_t_shift = model.NewBoolVar(f"has_t_shift_{w}_{week}")
-                
-                # Create expressions for total M and T shifts this week
-                total_m = sum(shift.get((w, d, "M"), 0) for d in working_days_in_week)
-                total_t = sum(shift.get((w, d, "T"), 0) for d in working_days_in_week)
-                
-                # Worker has M shifts if total_m > 0
-                model.Add(total_m >= 1).OnlyEnforceIf(has_m_shift)
-                model.Add(total_m == 0).OnlyEnforceIf(has_m_shift.Not())
-                
-                # Worker has T shifts if total_t > 0
-                model.Add(total_t >= 1).OnlyEnforceIf(has_t_shift)
-                model.Add(total_t == 0).OnlyEnforceIf(has_t_shift.Not())
-                
-                # Create a variable to indicate inconsistent shifts
-                inconsistent_shifts = model.NewBoolVar(f"inconsistent_shifts_{w}_{week}")
-                
-                # Worker has inconsistent shifts if both M and T shifts exist
-                model.AddBoolAnd([has_m_shift, has_t_shift]).OnlyEnforceIf(inconsistent_shifts)
-                model.AddBoolOr([has_m_shift.Not(), has_t_shift.Not()]).OnlyEnforceIf(inconsistent_shifts.Not())
-            
-                # Store the variable
-                inconsistent_shift_penalties[(w, week)] = inconsistent_shifts
-
-                # Store in optimization details
-                optimization_details['point_6_inconsistent_shifts']['variables'][(w, week)] = {
-                    'inconsistent_variable': inconsistent_shifts,
-                    'has_m_shift': has_m_shift,
-                    'has_t_shift': has_t_shift,
-                    'working_days_in_week': working_days_in_week
-                }
-                
-                # Add penalty to the objective function
-                objective_terms.append(INCONSISTENT_SHIFT_PENALTY * inconsistent_shifts)
-
-    # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
-    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5
-    sunday_balance_across_workers_penalties = []
-
-    # Create constraint variables for each worker's total Sunday free days
-    sunday_free_worker_vars = {}
-    workers_with_sundays = [] 
-
-    for w in all_workers:
-        worker_sundays = [d for d in sundays if d in working_days[w]]
-        
-        if len(worker_sundays) == 0:
-            continue  # Skip workers with no Sundays
-        
-        workers_with_sundays.append(w)
-        
-        # Create variables for Sunday free days
-        sunday_free_vars = []
-        for sunday in worker_sundays:
-            sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
-            
-            # Link to actual L or F shift assignment
-            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) >= 1).OnlyEnforceIf(sunday_free)
-            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
-            
-            sunday_free_vars.append(sunday_free)
-        
-        # Create constraint variable for total Sunday free days
-        total_sunday_free_var = model.NewIntVar(0, len(worker_sundays), f"total_sunday_free_{w}")
-        model.Add(total_sunday_free_var == sum(sunday_free_vars))
-        
-        sunday_free_worker_vars[w] = total_sunday_free_var
-
-    # STRATEGY: Pairwise proportional balance (simplest and most reliable)
-    if len(workers_with_sundays) > 1:
-        # For each pair of workers, ensure proportional fairness
-        for i, w1 in enumerate(workers_with_sundays):
-            for w2 in workers_with_sundays[i+1:]:
-                if last_day.get(w1, 0) == 0 :
-                    last_day[w1] = days_of_year[-1]
-                if last_day.get(w2, 0) == 0 :
-                    last_day[w2] = days_of_year[-1]
-                prop1 = (last_day.get(w1, 0) - first_day.get(w1, 0) + 1) / len(days_of_year)
-                prop1 = max(0.0, min(1.0, prop1))
-                prop2 = (last_day.get(w2, 0) - first_day.get(w2, 0) + 1) / len(days_of_year)
-                prop2 = max(0.0, min(1.0, prop2))
-                #logger.info(f"Worker {w1} proportion: {prop1}, first day: {first_day.get(w1, 0)}, last day: {last_day.get(w1, 0)}, Worker {w2} proportion: {prop2}, first day: {first_day.get(w2, 0)}, last day: {last_day.get(w2, 0)}")
-
-                if prop1 > 0 and prop2 > 0:
-                    # Calculate proportion ratio as integers (multiply by 100 for precision)
-                    prop1_int = int(prop1 * 100)
-                    prop2_int = int(prop2 * 100)
-                    
-                    # Calculate maximum possible difference
-                    max_sundays_w1 = len([d for d in sundays if d in working_days[w1]])
-                    max_sundays_w2 = len([d for d in sundays if d in working_days[w2]])
-                    max_diff = max(max_sundays_w1 * prop2_int, max_sundays_w2 * prop1_int)
-                    
-                    # Create variables for proportional difference
-                    proportional_diff_pos = model.NewIntVar(0, max_diff, f"prop_diff_pos_{w1}_{w2}")
-                    proportional_diff_neg = model.NewIntVar(0, max_diff, f"prop_diff_neg_{w1}_{w2}")
-                    
-                    # Proportional balance constraint:
-                    # sunday_free_worker_vars[w1] / prop1 should ≈ sunday_free_worker_vars[w2] / prop2
-                    # Rearranged: sunday_free_worker_vars[w1] * prop2_int should ≈ sunday_free_worker_vars[w2] * prop1_int
-                    
-                    model.Add(proportional_diff_pos >= 
-                            sunday_free_worker_vars[w1] * prop2_int - sunday_free_worker_vars[w2] * prop1_int)
-                    model.Add(proportional_diff_pos >= 0)
-                    
-                    model.Add(proportional_diff_neg >= 
-                            sunday_free_worker_vars[w2] * prop1_int - sunday_free_worker_vars[w1] * prop2_int)
-                    model.Add(proportional_diff_neg >= 0)
-
-                    # Store in optimization details
-                    optimization_details['point_7_sunday_balance_across_workers']['variables'].append({
-                        'worker1': w1,
-                        'worker2': w2,
-                        'proportional_diff_pos': proportional_diff_pos,
-                        'proportional_diff_neg': proportional_diff_neg,
-                        'prop1': prop1,
-                        'prop2': prop2,
-                        'total_sunday_free_w1': sunday_free_worker_vars[w1],
-                        'total_sunday_free_w2': sunday_free_worker_vars[w2]
-                    })
-                    
-                    # Add penalties for proportional imbalance
-                    weight = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 2  # Distribute penalty across pairs
-                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos)
-                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
-
-    # Add to objective
-    objective_terms.extend(sunday_balance_across_workers_penalties)  
- 
-
 
     # 7B Balancing number of LQ (quality weekends) across workers (pairwise)
     # Business rule: a weekend counts as LQ iff Saturday has shift "LQ" AND Sunday has shift "L".
