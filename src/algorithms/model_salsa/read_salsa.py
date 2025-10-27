@@ -675,14 +675,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     has_week_compensation_limit = True
 
                 if contract_type[w] == 8:
-                    if w == 81001475:
-                        worker_holiday[w] = [293, 294,295,297,298,299,302, 303, 304, 307, 309, 310, 311, 314, 316, 317, 318, 323, 324, 325, 326, 330, 331, 332, 333, 334, 338, 339, 340, 341, 342, 344, 345, 346, 348, 351, 353, 354, 355, 358, 360]
-                        fixed_days_off[w] = []
-                    work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa) #passar aqui dados do ano passado do trabalhador
+                    work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa)
                     if w not in workers_past:
                         worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(w, set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days_salsa, set(closed_holidays), work_days_per_week[w])
                     working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
-                    #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
                 else:
                     work_days_per_week[w] = [5] * 52
                 if not working_days[w]:
@@ -995,17 +991,19 @@ def consecutive_days(holiday_days_in_week, nbr_holidays, cut_off, days):
     if nbr_holidays <= 2:
         #print("week too short")
         return False
-    for i in range(nbr_holidays - 1):
-        if holiday_days_in_week[i + 1] != holiday_days_in_week[i] + 1:
-            #print("holidays not in a row")
-            return False
     if cut_off == 5:
-        if holiday_days_in_week[-1] < days[4]:
-            #print("holidays end before friday")
+        if not all(day in holiday_days_in_week for day in days[2:5]):
+            print(f"holidays not in a row {holiday_days_in_week}")
+            return False
+        if holiday_days_in_week[-1] != days[4]:
+            print(f"holidays dont end on friday {holiday_days_in_week[-1]} {days[4]}")
             return False
     elif cut_off == 6:
-        if holiday_days_in_week[-1] < days[5]:
-            #print(f"holidays end before saturday {holiday_days_in_week[i]} {days[5]}")
+        if not all(day in holiday_days_in_week for day in days[3:6]):
+            print(f"holidays not in a row {holiday_days_in_week}")
+            return False
+        if holiday_days_in_week[-1] != days[5]:
+            print(f"holidays dont end on saturday {holiday_days_in_week[-1]} {days[5]}")
             return False
     return True
 
@@ -1022,7 +1020,7 @@ def data_treatment(w, worker_holiday, fixed_days_off, fixed_LQs, week_to_days_sa
 
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
 
-            if nbr_holidays <= 5:
+            if nbr_holidays < 5:
                 if consecutive_days(sorted(holiday_days_in_week), nbr_holidays, 5, days) == False:
                     continue
 
@@ -1066,7 +1064,7 @@ def data_treatment(w, worker_holiday, fixed_days_off, fixed_LQs, week_to_days_sa
             if len(days_off) > 0:
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
                 continue
-            if nbr_holidays < 6:
+            if nbr_holidays <= 6:
                 if consecutive_days(sorted(holiday_days_in_week), nbr_holidays, 6, days) == False:
                     continue
             atributing_days = list(sorted(days_set - closed_holidays))
