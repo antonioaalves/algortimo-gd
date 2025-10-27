@@ -668,18 +668,17 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
 
                 first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
-
                 week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
                 if (has_week_compensation_limit == False and week_compensation_limit[w] != 0):
                     has_week_compensation_limit = True
 
                 if contract_type[w] == 8:
                     if (first_week_5_6[w] != 0):
-                        work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa) #passar aqui dados do ano passado do trabalhador
+                        work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa)
                     else:
                         work_days_per_week[w] = populate_week_fixed_days_off(set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days_salsa)
                     check_5_6_pattern_consistency(w, set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days, work_days_per_week[w])
-                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), work_days_per_week[w])
+                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(w, set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), set(fixed_LQs[w]), week_to_days_salsa, set(closed_holidays), work_days_per_week[w])
                     working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
                 else:
                     work_days_per_week[w] = [5] * 52
@@ -1093,16 +1092,18 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days):
     week_5_days = 0
     for week, days in week_to_days.items():
         days_set = set(days)
-
-        if len(days_set.intersection(fixed_days_off.union(fixed_LQs))) > 1:
+        days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+        if len(days_off_week) > 1:
             week_5_days = week - 1
             break
 
     if week_5_days % 2 == 0:
-        logger.debug(f"Found week that has to be of 5 working days in week {week_5_days + 1}, since its even, first week will start with 5")
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+                    f"with days {days_off_week} since its even, first week will start with 5")
         work_days_per_week= np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
     else:
-        logger.debug(f"Found week that has to be of 5 working days in week {week_5_days + 1}, since its odd, first week will start with 6")
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+                    f"with days {days_off_week} since its odd, first week will start with 6")
         work_days_per_week= np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
 
     return work_days_per_week.astype(int)
