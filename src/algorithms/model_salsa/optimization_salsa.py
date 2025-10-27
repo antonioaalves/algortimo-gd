@@ -307,18 +307,18 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     for w in workers:
         worker_sundays[w] = [d for d in sundays if d in working_days[w]]
+        sunday_free_vars[w] = []
         
         if len(worker_sundays[w]) <= 1:
             continue
         
         # Create variables for Sunday free days (L shifts)
-        sunday_free_vars[w] = []
         for sunday in worker_sundays[w]:
             sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
             
             # Link to actual L shift assignment
-            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) >= 1).OnlyEnforceIf(sunday_free)
-            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
+            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) + shift.get((w, sunday, "LD"), 0) >= 1).OnlyEnforceIf(sunday_free)
+            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) + shift.get((w, sunday, "LD"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
             sunday_free_vars[w].append(sunday_free)
         
         # Calculate target spacing between Sunday free days

@@ -61,7 +61,7 @@ class SalsaAlgorithm(BaseAlgorithm):
         """
         # Default parameters for the SALSA algorithm
         default_parameters = {
-            "shifts": ["M", "T", "L", "LQ", 'LD', "F", "A", "V", "-"],
+            "shifts": ['M', 'T', 'L', 'LQ', 'LD', 'F', 'A', 'V', '-'],
             "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
             "working_shifts": ['M', 'T', 'LD'],
             "settings":{
@@ -318,16 +318,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             # workers_complete = [w for w in workers_complete if w not in DROP_WORKERS]
             # workers_complete_cycle = [w for w in workers_complete_cycle if w not in DROP_WORKERS]
 
-            # # 2) dicionários por worker
-            # for dct in [
-            #     working_days, worker_holiday, missing_days, empty_days, free_day_complete_cycle,
-            #     contract_type, c2d, c3d, l_d, l_q, t_lq, data_admissao, data_demissao,
-            #     first_day, last_day, total_l, total_l_dom, fixed_days_off, fixed_LQs, role_by_worker
-            # ]:
-            #     if isinstance(dct, dict):
-            #         for worker_id in DROP_WORKERS:
-            #             dct.pop(worker_id, None)
-
             # # 3) mapas (w, week, ...) → limpar chaves desses workers
             # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] not in DROP_WORKERS}
 
@@ -339,7 +329,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             model = cp_model.CpModel()
             self.model = model
             
-            # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_holiday,
                                        missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
                                        fixed_M, fixed_T, start_weekday, workers_past, fixed_compensation_days)
