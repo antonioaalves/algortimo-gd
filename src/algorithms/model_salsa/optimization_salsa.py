@@ -309,7 +309,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         worker_sundays[w] = [d for d in sundays if d in working_days[w]]
         
         if len(worker_sundays[w]) <= 1:
-            continue  # Skip if worker has 0 or 1 Sunday (no balancing needed)
+            continue
         
         # Create variables for Sunday free days (L shifts)
         sunday_free_vars[w] = []
@@ -382,11 +382,11 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     for w in all_workers:
         if len(worker_sundays[w]) == 0:
-            continue  # Skip workers with no Sundays
+            continue
         
         workers_with_sundays.append(w)
         # Create constraint variable for total Sunday free days
-        total_sunday_free_var = model.NewIntVar(0, len(worker_sundays), f"total_sunday_free_{w}")
+        total_sunday_free_var = model.NewIntVar(0, len(worker_sundays[w]), f"total_sunday_free_{w}")
         model.Add(total_sunday_free_var == sum(sunday_free_vars[w]))
         
         sunday_free_worker_vars[w] = total_sunday_free_var
