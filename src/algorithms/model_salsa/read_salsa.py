@@ -351,7 +351,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         min_calendar_date = matriz_calendario_gd['data'].min()
         max_calendar_date = matriz_calendario_gd['data'].max()
         min_day_of_year = min_calendar_date.dayofyear
-        max_day_of_year = max_calendar_date.dayofyear
+        max_day_of_year = (max_calendar_date - min_calendar_date).days + 1
 
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_of_year} to {max_day_of_year}")
