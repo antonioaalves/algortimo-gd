@@ -41,8 +41,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
         logger.info(f"For PAST WORKER {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
         logger.info(f"\tDEBUG missing {sorted(missing_set)}")
-        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
+        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
         logger.info(f"\tDEBUG fixed M {sorted(fixed_M_set)}")
         logger.info(f"\tDEBUG fixed T {sorted(fixed_T_set)}")
@@ -69,8 +69,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
         logger.info(f"For worker {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
         logger.info(f"\tDEBUG missing {sorted(missing_set)}")
-        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
+        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
  
         blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set
