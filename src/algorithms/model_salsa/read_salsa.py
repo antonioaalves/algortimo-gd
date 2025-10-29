@@ -546,13 +546,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 missing_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in missing_days[w]])
             
 
-            empty_days[w] = sorted(list(set(empty_days[w]) - set(closed_holidays)))
-            fixed_days_off[w] = sorted(list(set(fixed_days_off[w]) - set(closed_holidays)))
-            #logger.info(f"Worker {w} empty days after removing closed holidays: {empty_days[w]}")
-            #logger.info(f"Worker {w} holiday days after removing closed holidays: {worker_holiday[w]}")
-            missing_days[w] = sorted(list(set(missing_days[w]) - set(closed_holidays)))
-            #logger.info(f"Worker {w} missing days after removing closed holidays: {missing_days[w]}")
-            free_day_complete_cycle[w] = sorted(list(set(free_day_complete_cycle[w]) - set(closed_holidays)))
+            empty_days[w] = sorted(set(empty_days[w]) - set(closed_holidays))
+            fixed_days_off[w] = sorted(set(fixed_days_off[w]) - set(closed_holidays))
+            missing_days[w] = sorted(set(missing_days[w]) - set(closed_holidays))
+            free_day_complete_cycle[w] = sorted(set(free_day_complete_cycle[w]) - set(closed_holidays))
             worker_info = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
 
             if not worker_info.empty:
@@ -1029,24 +1026,24 @@ def data_treatment(w, worker_holiday, fixed_days_off, fixed_LQs, week_to_days_sa
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
 
-            atributing_days = list(sorted(days_set - closed_holidays))
+            atributing_days = sorted(days_set - closed_holidays)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]
-                if only_day_off == atributing_days[-1] and only_day_off == days[6]:
+                if only_day_off == atributing_days[-1] and only_day_off == days[6] and atributing_days[-2] == days[5]:
                     l2 = atributing_days[-2]
                     worker_holiday -= {l2}
                     fixed_LQs.append(l2)
 
-                elif only_day_off == atributing_days[-2] and only_day_off == days[5]:
+                elif only_day_off == atributing_days[-2] and only_day_off == days[5] and atributing_days[-1] == days[6]:
                     l1 = atributing_days[-1]
                     worker_holiday -= {l1}
                     fixed_days_off |= {l1}
                     fixed_days_off -= {only_day_off}
                     fixed_LQs.append(only_day_off)
-                    
                 else:
-                    l1 = atributing_days[-1]
+                    #last day insured not to be an already fixed day off
+                    l1 = sorted(set(atributing_days) - {only_day_off})[-1]
                     worker_holiday -= {l1}
                     fixed_days_off |= {l1}
             else:
@@ -1068,7 +1065,7 @@ def data_treatment(w, worker_holiday, fixed_days_off, fixed_LQs, week_to_days_sa
             if nbr_holidays <= 6:
                 if consecutive_days(sorted(holiday_days_in_week), nbr_holidays, 6, days) == False:
                     continue
-            atributing_days = list(sorted(days_set - closed_holidays))
+            atributing_days = sorted(days_set - closed_holidays)
             l1 = atributing_days[-1]
             worker_holiday -= {l1}
             fixed_days_off |= {l1}
