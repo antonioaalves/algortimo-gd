@@ -232,9 +232,10 @@ def working_day_shifts(model, shift, workers, working_days, check_shift, workers
             if total_shifts:
                 model.add_exactly_one(total_shifts)
 
-def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type):
-    for w in workers: 
-        # Get all working days for this worker
+def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days, fixed_LQs):
+    for w in workers:
+        
+        all_days_off = fixed_days[w].union(fixed_LQs[w])
         all_work_days = sorted(working_days[w])
         if contract_type.get(w, 0) == 8:
             max_continuous_free_days = 2
@@ -265,7 +266,9 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
         for i in range(len(all_work_days) - max_continuous_free_days):
             # Get the sequence of consecutive day indices
             day_sequence = all_work_days[i:i + max_continuous_free_days + 1]
-            
+
+            if all(day_sequence[j] in all_days_off for j in range(len(day_sequence))):
+                continue
             # Check if all days in the sequence are actually consecutive (no gaps)
             is_consecutive = all(
                 day_sequence[j + 1] == day_sequence[j] + 1 
@@ -576,24 +579,22 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 #     model.Add(free_shift_sum <= required_free_days)
 
 #-----------------------------------------------------------------------------------------------
-def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift):
+def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift, fixed_days):
     """Ensures that workers contracted in the middle of the period have a working shift on their first registered day."""
     # Find the earliest first registered day across all workers
     earliest_first_day = min(first_registered_day.get(w, float('inf')) for w in workers if first_registered_day.get(w, 0) > 0)
     
     for w in workers:
         # Get the worker's first registered day
-        worker_first_day = first_registered_day.get(w, 0)
+        first = first_registered_day.get(w, 0)
         
         # Only apply constraint if:
         # 1. The worker has a valid first registered day
         # 2. That day is within their working days
         # 3. The worker was contracted after the earliest worker (i.e., in the middle of the period)
-        if (worker_first_day > 0 and 
-            worker_first_day in working_days[w] and 
-            worker_first_day > earliest_first_day):
+        if (first > 0 and first in working_days[w] and first > earliest_first_day and first not in fixed_days[w]):
             # Ensure the worker has exactly one working shift on their first registered day
-            model.Add(sum(shift.get((w, worker_first_day, shift_type), 0) 
+            model.Add(sum(shift.get((w, first, shift_type), 0) 
                     for shift_type in working_shift) == 1)
             
 #-------------------------------------------------------------------------------------------------------------------------------------
