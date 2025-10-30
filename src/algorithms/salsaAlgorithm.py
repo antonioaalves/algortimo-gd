@@ -286,6 +286,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             partial_workers_complete = adapted_data['partial_workers_complete']
             workers_past = adapted_data['workers_past']
             fixed_compensation_days = adapted_data['fixed_compensation_days']
+            max_day_year = adapted_data["max_day_year"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -360,7 +361,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Maximum continuous working days constraint
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
-            LQ_attribution(model, shift, workers, working_days, c2d)           
+            LQ_attribution(model, shift, workers, working_days, c2d, max_day_year)           
             
             # Worker week shift assignments
             assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
@@ -372,7 +373,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
             
             self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
-            salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
+            salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays, max_day_year)
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
@@ -380,7 +381,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
 
-            free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
+            free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, max_day_year)
 
             if country == "spain":
                 compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_holiday)
@@ -394,7 +395,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past)  # role_by_worker)
+                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, max_day_year)
 
             # =================================================================
             # SOLVE THE MODEL
