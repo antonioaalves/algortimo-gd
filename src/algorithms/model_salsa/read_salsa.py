@@ -870,14 +870,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         logger.info("Setting up additional worker assignments")
         
-        worker_week_shift = {}
+        worker_day_shift = {}
 
         # Iterate over each worker
         for w in workers_complete:
             # Only iterate over weeks that actually exist in week_to_days
-            for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
-                worker_week_shift[(w, week, 'M')] = 0
-                worker_week_shift[(w, week, 'T')] = 0
+            for days in working_days[w]:  # Use only existing weeks instead of range(1, 53)
+                worker_day_shift[(w, week, 'M')] = 0
+                worker_day_shift[(w, week, 'T')] = 0
                 
                 # Iterate through days of the week for the current week
                 for day in week_to_days[week]:
@@ -893,16 +893,16 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         # Check for morning shifts ('M') for the current worker
                         if not shift_entries[shift_entries['tipo_turno'] == "M"].empty:
                             # Assign morning shift to the worker for that week
-                            worker_week_shift[(w, week, 'M')] = 1  # Set to 1 if morning shift is found
+                            worker_day_shift[(w, week, 'M')] = 1  # Set to 1 if morning shift is found
 
                         # Check for afternoon shifts ('T') for the current worker
                         if not shift_entries[shift_entries['tipo_turno'] == "T"].empty:
                             # Assign afternoon shift to the worker for that week
-                            worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
+                            worker_day_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
                     
-                        #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
+                        #logger.info(f"Worker {w} week {week} day {day}: M={worker_day_shift[(w, week, 'M')]}, T={worker_day_shift[(w, week, 'T')]}")
                 
-            if not worker_week_shift:
+            if not worker_day_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
 
         working_shift_2 = ["M", "T"]
@@ -942,7 +942,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "non_holidays": non_holidays,                         # 10
             "start_weekday": start_weekday,                       # 11
             "week_to_days": week_to_days,                         # 12
-            "worker_week_shift": worker_week_shift,               # 13
+            "worker_day_shift": worker_day_shift,               # 13
             "matriz_colaborador_gd": matriz_colaborador_gd,       # 14
             "workers": workers,                                   # 15
             "contract_type": contract_type,                       # 16

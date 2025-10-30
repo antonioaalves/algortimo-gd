@@ -244,7 +244,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             non_holidays = adapted_data['non_holidays']
             start_weekday = adapted_data['start_weekday']
             week_to_days = adapted_data['week_to_days']
-            worker_week_shift = adapted_data['worker_week_shift']
+            worker_day_shift = adapted_data['worker_day_shift']
             matriz_colaborador_gd = adapted_data['matriz_colaborador_gd']
             workers = adapted_data['workers']
             contract_type = adapted_data['contract_type']
@@ -330,7 +330,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             #             dct.pop(worker_id, None)
 
             # # 3) mapas (w, week, ...) → limpar chaves desses workers
-            # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] not in DROP_WORKERS}
+            # worker_day_shift = {k: v for k, v in worker_day_shift.items() if k[0] not in DROP_WORKERS}
 
             # =================================================================
             # CREATE MODEL AND DECISION VARIABLES
@@ -364,7 +364,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             LQ_attribution(model, shift, workers, working_days, c2d, max_day_year)           
             
             # Worker week shift assignments
-            assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
+            assign_week_shift(model, shift, workers, week_to_days, working_days, worker_day_shift)
             
             # Working day shifts constraint
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)

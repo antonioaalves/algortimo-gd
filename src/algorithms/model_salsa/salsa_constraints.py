@@ -195,8 +195,8 @@ def LQ_attribution(model, shift, workers, working_days, c2d, max_day_year):
     for w in workers:
         model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if d < max_day_year and (w, d, "LQ") in shift) >= c2d.get(w, 0))
 
-def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift):
-    # Contraint for workers shifts taking into account the worker_week_shift (each week a worker can either be )
+def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_day_shift):
+    # Contraint for workers shifts taking into account the worker_day_shift (each week a worker can either be )
     for w in workers:
         for week in week_to_days.keys():  # Iterate over the 52 weeks
             # Iterate through days of the week for the current week
@@ -204,11 +204,11 @@ def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_
                 if day in working_days[w]:
                     # Morning shift constraint: worker can only be assigned to M if available for M
                     if ((w, day, "M") in shift):
-                        model.Add(shift[(w, day, "M")] <= worker_week_shift[(w, week, 'M')])
+                        model.Add(shift[(w, day, "M")] <= worker_day_shift[(w, week, 'M')])
                     
                     # Afternoon shift constraint: worker can only be assigned to T if available for T
                     if ((w, day, "T") in shift):
-                        model.Add(shift[(w, day, "T")] <= worker_week_shift[(w, week, 'T')])
+                        model.Add(shift[(w, day, "T")] <= worker_day_shift[(w, week, 'T')])
 
 def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
