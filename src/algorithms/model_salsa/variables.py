@@ -80,10 +80,10 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
 
-        add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'V', start_weekday)
-        add_var(model, shift, w, absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'A', start_weekday)
-        add_var(model, shift, w, fixed_days_set - closed_set - fixed_LQs_set - empty_days_set, 'L', start_weekday)
-        add_var(model, shift, w, fixed_LQs_set - closed_set - empty_days_set, 'LQ', start_weekday)
+        add_var(model, shift, w, absence_set - empty_days_set, 'A', start_weekday)
+        add_var(model, shift, w, missing_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'V', start_weekday)
+        add_var(model, shift, w, fixed_days_set - fixed_LQs_set - empty_days_set, 'L', start_weekday)
+        add_var(model, shift, w, fixed_LQs_set - empty_days_set, 'LQ', start_weekday)
         add_var(model, shift, w, closed_set - empty_days_set, 'F', start_weekday)
         add_var(model, shift, w, empty_days_set, '-', start_weekday)
     return shift
