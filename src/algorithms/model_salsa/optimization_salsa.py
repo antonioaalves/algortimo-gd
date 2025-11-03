@@ -6,7 +6,7 @@ logger = get_logger(PROJECT_NAME)
 
 def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days,
                        closed_holidays, min_workers,week_to_days, sundays, c2d, first_day, last_day,
-                       role_by_worker, work_day_hours, workers_past, max_day_year):
+                       role_by_worker, work_day_hours, workers_past, year_range):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -261,7 +261,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     # 5.1 Balance sundays free days 
     sunday_balance_penalties = []
     for w in workers:
-        worker_sundays = [d for d in sundays if d in working_days[w] and d <= max_day_year]
+        worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
         
         if len(worker_sundays) <= 1:
             continue  # Skip if worker has 0 or 1 Sunday (no balancing needed)
@@ -340,7 +340,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         weekend_dates = []
         
         for sunday in sundays:
-            if sunday > max_day_year:
+            if not (year_range[0] <= sunday <= year_range[1]):
                 continue
             saturday = sunday - 1
             
@@ -471,7 +471,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     workers_with_sundays = [] 
 
     for w in all_workers:
-        worker_sundays = [d for d in sundays if d in working_days[w] and d <= max_day_year]
+        worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
         
         if len(worker_sundays) == 0:
             continue  # Skip workers with no Sundays
@@ -516,8 +516,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     prop2_int = int(prop2 * 100)
                     
                     # Calculate maximum possible difference
-                    max_sundays_w1 = len([d for d in sundays if d in working_days[w1] and d <= max_day_year])
-                    max_sundays_w2 = len([d for d in sundays if d in working_days[w2] and d <= max_day_year])
+                    max_sundays_w1 = len([d for d in sundays if d in working_days[w1] and year_range[0] <= d <= year_range[1]])
+                    max_sundays_w2 = len([d for d in sundays if d in working_days[w2] and year_range[0] <= d <= year_range[1]])
                     max_diff = max(max_sundays_w1 * prop2_int, max_sundays_w2 * prop1_int)
                     
                     # Create variables for proportional difference
@@ -565,12 +565,12 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     lq_free_worker_vars = {}
     workers_with_lq = []
-    saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year and s <= max_day_year]
+    saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year and year_range[0] <= s <= year_range[1]]
 
     for w in all_workers:
         # Only consider weekends where the worker is actually exposed:
         # both Saturday and the following Sunday exist in their working_days.
-        eligible_saturdays = [s for s in saturdays if (s in working_days[w] and (s + 1) in working_days[w] and s < max_day_year)]
+        eligible_saturdays = [s for s in saturdays if (s in working_days[w] and (s + 1) in working_days[w] and year_range[0] <= s <= year_range[1])]
         if not eligible_saturdays:
             continue
 

@@ -21,7 +21,6 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 
- 
     closed_set = set(closed_holidays)
     for w in past_workers:
         empty_days_set = set(empty_days[w])
@@ -31,7 +30,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
         absence_set = set(absences[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set
         shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set
         shift_T_set = set(shift_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - shift_M_set
-        fixed_c_set = set(fixed_compensation_days[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - shift_M_set - shift_T_set
+        fixed_LD_set = set(fixed_compensation_days[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set - shift_M_set - shift_T_set
 
         logger.info(f"For PAST WORKER {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
@@ -41,9 +40,9 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
         logger.info(f"\tDEBUG fixed M {sorted(shift_M_set)}")
         logger.info(f"\tDEBUG fixed T {sorted(shift_T_set)}")
-        logger.info(f"\tDEBUG fixed LDs {sorted(fixed_c_set)}")
+        logger.info(f"\tDEBUG fixed LDs {sorted(fixed_LD_set)}")
 
-        add_var(model, shift, w, fixed_c_set, 'LD', start_weekday)
+        add_var(model, shift, w, fixed_LD_set, 'LD', start_weekday)
         add_var(model, shift, w, shift_T_set, 'T', start_weekday)
         add_var(model, shift, w, shift_M_set, 'M', start_weekday)
         add_var(model, shift, w, missing_set, 'V', start_weekday)
@@ -68,6 +67,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
         fixed_LQs_set = set(fixed_LQs[w]) - missing_set - closed_set
         fixed_days_set = set(fixed_days_off[w]) - missing_set - closed_set - fixed_LQs_set
         absence_set = set(absences[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set
+        shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set
+        shift_T_set = set(shift_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - missing_set - absence_set
 
         logger.info(f"For worker {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_days_set)}")
@@ -82,9 +83,9 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
             if d not in blocked_days:
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
-                if d in shift_M[w]:
+                if d in shift_M_set:
                     shift[(w, d, 'M')] = model.NewBoolVar(f"{w}_Day{d}_M")
-                if d in shift_T[w]:
+                if d in shift_T_set:
                     shift[(w, d, 'T')] = model.NewBoolVar(f"{w}_Day{d}_T")
 
         add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set - fixed_LQs_set - empty_days_set, 'V', start_weekday)

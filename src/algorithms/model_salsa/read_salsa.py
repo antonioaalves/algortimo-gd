@@ -350,19 +350,27 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Get the date range from matriz_calendario for validation
         min_calendar_date = matriz_calendario_gd['data'].min()
         max_calendar_date = matriz_calendario_gd['data'].max()
-        min_day_of_year = min_calendar_date.dayofyear
-        max_day_of_year = (max_calendar_date - min_calendar_date).days + 1
 
-        feb29_exists = not matriz_calendario_gd.loc[
-        (matriz_calendario_gd['data'].dt.month == 2) &
-        (matriz_calendario_gd['data'].dt.day == 29)
-        ].empty
+        jan1 = matriz_estimativas_gd.loc[
+        (matriz_estimativas_gd['data'].dt.month == 1) &
+        (matriz_estimativas_gd['data'].dt.day == 1)
+        ]
 
-        max_day_year = 366 if feb29_exists else 365
+        dec31 = matriz_estimativas_gd.loc[
+        (matriz_estimativas_gd['data'].dt.month == 12) &
+        (matriz_estimativas_gd['data'].dt.day == 31)
+        ]
+        if (1 == 2):
+            min_day_year = jan1['index'].iloc[0] if not jan1.empty else 1 #DEPENDE DO NOME QUE O ANTONIO DER À COLUNA
+            max_day_year = dec31['index'].iloc[0] if not dec31.empty else 365 #DEPENDE DO NOME QUE O ANTONIO DER À COLUNA
+        else:
+            min_day_year = 1
+            max_day_year = 365
 
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
-        logger.info(f"Calendar day of year range: {min_day_of_year} to {max_day_of_year}")
-        
+        logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
+        year_range = [min_day_year, max_day_year]
+
         # Initialize dictionaries for worker-specific information
         empty_days = {}
         worker_holiday = {}
@@ -742,7 +750,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         proportion = {}
         for w in workers:
             if (last_registered_day[w] > 0 and last_registered_day[w] < 364):
-                proportion[w] = (last_registered_day[w]- first_registered_day[w])  / (days_of_year[-1] - first_registered_day[w])
+                proportion[w] = (last_registered_day[w]- first_registered_day[w])  / (max_day_year - first_registered_day[w])
                 logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion[w] {proportion[w]:.2f}")
                 total_l[w] = int(round(proportion[w] * total_l[w]))
                 total_l_dom[w] = int(round(proportion[w] * total_l_dom[w]))
@@ -882,7 +890,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "partial_workers_complete": partial_workers_complete,
             "workers_past": workers_past,                        
             "fixed_compensation_days": fixed_compensation_days,  
-            "max_day_year": max_day_year,
+            "year_range": year_range,
             }
         
     except Exception as e:
