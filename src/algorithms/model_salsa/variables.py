@@ -20,11 +20,6 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
                        start_weekday, past_workers, fixed_compensation_days):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
-    shifts2 = shifts.copy()
-    shifts2.remove('A')
-    shifts2.remove('V')
-    shifts2.remove('F')
-    shifts2.remove('-')
 
  
     closed_set = set(closed_holidays)
@@ -58,6 +53,12 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, mi
         add_var(model, shift, w, closed_set, 'F', start_weekday)
         add_var(model, shift, w, empty_days_set, '-', start_weekday)
 
+    shifts2 = shifts.copy()
+    shifts2.remove('A')
+    shifts2.remove('V')
+    shifts2.remove('F')
+    shifts2.remove('-')
+    
     for w in workers:
  
         empty_days_set = set(empty_days[w])

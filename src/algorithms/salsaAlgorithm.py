@@ -244,7 +244,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             non_holidays = adapted_data['non_holidays']
             start_weekday = adapted_data['start_weekday']
             week_to_days = adapted_data['week_to_days']
-            worker_day_shift = adapted_data['worker_day_shift']
             matriz_colaborador_gd = adapted_data['matriz_colaborador_gd']
             workers = adapted_data['workers']
             contract_type = adapted_data['contract_type']
@@ -271,12 +270,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
             fixed_LQs = adapted_data['fixed_LQs']
-            fixed_M = adapted_data['fixed_M']
-            fixed_T = adapted_data['fixed_T']
+            shift_M = adapted_data['shift_M']
+            shift_T = adapted_data['shift_T']
             role_by_worker = adapted_data['role_by_worker']
-            #managers = adapted_data['managers']
-            #keyholders = adapted_data['keyholders']
-            # week_cut = adapted_data['week_cut']
             proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
             work_days_per_week = adapted_data['work_days_per_week']
@@ -343,7 +339,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_holiday,
                                        missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       fixed_M, fixed_T, start_weekday, workers_past, fixed_compensation_days)
+                                       shift_M, shift_T, start_weekday, workers_past, fixed_compensation_days)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -364,7 +360,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             LQ_attribution(model, shift, workers, working_days, c2d, max_day_year)           
             
             # Worker week shift assignments
-            assign_week_shift(model, shift, workers, week_to_days, working_days, worker_day_shift)
+            assign_week_shift(model, shift, workers, working_days, shift_M, shift_T)
             
             # Working day shifts constraint
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)

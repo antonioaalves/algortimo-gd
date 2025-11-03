@@ -195,20 +195,23 @@ def LQ_attribution(model, shift, workers, working_days, c2d, max_day_year):
     for w in workers:
         model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if d < max_day_year and (w, d, "LQ") in shift) >= c2d.get(w, 0))
 
-def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_day_shift):
+def assign_week_shift(model, shift, workers, working_days, shift_M, shift_T):
     # Contraint for workers shifts taking into account the worker_day_shift (each week a worker can either be )
     for w in workers:
-        for week in week_to_days.keys():  # Iterate over the 52 weeks
-            # Iterate through days of the week for the current week
-            for day in week_to_days[week]:
-                if day in working_days[w]:
-                    # Morning shift constraint: worker can only be assigned to M if available for M
-                    if ((w, day, "M") in shift):
-                        model.Add(shift[(w, day, "M")] <= worker_day_shift[(w, week, 'M')])
-                    
-                    # Afternoon shift constraint: worker can only be assigned to T if available for T
-                    if ((w, day, "T") in shift):
-                        model.Add(shift[(w, day, "T")] <= worker_day_shift[(w, week, 'T')])
+        for day in working_days[w]:
+            # Morning shift constraint: worker can only be assigned to M if available for M
+            if (w, day, "M") in shift:
+                if (day not in shift_M[w]):
+                        model.Add(shift[(w, day, "M")] == 0)
+                else:
+                    model.Add(shift[(w, day, "M")] <= 1)
+
+            # Afternoon shift constraint: worker can only be assigned to T if available for T
+            if (w, day, "T") in shift:
+                if (day not in shift_T[w]):
+                        model.Add(shift[(w, day, "T")] == 0)
+                else:
+                    model.Add(shift[(w, day, "T")] <= 1)
 
 def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
@@ -294,9 +297,9 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
             
             if F_special_day == False:
                 # First, identify all potential 2-day quality weekends (Saturday + Sunday)
-                for d in working_days[w] and d <= max_day_year:
+                for d in working_days[w]:
                     # If this is a Sunday and the previous day (Saturday) is a working day
-                    if d in sundays and d - 1 in working_days[w]:  
+                    if d in sundays and d - 1 in working_days[w] and d <= max_day_year:  
                         # Boolean variables to check if the worker is assigned each shift
                         has_L_on_sunday = model.NewBoolVar(f"has_L_on_sunday_{w}_{d}")
                         has_LQ_on_saturday = model.NewBoolVar(f"has_LQ_on_saturday_{w}_{d-1}")
@@ -323,7 +326,9 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                 
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
-                for d in working_days[w] and d <= max_day_year:
+                for d in working_days[w]:
+                    if d > max_day_year:
+                        continue
                     # If the worker can be assigned an LQ shift on this day
                     if (w, d, "LQ") in shift:
                         # This boolean captures if this day could be part of a quality weekend
@@ -358,7 +363,9 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
             else:
                 # First, identify all potential 2-day quality weekends (Saturday + Sunday)
-                for d in days_of_year and d <= max_day_year:
+                for d in days_of_year:
+                    if d > max_day_year:
+                        continue
                     if d in sundays and (d in working_days[w] or d in closed_holidays) and (d - 1 in working_days[w] or d - 1 in closed_holidays):
                         # Boolean variables to check if the worker is assigned each shift
                         has_L_on_sunday = model.NewBoolVar(f"has_L_on_sunday_{w}_{d}")
@@ -400,7 +407,9 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                 
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
-                for d in working_days[w] and d < max_day_year:
+                for d in working_days[w]:
+                    if d >= max_day_year:
+                        continue
                     # If the worker can be assigned an LQ shift on this day
                     if (w, d, "LQ") in shift:
                         # This boolean captures if this day could be part of a quality weekend
