@@ -18,7 +18,7 @@ from src.config import PROJECT_NAME, ROOT_DIR
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    LQ_attribution, compensation_days, assign_week_shift, working_day_shifts, salsa_2_consecutive_free_days,
+    LQ_attribution, compensation_days, working_day_shifts, salsa_2_consecutive_free_days,
     salsa_2_day_quality_weekend, salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free,
     free_days_special_days
 )
@@ -358,9 +358,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
             LQ_attribution(model, shift, workers, working_days, c2d, max_day_year)           
-            
-            # Worker week shift assignments
-            assign_week_shift(model, shift, workers, working_days, shift_M, shift_T)
             
             # Working day shifts constraint
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)

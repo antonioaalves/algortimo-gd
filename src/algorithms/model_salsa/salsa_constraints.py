@@ -195,24 +195,6 @@ def LQ_attribution(model, shift, workers, working_days, c2d, max_day_year):
     for w in workers:
         model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if d < max_day_year and (w, d, "LQ") in shift) >= c2d.get(w, 0))
 
-def assign_week_shift(model, shift, workers, working_days, shift_M, shift_T):
-    # Contraint for workers shifts taking into account the worker_day_shift (each week a worker can either be )
-    for w in workers:
-        for day in working_days[w]:
-            # Morning shift constraint: worker can only be assigned to M if available for M
-            if (w, day, "M") in shift:
-                if (day not in shift_M[w]):
-                        model.Add(shift[(w, day, "M")] == 0)
-                else:
-                    model.Add(shift[(w, day, "M")] <= 1)
-
-            # Afternoon shift constraint: worker can only be assigned to T if available for T
-            if (w, day, "T") in shift:
-                if (day not in shift_T[w]):
-                        model.Add(shift[(w, day, "T")] == 0)
-                else:
-                    model.Add(shift[(w, day, "T")] <= 1)
-
 def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
     #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
@@ -447,26 +429,10 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
     for w in workers:
         for day in working_days[w]:
             # Get day of week (5 = Saturday)
-            day_of_week = (day + start_weekday - 2) % 7
-            
-            # Case 1: Saturday (day_of_week == 5)
-            if day_of_week == 5:
-                sunday_day = day + 1
-                
-                # Check if Sunday exists and is within the year bounds
-                if sunday_day in working_days[w]:
-                    # Check if both Saturday and Sunday shifts exist for this worker
-                    saturday_l_key = (w, day, "L")
-                    sunday_l_key = (w, sunday_day, "L")
-                    
-                    if saturday_l_key in shift and sunday_l_key in shift:
-                        saturday_l = shift[saturday_l_key]
-                        sunday_l = shift[sunday_l_key]
-                        #logger.debug(f"DEBUG: Adding constraint for Worker {w}, Saturday {day}, Sunday {sunday_day}")
-                        # If Sunday has L, then Saturday can't have L
-                        # This translates to: sunday_l == 1 → saturday_l == 0
-                        # Which is equivalent to: saturday_l + sunday_l <= 1
-                        model.Add(saturday_l + sunday_l <= 1)
+            if (day + start_weekday - 2) % 7 == 5:
+                if day + 1 in working_days[w]:
+                    if (w, day, "L") in shift and (w, day + 1, "L") in shift:
+                        model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week):
     for w in workers:
@@ -563,11 +529,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             # Only add constraint if we require at least 1 free day
             if required_free_days >= 0:
                 # Create a sum of free shifts for this worker in the current week
-                free_shift_sum = sum(
-                    shift.get((w, d, shift_type), 0) 
-                    for d in week_work_days 
-                    for shift_type in ["L", "LQ"]
-                )
+                free_shift_sum = sum(shift.get((w, d, shift_type), 0) for d in week_work_days for shift_type in ["L", "LQ"])
 
                 if required_free_days == 2:
                     if (len(week_work_days) >= 2):
@@ -582,8 +544,6 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                         model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 0:
                     model.Add(free_shift_sum == 0)
-                # else:
-                #     model.Add(free_shift_sum <= required_free_days)
 
 #-----------------------------------------------------------------------------------------------
 def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift, fixed_days):
@@ -601,8 +561,7 @@ def first_day_not_free(model, shift, workers, working_days, first_registered_day
         # 3. The worker was contracted after the earliest worker (i.e., in the middle of the period)
         if (first > 0 and first in working_days[w] and first > earliest_first_day and first not in fixed_days[w]):
             # Ensure the worker has exactly one working shift on their first registered day
-            model.Add(sum(shift.get((w, first, shift_type), 0) 
-                    for shift_type in working_shift) == 1)
+            model.Add(sum(shift.get((w, first, shift_type), 0) for shift_type in working_shift) == 1)
             
 #-------------------------------------------------------------------------------------------------------------------------------------
 def free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, max_day_year):

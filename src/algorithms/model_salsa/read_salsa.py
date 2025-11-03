@@ -578,7 +578,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         work_days_per_week = {}
         week_compensation_limit = {}
         has_week_compensation_limit = False
-        has_max_work_days_7 = False
+        has_max_work_days_7 = False if (num_dias_cons != 7) else True
 
         for w in workers:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
@@ -651,9 +651,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if total_l[w] < 0:
                 logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-
-        if (has_max_work_days_7 == False and num_dias_cons == 7):
-            has_max_work_days_7 = True
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
 
@@ -886,8 +883,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "workers_past": workers_past,                        
             "fixed_compensation_days": fixed_compensation_days,  
             "max_day_year": max_day_year,
-            "shift_M": shift_M,
-            "shift_T": shift_T,
             }
         
     except Exception as e:
