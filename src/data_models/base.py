@@ -28,6 +28,11 @@ from src.data_models.functions.helper_functions import (
     convert_types_out,
     bulk_insert_with_query
 )
+from src.data_models.functions.data_treatment_functions import (
+    adjust_estimativas_special_days,
+    filter_df_dates,
+    add_date_related_columns
+)
 from src.data_models.validations.load_process_data_validations import (
     validate_posto_id,
 )
@@ -123,7 +128,7 @@ class BaseDescansosDataModel(ABC):
                 # df_estimativas borns as an empty dataframe
                 df_estimativas = pd.DataFrame()
 
-                columns_select = ['nome', 'emp', 'fk_tipo_posto', 'loja', 'secao', 'h_tm_in', 'h_tm_out', 'h_tt_in', 'h_tt_out', 'h_seg_in', 'h_seg_out', 'h_ter_in', 'h_ter_out', 'h_qua_in', 'h_qua_out', 'h_qui_in', 'h_qui_out', 'h_sex_in', 'h_sex_out', 'h_sab_in', 'h_sab_out', 'h_dom_in', 'h_dom_out', 'h_fer_in', 'h_fer_out'] # TODO: define what columns to select
+                columns_select = ['nome', 'emp', 'fk_colaborador', 'fk_tipo_posto', 'loja', 'secao', 'h_tm_in', 'h_tm_out', 'h_tt_in', 'h_tt_out', 'h_seg_in', 'h_seg_out', 'h_ter_in', 'h_ter_out', 'h_qua_in', 'h_qua_out', 'h_qui_in', 'h_qui_out', 'h_sex_in', 'h_sex_out', 'h_sab_in', 'h_sab_out', 'h_dom_in', 'h_dom_out', 'h_fer_in', 'h_fer_out'] # TODO: define what columns to select
                 self.logger.info(f"Columns to select: {columns_select}")
             except Exception as e:
                 self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
@@ -349,6 +354,7 @@ class BaseDescansosDataModel(ABC):
                 df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
                 df_feriados = self.auxiliary_data['df_feriados'].copy()
                 df_orcamento = self.auxiliary_data['df_orcamento'].copy()  # This is dfGranularidade equivalent - TODO: check if this is needed
+                df_valid_emp = self.auxiliary_data['df_valid_emp'].copy()
                 
                 self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_estrutura_wfm: {df_estrutura_wfm.shape}, df_faixa_horario: {df_faixa_horario.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}")
             except KeyError as e:
@@ -359,17 +365,28 @@ class BaseDescansosDataModel(ABC):
                 return False
             
             try:
-                self.logger.info("Processing df_turnos data")
+                self.logger.info(f"Processing df_turnos data - Initial shape: {df_turnos.shape}")
                 # Filter df_turnos by fk_tipo_posto
-                df_turnos = df_turnos[df_turnos['fk_tipo_posto'] == fk_tipo_posto].copy()
-                self.logger.info(f"Filtered df_turnos by fk_tipo_posto {fk_tipo_posto}: {df_turnos.shape}")
+                # TODO: change this to be filtered by the employees from valid_emp that belong to this fk_tipo_posto
+                employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == fk_tipo_posto]['fk_colaborador']
+                df_turnos = df_turnos[df_turnos['fk_colaborador'] == employees_id_list_from_posto].copy()
+                self.logger.info(f"After filtering by fk_tipo_posto={fk_tipo_posto}, df_turnos shape: {df_turnos.shape}")
                 
                 # Define time columns for min/max calculations
                 columns_in = ["h_tm_in", "h_seg_in", "h_ter_in", "h_qua_in", "h_qui_in", "h_sex_in", "h_sab_in", "h_dom_in", "h_fer_in"]
                 columns_out = ["h_tt_out", "h_seg_out", "h_ter_out", "h_qua_out", "h_qui_out", "h_sex_out", "h_sab_out", "h_dom_out", "h_fer_out"]
                 self.logger.info(f"Time columns defined - in: {len(columns_in)}, out: {len(columns_out)}")
                 
-                # Calculate MinIN1 and MaxOUT2
+                # Convert time string columns to datetime (using base date 2000-01-01)
+                # This handles 'HH:MM' strings properly and ignores None/NaN values
+                self.logger.info("Converting time columns to datetime format")
+                for col in columns_in + columns_out:
+                    if col in df_turnos.columns:
+                        df_turnos[col] = pd.to_datetime('2000-01-01 ' + df_turnos[col].astype(str), 
+                                                        format='%Y-%m-%d %H:%M', 
+                                                        errors='coerce')
+                
+                # Calculate MinIN1 and MaxOUT2 (skipna handles NaT values automatically)
                 df_turnos['min_in1'] = df_turnos[columns_in].min(axis=1, skipna=True)
                 df_turnos['max_out2'] = df_turnos[columns_out].max(axis=1, skipna=True)
                 
@@ -384,19 +401,15 @@ class BaseDescansosDataModel(ABC):
                 df_turnos['min_in1'] = df_turnos['min_in1'].fillna(df_turnos['h_tt_in'])
                 df_turnos['max_out2'] = df_turnos['max_out2'].fillna(df_turnos['h_tm_out'])
                 
-                self.logger.info("Basic time calculations completed")
+                self.logger.info(f"Time calculations completed, df_turnos shape: {df_turnos.shape}")
             except Exception as e:
                 self.logger.error(f"Error processing df_turnos data: {e}", exc_info=True)
                 return False
             
             try:
-                self.logger.info("Converting time columns to datetime")
-                # Convert time columns to datetime (using 2000-01-01 as base date)
-                time_cols = ['min_in1', 'h_tm_out', 'h_tt_in', 'max_out2']
-                for col in time_cols:
-                    df_turnos[col] = pd.to_datetime('2000-01-01 ' + df_turnos[col].astype(str), format='%Y-%m-%d %H:%M:%S', errors='coerce')
-                
                 # Handle overnight shifts (add 24 hours if end time is before start time)
+                # Note: Time columns are already datetime objects from earlier conversion
+                self.logger.info("Checking for overnight shifts")
                 mask_tm = df_turnos['h_tm_out'] < df_turnos['min_in1']
                 df_turnos.loc[mask_tm, 'h_tm_out'] += timedelta(days=1)
                 
@@ -409,12 +422,14 @@ class BaseDescansosDataModel(ABC):
                 return False
             
             # Group by fk_tipo_posto and calculate aggregated times
+            self.logger.info(f"DEBUG: Before groupby, df_turnos shape: {df_turnos.shape}")
             df_turnos_grouped = df_turnos.groupby('fk_tipo_posto').agg({
                 'min_in1': 'min',
                 'h_tm_out': 'max', 
                 'h_tt_in': 'min',
                 'max_out2': 'max'
             }).reset_index()
+            self.logger.info(f"DEBUG: After groupby, df_turnos_grouped shape: {df_turnos_grouped.shape}")
             
             # Calculate MED1 and MED2
             df_turnos_grouped['med1'] = np.where(
@@ -446,6 +461,7 @@ class BaseDescansosDataModel(ABC):
             # Merge with estrutura_wfm
             df_estrutura_wfm_filtered = df_estrutura_wfm[df_estrutura_wfm['fk_tipo_posto'] == fk_tipo_posto].copy()
             df_turnos = pd.merge(df_estrutura_wfm_filtered, df_turnos, on='fk_tipo_posto', how='left')
+            self.logger.info(f"After merge with estrutura_wfm, df_turnos shape: {df_turnos.shape}")
             
             # Create date sequence
             date_range = pd.date_range(start=start_date, end=end_date, freq='D')
@@ -704,32 +720,40 @@ class BaseDescansosDataModel(ABC):
             
             # Filter granularity data
             df_granularidade = df_granularidade[df_granularidade['fk_tipo_posto'] == fk_tipo_posto].copy()
+            self.logger.info(f"DEBUG: df_granularidade filtered shape: {df_granularidade.shape}")
             
             # Process each unique turno
             output_final = pd.DataFrame()
+            self.logger.info(f"DEBUG: df_turnos_processing shape before loop: {df_turnos_processing.shape}")
+            self.logger.info(f"DEBUG: Unique fk_posto_turno values: {df_turnos_processing['fk_posto_turno'].unique()}")
             
             df_turnos_processing = pd.DataFrame(df_turnos_processing)
             for i, fk_posto_turno in enumerate(df_turnos_processing['fk_posto_turno'].unique()):
-                self.logger.info(f"Processing turno {i+1}: {fk_posto_turno}")
+                self.logger.info(f"DEBUG: Processing turno {i+1}: {fk_posto_turno}")
                 
                 df_turnos_f = pd.DataFrame(df_turnos_processing[df_turnos_processing['fk_posto_turno'] == fk_posto_turno].copy())
                 fk_posto = pd.DataFrame(df_turnos_f)['fk_tipo_posto'].iloc[0]
                 turno = pd.DataFrame(df_turnos_f)['turno'].iloc[0]
+                self.logger.info(f"DEBUG:   df_turnos_f shape: {df_turnos_f.shape}")
                 
                 # Filter granularity data for this posto
                 df_granularidade_f = pd.DataFrame(df_granularidade[df_granularidade['fk_tipo_posto'] == fk_posto].copy())
+                self.logger.info(f"DEBUG:   df_granularidade_f shape before merge: {df_granularidade_f.shape}")
                 
                 # Merge with turno data
                 df_granularidade_f = pd.merge(df_granularidade_f, df_turnos_f, 
                                             on=['fk_tipo_posto', 'data'], how='inner')
+                self.logger.info(f"DEBUG:   df_granularidade_f shape after merge: {df_granularidade_f.shape}")
                 
                 # Filter by time range
                 time_mask = (df_granularidade_f['hora_ini'] >= df_granularidade_f['h_ini_1']) & \
                         (df_granularidade_f['hora_ini'] < df_granularidade_f['h_out_1'])
                 df_granularidade_f = pd.DataFrame(df_granularidade_f[time_mask].copy())
+                self.logger.info(f"DEBUG:   After time filter, df_granularidade_f shape: {df_granularidade_f.shape}")
                 
                 df_granularidade_f = df_granularidade_f.sort_values(['data', 'hora_ini'], ascending=[True, True]).drop_duplicates()
                 df_granularidade_f['pessoas_final'] = pd.to_numeric(df_granularidade_f['pessoas_final'], errors='coerce')
+                self.logger.info(f"DEBUG:   After sort and numeric conversion, df_granularidade_f shape: {df_granularidade_f.shape}")
                 
                 # Calculate statistics
                 if len(df_granularidade_f) == 0:
@@ -763,10 +787,12 @@ class BaseDescansosDataModel(ABC):
                 
                 output['turno'] = turno
                 output['fk_tipo_posto'] = fk_posto
+                self.logger.info(f"DEBUG:   Output shape for this turno: {output.shape}")
                 
                 output_final = pd.concat([output_final, output], ignore_index=True)
+                self.logger.info(f"DEBUG:   Cumulative output_final shape: {output_final.shape}")
                 
-                self.logger.info(f"Completed processing turno {fk_posto_turno}")
+                self.logger.info(f"DEBUG: Completed processing turno {fk_posto_turno}")
             
             # Final processing
             if len(output_final) > 0:
@@ -783,6 +809,53 @@ class BaseDescansosDataModel(ABC):
             numeric_cols = ['max_turno', 'min_turno', 'media_turno', 'sd_turno']
             for col in numeric_cols:
                 output_final[col] = pd.to_numeric(output_final[col], errors='coerce')
+
+            # Filter by date range (Step 3B from func_inicializa guide)
+            try:
+                self.logger.info(f"DEBUG: About to filter df_estimativas by date range. output_final shape: {output_final.shape}")
+                self.logger.info(f"DEBUG: output_final empty? {output_final.empty}")
+                if not output_final.empty:
+                    self.logger.info(f"DEBUG: output_final columns: {output_final.columns.tolist()}")
+                    self.logger.info(f"DEBUG: output_final head:\n{output_final.head()}")
+                success, output_final, error_msg = filter_df_dates(
+                    df=output_final,
+                    first_date_str=start_date,
+                    last_date_str=end_date,
+                    date_col_name='data'
+                )
+                if not success:
+                    self.logger.error(f"Failed to filter estimativas by dates: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error filtering estimativas by dates: {e}", exc_info=True)
+                return False
+
+            # Adjust for special dates (Step 2 from func_inicializa guide)
+            try:
+                self.logger.info("Adjusting estimativas for special dates (Christmas/New Year)")
+                special_days_list = []  # Empty list = auto-generate from data year
+                success, output_final, error_msg = adjust_estimativas_special_days(df_estimativas=output_final, special_days_list=special_days_list)
+                if not success:
+                    self.logger.error(f"Failed to adjust special dates: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error adjusting for special dates: {e}", exc_info=True)
+                return False
+            
+            # Add date-related columns (Step 3G/6E from func_inicializa guide)
+            try:
+                self.logger.info("Adding date-related columns to estimativas (WDAY, WW, WD)")
+                success, output_final, error_msg = add_date_related_columns(
+                    df=output_final,
+                    date_col='data',
+                    add_id_col=False
+                )
+                if not success:
+                    self.logger.error(f"Failed to add date-related columns: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error adding date-related columns: {e}", exc_info=True)
+                return False                
             
             try:
                 self.logger.info("Storing results in appropriate class attributes")

@@ -405,7 +405,7 @@ class AlgoritmoGDService(BaseService):
                 #algorithm_name = self.process_manager.current_decisions.get(stage_sequence, {}).get('algorithm', {}).get('name', algorithm_name)
                 #algorithm_params = self.process_manager.current_decisions.get(stage_sequence, {}).get('algorithm', {}).get('parameters', algorithm_params)
                 self.logger.info(f"Looking for defaults with stage_sequence: {stage_sequence}, type: {type(stage_sequence)}")
-                stage_config = self.config_manager.stages.stages['stages'].get('processing', {})
+                stage_config = self.config_manager.stages.stages.get('processing', {})
                 decisions = stage_config.get('decisions', {})
 
                 self.logger.info(f"DEBUG: Decisions: {decisions}")
@@ -1497,11 +1497,7 @@ class AlgoritmoGDService(BaseService):
                 self.logger.error("Invalid start_date or end_date")
                 return False
                 
-            success = self.data_model.func_inicializa(
-                start_date=start_date,
-                end_date=end_date,
-                fer=self.data_model.auxiliary_data.get('df_festivos'),
-            )
+            success = self.data_model.func_inicializa()
             if not success:
                 self.logger.warning("Performing func_inicializa unsuccessful, returning False")
                 if self.stage_handler:

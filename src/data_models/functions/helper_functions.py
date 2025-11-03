@@ -577,6 +577,12 @@ def get_past_employee_id_list(past_employee_id_list: List[int], case_type: int, 
 def create_employee_query_string(employee_id_list: List[str]) -> str:
     """
     Creates a string with the employee_ids for query substitution.
+    Args:
+        employee_id_list (List[str]): List of employee ids - could be fk_colaborador or matricula
+    Returns:
+        str: String with the employee ids for query substitution
+    Raises:
+        Exception: If an error occurs
     """
     try:
         if len(employee_id_list) == 0:
@@ -875,3 +881,68 @@ def bulk_insert_with_query(data_manager: DBDataManager,
     # Should not reach here
     logger.error(f"Bulk insert failed after {max_retries + 1} attempts")
     return False
+
+
+def adjusted_isoweek(date) -> int:
+    """
+    Calculate adjusted ISO week number.
+    
+    Special handling: If ISO week is 1 but month is December, return 53 instead.
+    This prevents last week of December from being labeled as week 1 of next year.
+    
+    Args:
+        date: Date to calculate week for (can be datetime, Timestamp, or string)
+        
+    Returns:
+        Adjusted ISO week number (1-53)
+    """
+    date = pd.to_datetime(date)
+    week = date.isocalendar().week
+    month = date.month
+    
+    # If week is 1 but date is in December, it's actually week 53
+    if week == 1 and month == 12:
+        return 53
+    
+    return week
+
+def get_colabs_passado(wfm_proc_colab: str, df_mpd_valid_employees: pd.DataFrame, fk_tipo_posto: str) -> Tuple[bool, List[int], str]:
+    """
+    Get employees from the past (colabs_passado) for a specific job position type.
+    
+    Args:
+        wfm_proc_colab: The employee ID to exclude from the past employees list
+        df_mpd_valid_employees: DataFrame containing valid employees data
+        fk_tipo_posto: Job position type filter
+        
+    Returns:
+        Tuple of (success: bool, colabs_passado: List[int], message: str)
+    """
+
+    # Validate there is not multiple employees with expected conditions
+    try:
+        df = df_mpd_valid_employees[df_mpd_valid_employees['fk_tipo_posto'] == fk_tipo_posto]
+        mask = (df['gera_horario_ind'] == 'Y') & (df['existe_horario_ind'] == 'N')
+        colabs_a_gerar = df[mask]['fk_colaborador'].unique()
+        
+        logger.info(f"DEBUG: colabs_a_gerar type: {type(colabs_a_gerar)}")
+        logger.info(f"DEBUG: wfm_proc_colab type: {type(wfm_proc_colab)}")
+        
+        wfm_proc_colab = int(wfm_proc_colab)
+        
+        if len(colabs_a_gerar) == 0:
+            return False, [], "No employees found with the expected conditions."
+            
+        if len(colabs_a_gerar) > 1:
+            return False, [], "There should be only one employee for allocation."
+
+        if int(colabs_a_gerar[0]) != wfm_proc_colab:
+            return False, [], "The employee is not present in the df_mpd_valid_employees query."
+
+        colabs_passado = [int(x) for x in df['fk_colaborador'].unique()]
+        colabs_passado.remove(wfm_proc_colab)
+        logger.info(f"Created colabs_passado list: {colabs_passado}")
+        return True, colabs_passado, "Success"
+    except Exception as e:
+        logger.error(f"Error creating colabs_passado list: {e}", exc_info=True)
+        return False, [], "Error creating the colabs_passado_list"

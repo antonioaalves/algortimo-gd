@@ -61,6 +61,9 @@ class StagesConfig:
         try:
             from src.settings.project_structure import project_structure
             self.logger.info("Stages configuration imported successfully")
+            # Extract the actual stages dict (unwrap the "stages" key)
+            if "stages" in project_structure:
+                return project_structure["stages"]
             return project_structure
         except ImportError:
             raise FileNotFoundError("Could not import project_structure from project_structure.py")

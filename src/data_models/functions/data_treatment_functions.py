@@ -5,6 +5,17 @@ Data treatment functions:
 - treat_df_closed_days
 - treat_calendario_passado
 - create_df_calendario
+- adjust_estimativas_special_days
+- filter_df_dates
+- extract_tipos_turno
+- process_special_shift_types
+- add_date_related_columns
+- define_dia_tipo
+- merge_contract_data
+- adjust_counters_for_contract_types
+- handle_employee_edge_cases
+- adjust_horario_for_admission_date
+- calculate_and_merge_allocated_employees
 
 Dataframe manipulation functions:
 - add_calendario_passado
@@ -22,7 +33,7 @@ from base_data_project.log_config import get_logger
 
 # Local stuff
 from src.configuration_manager.instance import get_config
-from src.data_models.functions.helper_functions import convert_types_in
+from src.data_models.functions.helper_functions import convert_types_in, adjusted_isoweek
 
 # Get configuration singleton
 _config = get_config()
@@ -140,6 +151,10 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_i
 
         # TREATMENT LOGIC
         if df_calendario_passado.empty:
+            # Even when empty, ensure proper column structure after treatment
+            # Rename 'schedule_day' to 'data' to match expected structure
+            if 'schedule_day' in df_calendario_passado.columns:
+                df_calendario_passado = df_calendario_passado.rename(columns={'schedule_day': 'data'})
             return True, df_calendario_passado, ""
             
         logger.info(f"Treating df_calendario_passado")
@@ -377,7 +392,9 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[i
         #logger.info(f"DEBUG df_colaborador:\n {df_colaborador}")
 
         # Fill missing values
-        non_date_columns = [col for col in df_colaborador.columns if col not in ['data_admissao', 'data_demissao']]
+        # Exclude date and time columns from fillna(0) - they should remain as NaT/None
+        datetime_columns = ['data_admissao', 'data_demissao', "h_tm_in", "h_seg_in", "h_ter_in", "h_qua_in", "h_qui_in", "h_sex_in", "h_sab_in", "h_dom_in", "h_fer_in", "h_tt_out", "h_seg_out", "h_ter_out", "h_qua_out", "h_qui_out", "h_sex_out", "h_sab_out", "h_dom_out", "h_fer_out"]
+        non_date_columns = [col for col in df_colaborador.columns if col not in datetime_columns]
         df_colaborador[non_date_columns] = df_colaborador[non_date_columns].fillna(0)
 
         # Validate seq_turno
@@ -422,13 +439,15 @@ def add_lqs_to_df_colaborador(df_colaborador: pd.DataFrame, df_params_lq: pd.Dat
             # TODO: develop lq treatment logic (import from the original models.py)
             pass
         else:
-            logger.error(f"use case {use_case} not supported, please ensure the correct values are defined.")
-            return False
+            error_msg = f"use case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
 
-        pass
+        return True, df_colaborador, ""
     except Exception as e:
-        logger.error(f"", exc_info=True)
-        return False
+        error_msg = f""
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
 
 def set_tipo_contrato_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
     """
@@ -477,7 +496,7 @@ def add_prioridade_folgas_to_df_colaborador(df_colaborador: pd.DataFrame, df_val
             return False, pd.DataFrame(), "Input validation failed: empty df_colaborador DataFrame"
 
         needed_columns = ['fk_colaborador', 'prioridade_folgas']
-        if needed_columns not in df_valid_emp.columns:
+        if not all(col in df_valid_emp.columns for col in needed_columns):
             return False, pd.DataFrame(), f"Needed columns not present in df_valid_emp: {needed_columns}"
 
         if use_case == 0:
@@ -943,7 +962,7 @@ def add_l_d_to_df_colaborador(
             if mask_32_sabeco.any():
                 df_result.loc[mask_32_sabeco, 'ld'] = 0
 
-        return df_result
+        return True, df_result, ""
         
     except Exception as e:
         logger.error(f"Error in add_l_d_to_df_colaborador: {str(e)}", exc_info=True)
@@ -1066,7 +1085,7 @@ def add_l_dom_to_df_colaborador(
             logger.error(error_msg)
             return False, pd.DataFrame(), error_msg
 
-        return df_result
+        return True, df_result, ""
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
@@ -1092,7 +1111,7 @@ def set_c2d_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: int) -> Tu
             logger.error(error_msg)
             return False, pd.DataFrame(), error_msg        
 
-        return df_colaborador
+        return True, df_colaborador, ""
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
@@ -1150,7 +1169,7 @@ def set_c3d_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, us
             logger.error(error_msg)
             return False, pd.DataFrame(), error_msg
 
-        return df_colaborador
+        return True, df_colaborador, ""
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
@@ -1211,6 +1230,8 @@ def add_l_q_to_df_colaborador(df_colaborador: pd.DataFrame, convenio_bd: str, us
             logger.error(error_msg)
             return False, pd.DataFrame(), error_msg
 
+        return True, df_colaborador, ""
+
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
@@ -1267,7 +1288,14 @@ def add_l_total_to_df_colaborador(df_colaborador: pd.DataFrame, df_feriados: pd.
                             coh = count_open_holidays(df_feriados, tipo_contrato)
                             df_colaborador.loc[tipo_mask, 'l_total'] = coh[1]
                 else:
-                    df_colaborador.loc[mask_32_bd, 'l_total'] = 0       
+                    df_colaborador.loc[mask_32_bd, 'l_total'] = 0
+
+        else:
+            error_msg = f"use case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg            
+
+        return True, df_colaborador, ""
 
     except Exception as e:
         logger.error(f"Error in add_l_dom_to_df_colaborador: {str(e)}", exc_info=True)
@@ -1292,7 +1320,7 @@ def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_
         if not start_date or not end_date:
             return False, pd.DataFrame(), "Input validation failed: missing date parameters"
             
-        if not employee_id_matriculas_map or len(employee_id_matriculas_map) == 0:
+        if employee_id_matriculas_map.empty or len(employee_id_matriculas_map) == 0:
             return False, pd.DataFrame(), "Input validation failed: empty employee mapping"
             
         logger.info(f"Creating df_calendario from {start_date} to {end_date} for {len(employee_id_matriculas_map)} employees")
@@ -1369,7 +1397,7 @@ def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_
 def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
     """
     Fill missing horario values in df_calendario using historical data from df_calendario_passado.
-    Matches records by fk_colaborador and data fields.
+    Matches records by employee_id and data fields.
     """
     try:
         # INPUT VALIDATION
@@ -1387,7 +1415,7 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
                 return True, df_calendario, ""
                 
             # Check required columns exist
-            required_cols = ['fk_colaborador', 'data', 'horario']
+            required_cols = ['employee_id', 'data', 'horario']
             for col in required_cols:
                 if col not in df_calendario.columns:
                     return False, pd.DataFrame(), f"Missing required column '{col}' in df_calendario"
@@ -1397,10 +1425,10 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
             df_result = df_calendario.copy()
             
             # Create lookup Series from df_calendario_passado using MultiIndex
-            passado_lookup = df_calendario_passado.set_index(['fk_colaborador', 'data'])['horario']
+            passado_lookup = df_calendario_passado.set_index(['employee_id', 'data'])['horario']
             
             # Create MultiIndex for df_result to enable vectorized lookup (without tipo_turno)
-            result_index = df_result.set_index(['fk_colaborador', 'data']).index
+            result_index = df_result.set_index(['employee_id', 'data']).index
             
             # Vectorized lookup: map passado values to result positions
             mapped_values = result_index.map(passado_lookup)
@@ -1462,7 +1490,9 @@ def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.Da
             ausencias_lookup = df_ausencias_ferias.set_index([employee_col, 'data'])['tipo_ausencia']
             
             # Create MultiIndex for df_result to enable vectorized lookup (without tipo_turno)
-            result_index = df_result.set_index(['fk_colaborador', 'data']).index
+            # Use the same employee column as in df_result (could be 'employee_id' or 'fk_colaborador')
+            result_employee_col = 'employee_id' if 'employee_id' in df_result.columns else 'fk_colaborador'
+            result_index = df_result.set_index([result_employee_col, 'data']).index
             
             # Vectorized lookup: map ausencias values to result positions
             mapped_values = result_index.map(ausencias_lookup)
@@ -1640,3 +1670,1033 @@ def add_days_off(df_calendario: pd.DataFrame, df_days_off: pd.DataFrame) -> Tupl
     except Exception as e:
         logger.error(f"Error in add_days_off: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), ""
+
+
+def adjust_estimativas_special_days(df_estimativas: pd.DataFrame, special_days_list: List[str] = None, use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Adjust min_turno for special dates (Christmas, New Year season) to match max_turno.
+    
+    Business Logic:
+    - Peak shopping season dates (Dec 23, 24, 30, 31) require maximum staffing (no flexibility)
+    - Specific Friday mornings (Dec 22, 29) also require maximum morning shift staffing
+    
+    Args:
+        df_estimativas: Workload estimates dataframe with columns: data, turno, min_turno, max_turno
+        special_days_list: Optional list of special dates. If empty/None, uses default December dates based on year in data
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, modified dataframe, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_estimativas.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_estimativas"
+        
+        required_cols = ['data', 'turno', 'min_turno', 'max_turno']
+        missing_cols = [col for col in required_cols if col not in df_estimativas.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
+
+        if use_case == 0:
+            logger.info("use_case == 0: returning df_estimativas as is")
+            return True, df_estimativas, "No processing applied (use_case=0)"
+
+        elif use_case == 1:
+        
+            # TREATMENT LOGIC
+            df_estimativas_adjusted = df_estimativas.copy()
+            
+            # If no special_days_list provided, create default list based on year from data
+            # TODO: Remove this when special dates added to settings
+            if special_days_list is None or len(special_days_list) == 0:
+                try:
+                    # Get year from the minimum date in df_estimativas
+                    ano = pd.to_datetime(df_estimativas_adjusted['data'].min()).year
+                    logger.info(f"Using year {ano} from df_estimativas for special dates")
+                    
+                    # Define special dates (Christmas and New Year season)
+                    special_dates = [
+                        f'{ano}-12-23',  # December 23
+                        f'{ano}-12-24',  # Christmas Eve
+                        f'{ano}-12-30',  # December 30
+                        f'{ano}-12-31'   # New Year's Eve
+                    ]
+                    
+                    # Define special Friday dates (morning shifts only)
+                    friday_dates = [
+                        f'{ano}-12-22',  # Friday before Christmas
+                        f'{ano}-12-29'   # Friday before New Year
+                    ]
+                except Exception as e:
+                    logger.warning(f"Could not extract year from data, using empty special dates: {e}")
+                    special_dates = []
+                    friday_dates = []
+            else:
+                # Use provided special_days_list
+                # Assume it contains both types of dates (you can enhance this later)
+                special_dates = special_days_list
+                friday_dates = []
+                logger.info(f"Using provided special_days_list with {len(special_dates)} dates")
+            
+            # Adjust min_turno = max_turno for all special dates (both M and T shifts)
+            if len(special_dates) > 0:
+                mask_special = df_estimativas_adjusted['data'].isin(special_dates)
+                df_estimativas_adjusted.loc[mask_special, 'min_turno'] = df_estimativas_adjusted.loc[mask_special, 'max_turno']
+                logger.info(f"Adjusted {mask_special.sum()} rows for special dates: {special_dates}")
+            
+            # Adjust min_turno = max_turno for Friday morning shifts only
+            if len(friday_dates) > 0:
+                mask_friday = (
+                    (df_estimativas_adjusted['data'].isin(friday_dates)) & 
+                    (df_estimativas_adjusted['turno'] == 'M')
+                )
+                df_estimativas_adjusted.loc[mask_friday, 'min_turno'] = df_estimativas_adjusted.loc[mask_friday, 'max_turno']
+                logger.info(f"Adjusted {mask_friday.sum()} rows for Friday morning shifts: {friday_dates}")
+            
+            # OUTPUT VALIDATION
+            if df_estimativas_adjusted.empty:
+                return False, pd.DataFrame(), "Treatment resulted in empty DataFrame"
+            
+            logger.info(f"Successfully adjusted estimativas for special days. Shape: {df_estimativas_adjusted.shape}")
+            return True, df_estimativas_adjusted, ""
+
+        else: 
+            error_msg = f"use_case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg            
+
+    except Exception as e:
+        logger.error(f"Error in adjust_estimativas_special_days: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+def filter_df_dates(df: pd.DataFrame, first_date_str: str, last_date_str: str, date_col_name: str = 'data', use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Filter dataframe by date range. Works for any dataframe with a date column.
+    
+    This function is agnostic to the dataframe type - works for df_calendario, 
+    df_estimativas, or any dataframe with a date column.
+    
+    Args:
+        df: Input dataframe with a date column
+        first_date_str: Start date in 'YYYY-MM-DD' format
+        last_date_str: End date in 'YYYY-MM-DD' format
+        date_col_name: Name of the date column (default: 'data', can be 'DATA' for calendario)
+        use_case: Use case for the function. 0: no processing, 1: processing
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, filtered dataframe, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df.empty or len(df) == 0:
+            return False, pd.DataFrame(), "Input validation failed: empty dataframe"
+        
+        if date_col_name not in df.columns:
+            # Try alternate column names
+            alternate_cols = ['data', 'DATA', 'date', 'DATE']
+            date_col_found = None
+            for col in alternate_cols:
+                if col in df.columns:
+                    date_col_found = col
+                    logger.info(f"Date column '{date_col_name}' not found, using '{col}' instead")
+                    break
+            
+            if date_col_found is None:
+                return False, pd.DataFrame(), f"Input validation failed: no date column found. Searched for: {alternate_cols}"
+            
+            date_col_name = date_col_found
+        
+        if not first_date_str or not last_date_str:
+            return False, pd.DataFrame(), "Input validation failed: invalid date parameters"
+
+        if use_case == 0:
+            logger.info("use_case == 0: returning df as is")
+            return True, df, "No processing applied (use_case=0)"
+
+        elif use_case == 1:
+        
+            # Validate date format
+            try:
+                pd.to_datetime(first_date_str, format="%Y-%m-%d")
+                pd.to_datetime(last_date_str, format="%Y-%m-%d")
+            except Exception as e:
+                return False, pd.DataFrame(), f"Input validation failed: invalid date format. Expected 'YYYY-MM-DD': {e}"
+            
+            # TREATMENT LOGIC
+            df_filtered = df.copy()
+            
+            # Convert date column to datetime if it isn't already
+            if not pd.api.types.is_datetime64_any_dtype(df_filtered[date_col_name]):
+                try:
+                    # Clean DATA column (remove everything after underscore if present)
+                    if df_filtered[date_col_name].dtype == 'object':
+                        df_filtered[date_col_name] = df_filtered[date_col_name].str.replace(r'_.*$', '', regex=True)
+                    
+                    # Convert to datetime
+                    df_filtered[date_col_name] = pd.to_datetime(df_filtered[date_col_name])
+                    logger.info(f"Converted {date_col_name} column to datetime")
+                except Exception as e:
+                    return False, pd.DataFrame(), f"Error converting {date_col_name} to datetime: {e}"
+            
+            # Convert filter dates to datetime
+            first_date = pd.to_datetime(first_date_str, format="%Y-%m-%d")
+            last_date = pd.to_datetime(last_date_str, format="%Y-%m-%d")
+            
+            # Apply date filter
+            original_count = len(df_filtered)
+            df_filtered = df_filtered[
+                (df_filtered[date_col_name] >= first_date) & 
+                (df_filtered[date_col_name] <= last_date)
+            ]
+            filtered_count = len(df_filtered)
+            
+            logger.info(f"Filtered dataframe by dates: {first_date_str} to {last_date_str}")
+            logger.info(f"Rows before: {original_count}, after: {filtered_count}, removed: {original_count - filtered_count}")
+            
+            # OUTPUT VALIDATION
+            if df_filtered.empty:
+                return False, pd.DataFrame(), f"Filtering resulted in empty dataframe. Date range {first_date_str} to {last_date_str} has no data."
+            
+            return True, df_filtered, ""
+
+        else:
+            error_msg = f"use_case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+    except Exception as e:
+        logger.error(f"Error in filter_df_dates: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def extract_tipos_turno(df_calendario: pd.DataFrame, tipo_turno_col: str = 'TIPO_TURNO') -> Tuple[bool, List[str], str]:
+    """
+    Extract unique shift types (tipos de turno) from calendario dataframe.
+    
+    This is a simple extraction function that identifies all shift types present in the schedule.
+    The list is used for:
+    - Determining if special shift processing is needed (MoT, P)
+    - Validation and logging
+    - Algorithm decision-making
+    
+    Common shift types:
+    - 'M': Morning (Mañana)
+    - 'T': Afternoon (Tarde)
+    - 'MoT': Morning or Afternoon (ambiguous - needs processing)
+    - 'P': Split shift (Partido - works both M and T)
+    - 'F': Holiday (Feriado)
+    - 'L': Day off (Livre)
+    - 'V': Vacation (Férias)
+    - 'A', 'DFS', 'OUT', 'NL': Other statuses
+    
+    Args:
+        df_calendario: Calendar dataframe with shift assignments
+        tipo_turno_col: Name of the shift type column (default: 'TIPO_TURNO')
+        
+    Returns:
+        Tuple[bool, List[str], str]: (success, list of shift types, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_calendario is None or df_calendario.empty:
+            return False, [], "Input validation failed: empty or None dataframe"
+        
+        if tipo_turno_col not in df_calendario.columns:
+            return False, [], f"Input validation failed: column '{tipo_turno_col}' not found in dataframe"
+        
+        # EXTRACTION LOGIC
+        tipos_turno_list = df_calendario[tipo_turno_col].unique().tolist()
+        
+        # Remove None/NaN values if present
+        tipos_turno_list = [t for t in tipos_turno_list if pd.notna(t)]
+        
+        # Sort for consistency (optional but helpful for logging)
+        tipos_turno_list = sorted(tipos_turno_list)
+        
+        # OUTPUT VALIDATION
+        if len(tipos_turno_list) == 0:
+            return False, [], "No shift types found in dataframe"
+        
+        logger.info(f"Extracted {len(tipos_turno_list)} unique shift types: {tipos_turno_list}")
+        
+        # Log if special shift types are present
+        special_types = [t for t in tipos_turno_list if t in ['MoT', 'P']]
+        if special_types:
+            logger.info(f"Special shift types detected (will need processing): {special_types}")
+        
+        return True, tipos_turno_list, ""
+        
+    except Exception as e:
+        error_msg = f"Error extracting tipos_turno: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, [], error_msg
+
+
+def process_special_shift_types(df_calendario: pd.DataFrame, shift_type: str, employee_col: str = 'COLABORADOR', date_col: str = 'DATA', shift_col: str = 'TIPO_TURNO', use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Process ambiguous shift types (MoT, P) by converting them to concrete M/T assignments.
+    
+    This function handles two special shift types:
+    
+    1. **'MoT'** (Morning or Tarde): Employee can work either morning OR afternoon
+       - Ambiguous assignment that needs to be resolved
+       - First occurrence → 'M' (morning)
+       - Second occurrence → 'T' (afternoon)
+    
+    2. **'P'** (Partida/Split shift): Employee works BOTH morning AND afternoon
+       - Creates two separate shift entries
+       - First occurrence → 'M' (morning shift)
+       - Second occurrence → 'T' (afternoon shift)
+    
+    Algorithm:
+    - Groups rows by employee and date
+    - For each group with the special shift type:
+      - 1st row → converts to 'M'
+      - 2nd row → converts to 'T'
+    - Combines processed rows back with unprocessed rows
+    
+    Args:
+        df_calendario: Calendar dataframe with shift assignments
+        shift_type: The special shift type to process ('MoT' or 'P')
+        employee_col: Column name for employee identifier (default: 'COLABORADOR')
+        date_col: Column name for date (default: 'DATA')
+        shift_col: Column name for shift type (default: 'TIPO_TURNO')
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, processed dataframe, error message)
+    
+    Example:
+        Input:
+            COLABORADOR | DATA       | TIPO_TURNO
+            123         | 2024-01-15 | P
+            123         | 2024-01-15 | P
+        
+        Output:
+            COLABORADOR | DATA       | TIPO_TURNO
+            123         | 2024-01-15 | M
+            123         | 2024-01-15 | T
+    """
+    try:
+        # INPUT VALIDATION
+        if df_calendario is None or df_calendario.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty or None dataframe"
+        
+        required_cols = [employee_col, date_col, shift_col]
+        missing_cols = [col for col in required_cols if col not in df_calendario.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
+        
+        if not shift_type or shift_type not in ['MoT', 'P']:
+            return False, pd.DataFrame(), f"Input validation failed: shift_type must be 'MoT' or 'P', got '{shift_type}'"
+        
+        if use_case == 0:
+            logger.info("use_case == 0: returning df_estimativas as is")
+            return True, df_calendario, "No processing applied (use_case=0)"
+
+        elif use_case == 1:
+            # TREATMENT LOGIC
+            df_result = df_calendario.copy()
+            
+            # Filter rows that match the special shift type
+            mask_special = df_result[shift_col] == shift_type
+            df_filtered = df_result[mask_special].copy()
+            
+            if len(df_filtered) > 0:
+                logger.info(f"Processing {len(df_filtered)} rows with shift type '{shift_type}'")
+                
+                # Group by employee and date, then assign M/T to HORARIO based on row position
+                def assign_shift_type(group):
+                    """Assign M to first occurrence, T to second occurrence in HORARIO column."""
+                    group = group.copy()
+                    
+                    if len(group) >= 1:
+                        # First occurrence becomes Morning shift in HORARIO
+                        group.loc[group.index[0], 'HORARIO'] = 'M'
+                    
+                    if len(group) >= 2:
+                        # Second occurrence becomes Tarde (afternoon) shift in HORARIO
+                        group.loc[group.index[1], 'HORARIO'] = 'T'
+                    
+                    if len(group) > 2:
+                        logger.warning(f"Employee {group[employee_col].iloc[0]} has {len(group)} '{shift_type}' shifts on {group[date_col].iloc[0]} - only first 2 processed")
+                    
+                    return group
+                
+                # Apply the transformation
+                df_filtered = (df_filtered
+                            .groupby([employee_col, date_col], group_keys=False)
+                            .apply(assign_shift_type)
+                            .reset_index(drop=True))
+                
+                # Get rows that don't have the special shift type
+                df_rest = df_result[~mask_special].copy()
+                
+                # Combine processed and unprocessed rows
+                df_result = pd.concat([df_rest, df_filtered], ignore_index=True)
+                
+                # Count how many shifts were converted in HORARIO
+                converted_m = (df_filtered['HORARIO'] == 'M').sum()
+                converted_t = (df_filtered['HORARIO'] == 'T').sum()
+                logger.info(f"Converted '{shift_type}' HORARIO: {converted_m} to 'M', {converted_t} to 'T'")
+            else:
+                logger.info(f"No '{shift_type}' shift types found in dataframe - skipping processing")
+            
+            # OUTPUT VALIDATION
+            if df_result.empty:
+                return False, pd.DataFrame(), "Processing resulted in empty dataframe"
+            
+            # Verify the special shift type was removed
+            remaining_special = (df_result[shift_col] == shift_type).sum()
+            if remaining_special > 0:
+                logger.warning(f"After processing, {remaining_special} '{shift_type}' shifts still remain (might be >2 occurrences per employee-date)")
+            
+            logger.info(f"Successfully processed special shift type '{shift_type}'")
+            return True, df_result, ""
+
+        else:
+            error_msg = f"use_case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+    except Exception as e:
+        error_msg = f"Error processing special shift type '{shift_type}': {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Add date-related columns to dataframe (WDAY, WW, WD).
+    
+    Agnostic function that works for both df_calendario and df_estimativas.
+    
+    Args:
+        df: Input dataframe with date column
+        date_col: Name of date column ('data' for estimativas, 'DATA' for calendario)
+        add_id_col: Whether to add ID column (row index) - usually only for calendario
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, dataframe with new columns, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df is None or df.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty or None dataframe"
+        
+        if date_col not in df.columns:
+            return False, pd.DataFrame(), f"Input validation failed: column '{date_col}' not found"
+        
+        # TREATMENT LOGIC
+        df_result = df.copy()
+        
+        # Ensure date column is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_result[date_col]):
+            df_result[date_col] = pd.to_datetime(df_result[date_col])
+        
+        # Add WDAY (1=Monday, 7=Sunday)
+        df_result['WDAY'] = df_result[date_col].dt.dayofweek + 1
+        
+        # Add WW (adjusted ISO week)
+        df_result['WW'] = df_result[date_col].apply(adjusted_isoweek)
+        
+        # Add WD (3-letter weekday name)
+        df_result['WD'] = df_result[date_col].dt.day_name().str[:3]
+        
+        # Add ID column if requested (usually for calendario)
+        if add_id_col:
+            df_result['ID'] = range(len(df_result))
+        
+        logger.info(f"Added date-related columns: WDAY, WW, WD" + (" and ID" if add_id_col else ""))
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error adding date-related columns: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def define_dia_tipo(df: pd.DataFrame, date_col: str = 'data', tipo_turno_col: str = 'TIPO_TURNO', horario_col: str = 'HORARIO', wd_col: str = 'WD') -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Define DIA_TIPO (day type) column - identifies Sundays and holidays.
+    
+    Business Logic:
+    - 'domYf' (domingo y feriado): Sundays or holidays requiring special rest day handling
+    - Regular weekday name (Mon, Tue, etc.): Normal working days
+    
+    A date is marked as 'domYf' if:
+    - The date contains at least one holiday (TIPO_TURNO == 'F'), OR
+    - The date is a Sunday (WD == 'Sun')
+    - AND the specific row's HORARIO != 'F' (not the holiday row itself)
+    
+    Requires: WD column must exist (run add_date_related_columns first)
+    
+    Args:
+        df: Input dataframe
+        date_col: Date column name (default: 'data')
+        tipo_turno_col: Shift type column (default: 'TIPO_TURNO')
+        horario_col: Work status column (default: 'HORARIO')
+        wd_col: Weekday name column (default: 'WD')
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, dataframe with DIA_TIPO column, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df is None or df.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty or None dataframe"
+        
+        required_cols = [date_col, tipo_turno_col, horario_col, wd_col]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}. Run add_date_related_columns first."
+        
+        # TREATMENT LOGIC
+        df_result = df.copy()
+        
+        def assign_dia_tipo(group):
+            """Assign DIA_TIPO for each date group."""
+            # Check if this date has any holiday markers OR is a Sunday
+            has_holiday = (group[tipo_turno_col] == 'F').any()
+            is_sunday = group[wd_col].iloc[0] == 'Sun'
+            
+            # Apply logic row by row within the date group
+            group['DIA_TIPO'] = group.apply(
+                lambda row: 'domYf' if ((has_holiday or is_sunday) and row[horario_col] != 'F') else row[wd_col],
+                axis=1
+            )
+            return group
+        
+        # Group by date and apply the logic
+        df_result = df_result.groupby(date_col, group_keys=False).apply(assign_dia_tipo)
+        
+        # Count results
+        domyf_count = (df_result['DIA_TIPO'] == 'domYf').sum()
+        logger.info(f"Defined DIA_TIPO column: {domyf_count} rows marked as 'domYf' (Sundays/holidays)")
+        
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error defining DIA_TIPO: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def merge_contract_data(df_calendario: pd.DataFrame, df_contratos: pd.DataFrame, employee_col: str = 'COLABORADOR', date_col: str = 'DATA') -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Merge contract information into calendario dataframe.
+    
+    Cross-dataframe operation that adds contract details (contract_id, carga_diaria) 
+    to each employee-date row in the calendar.
+    
+    Args:
+        df_calendario: Calendar dataframe with employee schedules
+        df_contratos: Contracts dataframe with employee contract information
+        employee_col: Employee identifier column in calendario (default: 'COLABORADOR')
+        date_col: Date column name (default: 'DATA')
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, calendario with contract data, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_calendario is None or df_calendario.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_calendario"
+        
+        if df_contratos is None or df_contratos.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_contratos"
+        
+        if employee_col not in df_calendario.columns:
+            return False, pd.DataFrame(), f"Input validation failed: {employee_col} not in df_calendario"
+        
+        if date_col not in df_calendario.columns:
+            return False, pd.DataFrame(), f"Input validation failed: {date_col} not in df_calendario"
+        
+        # TREATMENT LOGIC
+        df_result = df_calendario.copy()
+        df_contratos_work = df_contratos.copy()
+        
+        # Prepare df_contratos for merging
+        if 'schedule_day' in df_contratos_work.columns:
+            df_contratos_work[date_col] = pd.to_datetime(df_contratos_work['schedule_day'])
+        
+        # Ensure required columns exist in df_contratos
+        required_contract_cols = ['employee_id', date_col, 'matricula', 'contract_id', 'carga_diaria']
+        missing_cols = [col for col in required_contract_cols if col not in df_contratos_work.columns]
+        if missing_cols:
+            logger.warning(f"df_contratos missing columns: {missing_cols}. Merge may have limited data.")
+        
+        # Merge contract information
+        original_count = len(df_result)
+        df_result = df_result.merge(
+            df_contratos_work[['employee_id', date_col, 'matricula', 'contract_id', 'carga_diaria']],
+            left_on=[employee_col, date_col],
+            right_on=['matricula', date_col],
+            how='left'
+        )
+        
+        # Drop duplicate columns
+        df_result = df_result.drop(columns=['employee_id', 'matricula'], errors='ignore')
+        
+        # OUTPUT VALIDATION
+        if len(df_result) != original_count:
+            logger.warning(f"Row count changed after merge: {original_count} -> {len(df_result)}")
+        
+        # Check if contract data was added
+        if 'contract_id' in df_result.columns:
+            null_contracts = df_result['contract_id'].isnull().sum()
+            if null_contracts > 0:
+                logger.warning(f"{null_contracts} rows have null contract_id after merge")
+            logger.info(f"Successfully merged contract data. Added columns: contract_id, carga_diaria")
+        else:
+            logger.warning("contract_id column not found after merge")
+        
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error merging contract data: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def adjust_counters_for_contract_types(df_colaborador: pd.DataFrame, tipo_contrato_col: str = 'tipo_contrato', use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Adjust Sunday/holiday counters for contract type 3 employees.
+    
+    Contract type 3 employees don't work weekends, so their total_dom_fes (Sundays/holidays 
+    worked) and dyf_max_t (max Sundays/holidays allowed) should be set to 0.
+    
+    Args:
+        df_colaborador: Employee dataframe with contract information
+        tipo_contrato_col: Contract type column name (default: 'tipo_contrato')
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, adjusted colaborador df, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_colaborador is None or df_colaborador.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_colaborador"
+        
+        if tipo_contrato_col not in df_colaborador.columns:
+            return False, pd.DataFrame(), f"Input validation failed: {tipo_contrato_col} not in df_colaborador"
+        
+        required_cols = ['total_dom_fes', 'dyf_max_t']
+        missing_cols = [col for col in required_cols if col not in df_colaborador.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
+        
+        if use_case == 0:
+            logger.info("use_case == 0: returning df_estimativas as is")
+            return True, df_colaborador, "No processing applied (use_case=0)"
+
+        elif use_case == 1: 
+            # TREATMENT LOGIC
+            df_result = df_colaborador.copy()
+            
+            # Count contract type 3 employees before adjustment
+            type_3_mask = df_result[tipo_contrato_col] == 3
+            type_3_count = type_3_mask.sum()
+            
+            if type_3_count == 0:
+                logger.info("No contract type 3 employees found, skipping adjustment")
+                return True, df_result, ""
+            
+            # Set Sunday/holiday counters to 0 for type 3 contracts
+            df_result.loc[type_3_mask, 'total_dom_fes'] = 0
+            df_result.loc[type_3_mask, 'dyf_max_t'] = 0
+            
+            # OUTPUT VALIDATION
+            # Verify adjustments were applied
+            type_3_total_dom_fes = df_result.loc[type_3_mask, 'total_dom_fes'].sum()
+            type_3_dyf_max_t = df_result.loc[type_3_mask, 'dyf_max_t'].sum()
+            
+            if type_3_total_dom_fes != 0 or type_3_dyf_max_t != 0:
+                logger.warning(f"Adjustment may have failed: type 3 employees have non-zero values")
+            
+            logger.info(f"Adjusted {type_3_count} contract type 3 employees: set total_dom_fes=0, dyf_max_t=0")
+            
+            return True, df_result, ""
+
+        else:
+            error_msg = f"use_case {use_case} not supported, please ensure the correct values are defined."
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+    except Exception as e:
+        error_msg = f"Error adjusting contract type 3: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def handle_employee_edge_cases(df_colaborador: pd.DataFrame, df_calendario: pd.DataFrame, employee_col: str = 'COLABORADOR', matricula_col: str = 'matricula') -> Tuple[bool, pd.DataFrame, pd.DataFrame, str]:
+    """
+    Handle special edge cases for employee day-off calculations.
+    
+    Cross-dataframe operation that applies business rules for:
+    - Employees with dyf_max_t=0 (cannot work Sundays/holidays)
+    - Employees with COMPLETO cycle (all quotas reset to 0)
+    - CXX adjustments for contract types 4/5
+    
+    Args:
+        df_colaborador: Employee dataframe with quotas and cycle info
+        df_calendario: Calendar dataframe with employee schedules
+        employee_col: Employee identifier in calendario (default: 'COLABORADOR')
+        matricula_col: Employee identifier in colaborador (default: 'matricula')
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, pd.DataFrame, str]: (success, updated colaborador, updated calendario, error)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_colaborador is None or df_colaborador.empty:
+            return False, pd.DataFrame(), pd.DataFrame(), "Input validation failed: empty df_colaborador"
+        
+        if df_calendario is None or df_calendario.empty:
+            return False, pd.DataFrame(), pd.DataFrame(), "Input validation failed: empty df_calendario"
+        
+        required_cols_colab = [matricula_col, 'dyf_max_t', 'ciclo', 'l_dom', 'l_total', 'tipo_contrato', 'cxx']
+        missing_cols = [col for col in required_cols_colab if col not in df_colaborador.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), pd.DataFrame(), f"df_colaborador missing columns: {missing_cols}"
+        
+        required_cols_cal = [employee_col, 'DIA_TIPO', 'HORARIO']
+        missing_cols = [col for col in required_cols_cal if col not in df_calendario.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), pd.DataFrame(), f"df_calendario missing columns: {missing_cols}"
+        
+        # TREATMENT LOGIC
+        df_colab_result = df_colaborador.copy()
+        df_cal_result = df_calendario.copy()
+        
+        # 5H-1: Handle dyf_max_t = 0 (cannot work Sundays/holidays)
+        dyf_zero_mask = (df_colab_result['dyf_max_t'] == 0) & (df_colab_result['ciclo'] != 'COMPLETO')
+        dyf_zero_count = dyf_zero_mask.sum()
+        
+        if dyf_zero_count > 0:
+            # Adjust l_total: subtract l_dom from l_total
+            df_colab_result.loc[dyf_zero_mask, 'l_total'] = (
+                df_colab_result.loc[dyf_zero_mask, 'l_total'] - 
+                df_colab_result.loc[dyf_zero_mask, 'l_dom']
+            )
+            
+            # Set l_dom to 0
+            df_colab_result.loc[dyf_zero_mask, 'l_dom'] = 0
+            
+            # Get list of employees with dyf_max_t=0
+            dyf_zero_employees = df_colab_result.loc[dyf_zero_mask, matricula_col].tolist()
+            
+            # Mark domYf days as 'L_DOM' in calendario for these employees
+            cal_mask = (
+                df_cal_result[employee_col].isin(dyf_zero_employees) &
+                (df_cal_result['DIA_TIPO'] == 'domYf') &
+                (df_cal_result['HORARIO'] != 'V')
+            )
+            df_cal_result.loc[cal_mask, 'HORARIO'] = 'L_DOM'
+            
+            logger.info(f"5H-1: Processed {dyf_zero_count} employees with dyf_max_t=0")
+        
+        # 5H-2: Handle COMPLETO cycle (reset all quotas to 0)
+        completo_mask = df_colab_result['ciclo'] == 'COMPLETO'
+        completo_count = completo_mask.sum()
+        
+        if completo_count > 0:
+            cols_to_reset = ['l_total', 'l_dom', 'l_d', 'l_q', 'l_qs', 'c2d', 'c3d', 'cxx', 'descansos_atrb']
+            # Only reset columns that exist
+            cols_to_reset = [col for col in cols_to_reset if col in df_colab_result.columns]
+            df_colab_result.loc[completo_mask, cols_to_reset] = 0
+            
+            logger.info(f"5H-2: Reset quotas for {completo_count} employees with COMPLETO cycle")
+        
+        # 5H-3: Handle CXX for contract types 4/5
+        if 'l_res' in df_colab_result.columns:
+            cxx_mask = (
+                df_colab_result['tipo_contrato'].isin([4, 5]) & 
+                (df_colab_result['cxx'] > 0) &
+                (~df_colab_result['ciclo'].isin(['SIN DYF', 'COMPLETO']))
+            )
+            cxx_count = cxx_mask.sum()
+            
+            if cxx_count > 0:
+                df_colab_result.loc[cxx_mask, 'l_res2'] = (
+                    df_colab_result.loc[cxx_mask, 'l_res'] - 
+                    df_colab_result.loc[cxx_mask, 'cxx']
+                )
+                logger.info(f"5H-3: Calculated l_res2 for {cxx_count} employees with contract types 4/5 and CXX>0")
+        else:
+            logger.info("5H-3: Skipping CXX handling - l_res column not found")
+        
+        # 5H-4: Handle 'SIN DYF' cycle
+        sin_dyf_mask = df_colab_result['ciclo'] == 'SIN DYF'
+        sin_dyf_count = sin_dyf_mask.sum()
+        
+        if sin_dyf_count > 0:
+            # Adjust c2d: subtract c3d from c2d
+            df_colab_result.loc[sin_dyf_mask, 'c2d'] = (
+                df_colab_result.loc[sin_dyf_mask, 'c2d'] - 
+                df_colab_result.loc[sin_dyf_mask, 'c3d']
+            )
+            
+            # Recalculate l_total based on specific quotas
+            df_colab_result.loc[sin_dyf_mask, 'l_total'] = (
+                df_colab_result.loc[sin_dyf_mask, 'l_dom'] + 
+                df_colab_result.loc[sin_dyf_mask, 'l_d'] + 
+                df_colab_result.loc[sin_dyf_mask, 'c2d'] + 
+                df_colab_result.loc[sin_dyf_mask, 'cxx']
+            )
+            
+            # Reset specific quotas to 0
+            reset_cols_sin_dyf = ['l_q', 'l_qs', 'c3d', 'vz']
+            if 'l_res' in df_colab_result.columns:
+                reset_cols_sin_dyf.append('l_res')
+            
+            # Only reset columns that exist
+            reset_cols_sin_dyf = [col for col in reset_cols_sin_dyf if col in df_colab_result.columns]
+            df_colab_result.loc[sin_dyf_mask, reset_cols_sin_dyf] = 0
+            
+            logger.info(f"5H-4: Adjusted {sin_dyf_count} employees with 'SIN DYF' cycle")
+        
+        # OUTPUT VALIDATION
+        logger.info(f"Successfully handled employee edge cases: {dyf_zero_count} dyf_max_t=0, {completo_count} COMPLETO, {sin_dyf_count} SIN DYF")
+        
+        return True, df_colab_result, df_cal_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error handling employee edge cases: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), pd.DataFrame(), error_msg
+
+
+def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborador: pd.DataFrame, employee_col: str = 'COLABORADOR', date_col: str = 'DATA', horario_col: str = 'HORARIO', dia_tipo_col: str = 'DIA_TIPO') -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Adjust HORARIO based on employee admission dates.
+    
+    For dates before admission:
+    - If domYf (Sunday/holiday): set HORARIO to 'L_' (guaranteed day off)
+    - Otherwise: set HORARIO to 'NL' (nao libranza)
+    
+    Args:
+        df_calendario: Calendar dataframe with employee schedules
+        df_colaborador: Employee dataframe with admission dates
+        employee_col: Employee identifier column (default: 'COLABORADOR')
+        date_col: Date column name (default: 'DATA')
+        horario_col: Schedule column (default: 'HORARIO')
+        dia_tipo_col: Day type column (default: 'DIA_TIPO')
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, adjusted calendario, error message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_calendario is None or df_calendario.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_calendario"
+        
+        if df_colaborador is None or df_colaborador.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_colaborador"
+        
+        required_cols_cal = [employee_col, date_col, horario_col, dia_tipo_col]
+        missing_cols = [col for col in required_cols_cal if col not in df_calendario.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_calendario missing columns: {missing_cols}"
+        
+        if 'data_admissao' not in df_colaborador.columns:
+            logger.warning("data_admissao column not found in df_colaborador, skipping admission date adjustment")
+            return True, df_calendario.copy(), ""
+        
+        # TREATMENT LOGIC
+        df_result = df_calendario.copy()
+        
+        # Merge admission date into calendario
+        admission_data = df_colaborador[[employee_col, 'data_admissao']].copy()
+        df_result = df_result.merge(admission_data, on=employee_col, how='left')
+        
+        # Convert dates to datetime if needed
+        df_result[date_col] = pd.to_datetime(df_result[date_col])
+        df_result['data_admissao'] = pd.to_datetime(df_result['data_admissao'])
+        
+        # Fill missing admission dates with very old date (assume they were always employed)
+        df_result['data_admissao'] = df_result['data_admissao'].fillna(pd.Timestamp('1900-01-01'))
+        
+        # Vectorized adjustment
+        # Mask for dates before admission
+        before_admission = df_result[date_col] < df_result['data_admissao']
+        
+        # For dates before admission AND domYf: set to 'L_'
+        mask_domyf = before_admission & (df_result[dia_tipo_col] == 'domYf')
+        df_result.loc[mask_domyf, horario_col] = 'L_'
+        
+        # For dates before admission AND NOT domYf: set to 'NL'
+        mask_not_domyf = before_admission & (df_result[dia_tipo_col] != 'domYf')
+        df_result.loc[mask_not_domyf, horario_col] = 'NL'
+        
+        # Drop temporary admission date column
+        df_result = df_result.drop(columns=['data_admissao'])
+        
+        # OUTPUT VALIDATION
+        before_count = before_admission.sum()
+        domyf_adjusted = mask_domyf.sum()
+        nl_adjusted = mask_not_domyf.sum()
+        
+        logger.info(f"Adjusted HORARIO for {before_count} dates before admission: {domyf_adjusted} to 'L_', {nl_adjusted} to 'NL'")
+        
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error adjusting HORARIO for admission dates: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_calendario: pd.DataFrame, date_col_est: str = 'data', date_col_cal: str = 'DATA', shift_col_est: str = 'turno', shift_col_cal: str = 'TIPO_TURNO', employee_col: str = 'COLABORADOR', horario_col: str = 'HORARIO', param_pess_obj: float = 0.5) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Calculate actual employee headcount (+H) for each shift and merge with demand estimates.
+    
+    Cross-dataframe operation that:
+    1. Counts how many employees work M/T shifts from calendario
+    2. Handles split shifts (0.5 weighting for M+T same day)
+    3. Merges +H with estimativas
+    4. Calculates staffing objective (pess_obj) and diff
+    
+    Args:
+        df_estimativas: Demand estimates with min/max/mean/sd per shift
+        df_calendario: Calendar with employee schedules
+        date_col_est: Date column in estimativas (default: 'data')
+        date_col_cal: Date column in calendario (default: 'DATA')
+        shift_col_est: Shift column in estimativas (default: 'turno')
+        shift_col_cal: Shift column in calendario (default: 'TIPO_TURNO')
+        employee_col: Employee identifier (default: 'COLABORADOR')
+        horario_col: Schedule column (default: 'HORARIO')
+        param_pess_obj: Volatility threshold for staffing objective (default: 0.5)
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, estimativas with +H/pess_obj/diff, error)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_estimativas is None or df_estimativas.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_estimativas"
+        
+        if df_calendario is None or df_calendario.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_calendario"
+        
+        required_cols_est = [date_col_est, shift_col_est, 'max_turno', 'min_turno', 'media_turno', 'sd_turno']
+        missing_cols = [col for col in required_cols_est if col not in df_estimativas.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_estimativas missing columns: {missing_cols}"
+        
+        required_cols_cal = [date_col_cal, shift_col_cal, employee_col, horario_col]
+        missing_cols = [col for col in required_cols_cal if col not in df_calendario.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_calendario missing columns: {missing_cols}"
+        
+        # TREATMENT LOGIC
+        df_est_result = df_estimativas.copy()
+        df_cal_work = df_calendario.copy()
+        
+        # Step 6B-1: Data type conversions
+        df_est_result['max_turno'] = pd.to_numeric(df_est_result['max_turno'], errors='coerce')
+        df_est_result['min_turno'] = pd.to_numeric(df_est_result['min_turno'], errors='coerce')
+        df_est_result['sd_turno'] = pd.to_numeric(df_est_result['sd_turno'], errors='coerce')
+        df_est_result['media_turno'] = pd.to_numeric(df_est_result['media_turno'], errors='coerce')
+        df_est_result[shift_col_est] = df_est_result[shift_col_est].str.upper()
+        
+        # Filter out TIPO_DIA metadata rows
+        df_cal_work = df_cal_work[df_cal_work[employee_col] != 'TIPO_DIA'].copy()
+        
+        # Convert dates to datetime for consistency
+        df_est_result[date_col_est] = pd.to_datetime(df_est_result[date_col_est]).dt.date
+        df_cal_work[date_col_cal] = pd.to_datetime(df_cal_work[date_col_cal]).dt.date
+        
+        # Step 6B-2 & 6B-3: Calculate +H for M and T shifts (vectorized)
+        # Identify working employees (H or NL in HORARIO)
+        df_cal_work['is_working'] = df_cal_work[horario_col].str.contains('H|NL', case=False, na=False)
+        
+        # Create pivot: for each employee-date, which shifts they work
+        employee_shifts = df_cal_work[df_cal_work['is_working']].groupby(
+            [employee_col, date_col_cal, shift_col_cal]
+        ).size().reset_index(name='count')
+        
+        # Count shifts per employee-date
+        shifts_per_emp_date = employee_shifts.groupby([employee_col, date_col_cal])[shift_col_cal].apply(
+            lambda x: set(x)
+        ).reset_index()
+        shifts_per_emp_date.columns = [employee_col, date_col_cal, 'shifts_worked']
+        
+        # Apply 0.5 weighting for employees working both M and T
+        def calc_shift_weight(row, target_shift):
+            shifts = row['shifts_worked']
+            if target_shift in shifts:
+                return 0.5 if ('M' in shifts and 'T' in shifts) else 1.0
+            return 0.0
+        
+        # Calculate +H for Morning
+        shifts_per_emp_date['M_weight'] = shifts_per_emp_date.apply(
+            lambda row: calc_shift_weight(row, 'M'), axis=1
+        )
+        plus_h_m = shifts_per_emp_date.groupby(date_col_cal)['M_weight'].sum().reset_index()
+        plus_h_m.columns = [date_col_cal, '+H']
+        plus_h_m[shift_col_est] = 'M'
+        
+        # Calculate +H for Afternoon
+        shifts_per_emp_date['T_weight'] = shifts_per_emp_date.apply(
+            lambda row: calc_shift_weight(row, 'T'), axis=1
+        )
+        plus_h_t = shifts_per_emp_date.groupby(date_col_cal)['T_weight'].sum().reset_index()
+        plus_h_t.columns = [date_col_cal, '+H']
+        plus_h_t[shift_col_est] = 'T'
+        
+        # Combine M and T
+        plus_h_combined = pd.concat([plus_h_m, plus_h_t], ignore_index=True)
+        
+        # Step 6C: Merge +H with estimativas
+        df_est_result = df_est_result.merge(
+            plus_h_combined,
+            left_on=[date_col_est, shift_col_est],
+            right_on=[date_col_cal, shift_col_est],
+            how='left'
+        )
+        
+        # Drop duplicate date column if it exists
+        if date_col_cal in df_est_result.columns and date_col_cal != date_col_est:
+            df_est_result = df_est_result.drop(columns=[date_col_cal])
+        
+        df_est_result['+H'] = pd.to_numeric(df_est_result['+H'], errors='coerce').fillna(0)
+        
+        # Step 6D: Calculate staffing objective
+        # aux = coefficient of variation (sd/mean)
+        df_est_result['aux'] = np.where(
+            df_est_result['media_turno'] != 0,
+            df_est_result['sd_turno'] / df_est_result['media_turno'],
+            0
+        )
+        
+        # pess_obj: ceil if high volatility (aux >= threshold), else round
+        df_est_result['pess_obj'] = np.where(
+            df_est_result['aux'] >= param_pess_obj,
+            np.ceil(df_est_result['media_turno']),
+            np.round(df_est_result['media_turno'])
+        )
+        
+        # diff: gap between current staffing and objective
+        df_est_result['diff'] = df_est_result['+H'] - df_est_result['pess_obj']
+        
+        # Ensure min_turno is at least 1
+        df_est_result['min_turno'] = np.where(
+            df_est_result['min_turno'] == 0, 
+            1, 
+            df_est_result['min_turno']
+        )
+        
+        # Drop temporary aux column
+        df_est_result = df_est_result.drop(columns=['aux'], errors='ignore')
+        
+        # OUTPUT VALIDATION
+        plus_h_count = (~df_est_result['+H'].isna()).sum()
+        logger.info(f"Calculated +H for {plus_h_count} shift-date combinations")
+        logger.info(f"Staffing objective (pess_obj) calculated using param_pess_obj={param_pess_obj}")
+        
+        return True, df_est_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error calculating and merging +H: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg

@@ -138,10 +138,10 @@ def validate_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: Lis
     if df_colaborador.empty:
         return False
 
-    needed_columns = ['codigo', 'loja', 'secao', 'fk_tipo_posto', 'convenio']
+    needed_columns = ['fk_colaborador', 'loja', 'secao', 'fk_tipo_posto', 'convenio']
     if not all(col in df_colaborador.columns for col in needed_columns):
         return False
-    if not df_colaborador['codigo'].isin(employees_id_list).all():
+    if not df_colaborador['fk_colaborador'].isin(employees_id_list).all():
         return False
     return True
 
