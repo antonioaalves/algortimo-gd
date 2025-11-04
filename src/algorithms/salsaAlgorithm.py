@@ -20,7 +20,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
     LQ_attribution, compensation_days, assign_week_shift, working_day_shifts, salsa_2_consecutive_free_days,
     salsa_2_day_quality_weekend, salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free,
-    free_days_special_days
+    free_days_special_days, christmas_or_new_year
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -64,6 +64,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             "shifts": ["M", "T", "L", "LQ", 'LD', "F", "A", "V", "-"],
             "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
             "working_shifts": ['M', 'T', 'LD'],
+            "real_working_shifts": ['M', 'T'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -274,9 +275,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             fixed_M = adapted_data['fixed_M']
             fixed_T = adapted_data['fixed_T']
             role_by_worker = adapted_data['role_by_worker']
-            #managers = adapted_data['managers']
-            #keyholders = adapted_data['keyholders']
-            # week_cut = adapted_data['week_cut']
             proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
             work_days_per_week = adapted_data['work_days_per_week']
@@ -286,11 +284,14 @@ class SalsaAlgorithm(BaseAlgorithm):
             partial_workers_complete = adapted_data['partial_workers_complete']
             workers_past = adapted_data['workers_past']
             fixed_compensation_days = adapted_data['fixed_compensation_days']
+            christmas_eve = adapted_data['christmas_eve']
+            max_day_year = adapted_data['max_day_year']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
             check_shift = self.parameters["check_shifts"]
             working_shift = self.parameters["working_shifts"]
+            real_working_shift = self.parameters["real_working_shifts"]
             
             if country != "spain":
                 shifts.remove("LD")
@@ -382,6 +383,9 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
+            christmas_or_new_year(model, shift, workers, real_working_shift, working_days, christmas_eve, max_day_year)
+
+
             if country == "spain":
                 compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_holiday)
                         
@@ -394,7 +398,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past)  # role_by_worker)
+                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, christmas_eve, max_day_year, real_working_shift)
 
             # =================================================================
             # SOLVE THE MODEL

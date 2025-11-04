@@ -284,12 +284,10 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
                     for day in day_sequence
                 ])
 
-
 def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays):
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
     debug_vars = {}  # Store debug variables to return    
     for w in workers:
-
         if contract_type[w] in [4, 5, 6, 8]:
             quality_2weekend_vars = []
             
@@ -605,3 +603,9 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
         logger.info(f"Worker {w}, Sundays {worker_sundays}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
 
+def christmas_or_new_year(model, shift, workers, real_working_shift, working_days, christmas_eve, new_year_eve):
+    for w in workers:
+        if christmas_eve in working_days[w] and new_year_eve in working_days[w]:
+            christmas_shift = sum(shift[(w, christmas_eve, s)] for s in real_working_shift if (w, christmas_eve, s) in shift)
+            new_year_shift = sum(shift[(w, new_year_eve, s)] for s in real_working_shift if (w, new_year_eve, s) in shift)
+            model.Add(christmas_shift + new_year_shift <= 1)

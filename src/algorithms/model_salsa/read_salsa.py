@@ -353,6 +353,28 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         min_day_of_year = min_calendar_date.dayofyear
         max_day_of_year = (max_calendar_date - min_calendar_date).days + 1
 
+        dec24 = matriz_estimativas_gd.loc[
+        (matriz_estimativas_gd['data'].dt.month == 12) &
+        (matriz_estimativas_gd['data'].dt.day == 24)
+        ]
+        jan1 = matriz_estimativas_gd.loc[
+        (matriz_estimativas_gd['data'].dt.month == 1) &
+        (matriz_estimativas_gd['data'].dt.day == 1)
+        ]
+
+        dec31 = matriz_estimativas_gd.loc[
+        (matriz_estimativas_gd['data'].dt.month == 12) &
+        (matriz_estimativas_gd['data'].dt.day == 31)
+        ]
+        if (1 == 2):
+            min_day_year = jan1['index'].iloc[0] if not jan1.empty else 1 #DEPENDE DO NOME QUE O ANTONIO DER À COLUNA
+            max_day_year = dec31['index'].iloc[0] if not dec31.empty else 365 #DEPENDE DO NOME QUE O ANTONIO DER À COLUNA
+            christmas_eve = dec24['index'].iloc[0] if not dec24.empty else 358 #DEPENDE DO NOME QUE O ANTONIO DER À COLUNA
+        else:
+            min_day_year = 1
+            max_day_year = 365
+            christmas_eve = 358
+
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_of_year} to {max_day_of_year}")
         
@@ -980,6 +1002,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "partial_workers_complete": partial_workers_complete, # 50
             "workers_past": workers_past,                         # 51
             "fixed_compensation_days": fixed_compensation_days,   # 52
+            "christmas_eve": christmas_eve,   # 52
+            "max_day_year": max_day_year,   # 52
             }
         
     except Exception as e:
