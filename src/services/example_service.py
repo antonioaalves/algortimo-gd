@@ -1497,7 +1497,8 @@ class AlgoritmoGDService(BaseService):
                 self.logger.error("Invalid start_date or end_date")
                 return False
                 
-            success = self.data_model.func_inicializa()
+            # Unpack the return tuple from func_inicializa
+            success, error_code, error_msg = self.data_model.func_inicializa()
             if not success:
                 self.logger.warning("Performing func_inicializa unsuccessful, returning False")
                 if self.stage_handler:
