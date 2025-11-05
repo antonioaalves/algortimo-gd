@@ -18,7 +18,7 @@ from src.config import PROJECT_NAME, ROOT_DIR
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    LQ_attribution, compensation_days, assign_week_shift, working_day_shifts, salsa_2_consecutive_free_days,
+    LQ_attribution, compensation_days, working_day_shifts, salsa_2_consecutive_free_days,
     salsa_2_day_quality_weekend, salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free,
     free_days_special_days, christmas_or_new_year
 )
@@ -245,7 +245,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             non_holidays = adapted_data['non_holidays']
             start_weekday = adapted_data['start_weekday']
             week_to_days = adapted_data['week_to_days']
-            worker_week_shift = adapted_data['worker_week_shift']
             matriz_colaborador_gd = adapted_data['matriz_colaborador_gd']
             workers = adapted_data['workers']
             contract_type = adapted_data['contract_type']
@@ -272,8 +271,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
             fixed_LQs = adapted_data['fixed_LQs']
-            fixed_M = adapted_data['fixed_M']
-            fixed_T = adapted_data['fixed_T']
+            shift_M = adapted_data['shift_M']
+            shift_T = adapted_data['shift_T']
             role_by_worker = adapted_data['role_by_worker']
             proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
@@ -284,6 +283,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             partial_workers_complete = adapted_data['partial_workers_complete']
             workers_past = adapted_data['workers_past']
             fixed_compensation_days = adapted_data['fixed_compensation_days']
+            year_range = adapted_data["year_range"]
             christmas_eve = adapted_data['christmas_eve']
             max_day_year = adapted_data['max_day_year']
 
@@ -330,7 +330,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             #             dct.pop(worker_id, None)
 
             # # 3) mapas (w, week, ...) → limpar chaves desses workers
-            # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] not in DROP_WORKERS}
+            # worker_day_shift = {k: v for k, v in worker_day_shift.items() if k[0] not in DROP_WORKERS}
 
             # =================================================================
             # CREATE MODEL AND DECISION VARIABLES
@@ -343,7 +343,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_holiday,
                                        missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       fixed_M, fixed_T, start_weekday, workers_past, fixed_compensation_days)
+                                       shift_M, shift_T, start_weekday, workers_past, fixed_compensation_days)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -361,10 +361,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Maximum continuous working days constraint
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
-            LQ_attribution(model, shift, workers, working_days, c2d)           
-            
-            # Worker week shift assignments
-            assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
+            LQ_attribution(model, shift, workers, working_days, c2d, year_range)           
             
             # Working day shifts constraint
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
@@ -373,7 +370,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
             
             self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
-            salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
+            salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays, year_range)
             
             salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
 
@@ -381,7 +378,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
 
-            free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
+            free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range)
 
             christmas_or_new_year(model, shift, workers, real_working_shift, working_days, christmas_eve, max_day_year)
 
@@ -398,7 +395,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, christmas_eve, max_day_year, real_working_shift)
+                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range, christmas_eve, max_day_year, real_working_shift)
 
             # =================================================================
             # SOLVE THE MODEL
