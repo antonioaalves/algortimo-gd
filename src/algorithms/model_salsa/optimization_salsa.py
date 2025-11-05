@@ -757,27 +757,22 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     #9 Christmas and New year's eve equalization
 
     #confirmar indice para int(work_day_hours[w][christmas_eve])
-    christmas_shift = sum(shift[(w, christmas_eve, s)] * int(work_day_hours[w][christmas_eve]) for s in real_working_shift for w in all_workers if (w, christmas_eve, s) in shift)
-    new_year_shift = sum(shift[(w, max_day_year, s)] * int(work_day_hours[w][max_day_year]) for s in real_working_shift for w in all_workers if (w, max_day_year, s) in shift)
-    pos_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"pos_diff_{d}_{s}")
-    neg_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"neg_diff_{d}_{s}")
-            
-    # Store the variables in dictionaries
-    pos_diff_dict[(d, s)] = pos_diff
-    neg_diff_dict[(d, s)] = neg_diff
+    christmas_shift = sum(shift[(w, christmas_eve, s)] * int(work_day_hours[w][christmas_eve -1]) for s in real_working_shift for w in all_workers if (w, christmas_eve, s) in shift)
+    new_year_shift = sum(shift[(w, max_day_year, s)] * int(work_day_hours[w][max_day_year - 1]) for s in real_working_shift for w in all_workers if (w, max_day_year, s) in shift)
+    christmas_surplus = model.NewIntVar(0, len(all_workers) * hours_scale, f"christmas_surplus")
+    new_year_surplus = model.NewIntVar(0, len(all_workers) * hours_scale, f"new_year_surplus")
 
-    target = pessObj.get((d, s), 0)
             
     # Add constraints to ensure that the positive and negative deviations are correctly computed
-    model.Add(pos_diff >= assigned_workers - target)  # If excess, pos_diff > 0
-    model.Add(pos_diff >= 0)  # Ensure pos_diff is non-negative
+    model.Add(christmas_surplus >= christmas_shift - new_year_shift)  # If excess, christmas_surplus > 0
+    model.Add(christmas_surplus >= 0)  # Ensure christmas_surplus is non-negative
             
-    model.Add(neg_diff >= target - assigned_workers)  # If shortfall, neg_diff > 0
-    model.Add(neg_diff >= 0)  # Ensure neg_diff is non-negative
+    model.Add(new_year_surplus >= new_year_shift - christmas_shift)  # If shortfall, new_year_surplus > 0
+    model.Add(new_year_surplus >= 0)  # Ensure new_year_surplus is non-negative
             
     # Add both positive and negative deviations to the objective function
-    objective_terms.append(PESS_OBJ_PENALTY * pos_diff)
-    objective_terms.append(PESS_OBJ_PENALTY * neg_diff)
+    objective_terms.append(PESS_OBJ_PENALTY * christmas_surplus)
+    objective_terms.append(PESS_OBJ_PENALTY * new_year_surplus)
         
 
 
