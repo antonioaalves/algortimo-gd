@@ -6,7 +6,7 @@ logger = get_logger(PROJECT_NAME)
 
 def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days,
                        closed_holidays, min_workers,week_to_days, sundays, c2d, first_day, last_day,
-                       role_by_worker, work_day_hours, workers_past, year_range, christmas_eve, max_day_year, real_working_shift):
+                       role_by_worker, work_day_hours, workers_past, year_range, christmas_eve, real_working_shift):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -759,7 +759,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     #confirmar indice para int(work_day_hours[w][christmas_eve])
     christmas_shift = sum(shift[(w, christmas_eve, s)] * int(work_day_hours[w][christmas_eve -1]) for s in real_working_shift for w in all_workers if (w, christmas_eve, s) in shift)
-    new_year_shift = sum(shift[(w, max_day_year, s)] * int(work_day_hours[w][max_day_year - 1]) for s in real_working_shift for w in all_workers if (w, max_day_year, s) in shift)
+    new_year_shift = sum(shift[(w, year_range[1], s)] * int(work_day_hours[w][year_range[1] - 1]) for s in real_working_shift for w in all_workers if (w, year_range[1], s) in shift)
     christmas_surplus = model.NewIntVar(0, len(all_workers) * hours_scale, f"christmas_surplus")
     new_year_surplus = model.NewIntVar(0, len(all_workers) * hours_scale, f"new_year_surplus")
 

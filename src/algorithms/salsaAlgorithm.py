@@ -285,7 +285,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             fixed_compensation_days = adapted_data['fixed_compensation_days']
             year_range = adapted_data["year_range"]
             christmas_eve = adapted_data['christmas_eve']
-            max_day_year = adapted_data['max_day_year']
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -380,7 +379,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range)
 
-            christmas_or_new_year(model, shift, workers, real_working_shift, working_days, christmas_eve, max_day_year)
+            christmas_or_new_year(model, shift, workers, real_working_shift, working_days, christmas_eve, year_range[1])
 
 
             if country == "spain":
@@ -394,8 +393,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
-                                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range, christmas_eve, max_day_year, real_working_shift)
+                                            working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day,
+                                            role_by_worker, work_day_hours, workers_past, year_range, christmas_eve, real_working_shift)
 
             # =================================================================
             # SOLVE THE MODEL
