@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 # Local stuff
 from src.oracle_config import ORACLE_CONFIG
-from src.config import PROJECT_NAME
+from src.config import PROJECT_NAME, CODIGOS_MOTIVO_AUSENCIA
 from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
@@ -20,6 +20,7 @@ from src.orquestrador_functions.Classes.Connection.connect import ensure_connect
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
+codigos_motivo_ausencia = CODIGOS_MOTIVO_AUSENCIA
 
 def log_process_event(message_key:str, messages_df: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
     """
@@ -286,7 +287,8 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
                 #logger.info(f"DEBUG: col_indices: {col_indices}")
                 if len(col_indices) >= 2:
                     #logger.info(f"DEBUG: fk_motivo_ausencia: {fk_motivo_ausencia}, type: {type(fk_motivo_ausencia)}")
-                    if fk_motivo_ausencia == 1:
+                    # TODO: check for codigo_motivo_ausencia in config.py
+                    if fk_motivo_ausencia in codigos_motivo_ausencia:
                         # Vacation
                         reshaped_final_3.iloc[row_index, col_indices[0]] = "V"
                         reshaped_final_3.iloc[row_index, col_indices[1]] = "V"
