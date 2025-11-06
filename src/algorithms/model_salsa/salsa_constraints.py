@@ -435,31 +435,15 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
     
     return debug_vars
 
-def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, non_working_days):
+def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday):
     # For each worker, constrain L on Saturday if L on Sunday
     for w in workers:
         for day in working_days[w]:
             # Get day of week (5 = Saturday)
-            day_of_week = (day + start_weekday - 2) % 7
-            
-            # Case 1: Saturday (day_of_week == 5)
-            if day_of_week == 5:
-                sunday_day = day + 1
-                
-                # Check if Sunday exists and is within the year bounds
-                if sunday_day in working_days[w]:
-                    # Check if both Saturday and Sunday shifts exist for this worker
-                    saturday_l_key = (w, day, "L")
-                    sunday_l_key = (w, sunday_day, "L")
-                    
-                    if saturday_l_key in shift and sunday_l_key in shift:
-                        saturday_l = shift[saturday_l_key]
-                        sunday_l = shift[sunday_l_key]
-                        #logger.debug(f"DEBUG: Adding constraint for Worker {w}, Saturday {day}, Sunday {sunday_day}")
-                        # If Sunday has L, then Saturday can't have L
-                        # This translates to: sunday_l == 1 → saturday_l == 0
-                        # Which is equivalent to: saturday_l + sunday_l <= 1
-                        model.Add(saturday_l + sunday_l <= 1)
+            if (day + start_weekday - 2) % 7 == 5:
+                if day + 1 in working_days[w]:
+                    if (w, day, "L") in shift and (w, day + 1, "L") in shift:
+                        model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week):
     for w in workers:
