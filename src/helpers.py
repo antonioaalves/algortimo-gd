@@ -293,23 +293,23 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
                     if fk_motivo_ausencia == 1:
                         # Vacation - check if current value is "-"
                         if current_morning == "-":
-                            reshaped_final_3.iloc[row_index, col_indices[0]] = "VV"
+                            reshaped_final_3.iloc[row_index, col_indices[0]] = "V-"
                         else:
                             reshaped_final_3.iloc[row_index, col_indices[0]] = "V"
                         
                         if current_afternoon == "-":
-                            reshaped_final_3.iloc[row_index, col_indices[1]] = "VV"
+                            reshaped_final_3.iloc[row_index, col_indices[1]] = "V-"
                         else:
                             reshaped_final_3.iloc[row_index, col_indices[1]] = "V"
                     else:
                         # Other absence - check if current value is "-" and val is "A"
                         if current_morning == "-" and val == "A":
-                            reshaped_final_3.iloc[row_index, col_indices[0]] = "AV"
+                            reshaped_final_3.iloc[row_index, col_indices[0]] = "A-"
                         else:
                             reshaped_final_3.iloc[row_index, col_indices[0]] = val
                         
                         if current_afternoon == "-" and val == "A":
-                            reshaped_final_3.iloc[row_index, col_indices[1]] = "AV"
+                            reshaped_final_3.iloc[row_index, col_indices[1]] = "A-"
                         else:
                             reshaped_final_3.iloc[row_index, col_indices[1]] = val
         
@@ -442,14 +442,14 @@ def insert_dayoffs_override(df_core_pro_emp_horario_det: pd.DataFrame,
                 current_afternoon = reshaped_final_3.iloc[employee_row_idx, col_indices[1]]
                 
                 if current_morning == "A":
-                    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "AV"
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "A-"
                 if current_afternoon == "A":
-                    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "AV"
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "A-"
                 
                 if current_morning == "V":
-                    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "VV"
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "V-"
                 if current_afternoon == "V":
-                    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "VV"
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "V-"
 
         logger.info("Completed insert_dayoffs_override processing")
         return reshaped_final_3
