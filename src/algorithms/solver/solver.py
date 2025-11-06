@@ -299,7 +299,7 @@ def solve(
                         time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
 
                     day_counter += 1
-                logger.info(f"days worked: {special_days_worked[w]}"
+                logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 # Store statistics for this worker
@@ -374,7 +374,7 @@ def solve(
                         time_worked_day_M_after[day_counter] += work_day_hours[w][day_counter]
 
                     day_counter += 1
-                logger.info(f"days worked: {special_days_worked[w]}"
+                logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 # Store statistics for this worker

@@ -559,7 +559,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 logger.warning(f"No collaborator data found for worker {w}")
                 tipo_contrato = 'Contract Error'
             if tipo_contrato != 8:
-                worker_absences[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, None)
+                worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, None)
                 working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays 
                 #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
 
@@ -640,7 +640,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     else:
                         work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa)
                     check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days, work_days_per_week[w])
-                    worker_absences[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w])
+                    worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w])
                     working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays 
                 else:
                     work_days_per_week[w] = [5] * 52
@@ -1001,11 +1001,13 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                 if only_day_off == atributing_days[-1] and only_day_off == days[6] and atributing_days[-2] == days[5]:
                     l2 = atributing_days[-2]
                     absences -= {l2}
+                    vacations -= {l2}
                     fixed_LQs.append(l2)
 
                 elif only_day_off == atributing_days[-2] and only_day_off == days[5] and atributing_days[-1] == days[6]:
                     l1 = atributing_days[-1]
                     absences -= {l1}
+                    vacations -= {l1}
                     fixed_days_off |= {l1}
                     fixed_days_off -= {only_day_off}
                     fixed_LQs.append(only_day_off)
@@ -1013,6 +1015,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     #last day insured not to be an already fixed day off
                     l1 = sorted(set(atributing_days) - {only_day_off})[-1]
                     absences -= {l1}
+                    vacations -= {l1}
                     fixed_days_off |= {l1}
             else:
                 l1 = atributing_days[-1]
@@ -1020,10 +1023,12 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
 
                 if l1 == days[6] and l2 == days[5]:
                     absences -= {l2, l1}
+                    vacations -= {l2, l1}
                     fixed_days_off |= {l1}
                     fixed_LQs.append(l2)
                 else:
                     absences -= {l2,l1}
+                    vacations -= {l2,l1}
                     fixed_days_off |= {l2,l1}
                 
         else:
@@ -1036,9 +1041,10 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
             atributing_days = sorted(days_set - closed_holidays)
             l1 = atributing_days[-1]
             absences -= {l1}
+            vacations -= {l1}
             fixed_days_off |= {l1}
     
-    return absences, fixed_days_off, fixed_LQs
+    return absences, vacations, fixed_days_off, fixed_LQs
 
 def populate_week_seed_5_6(first_week_5_6, data_admissao, week_to_days):
     nbr_weeks = len(week_to_days)
