@@ -3,7 +3,7 @@ from base_data_project.log_config import get_logger
 
 logger = get_logger('algoritmo_GD')
 
-def possible_week(special_day_week, fixed_days_off, fixed_LQs, worker_holidays, week_to_days, week_compensation_limit):
+def possible_week(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit):
     possible_weeks = []
     weeks_added = 0
     current_week = special_day_week
@@ -13,7 +13,7 @@ def possible_week(special_day_week, fixed_days_off, fixed_LQs, worker_holidays, 
 
         week_days = set(week_to_days.get(current_week, []))
 
-        all_days_off = worker_holidays.union(fixed_days_off).union(fixed_LQs)
+        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off).union(fixed_LQs))
 
         available_days = week_days - all_days_off
 
@@ -23,7 +23,7 @@ def possible_week(special_day_week, fixed_days_off, fixed_LQs, worker_holidays, 
 
     return possible_weeks
 
-def compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_holidays):
+def compensation_days(model, shift, workers, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days):
     #Define compensation days (LD) constraint for contract types 4, 5, 6
     possible_compensation_days = {}
     for w in workers:
@@ -39,7 +39,7 @@ def compensation_days(model, shift, workers, working_days, holidays, start_weekd
                     continue
                 
                 # Possible compensation weeks (current and next week)
-                possible_weeks = possible_week(special_day_week, fixed_days_off[w], fixed_LQs[w], worker_holidays[w], week_to_days, week_compensation_limit.get(w, 2))
+                possible_weeks = possible_week(special_day_week, fixed_days_off[w], fixed_LQs[w], worker_absences[w], vacation_days[w], week_to_days, week_compensation_limit.get(w, 2))
                 # Collect potential compensation days
                 compensation_days = []
                 for week in filter(None, possible_weeks):
