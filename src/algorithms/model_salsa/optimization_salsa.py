@@ -453,37 +453,17 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     # 5.2 Balance c2d free days
     c2d_balance_penalties = []
     quality_weekend_2_dict = {}
+    saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
     for w in workers:
         # Find all potential quality weekends (Saturday-Sunday pairs)
         quality_weekend_vars = []
-        weekend_dates = []
         
-        for sunday in sundays:
-            saturday = sunday - 1
-            
-            # Check if both Saturday and Sunday are in worker's schedule
-            if saturday in working_days[w] and sunday in working_days[w]:
-                # Create boolean for this quality weekend
-                quality_weekend = model.NewBoolVar(f"quality_weekend_{w}_{sunday}")
-                
-                # Quality weekend is True if LQ on Saturday AND L on Sunday
-                has_lq_saturday = model.NewBoolVar(f"has_lq_sat_{w}_{saturday}")
-                has_l_sunday = model.NewBoolVar(f"has_l_sun_{w}_{sunday}")
-                
-                # Link to actual shift assignments
-                model.Add(shift.get((w, saturday, "LQ"), 0) >= 1).OnlyEnforceIf(has_lq_saturday)
-                model.Add(shift.get((w, saturday, "LQ"), 0) == 0).OnlyEnforceIf(has_lq_saturday.Not())
-                
-                model.Add(shift.get((w, sunday, "L"), 0) >= 1).OnlyEnforceIf(has_l_sunday)
-                model.Add(shift.get((w, sunday, "L"), 0) == 0).OnlyEnforceIf(has_l_sunday.Not())
-                
-                # Quality weekend requires both conditions
-                model.AddBoolAnd([has_lq_saturday, has_l_sunday]).OnlyEnforceIf(quality_weekend)
-                model.AddBoolOr([has_lq_saturday.Not(), has_l_sunday.Not()]).OnlyEnforceIf(quality_weekend.Not())
-                quality_weekend_2_dict[(w, sunday)] = quality_weekend
-                
-                quality_weekend_vars.append(quality_weekend)
-                weekend_dates.append(sunday)
+        for saturday in saturdays:
+            if saturday in working_days[w]:
+                # Quality weekend is True if LQ on Saturday
+                has_lq_saturday = shift[(w, saturday, "LQ")]
+                quality_weekend_2_dict[(w, saturday)] = has_lq_saturday
+                quality_weekend_vars.append(has_lq_saturday)
         
         if len(quality_weekend_vars) <= 1:
             continue  # Skip if worker has 0 or 1 potential quality weekend
@@ -501,7 +481,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 
                 if len(segment_weekends) > 0:
                     segment_count = sum(segment_weekends)
-                    max_possible_quality = c2d.get(w,0)  # from your business logic
+                    max_possible_quality = c2d.get(w,0)
                     base_ideal = max_possible_quality // num_segments
                     remainder = max_possible_quality % num_segments
                     ideal_count = base_ideal + (1 if segment < remainder else 0)
@@ -527,7 +507,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     'over_penalty': over_penalty,
                     'under_penalty': under_penalty,
                     'ideal_count': ideal_count,
-                    'segment_weekends': [weekend_dates[i] for i in range(start_idx, min(end_idx, len(weekend_dates)))]
+                    'segment_weekends': [quality_weekend_vars[i] for i in range(start_idx, min(end_idx, len(quality_weekend_vars)))]
                     })
                     
                     c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * over_penalty)
@@ -542,7 +522,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     lq_free_worker_vars = {}
     workers_with_lq = []
-    saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
 
     for w in all_workers:
         # Only consider weekends where the worker is actually exposed:
@@ -555,36 +534,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         lq_free_vars = []
 
         for s in eligible_saturdays:
-            d = s + 1  # following Sunday
-
-            # --- Saturday LQ flag ---
-            # Use the existing shift var if available; otherwise create a dummy Bool forced to 0.
-            if (w, s, "LQ") in shift:
-                lq_sat = shift[(w, s, "LQ")]
-            else:
-                lq_sat = model.NewBoolVar(f"lq_sat_{w}_{s}")
-                model.Add(lq_sat == 0)  
-
-            # --- Sunday must be  "L" ---
-            if (w, d, "L") in shift:
-                sun_is_L = shift[(w, d, "L")]
-            else:
-                sun_is_L = model.NewBoolVar(f"sun_is_L_{w}_{d}")
-
-                model.Add(sun_is_L == 0)  
-            
-            if (w, d, "F") in shift:
-                sun_is_F = shift[(w, d, "F")]
-            else:
-                sun_is_F = model.NewBoolVar(f"sun_is_F_{w}_{d}")
-                model.Add(sun_is_F == 0)
-
-            # --- Weekend LQ indicator (AND of Saturday LQ and Sunday L) ---
-            
-            lq_weekend = model.NewBoolVar(f"lq_weekend_{w}_{s}_{d}")
-            model.AddMultiplicationEquality(lq_weekend, [lq_sat, sun_is_L])
-
-            lq_free_vars.append(lq_weekend)
+            lq_sat = shift[(w, s, "LQ")]
+            lq_free_vars.append(lq_sat)
 
         # Total LQ weekends per worker (bounded by the number of eligible weekends)
         total_lq_free_var = model.NewIntVar(0, len(lq_free_vars), f"total_lq_free_{w}")

@@ -137,7 +137,7 @@ def solve(
         solver.parameters.symmetry_level = 4
         solver.parameters.linearization_level = 2
 
-        testing = False
+        testing = True
         if testing == True:
             solver.parameters.random_seed = 42
 
