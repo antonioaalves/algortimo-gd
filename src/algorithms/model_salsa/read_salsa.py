@@ -731,7 +731,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             elif role == "keyholder":
                 keyholders.append(w)
 
-        logger.info("Roles derived: managers=%d, keyholders=%d, normals=%d", managers, keyholders, len(workers_complete) - len(managers) - len(keyholders))
+        logger.info("Roles derived: managers=%d, keyholders=%d, normals=%d", len(managers), len(keyholders), len(workers_complete) - len(managers) - len(keyholders))
 
         # =================================================================
         # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
