@@ -42,6 +42,7 @@ from src.data_models.functions.data_treatment_functions import (
     set_c2d_to_df_colaborador,
     set_c3d_to_df_colaborador,
     create_df_calendario,
+    add_seq_turno,
     add_calendario_passado,
     add_ausencias_ferias,
     add_folgas_ciclos,
@@ -969,6 +970,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_core_pro_emp_horario_det = self.auxiliary_data['df_core_pro_emp_horario_det']
                 df_ciclos_90 = self.auxiliary_data['df_ciclos_90']
                 df_days_off = self.auxiliary_data['df_days_off']
+                df_colaborador = self.raw_data['df_colaborador'].copy()
                 
             except KeyError as e:
                 self.logger.error(f"Missing required DataFrame in load_calendario_transformations: {e}", exc_info=True)
@@ -987,6 +989,21 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if not success:
                     self.logger.error(f"Calendar creation failed: {error_msg}")
                     return False, "errSubproc", error_msg
+
+                # Add date-related columns (Step 3G from func_inicializa guide)
+                success, df_calendario, error_msg = add_date_related_columns(
+                    df=df_calendario,
+                    date_col='DATA',
+                    add_id_col=True
+                )
+                if not success:
+                    self.logger.error(f"Failed to add date-related columns: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                success, df_calendario, error_msg = add_seq_turno(df_calendario, df_colaborador)
+                if not success:
+                    self.logger.error()
+                    return False, "", error_msg
 
                 # Add df_ausencias_ferias to df_calendario
                 success, df_calendario, error_msg = add_ausencias_ferias(df_calendario, df_ausencias_ferias)
@@ -1042,43 +1059,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['tipos_de_turno'] = tipos_turno_list
                 self.logger.info(f"Stored tipos_de_turno in auxiliary_data: {tipos_turno_list}")
                 
-                # Process special shift types if present (Step 3F from func_inicializa guide)
-                if 'MoT' in tipos_turno_list:
-                    success, df_calendario, error_msg = process_special_shift_types(
-                        df_calendario=df_calendario,
-                        shift_type='MoT',
-                        employee_col='COLABORADOR',
-                        date_col='DATA',
-                        shift_col='TIPO_TURNO'
-                    )
-                    if not success:
-                        self.logger.error(f"Failed to process MoT shift types: {error_msg}")
-                        return False, "errSubproc", error_msg
-                    self.logger.info("Successfully processed MoT (Morning or Tarde) shift types")
-                
-                if 'P' in tipos_turno_list:
-                    success, df_calendario, error_msg = process_special_shift_types(
-                        df_calendario=df_calendario,
-                        shift_type='P',
-                        employee_col='COLABORADOR',
-                        date_col='DATA',
-                        shift_col='TIPO_TURNO'
-                    )
-                    if not success:
-                        self.logger.error(f"Failed to process P (split) shift types: {error_msg}")
-                        return False, "errSubproc", error_msg
-                    self.logger.info("Successfully processed P (Partida/split) shift types")
-                
-                # Add date-related columns (Step 3G from func_inicializa guide)
-                success, df_calendario, error_msg = add_date_related_columns(
-                    df=df_calendario,
-                    date_col='DATA',
-                    add_id_col=True
-                )
-                if not success:
-                    self.logger.error(f"Failed to add date-related columns: {error_msg}")
-                    return False, "errSubproc", error_msg
-                
                 # Define DIA_TIPO (Step 3H from func_inicializa guide)
                 success, df_calendario, error_msg = define_dia_tipo(
                     df=df_calendario,
@@ -1109,7 +1089,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 except Exception as e:
                     self.logger.error(f"Error saving df_calendario to raw_data: {e}", exc_info=True)
                     return False, "errSubproc", str(e)
-
 
                 return True, "", ""
                 

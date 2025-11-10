@@ -33,7 +33,13 @@ from base_data_project.log_config import get_logger
 
 # Local stuff
 from src.configuration_manager.instance import get_config
-from src.data_models.functions.helper_functions import convert_types_in, adjusted_isoweek
+from src.data_models.functions.helper_functions import (
+    convert_types_in, 
+    adjusted_isoweek, 
+    get_monday_of_previous_week, 
+    get_sunday_of_next_week,
+    get_week_pattern,
+)
 
 # Get configuration singleton
 _config = get_config()
@@ -122,7 +128,7 @@ def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp
         logger.error(f"Error in treat_df_closed_days: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), ""
 
-def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_id_list: List[int], past_employee_id_list: List[int], case_type: int, wfm_proc_colab: str, start_date: str, end_date: str) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_id_list: List[int], past_employee_id_list: List[int], case_type: int, wfm_proc_colab: str, first_date_passado: str, last_date_passado: str) -> Tuple[bool, pd.DataFrame, str]:
     """
     Treat df_calendario_passado dataframe.
     Convert types in df_calendario_passado.
@@ -134,7 +140,7 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_i
     """
     try:
         # INPUT VALIDATION
-        if not start_date or not end_date:
+        if not first_date_passado or not last_date_passado:
             return False, pd.DataFrame(), "Input validation failed: missing date parameters"
             
         if not df_calendario_passado.empty and 'schedule_day' not in df_calendario_passado.columns:
@@ -142,9 +148,9 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_i
             
         # Treat dates for filtering purposes
         try:
-            logger.info(f"Treating dates ({start_date} and {end_date})")
-            start_date_dt = pd.to_datetime(start_date, format="%Y-%m-%d")
-            end_date_dt = pd.to_datetime(end_date, format="%Y-%m-%d")
+            logger.info(f"Treating dates ({first_date_passado} and {last_date_passado})")
+            first_date_passado_dt = pd.to_datetime(first_date_passado, format="%Y-%m-%d")
+            last_date_passado_dt = pd.to_datetime(last_date_passado, format="%Y-%m-%d")
         except (ValueError, TypeError) as e:
             logger.error(f"Date parsing failed: {str(e)}")
             return False, pd.DataFrame(), "Date parsing failed"
@@ -166,13 +172,13 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_i
             
         if case_type in [3, 4, 6, 7]:
             # Filter df_calendario_passado to have values outside the date range (most efficient pandas way)
-            mask = ~df_calendario_passado['data_dt'].between(start_date_dt, end_date_dt, inclusive='both')
+            mask = ~df_calendario_passado['data_dt'].between(first_date_passado_dt, last_date_passado_dt, inclusive='both')
             df_calendario_passado = df_calendario_passado[mask]
 
         elif case_type == 8:
             # Filter df to exclude wfm_proc_colab employee within the date range (most efficient pandas way)
             mask = ~((df_calendario_passado['employee_id'] == wfm_proc_colab) & 
-                     df_calendario_passado['data_dt'].between(start_date_dt, end_date_dt, inclusive='both'))
+                     df_calendario_passado['data_dt'].between(first_date_passado_dt, last_date_passado_dt, inclusive='both'))
             df_calendario_passado = df_calendario_passado[mask]
 
         # Convert types in
@@ -206,7 +212,7 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, employees_i
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
 
-def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str, end_date: str) -> Tuple[bool, pd.DataFrame, str]:
     """
     Treat df_ausencias_ferias dataframe.
     """
@@ -215,6 +221,18 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame) -> Tuple[bool, 
         if df_ausencias_ferias.empty:
             return True, df_ausencias_ferias, ""  # Empty is valid for this function
             
+        if not start_date or start_date == '' or not end_date or end_date == '':
+            return False, pd.DataFrame(), "Input validation failed: missing date parameters"
+
+        try:
+            start_date_dt = pd.to_datetime(start_date, format="%Y-%m-%d")
+            end_date_dt = pd.to_datetime(end_date, format="%Y-%m-%d")
+        except (ValueError, TypeError) as e:
+            return False, pd.DataFrame(), "Date conversion failed"
+
+        if start_date_dt > end_date_dt:
+            return False, pd.DataFrame(), "Input validation failed: start_date is greater than end_date"
+
         required_columns = ['data_ini', 'data_fim']
         missing_columns = [col for col in required_columns if col not in df_ausencias_ferias.columns]
         if missing_columns:
@@ -298,6 +316,16 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame) -> Tuple[bool, 
                 labels=existing_columns_to_drop,
                 axis='columns'
             )
+
+        # Convert tipo_ausencia to 'V' for specific vacation motivo_ausencia codes
+        motivos_ausencia_list = _config.parameters.get_parameter_default('codigos_motivo_ausencia')
+        if 'fk_motivo_ausencia' in df_ausencias_ferias.columns:
+            df_ausencias_ferias.loc[
+                df_ausencias_ferias['fk_motivo_ausencia'].isin(motivos_ausencia_list),
+                'tipo_ausencia'
+            ] = 'V'
+
+        # TODO: Filter out tipo_ausencia = 'A' for dates outside the range of the execution period
             
         # OUTPUT VALIDATION
         if not df_ausencias_ferias.empty and 'data' not in df_ausencias_ferias.columns:
@@ -1303,7 +1331,7 @@ def add_l_total_to_df_colaborador(df_colaborador: pd.DataFrame, df_feriados: pd.
 
 
 
-def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_map: Dict[str, str]) -> Tuple[bool, pd.DataFrame, str]:
+def create_df_calendario(start_date: str, end_date: str, main_year: int, employee_id_matriculas_map: Dict[str, str]) -> Tuple[bool, pd.DataFrame, str]:
     """
     Create df_calendario dataframe with employee schedules for the specified date range using vectorized operations.
     
@@ -1327,9 +1355,11 @@ def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_
         
         # TREATMENT LOGIC
         try:
-            # Convert input strings to date format
-            start_dt = pd.to_datetime(start_date, format='%Y-%m-%d')
-            end_dt = pd.to_datetime(end_date, format='%Y-%m-%d')
+            # Convert date strings to date format
+            previous_monday = get_monday_of_previous_week(f"{main_year}-01-01")
+            start_dt = pd.to_datetime(previous_monday, format='%Y-%m-%d')
+            next_sunday = get_sunday_of_next_week(f"{main_year}-12-31")
+            end_dt = pd.to_datetime(next_sunday, format='%Y-%m-%d')
         except (ValueError, TypeError) as e:
             return False, pd.DataFrame(), "Date parsing failed"
         
@@ -1393,6 +1423,133 @@ def create_df_calendario(start_date: str, end_date: str, employee_id_matriculas_
     except Exception as e:
         logger.error(f"Error in create_df_calendario: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), ""
+
+
+def add_seq_turno(df_calendario: pd.DataFrame, df_colaborador: pd.DataFrame):
+    """
+    Populate df_calendario's horario column based on employee shift sequences using vectorized operations.
+    
+    The horario column indicates which shift type the employee works that week:
+    - If weekly pattern is 'M': only tipo_turno='M' rows get horario='M', tipo_turno='T' rows get '0'
+    - If weekly pattern is 'T': only tipo_turno='T' rows get horario='T', tipo_turno='M' rows get '0'
+    - If pattern is 'MoT', 'P', or 'CICLO': both tipo_turno='M' and tipo_turno='T' rows get that value
+    
+    Args:
+        df_calendario: Calendar dataframe with columns [employee_id, data, tipo_turno, ww, ...]
+        df_colaborador: Employee dataframe with columns [employee_id, seq_turno, semana1, ...]
+        
+    Returns:
+        Tuple[bool, DataFrame, str]: (success, updated_calendario, error_message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_calendario.empty or len(df_calendario) < 1:
+            return False, pd.DataFrame(), "df_calendario is empty"
+
+        if df_colaborador.empty or len(df_colaborador) < 1:
+            return False, pd.DataFrame(), "df_colaborador is empty"
+        
+        # Check required columns in calendario
+        required_cal_cols = ['employee_id', 'ww', 'tipo_turno']
+        missing_cols = [col for col in required_cal_cols if col not in df_calendario.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_calendario missing required columns: {missing_cols}"
+        
+        # Check required columns in colaborador
+        required_colab_cols = ['employee_id', 'seq_turno']
+        missing_cols = [col for col in required_colab_cols if col not in df_colaborador.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_colaborador missing required columns: {missing_cols}"
+        
+        logger.info(f"Starting add_seq_turno for {len(df_calendario)} calendario rows and {len(df_colaborador)} employees")
+        
+        # Create copy to avoid modifying original
+        df_result = df_calendario.copy()
+        
+        # TREATMENT LOGIC - FULLY VECTORIZED
+        
+        # Get max week number
+        max_week = int(df_result['ww'].max())
+        
+        # Create week range dataframe
+        weeks_df = pd.DataFrame({'ww': range(1, max_week + 1)})
+        
+        # Create employee-week combinations (cross join)
+        df_emp_weeks = df_colaborador[['employee_id', 'seq_turno']].copy()
+        if 'semana1' in df_colaborador.columns:
+            df_emp_weeks['semana1'] = df_colaborador['semana1']
+        else:
+            df_emp_weeks['semana1'] = 'M'  # Default
+        
+        df_emp_weeks['key'] = 1
+        weeks_df['key'] = 1
+        df_emp_weeks = df_emp_weeks.merge(weeks_df, on='key').drop('key', axis=1)
+        
+        # Handle null values
+        df_emp_weeks['seq_turno'] = df_emp_weeks['seq_turno'].fillna('T')
+        df_emp_weeks['semana1'] = df_emp_weeks['semana1'].fillna('M')
+        
+        # Calculate cycle length and position in cycle
+        cycle_length_map = {
+            'M': 1, 'T': 1, 'MoT': 1, 'P': 1, 'CICLO': 1,
+            'MT': 2, 
+            'MMT': 3, 'MTT': 3
+        }
+        df_emp_weeks['cycle_len'] = df_emp_weeks['seq_turno'].map(cycle_length_map).fillna(1).astype(int)
+        df_emp_weeks['week_in_cycle'] = (df_emp_weeks['ww'] - 1) % df_emp_weeks['cycle_len']
+        
+        # Apply pattern logic vectorized using apply with the helper function
+        df_emp_weeks['pattern'] = df_emp_weeks.apply(
+            lambda row: get_week_pattern(row['seq_turno'], row['semana1'], row['week_in_cycle']),
+            axis=1
+        )
+        
+        # Keep only needed columns for merge
+        df_emp_weeks = df_emp_weeks[['employee_id', 'ww', 'pattern']]
+        
+        logger.info(f"Generated {len(df_emp_weeks)} employee-week pattern combinations")
+        
+        # Merge pattern information back to calendario
+        df_result = df_result.merge(df_emp_weeks, on=['employee_id', 'ww'], how='left')
+        
+        # Fill any missing patterns with '0'
+        df_result['pattern'] = df_result['pattern'].fillna('0')
+        
+        # Vectorized horario assignment using np.select
+        conditions = [
+            # Special patterns that work both shifts
+            df_result['pattern'].isin(['MoT', 'P', 'CICLO']),
+            # Morning pattern matches morning shift
+            (df_result['pattern'] == 'M') & (df_result['tipo_turno'] == 'M'),
+            # Afternoon pattern matches afternoon shift
+            (df_result['pattern'] == 'T') & (df_result['tipo_turno'] == 'T'),
+        ]
+        
+        choices = [
+            df_result['pattern'],  # MoT/P/CICLO: use the pattern value
+            'M',                   # Morning shift on morning week
+            'T',                   # Afternoon shift on afternoon week
+        ]
+        
+        # Apply conditions and set default to '0' for non-matches
+        df_result['horario'] = np.select(conditions, choices, default='0')
+        
+        # Drop temporary helper column
+        df_result = df_result.drop('pattern', axis=1)
+        
+        # OUTPUT VALIDATION
+        if 'horario' not in df_result.columns:
+            return False, pd.DataFrame(), "Failed to create horario column"
+        
+        horario_counts = df_result['horario'].value_counts()
+        logger.info(f"Successfully populated horario column. Value counts: {horario_counts.to_dict()}")
+        logger.info(f"Completed add_seq_turno for {len(df_result)} rows")
+        
+        return True, df_result, ""
+        
+    except Exception as e:
+        logger.error(f"Error in add_seq_turno: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), f"Failed to add seq_turno: {str(e)}"
 
 def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
     """

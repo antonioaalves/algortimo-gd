@@ -12,7 +12,8 @@
             "GD_algorithmName",
             "GD_consideraFestivos",
             "GD_convenioBD",
-            "NUM_DIAS_CONS"
+            "NUM_DIAS_CONS",
+            "codigos_motivo_ausencia"
         ],
 
         "parameters_defaults": {
@@ -26,7 +27,12 @@
             "test_param_scheduling_threshold": 0.75,
             "GD_algorithmName": "alcampo_algorithm",
             "GD_consideraFestivos": 1,
-            "GD_convenioBD": "ALCAMPO"
+            "GD_convenioBD": "ALCAMPO",
+            "codigos_motivo_ausencia": [
+                2101,
+                8999,
+                3028
+            ]
         }
     }, 
     

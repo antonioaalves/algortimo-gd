@@ -946,3 +946,53 @@ def get_colabs_passado(wfm_proc_colab: str, df_mpd_valid_employees: pd.DataFrame
     except Exception as e:
         logger.error(f"Error creating colabs_passado list: {e}", exc_info=True)
         return False, [], "Error creating the colabs_passado_list"
+
+
+def get_week_pattern(seq_turno: str, semana1: str, week_in_cycle: int) -> str:
+    """
+    Determine the shift pattern for a specific week in the rotation cycle.
+    
+    Args:
+        seq_turno: Shift sequence type (M, T, MT, MMT, MTT, MoT, P, CICLO)
+        semana1: Starting week indicator (M, M1, M2, T, T1, T2)
+        week_in_cycle: Position in the rotation cycle (0-based)
+        
+    Returns:
+        str: The shift pattern for that week ('M', 'T', 'MoT', 'P', 'CICLO')
+        
+    Examples:
+        - get_week_pattern('MT', 'M1', 0) -> 'M'  (first week is morning)
+        - get_week_pattern('MT', 'M1', 1) -> 'T'  (second week is afternoon)
+        - get_week_pattern('MoT', 'M', 0) -> 'MoT'  (all weeks are morning or afternoon)
+    """
+    # Fixed patterns (no rotation)
+    if seq_turno in ['M', 'T', 'MoT', 'P', 'CICLO']:
+        return seq_turno
+    
+    # MT pattern (2-week cycle)
+    if seq_turno == 'MT':
+        if semana1 in ['M', 'M1']:
+            return 'M' if week_in_cycle == 0 else 'T'
+        else:  # T, T1
+            return 'T' if week_in_cycle == 0 else 'M'
+    
+    # MMT pattern (3-week cycle)
+    if seq_turno == 'MMT':
+        if semana1 == 'M1':
+            return ['M', 'M', 'T'][week_in_cycle]
+        elif semana1 == 'M2':
+            return ['M', 'T', 'M'][week_in_cycle]
+        else:  # T, T1
+            return ['T', 'M', 'M'][week_in_cycle]
+    
+    # MTT pattern (3-week cycle)
+    if seq_turno == 'MTT':
+        if semana1 in ['M', 'M1']:
+            return ['M', 'T', 'T'][week_in_cycle]
+        elif semana1 == 'T1':
+            return ['T', 'M', 'T'][week_in_cycle]
+        else:  # T2
+            return ['T', 'T', 'M'][week_in_cycle]
+    
+    # Unknown pattern - return as-is
+    return seq_turno
