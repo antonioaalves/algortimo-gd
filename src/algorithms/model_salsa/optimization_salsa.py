@@ -454,30 +454,32 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     c2d_balance_penalties = []
     quality_weekend_2_dict = {}
     saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
+    quality_weekend_vars = {}
+
     for w in workers:
         # Find all potential quality weekends (Saturday-Sunday pairs)
-        quality_weekend_vars = []
+        quality_weekend_vars[w] = []
         
         for saturday in saturdays:
             if saturday in working_days[w]:
                 # Quality weekend is True if LQ on Saturday
                 has_lq_saturday = shift[(w, saturday, "LQ")]
                 quality_weekend_2_dict[(w, saturday)] = has_lq_saturday
-                quality_weekend_vars.append(has_lq_saturday)
+                quality_weekend_vars[w].append(has_lq_saturday)
         
-        if len(quality_weekend_vars) <= 1:
+        if len(quality_weekend_vars[w]) <= 1:
             continue  # Skip if worker has 0 or 1 potential quality weekend
         
         # Divide the year into segments and try to distribute quality weekends evenly
-        num_segments = min(5, len(quality_weekend_vars))  # Use 5 segments or fewer if not enough weekends
+        num_segments = min(5, len(quality_weekend_vars[w]))  # Use 5 segments or fewer if not enough weekends
         if num_segments > 1:
-            segment_size = len(quality_weekend_vars) // num_segments
+            segment_size = len(quality_weekend_vars[w]) // num_segments
             
             for segment in range(num_segments):
                 start_idx = segment * segment_size
-                end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else len(quality_weekend_vars)
+                end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else len(quality_weekend_vars[w])
                 
-                segment_weekends = quality_weekend_vars[start_idx:end_idx]
+                segment_weekends = quality_weekend_vars[w][start_idx:end_idx]
                 
                 if len(segment_weekends) > 0:
                     segment_count = sum(segment_weekends)
@@ -507,7 +509,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     'over_penalty': over_penalty,
                     'under_penalty': under_penalty,
                     'ideal_count': ideal_count,
-                    'segment_weekends': [quality_weekend_vars[i] for i in range(start_idx, min(end_idx, len(quality_weekend_vars)))]
+                    'segment_weekends': [quality_weekend_vars[w][i] for i in range(start_idx, min(end_idx, len(quality_weekend_vars[w])))]
                     })
                     
                     c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * over_penalty)
@@ -526,20 +528,13 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     for w in all_workers:
         # Only consider weekends where the worker is actually exposed:
         # both Saturday and the following Sunday exist in their working_days.
-        eligible_saturdays = [s for s in saturdays if (s in working_days[w] and (s + 1) in working_days[w])]
-        if not eligible_saturdays:
+        if not quality_weekend_vars[w]:
             continue
 
         workers_with_lq.append(w)
-        lq_free_vars = []
-
-        for s in eligible_saturdays:
-            lq_sat = shift[(w, s, "LQ")]
-            lq_free_vars.append(lq_sat)
-
         # Total LQ weekends per worker (bounded by the number of eligible weekends)
-        total_lq_free_var = model.NewIntVar(0, len(lq_free_vars), f"total_lq_free_{w}")
-        model.Add(total_lq_free_var == sum(lq_free_vars))
+        total_lq_free_var = model.NewIntVar(0, len(quality_weekend_vars[w]), f"total_lq_free_{w}")
+        model.Add(total_lq_free_var == sum(quality_weekend_vars[w]))
         lq_free_worker_vars[w] = total_lq_free_var
 
     if len(workers_with_lq) > 1:
