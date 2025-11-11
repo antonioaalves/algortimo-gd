@@ -836,46 +836,46 @@ def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str, l
             max_exit = row['max_exit']
            
             # Log every row to understand the mapping
-            log_msg = f"[TRADS-MAP] tipo_dia='{tipo_dia}', descanso='{descanso}', horario_ind='{horario_ind}', dia_semana={dia_semana}, intervalo={intervalo}, max_exit={max_exit}"
+            #log_msg = f"[TRADS-MAP] tipo_dia='{tipo_dia}', descanso='{descanso}', horario_ind='{horario_ind}', dia_semana={dia_semana}, intervalo={intervalo}, max_exit={max_exit}"
            
             if tipo_dia == 'F' and (dia_semana == 1 or dia_semana == 8):
-                logger.info(f"{log_msg} → 'L_DOM' (tipo_dia='F' on Sunday/Monday)")
+                #logger.info(f"{log_msg} → 'L_DOM' (tipo_dia='F' on Sunday/Monday)")
                 return 'L_DOM'
             elif tipo_dia == 'F':
-                logger.info(f"{log_msg} → 'L' (tipo_dia='F': free/holiday)")
+                #logger.info(f"{log_msg} → 'L' (tipo_dia='F': free/holiday)")
                 return 'L'
             elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'N':
-                logger.info(f"{log_msg} → 'MoT' (Active + no rest + no individual schedule)")
+                #logger.info(f"{log_msg} → 'MoT' (Active + no rest + no individual schedule)")
                 return 'MoT'
             elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit >= lim_sup_manha:
-                logger.info(f"{log_msg} → 'T' (Active + no rest + horario_ind='S' + max_exit >= {lim_sup_manha})")
+                #logger.info(f"{log_msg} → 'T' (Active + no rest + horario_ind='S' + max_exit >= {lim_sup_manha})")
                 return 'T'
             elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit < lim_sup_manha:
-                logger.info(f"{log_msg} → 'M' (Active + no rest + horario_ind='S' + max_exit < {lim_sup_manha})")
+                #logger.info(f"{log_msg} → 'M' (Active + no rest + horario_ind='S' + max_exit < {lim_sup_manha})")
                 return 'M'
             elif tipo_dia == 'S':
-                logger.info(f"{log_msg} → '-' (tipo_dia='S': suspended/missing)")
+                #logger.info(f"{log_msg} → '-' (tipo_dia='S': suspended/missing)")
                 return '-'
             elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo >= 1:
-                logger.info(f"{log_msg} → 'P' (Active + rest/night + break >= 1h)")
+                #logger.info(f"{log_msg} → 'P' (Active + rest/night + break >= 1h)")
                 return 'P'
             elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit >= lim_sup_manha:
-                logger.info(f"{log_msg} → 'T' (Active + rest/night + break < 1h + max_exit >= {lim_sup_manha})")
+                #logger.info(f"{log_msg} → 'T' (Active + rest/night + break < 1h + max_exit >= {lim_sup_manha})")
                 return 'T'
             elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit < lim_sup_manha:
-                logger.info(f"{log_msg} → 'M' (Active + rest/night + break < 1h + max_exit < {lim_sup_manha})")
+                #logger.info(f"{log_msg} → 'M' (Active + rest/night + break < 1h + max_exit < {lim_sup_manha})")
                 return 'M'
             elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit >= lim_sup_manha:
-                logger.info(f"{log_msg} → 'T' (Active + no rest + individual='Y' + max_exit >= {lim_sup_manha})")
+                #logger.info(f"{log_msg} → 'T' (Active + no rest + individual='Y' + max_exit >= {lim_sup_manha})")
                 return 'T'
             elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit < lim_sup_manha:
-                logger.info(f"{log_msg} → 'M' (Active + no rest + individual='Y' + max_exit < {lim_sup_manha})")
+                #logger.info(f"{log_msg} → 'M' (Active + no rest + individual='Y' + max_exit < {lim_sup_manha})")
                 return 'M'
             elif tipo_dia == 'N':
-                logger.info(f"{log_msg} → 'NL' (tipo_dia='N': night shift)")
+                #logger.info(f"{log_msg} → 'NL' (tipo_dia='N': night shift)")
                 return 'NL'
             else:
-                logger.warning(f"{log_msg} → '-' (NO CONDITION MATCHED - this is why you get '-'!)")
+                #logger.warning(f"{log_msg} → '-' (NO CONDITION MATCHED - this is why you get '-'!)")
                 return '-'
         
         df_cycle90_info_filtered['codigo_trads'] = df_cycle90_info_filtered.apply(get_trads_code, axis=1)
