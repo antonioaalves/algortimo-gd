@@ -325,7 +325,16 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str
                 'tipo_ausencia'
             ] = 'V'
 
-        # TODO: Filter out tipo_ausencia = 'A' for dates outside the range of the execution period
+        # Filter out tipo_ausencia = 'A' for dates outside start_date and end_date
+        if 'tipo_ausencia' in df_ausencias_ferias.columns and 'data' in df_ausencias_ferias.columns:
+            # Ensure data column is datetime
+            df_ausencias_ferias['data'] = pd.to_datetime(df_ausencias_ferias['data'])
+            # Remove rows where tipo_ausencia='A' and date is within the execution period
+            df_ausencias_ferias = df_ausencias_ferias[
+                ~((df_ausencias_ferias['tipo_ausencia'] == 'A') & 
+                  (df_ausencias_ferias['data'] <= start_date_dt) & 
+                  (df_ausencias_ferias['data'] >= end_date_dt))
+            ]
             
         # OUTPUT VALIDATION
         if not df_ausencias_ferias.empty and 'data' not in df_ausencias_ferias.columns:
@@ -1490,6 +1499,7 @@ def add_seq_turno(df_calendario: pd.DataFrame, df_colaborador: pd.DataFrame):
         df_emp_weeks['semana1'] = df_emp_weeks['semana1'].fillna('M')
         
         # Calculate cycle length and position in cycle
+        # TODO: This definition shouldnt be done here
         cycle_length_map = {
             'M': 1, 'T': 1, 'MoT': 1, 'P': 1, 'CICLO': 1,
             'MT': 2, 

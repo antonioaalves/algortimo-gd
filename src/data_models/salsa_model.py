@@ -1,6 +1,7 @@
 """File containing the data model for Salsa"""
 
 # Dependencies
+from tracemalloc import start
 from typing import Dict, Optional, Any, List, Tuple
 import pandas as pd
 import os
@@ -793,7 +794,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df_ausencias_ferias = data_manager.load_data(
                         'df_ausencias_ferias', 
                         query_file=query_path, 
-                        colabs_id=colabs_id
+                        colabs_id=colabs_id,
+                        start_date=first_date_passado,
+                        end_date=last_date_passado
                     )
                     self.logger.info(f"df_ausencias_ferias shape (rows {df_ausencias_ferias.shape[0]}, columns {df_ausencias_ferias.shape[1]}): {df_ausencias_ferias.columns.tolist()}")
                 else:
@@ -805,7 +808,11 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             try:
                 self.logger.info("Treating df_ausencias_ferias")
-                success, df_ausencias_ferias, error_msg = treat_df_ausencias_ferias(df_ausencias_ferias)
+                success, df_ausencias_ferias, error_msg = treat_df_ausencias_ferias(
+                    df_ausencias_ferias=df_ausencias_ferias,
+                    start_date=start_date_str,
+                    end_date=end_date_str
+                )
                 if not success:
                     self.logger.error(f"Ausencias ferias treatment failed: {error_msg}")
                     return False, "errSubproc", error_msg
@@ -862,6 +869,20 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.error(f"Error loading ciclos_90: {e}", exc_info=True)
                 df_ciclos_90 = pd.DataFrame()
+
+            try:
+                self.logger.info("Treating ciclos 90")
+                success, df_ciclos_90, error_msg = treat_df_ciclos_90(
+                    df_ciclos_90=df_ciclos_90,
+                    start_date=start_date_str,
+                    end_date=end_date_str
+                )
+                if not success:
+                    self.logger.error(f"Ciclos 90 treatment failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+            except Exception as e:
+                self.logger.error(f"Error treating ciclos 90: {e}", exc_info=True)
+                return False, "errSubproc", "Error treating ciclos 90"
 
             try:
                 self.logger.info("Loading df_days_off from data manager")
