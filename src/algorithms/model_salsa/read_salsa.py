@@ -740,8 +740,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         proportion = {}
         for w in workers:
             if (0 < last_registered_day[w] < 364 or 1 < first_registered_day[w] < 364):
-                proportion[w] = (last_registered_day[w]- first_registered_day[w])  / (days_of_year[-1] - first_registered_day[w])
-                logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion[w] {proportion[w]:.2f}")
+                proportion[w] = (last_registered_day[w] - first_registered_day[w])  / (days_of_year[-1])
+                logger.info(f"Adjusting worker {w} parameters based on last {last_registered_day[w]} or first {first_registered_day[w]} registered day with proportion[w] {proportion[w]:.2f}")
                 total_l[w] = int(round(proportion[w] * total_l[w]))
                 total_l_dom[w] = int(round(proportion[w] * total_l_dom[w]))
                 c2d[w] = int(math.floor(proportion[w] * c2d[w]))

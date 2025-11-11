@@ -305,7 +305,7 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
     worker_sundays = {}
     sunday_free_vars = {}
 
-    for w in workers:
+    for w in workers + workers_past:
         worker_sundays[w] = [d for d in sundays if d in working_days[w]]
         sunday_free_vars[w] = []
         
@@ -317,8 +317,8 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
             sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
             
             # Link to actual L shift assignment
-            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) + shift.get((w, sunday, "LD"), 0) >= 1).OnlyEnforceIf(sunday_free)
-            model.Add(shift.get((w, sunday, "L"), 0) + shift.get((w, sunday, "F"), 0) + shift.get((w, sunday, "LD"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
+            model.Add(shift.get((w, sunday, "L"), 0) >= 1).OnlyEnforceIf(sunday_free)
+            model.Add(shift.get((w, sunday, "L"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
             sunday_free_vars[w].append(sunday_free)
         
         # Calculate target spacing between Sunday free days
@@ -446,7 +446,7 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
     # Add to objective
     objective_terms.extend(sunday_balance_across_workers_penalties)
 
-    # 5.2 Balance c2d free days
+    # 5.2 Balance quality weekend free days
     c2d_balance_penalties = []
     quality_weekend_2_dict = {}
     saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year]
