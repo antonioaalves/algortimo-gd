@@ -15,6 +15,7 @@ import os
 import psutil
 from src.algorithms.solver.solver_callback import SolutionCallback
 from src.algorithms.helpers_algorithm import analyze_optimization_results
+import time
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
@@ -146,7 +147,6 @@ def solve(
 
 
         # Simple timeout test without fancy threading
-        import time
         solve_start = time.time()
 
         solution_callback = SolutionCallback(logger, shift, workers, days_of_year)

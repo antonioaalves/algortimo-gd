@@ -529,7 +529,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     last_registered_day[w] = data_demissao[w]
                 logger.info(f"Worker {w} last registered day: {last_registered_day[w]}")
             else:
-                last_registered_day[w] = 0
+                last_registered_day[w] = 365
 
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)
@@ -739,7 +739,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Adjusting worker parameters based on last registered days")
         proportion = {}
         for w in workers:
-            if (0 < last_registered_day[w] < 364):
+            if (0 < last_registered_day[w] < 364 or 1 < first_registered_day[w] < 364):
                 proportion[w] = (last_registered_day[w]- first_registered_day[w])  / (days_of_year[-1] - first_registered_day[w])
                 logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion[w] {proportion[w]:.2f}")
                 total_l[w] = int(round(proportion[w] * total_l[w]))
@@ -760,6 +760,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             f"L_Q: {l_q[w]}, "
                             f"CXX: {cxx[w]}, "
                             f"T_LQ: {t_lq[w]}, ")
+            else:
+                #logger.info(f"{w} is hired the entire year so, the proportion given is 1")
+                proportion[w] = 1
 
         logger.info("Worker parameters adjusted based on first and last registered days")
 

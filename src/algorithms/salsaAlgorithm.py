@@ -383,7 +383,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past)  # role_by_worker)
+                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, proportion, workers)
 
             # =================================================================
             # SOLVE THE MODEL

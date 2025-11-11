@@ -4,7 +4,7 @@ from src.config import PROJECT_NAME
 logger = get_logger(PROJECT_NAME)
 
 
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past):
+def salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past, proportion, workers):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -82,7 +82,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         }
     }
 
-    all_workers = workers + workers_past
+    all_workers = workers_complete + workers_past
     closed = set(closed_holidays)
 
     # 1. Penalize deviations from pessObj
@@ -380,7 +380,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     sunday_free_worker_vars = {}
     workers_with_sundays = [] 
 
-    for w in all_workers:
+    for w in workers + workers_past:
         if len(worker_sundays[w]) == 0:
             continue
         
@@ -396,10 +396,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         # For each pair of workers, ensure proportional fairness
         for i, w1 in enumerate(workers_with_sundays):
             for w2 in workers_with_sundays[i+1:]:
-                if last_day.get(w1, 0) == 0 :
-                    last_day[w1] = days_of_year[-1]
-                if last_day.get(w2, 0) == 0 :
-                    last_day[w2] = days_of_year[-1]
                 prop1 = (last_day.get(w1, 0) - first_day.get(w1, 0) + 1) / len(days_of_year)
                 prop1 = max(0.0, min(1.0, prop1))
                 prop2 = (last_day.get(w2, 0) - first_day.get(w2, 0) + 1) / len(days_of_year)
@@ -461,7 +457,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         quality_weekend_vars[w] = []
         
         for saturday in saturdays:
-            if saturday in working_days[w]:
+            if saturday in working_days[w] and saturday + 1 in working_days[w]:
                 # Quality weekend is True if LQ on Saturday
                 has_lq_saturday = shift[(w, saturday, "LQ")]
                 quality_weekend_2_dict[(w, saturday)] = has_lq_saturday
@@ -481,7 +477,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                 
                 segment_weekends = quality_weekend_vars[w][start_idx:end_idx]
                 
-                if len(segment_weekends) > 0:
+                max_over = len(segment_weekends)  # All weekends in segment could be quality
+                if max_over > 0:
                     segment_count = sum(segment_weekends)
                     max_possible_quality = c2d.get(w,0)
                     base_ideal = max_possible_quality // num_segments
@@ -489,7 +486,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     ideal_count = base_ideal + (1 if segment < remainder else 0)
                     
                     # Maximum possible deviation bounds
-                    max_over = len(segment_weekends)  # All weekends in segment could be quality
                     max_under = ideal_count  # Could have 0 instead of ideal_count
                     
                     # Create penalty variables for deviation from ideal distribution
@@ -518,16 +514,12 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     objective_terms.extend(c2d_balance_penalties)
 
     # 7B Balancing number of LQ (quality weekends) across workers (pairwise)
-    # Business rule: a weekend counts as LQ iff Saturday has shift "LQ" AND Sunday has shift "L".
-    LQ_BALANCE_ACROSS_WORKERS_PENALTY = 5
     lq_balance_across_workers_penalties = []
 
     lq_free_worker_vars = {}
     workers_with_lq = []
 
-    for w in all_workers:
-        # Only consider weekends where the worker is actually exposed:
-        # both Saturday and the following Sunday exist in their working_days.
+    for w in workers + workers_past:
         if not quality_weekend_vars[w]:
             continue
 
@@ -540,25 +532,14 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     if len(workers_with_lq) > 1:
         for i, w1 in enumerate(workers_with_lq):
             for w2 in workers_with_lq[i+1:]:
-                # Keep your existing 'proportion' for consistency.
-                # If you compute a specific LQ exposure (prop_lq), you can swap it here.
-                if last_day.get(w1, 0) == 0 :
-                    last_day[w1] = days_of_year[-1]
-                if last_day.get(w2, 0) == 0 :
-                    last_day[w2] = days_of_year[-1]
-                prop1 = (last_day.get(w1, 0) - first_day.get(w1, 0) + 1) / len(days_of_year)
-                prop1 = max(0.0, min(1.0, prop1))
-                prop2 = (last_day.get(w2, 0) - first_day.get(w2, 0) + 1) / len(days_of_year)
-                prop2 = max(0.0, min(1.0, prop2))
-                if prop1 <= 0 or prop2 <= 0:
+
+                prop1_int = int(proportion[w1] * 100)
+                prop2_int = int(proportion[w2] * 100)
+                if prop1_int <= 0 or prop2_int <= 0:
                     continue
 
-                # Integer scaling avoids division and floating-point issues
-                prop1_int = int(prop1 * 100)
-                prop2_int = int(prop2 * 100)
-
-                max_w1 = len([s for s in saturdays if (s in working_days[w1] and (s + 1) in working_days[w1])])
-                max_w2 = len([s for s in saturdays if (s in working_days[w2] and (s + 1) in working_days[w2])])
+                max_w1 = len(quality_weekend_vars[w1])
+                max_w2 = len(quality_weekend_vars[w2])
                 max_diff = max(max_w1 * prop2_int, max_w2 * prop1_int)
 
                 diff_pos = model.NewIntVar(0, max_diff, f"lq_prop_diff_pos_{w1}_{w2}")
@@ -575,13 +556,13 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
                     'worker2': w2,
                     'diff_pos': diff_pos,
                     'diff_neg': diff_neg,
-                    'prop1': prop1,
-                    'prop2': prop2,
+                    'prop1': prop1_int,
+                    'prop2': prop2_int,
                     'total_lq_free_w1': lq_free_worker_vars[w1],
                     'total_lq_free_w2': lq_free_worker_vars[w2]
                 })
 
-                weight = LQ_BALANCE_ACROSS_WORKERS_PENALTY // 2
+                weight = C2D_BALANCE_ACROSS_WORKERS_PENALTY // 2
                 lq_balance_across_workers_penalties.append(weight * diff_pos)
                 lq_balance_across_workers_penalties.append(weight * diff_neg)
 
