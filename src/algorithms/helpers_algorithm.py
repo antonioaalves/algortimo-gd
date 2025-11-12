@@ -161,10 +161,8 @@ def analyze_optimization_results(solver, optimization_details):
                 'segment_sundays': var_info['segment_sundays']
             })
 
-
-           
     results['point_5_1_sunday_balance'] = point_5_1_results
-    
+
     # Point 5.2: C2D balance penalty
     point_5_2_results = {
         'worker_segments': [],
@@ -283,6 +281,8 @@ def analyze_optimization_results(solver, optimization_details):
            
             point_7b_results['total_penalty'] += penalty
     
+    logger.info(f"point 5.1 optimization results: {point_5_1_results}")
+    logger.info(f"point 5.2 optimization results: {point_5_2_results}")
     results['point_7b_lq_balance_across_workers'] = point_7b_results
     
     # Point 8: Manager/Keyholder conflicts

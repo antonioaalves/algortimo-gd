@@ -322,11 +322,11 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
             sunday_free_vars[w].append(sunday_free)
         
         # Calculate target spacing between Sunday free days
-        total_sunday_free = len(sunday_free_vars[w])
+        total_sunday_free = min(15, len(sunday_free_vars[w]))
         
         # For even distribution, we want to minimize variance in spacing
         # We'll divide the year into segments and try to have roughly equal distribution
-        num_segments = min(5, total_sunday_free)  # Use 5 segments or fewer if not enough Sundays
+        num_segments = min(4, total_sunday_free)  # Use 5 segments or fewer if not enough Sundays
         if num_segments > 1:
             segment_size = total_sunday_free // num_segments
             for segment in range(num_segments):
@@ -468,48 +468,47 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
         
         # Divide the year into segments and try to distribute quality weekends evenly
         num_segments = min(5, len(quality_weekend_vars[w]))  # Use 5 segments or fewer if not enough weekends
-        if num_segments > 1:
-            segment_size = len(quality_weekend_vars[w]) // num_segments
+        segment_size = len(quality_weekend_vars[w]) // num_segments
             
-            for segment in range(num_segments):
-                start_idx = segment * segment_size
-                end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else len(quality_weekend_vars[w])
+        for segment in range(num_segments):
+            start_idx = segment * segment_size
+            end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else len(quality_weekend_vars[w])
+            
+            segment_weekends = quality_weekend_vars[w][start_idx:end_idx]
+            
+            max_over = len(segment_weekends)  # All weekends in segment could be quality
+            if max_over > 0:
+                segment_count = sum(segment_weekends)
+                max_possible_quality = c2d.get(w,0)
+                base_ideal = max_possible_quality // num_segments
+                remainder = max_possible_quality % num_segments
+                ideal_count = base_ideal + (1 if segment < remainder else 0)
                 
-                segment_weekends = quality_weekend_vars[w][start_idx:end_idx]
+                # Maximum possible deviation bounds
+                max_under = ideal_count  # Could have 0 instead of ideal_count
                 
-                max_over = len(segment_weekends)  # All weekends in segment could be quality
-                if max_over > 0:
-                    segment_count = sum(segment_weekends)
-                    max_possible_quality = c2d.get(w,0)
-                    base_ideal = max_possible_quality // num_segments
-                    remainder = max_possible_quality % num_segments
-                    ideal_count = base_ideal + (1 if segment < remainder else 0)
-                    
-                    # Maximum possible deviation bounds
-                    max_under = ideal_count  # Could have 0 instead of ideal_count
-                    
-                    # Create penalty variables for deviation from ideal distribution
-                    over_penalty = model.NewIntVar(0, max_over, f"c2d_over_{w}_{segment}")
-                    under_penalty = model.NewIntVar(0, max_under, f"c2d_under_{w}_{segment}")
-                    
-                    # Correctly calculate deviations (handling negative cases)
-                    model.Add(over_penalty >= segment_count - ideal_count)
-                    model.Add(over_penalty >= 0)  # Ensure non-negative
-                    
-                    model.Add(under_penalty >= ideal_count - segment_count)
-                    model.Add(under_penalty >= 0)  # Ensure non-negative
-                    # Store in optimization details
-                    optimization_details['point_5_2_c2d_balance']['variables'].append({
-                    'worker': w,
-                    'segment': segment,
-                    'over_penalty': over_penalty,
-                    'under_penalty': under_penalty,
-                    'ideal_count': ideal_count,
-                    'segment_weekends': [quality_weekend_vars[w][i] for i in range(start_idx, min(end_idx, len(quality_weekend_vars[w])))]
-                    })
-                    
-                    c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * over_penalty)
-                    c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * under_penalty)
+                # Create penalty variables for deviation from ideal distribution
+                over_penalty = model.NewIntVar(0, max_over, f"c2d_over_{w}_{segment}")
+                under_penalty = model.NewIntVar(0, max_under, f"c2d_under_{w}_{segment}")
+                
+                # Correctly calculate deviations (handling negative cases)
+                model.Add(over_penalty >= segment_count - ideal_count)
+                model.Add(over_penalty >= 0)  # Ensure non-negative
+                
+                model.Add(under_penalty >= ideal_count - segment_count)
+                model.Add(under_penalty >= 0)  # Ensure non-negative
+                # Store in optimization details
+                optimization_details['point_5_2_c2d_balance']['variables'].append({
+                'worker': w,
+                'segment': segment,
+                'over_penalty': over_penalty,
+                'under_penalty': under_penalty,
+                'ideal_count': ideal_count,
+                'segment_weekends': [quality_weekend_vars[w][i] for i in range(start_idx, min(end_idx, len(quality_weekend_vars[w])))]
+                })
+                
+                c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * over_penalty)
+                c2d_balance_penalties.append(C2D_YEAR_BALANCE_PENALTY * under_penalty)
 
     objective_terms.extend(c2d_balance_penalties)
 
