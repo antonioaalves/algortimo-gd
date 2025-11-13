@@ -242,7 +242,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Identifying special days")
         
         # Define shifts and special days
-        shifts = ["M", "T", "L", "LQ", "LD", "F", "V", "A", "-"]
+        shifts = ["M", "T", "N", "L", "LQ", "LD", "F", "V", "A", "-"]
         
         sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['data'].dt.dayofyear.unique().tolist())
 
@@ -796,7 +796,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         pess_obj = {}
         min_workers = {}
         max_workers = {}
-        working_shift = ["M", "T"]
+        working_shift = ["M", "T", "N"]
 
         # If estimativas has specific data, process it
         if not matriz_estimativas_gd.empty:
@@ -814,7 +814,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         pess_obj[(d, s)] = 0  # or any default value you prefer
                 
                 # Process min/max workers for all shifts
-                for shift_type in shifts:
+                for shift_type in working_shift:
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == shift_type)]
                     if not day_shift_data.empty:
                                     # Convert floats to integers for OR-Tools compatibility
@@ -841,6 +841,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
                 worker_week_shift[(w, week, 'M')] = 0
                 worker_week_shift[(w, week, 'T')] = 0
+                worker_week_shift[(w, week, 'N')] = 0
                 
                 # Iterate through days of the week for the current week
                 for day in week_to_days[week]:
@@ -862,13 +863,17 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         if not shift_entries[shift_entries['tipo_turno'] == "T"].empty:
                             # Assign afternoon shift to the worker for that week
                             worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
+
+                        if not shift_entries[shift_entries['tipo_turno'] == "N"].empty:
+                            # Assign afternoon shift to the worker for that week
+                            worker_week_shift[(w, week, 'N')] = 1  # Set to 1 if afternoon shift is found
                     
                         #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
                 
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
 
-        working_shift_2 = ["M", "T"]
+        working_shift_2 = ["M", "T", "N"]
         # =================================================================
         # 13. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================

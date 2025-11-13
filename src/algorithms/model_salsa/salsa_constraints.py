@@ -211,6 +211,9 @@ def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_
                     if ((w, day, "T") in shift):
                         model.Add(shift[(w, day, "T")] <= worker_week_shift[(w, week, 'T')])
 
+                    if ((w, day, "N") in shift):
+                        model.Add(shift[(w, day, "N")] <= worker_week_shift[(w, week, 'N')])
+
 def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
     #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
@@ -589,3 +592,10 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
         logger.info(f"Worker {w}, Sundays {worker_sundays}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
 
+def cuf_shift_progession(model, shift, workers, working_days):
+    for w in workers:
+        for d in working_days[w]:
+            if d + 1 in working_days[w]:
+                model.Add(shift[(w, d, 'N')] + shift[(w, d + 1, 'M')] <= 1)
+                model.Add(shift[(w, d, 'N')] + shift[(w, d + 1, 'T')] <= 1)
+                model.Add(shift[(w, d, 'T')] + shift[(w, d + 1, 'M')] <= 1)

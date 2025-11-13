@@ -20,7 +20,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
     LQ_attribution, compensation_days, assign_week_shift, working_day_shifts, salsa_2_consecutive_free_days,
     salsa_2_day_quality_weekend, salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free,
-    free_days_special_days
+    free_days_special_days, cuf_shift_progession
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -61,9 +61,9 @@ class SalsaAlgorithm(BaseAlgorithm):
         """
         # Default parameters for the SALSA algorithm
         default_parameters = {
-            "shifts": ["M", "T", "L", "LQ", 'LD', "F", "A", "V", "-"],
-            "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
-            "working_shifts": ['M', 'T', 'LD'],
+            "shifts": ['M', 'T', 'N', 'L', 'LQ', 'LD', 'F', 'A', 'V', '-'],
+            "check_shifts": ['M', 'T', 'N', 'L', 'LQ', 'LD'],
+            "working_shifts": ['M', 'T', 'N', 'LD'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -381,6 +381,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
+
+            cuf_shift_progession(model, shift, workers, working_days)
 
             if country == "spain":
                 compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
