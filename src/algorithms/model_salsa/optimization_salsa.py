@@ -90,7 +90,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift)
+            assigned_workers = sum(shift[(w, d, s)] for w in all_workers if (w, d, s) in shift)
             # Create variables to represent the positive and negative deviations from the target
             pos_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"pos_diff_{d}_{s}")
             neg_diff = model.NewIntVar(0, len(all_workers) * hours_scale, f"neg_diff_{d}_{s}")
@@ -207,7 +207,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             min_req = min_workers.get((d, s), 8)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift)
+                assigned_workers = sum(shift[(w, d, s)] for w in all_workers if (w, d, s) in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, 1000, f"min_shortfall_{d}_{s}")
@@ -240,7 +240,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         assigned_workers_total = []
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = [shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift]
+            assigned_workers = [shift[(w, d, s)] for w in all_workers if (w, d, s) in shift]
             assigned_workers_total.extend(assigned_workers)
 
         # Create a variable to represent the shortfall from the minimum
@@ -755,8 +755,31 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             objective_terms.append(MANAGER_MANAGER_CONFLICT_PENALTY * mgr_overlap)
 
 
-        
+    #shift equalizer
+    shift_worked = {}
+    deviation_over = {}
+    deviation_under = {}
+    total_shift_s = {}
 
+    for s in working_shift:
+        shift_worked[s] = {}
+        deviation_over[s] = {}
+        deviation_under[s] = {}
+
+        total_shift_s[s] = model.NewIntVar(0, len(workers) * len(days_of_year), f"total_{s}")
+        model.Add(total_shift_s[s] == sum(shift[(w, d, s)] for w in workers for d in working_days[w]))
+
+        for w in workers:
+            shift_worked[s][w] = model.NewIntVar(0, len(working_days[w]), f"mornings_{s}_{w}")
+            deviation_over[s][w] = model.NewIntVar(0, len(workers) * len(working_days[w]), f"deviation_over_{s}_{w}")
+            deviation_under[s][w] = model.NewIntVar(0, len(workers) * len(days_of_year), f"deviation_under_{s}_{w}")
+
+            model.Add(shift_worked[s][w] == sum(shift[(w, d, s)] for d in working_days[w]))
+            model.Add(len(workers) * deviation_over[s][w] >= len(workers) * shift_worked[s][w] - total_shift_s[s])
+            model.Add(len(workers) * deviation_under[s][w] >= total_shift_s[s] - len(workers) *shift_worked[s][w])
+
+        objective_terms.append(100 * sum(deviation_over[s][w] for w in workers))
+        objective_terms.append(100 * sum(deviation_under[s][w] for w in workers))
 
 
     model.Minimize(sum(objective_terms))

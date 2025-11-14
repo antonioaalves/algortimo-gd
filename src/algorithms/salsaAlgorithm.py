@@ -378,7 +378,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
 
-            first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
+            #first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 

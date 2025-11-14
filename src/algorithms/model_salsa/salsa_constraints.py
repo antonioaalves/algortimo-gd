@@ -589,13 +589,14 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
     for w in workers:
         # Only consider special days that are in this worker's working days
         worker_sundays = [d for d in sundays if d in working_days[w]]
-        logger.info(f"Worker {w}, Sundays {worker_sundays}")
+        logger.info(f"Worker {w}, l_dom {total_l_dom.get(w,-1)} Sundays {worker_sundays}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
 
 def cuf_shift_progession(model, shift, workers, working_days):
     for w in workers:
         for d in working_days[w]:
             if d + 1 in working_days[w]:
-                model.Add(shift[(w, d, 'N')] + shift[(w, d + 1, 'M')] <= 1)
-                model.Add(shift[(w, d, 'N')] + shift[(w, d + 1, 'T')] <= 1)
-                model.Add(shift[(w, d, 'T')] + shift[(w, d + 1, 'M')] <= 1)
+                if ((w, d, 'N') in shift and (w, d, 'T') in shift and (w, d + 1, 'M') in shift and (w, d + 1, 'T') in shift):
+                    model.Add(shift[(w, d, 'N')] + shift[(w, d + 1, 'M')] <= 1)
+                    model.Add(shift[(w, d, 'N')] + shift[(w, d + 1, 'T')] <= 1)
+                    model.Add(shift[(w, d, 'T')] + shift[(w, d + 1, 'M')] <= 1)

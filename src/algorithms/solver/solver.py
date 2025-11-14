@@ -222,6 +222,7 @@ def solve(
         shift_mapping = {
             'M'     : 'M',  # Morning shift
             'T'     : 'T',  # Afternoon shift
+            'N'     : 'N',  # Night shift
             'F'     : 'F',  # Closed holiday
             'V'     : 'V',  # Empty Day
             'A'     : 'A',  # Missing shift
@@ -244,6 +245,7 @@ def solve(
         days_of_year_sorted = sorted(days_of_year)
         time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) for d in days_of_year_sorted]
         time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
+        time_worked_day_N = [-pessOBJ.get((d, 'N'), 0) for d in days_of_year_sorted]
         special_days_worked = {}
         compensation_days_off = {}
 
@@ -323,6 +325,7 @@ def solve(
 
         time_worked_day_M_after = time_worked_day_M.copy()
         time_worked_day_T_after = time_worked_day_T.copy()
+        time_worked_day_N_after = time_worked_day_N.copy()
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
@@ -366,13 +369,17 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        time_worked_day_T_after[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_T_after[day_counter] += 1
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
                             special_days_worked[w].append(d)
-                        time_worked_day_M_after[day_counter] += work_day_hours[w][day_counter]
-
+                        time_worked_day_M_after[day_counter] += 1
+                    elif day_assignment in ['N']:
+                        if d in special_days:
+                            special_days_count += 1
+                            special_days_worked[w].append(d)
+                        time_worked_day_N_after[day_counter] += 1
                     day_counter += 1
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
@@ -418,6 +425,7 @@ def solve(
 
             time_worked_M_row_after = ["Time_Worked_M"] + [time_worked_day_M_after[i] for i in range(len(days_of_year_sorted))]
             time_worked_T_row_after = ["Time_Worked_T"] + [time_worked_day_T_after[i] for i in range(len(days_of_year_sorted))]
+            time_worked_N_row_after = ["Time_Worked_N"] + [time_worked_day_N_after[i] for i in range(len(days_of_year_sorted))]
 
             # Append rows to DataFrame
             if workers_past:
@@ -425,13 +433,16 @@ def solve(
                 df2 = pd.concat([df, df_past], ignore_index=True)
                 time_worked_M_row = ["Original_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
                 time_worked_T_row = ["Original_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
+                time_worked_N_row = ["Original_N"] + [time_worked_day_N[i] for i in range(len(days_of_year_sorted))]
                 df2.loc[len(df2)] = time_worked_M_row
                 df2.loc[len(df2)] = time_worked_T_row
+                df2.loc[len(df2)] = time_worked_N_row
             else:
                 df2 = df.copy()
 
             df2.loc[len(df2)] = time_worked_M_row_after
             df2.loc[len(df2)] = time_worked_T_row_after
+            df2.loc[len(df2)] = time_worked_N_row_after
             df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:
