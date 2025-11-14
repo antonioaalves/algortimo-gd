@@ -396,52 +396,45 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
         # For each pair of workers, ensure proportional fairness
         for i, w1 in enumerate(workers_with_sundays):
             for w2 in workers_with_sundays[i+1:]:
-                prop1 = (last_day.get(w1, 0) - first_day.get(w1, 0) + 1) / len(days_of_year)
-                prop1 = max(0.0, min(1.0, prop1))
-                prop2 = (last_day.get(w2, 0) - first_day.get(w2, 0) + 1) / len(days_of_year)
-                prop2 = max(0.0, min(1.0, prop2))
-                #logger.info(f"Worker {w1} proportion: {prop1}, first day: {first_day.get(w1, 0)}, last day: {last_day.get(w1, 0)}, Worker {w2} proportion: {prop2}, first day: {first_day.get(w2, 0)}, last day: {last_day.get(w2, 0)}")
-
-                if prop1 > 0 and prop2 > 0:
-                    # Calculate proportion ratio as integers (multiply by 100 for precision)
-                    prop1_int = int(prop1 * 100)
-                    prop2_int = int(prop2 * 100)
+                prop1_int = int(proportion[w1] * 100)
+                prop2_int = int(proportion[w2] * 100)
+                if prop1_int <= 0 or prop2_int <= 0:
+                    continue
                     
-                    # Calculate maximum possible difference
-                    max_sundays_w1 = len([d for d in sundays if d in working_days[w1]])
-                    max_sundays_w2 = len([d for d in sundays if d in working_days[w2]])
-                    max_diff = max(max_sundays_w1 * prop2_int, max_sundays_w2 * prop1_int)
-                    
-                    # Create variables for proportional difference
-                    proportional_diff_pos = model.NewIntVar(0, max_diff, f"prop_diff_pos_{w1}_{w2}")
-                    proportional_diff_neg = model.NewIntVar(0, max_diff, f"prop_diff_neg_{w1}_{w2}")
-                    
-                    # Proportional balance constraint:
-                    # sunday_free_worker_vars[w1] / prop1 should ≈ sunday_free_worker_vars[w2] / prop2
-                    # Rearranged: sunday_free_worker_vars[w1] * prop2_int should ≈ sunday_free_worker_vars[w2] * prop1_int
-                    
-                    model.Add(proportional_diff_pos >= sunday_free_worker_vars[w1] * prop2_int - sunday_free_worker_vars[w2] * prop1_int)
-                    model.Add(proportional_diff_pos >= 0)
-                    
-                    model.Add(proportional_diff_neg >= sunday_free_worker_vars[w2] * prop1_int - sunday_free_worker_vars[w1] * prop2_int)
-                    model.Add(proportional_diff_neg >= 0)
-
-                    # Store in optimization details
-                    optimization_details['point_7_sunday_balance_across_workers']['variables'].append({
-                        'worker1': w1,
-                        'worker2': w2,
-                        'proportional_diff_pos': proportional_diff_pos,
-                        'proportional_diff_neg': proportional_diff_neg,
-                        'prop1': prop1,
-                        'prop2': prop2,
-                        'total_sunday_free_w1': sunday_free_worker_vars[w1],
-                        'total_sunday_free_w2': sunday_free_worker_vars[w2]
-                    })
-                    
-                    # Add penalties for proportional imbalance
-                    weight = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 2  # Distribute penalty across pairs
-                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos)
-                    sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
+                # Calculate maximum possible difference
+                max_sundays_w1 = len(worker_sundays[w1])
+                max_sundays_w2 = len(worker_sundays[w2])
+                max_diff = max(max_sundays_w1 * prop2_int, max_sundays_w2 * prop1_int)
+                
+                # Create variables for proportional difference
+                proportional_diff_pos = model.NewIntVar(0, max_diff, f"prop_diff_pos_{w1}_{w2}")
+                proportional_diff_neg = model.NewIntVar(0, max_diff, f"prop_diff_neg_{w1}_{w2}")
+                
+                # Proportional balance constraint:
+                # sunday_free_worker_vars[w1] / prop1 should ≈ sunday_free_worker_vars[w2] / prop2
+                # Rearranged: sunday_free_worker_vars[w1] * prop2_int should ≈ sunday_free_worker_vars[w2] * prop1_int
+                
+                model.Add(proportional_diff_pos >= sunday_free_worker_vars[w1] * prop2_int - sunday_free_worker_vars[w2] * prop1_int)
+                model.Add(proportional_diff_pos >= 0)
+                
+                model.Add(proportional_diff_neg >= sunday_free_worker_vars[w2] * prop1_int - sunday_free_worker_vars[w1] * prop2_int)
+                model.Add(proportional_diff_neg >= 0)
+                # Store in optimization details
+                optimization_details['point_7_sunday_balance_across_workers']['variables'].append({
+                    'worker1': w1,
+                    'worker2': w2,
+                    'proportional_diff_pos': proportional_diff_pos,
+                    'proportional_diff_neg': proportional_diff_neg,
+                    'prop1': prop1_int,
+                    'prop2': prop2_int,
+                    'total_sunday_free_w1': sunday_free_worker_vars[w1],
+                    'total_sunday_free_w2': sunday_free_worker_vars[w2]
+                })
+                
+                # Add penalties for proportional imbalance
+                weight = SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY // 2  # Distribute penalty across pairs
+                sunday_balance_across_workers_penalties.append(weight * proportional_diff_pos)
+                sunday_balance_across_workers_penalties.append(weight * proportional_diff_neg)
 
     # Add to objective
     objective_terms.extend(sunday_balance_across_workers_penalties)
