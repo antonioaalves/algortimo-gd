@@ -242,7 +242,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Identifying special days")
         
         # Define shifts and special days
-        shifts = ["M", "T", "L", "LQ", "LD", "F", "V", "A", "-"]
         
         sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['data'].dt.dayofyear.unique().tolist())
 
@@ -778,27 +777,21 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         working_shift = ["M", "T"]
 
         # If estimativas has specific data, process it
-        if not matriz_estimativas_gd.empty:
-            
+        if not matriz_estimativas_gd.empty:      
             for d in days_of_year:
-                
-                # Process pess_obj for working_shift
+                # Process pess_obj, min, max for working_shift
                 for s in working_shift:
 
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
                         pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
+                        min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
+                        max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
                     else:
                         pess_obj[(d, s)] = 0  # or any default value you prefer
-                
-                # Process min/max workers for all shifts
-                for shift_type in shifts:
-                    day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == shift_type)]
-                    if not day_shift_data.empty:
-                                    # Convert floats to integers for OR-Tools compatibility
-                                    min_workers[(d, shift_type)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
-                                    max_workers[(d, shift_type)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
+                        min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
+                        max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
 
             logger.info(f"Processing estimativas data with {len(matriz_estimativas_gd)} records")
             logger.info(f"  - pess_obj: {len(pess_obj)} entries")
@@ -849,7 +842,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
 
-        working_shift_2 = ["M", "T"]
         # =================================================================
         # 13. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
@@ -902,7 +894,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "pess_obj": pess_obj,                                 # 26
             "min_workers": min_workers,                           # 27
             "max_workers": max_workers,                           # 28
-            "working_shift_2": working_shift_2,                   # 29
             "workers_complete": workers_complete,                 # 30
             "workers_complete_cycle": workers_complete_cycle,     # 31
             "free_day_complete_cycle": free_day_complete_cycle,   # 32
