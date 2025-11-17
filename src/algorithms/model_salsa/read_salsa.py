@@ -789,9 +789,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
                         max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
                     else:
-                        pess_obj[(d, s)] = 0  # or any default value you prefer
-                        min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
-                        max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
+                        pess_obj[(d, s)] = 0
+                        min_workers[(d, s)] = 0
+                        max_workers[(d, s)] = 0
 
             logger.info(f"Processing estimativas data with {len(matriz_estimativas_gd)} records")
             logger.info(f"  - pess_obj: {len(pess_obj)} entries")
