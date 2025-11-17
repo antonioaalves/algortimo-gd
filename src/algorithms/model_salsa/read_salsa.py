@@ -250,7 +250,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             (matriz_calendario_gd["dia_tipo"] == "domYf")
         ]['data'].dt.dayofyear.unique().tolist())
         
-        closed_holidays = sorted(matriz_calendario_gd[
+        closed_holidays = set(matriz_calendario_gd[
             matriz_calendario_gd['tipo_turno'] == "F"
         ]['data'].dt.dayofyear.unique().tolist())
         
@@ -350,15 +350,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         min_calendar_date = matriz_calendario_gd['data'].min()
         max_calendar_date = matriz_calendario_gd['data'].max()
         min_day_of_year = min_calendar_date.dayofyear
-        max_day_of_year = max_calendar_date.dayofyear
+        max_day_of_year = (max_calendar_date - min_calendar_date).days + 1
 
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_of_year} to {max_day_of_year}")
         
         # Initialize dictionaries for worker-specific information
         empty_days = {}
-        worker_holiday = {}
-        missing_days = {}
+        worker_absences = {}
+        vacation_days = {}
         last_registered_day = {}
         first_registered_day = {}
         working_days = {}
@@ -393,8 +393,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_days_off[w] = worker_calendar[worker_calendar['tipo_turno'] == 'L']['data'].dt.dayofyear.tolist()
             fixed_compensation_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'LD']['data'].dt.dayofyear.tolist()
             empty_days[w] = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-            missing_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            worker_holiday[w] = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
+            vacation_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
+            worker_absences[w] = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
 
@@ -409,8 +409,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if worker_calendar.empty:
                 logger.warning(f"No calendar data found for worker {w}")
                 empty_days[w] = []
-                worker_holiday[w] = []
-                missing_days[w] = []
+                worker_absences[w] = []
+                vacation_days[w] = []
                 fixed_days_off[w] = []
                 fixed_LQs[w] = []
                 work_day_hours[w] = []
@@ -420,9 +420,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 continue
             
             # Find days with specific statuses
-            worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-            worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
+            worker_empty = worker_calendar[(worker_calendar['tipo_turno'] == '-') | (worker_calendar['tipo_turno'] == 'A-') | (worker_calendar['tipo_turno'] == 'V-')]['data'].dt.dayofyear.tolist()
+            w_holiday = worker_calendar[(worker_calendar['tipo_turno'] == 'V') | (worker_calendar['tipo_turno'] == 'V-')]['data'].dt.dayofyear.tolist()
+            w_absences = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP') | (worker_calendar['tipo_turno'] == 'A-')]['data'].dt.dayofyear.tolist()
             worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
             f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
             worker_work_day_hours = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
@@ -437,11 +437,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
 
             empty_days[w] = worker_empty
-            missing_days[w] = worker_missing
-            worker_holiday[w] = w_holiday
+            vacation_days[w] = w_holiday
+            worker_absences[w] = w_absences
             fixed_days_off[w] = worker_fixed_days_off
             free_day_complete_cycle[w] = f_day_complete_cycle
             work_day_hours[w] = worker_work_day_hours
+            fixed_LQs[w] = {}
 
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
@@ -533,17 +534,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)
             if first_registered_day[w] > 0 or last_registered_day[w] > 0:  # Ensure worker was registered at some point
-                missing_days[w].extend([d for d in range( 1, first_registered_day[w]) if d not in missing_days[w]])
-                missing_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in missing_days[w]])
+                empty_days[w].extend([d for d in range( 1, first_registered_day[w]) if d not in empty_days[w]])
+                empty_days[w].extend([d for d in range(last_registered_day[w] + 1, 366) if d not in empty_days[w]])
             
 
-            empty_days[w] = sorted(set(empty_days[w]) - set(closed_holidays))
-            fixed_days_off[w] = sorted(set(fixed_days_off[w]) - set(closed_holidays))
-            #logger.info(f"Worker {w} empty days after removing closed holidays: {empty_days[w]}")
-            #logger.info(f"Worker {w} holiday days after removing closed holidays: {worker_holiday[w]}")
-            missing_days[w] = sorted(set(missing_days[w]) - set(closed_holidays))
-            #logger.info(f"Worker {w} missing days after removing closed holidays: {missing_days[w]}")
-            free_day_complete_cycle[w] = sorted(set(free_day_complete_cycle[w]) - set(closed_holidays))
+            empty_days[w] = set(empty_days[w]) - closed_holidays
+            worker_absences[w] = set(worker_absences[w]) - closed_holidays
+            fixed_days_off[w] = set(fixed_days_off[w]) - closed_holidays
+            vacation_days[w] = set(vacation_days[w]) - closed_holidays
+            free_day_complete_cycle[w] = sorted(set(free_day_complete_cycle[w]) - closed_holidays)
             worker_info = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
 
             if not worker_info.empty:
@@ -552,16 +551,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 logger.warning(f"No collaborator data found for worker {w}")
                 tipo_contrato = 'Contract Error'
             if tipo_contrato != 8:
-                if w not in workers_past:
-                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), None)
-                working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
-                logger.info(f"Worker {w} working days after processing: {working_days[w]}")
+                worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, None)
+                working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays 
+                #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
 
                 if not working_days[w]:
                     logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
 
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
-
         # =================================================================
         # 10.1. EXTRACT WORKER CONTRACT INFORMATION
         # =================================================================
@@ -605,7 +602,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             else:
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
-                logger.info(f"Processing worker {w} with data: {worker_row.to_dict()}")
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
@@ -618,35 +614,40 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
 
                 first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
-
                 week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
                 if (has_week_compensation_limit == False and week_compensation_limit[w] != 0):
                     has_week_compensation_limit = True
 
                 if contract_type[w] == 8:
-                    work_days_per_week[w] = populate_every_week(first_week_5_6[w], data_admissao[w], week_to_days_salsa)
-                    worker_holiday[w], fixed_days_off[w], fixed_LQs[w] = data_treatment(set(worker_holiday[w]) - set(closed_holidays) - set(fixed_days_off[w]), set(fixed_days_off[w]), week_to_days_salsa, start_weekday, set(closed_holidays), work_days_per_week[w])
-                    working_days[w] = set(days_of_year) - set(empty_days[w]) - set(worker_holiday[w]) - set(missing_days[w]) - set(closed_holidays) 
-                    logger.info(f"Worker {w} working days after processing: {working_days[w]}")
+                    if (first_week_5_6[w] != 0):
+                        work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa)
+                    else:
+                        work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa)
+                    check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days, work_days_per_week[w])
+                    worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w])
+                    working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays 
                 else:
                     work_days_per_week[w] = [5] * 52
                 if not working_days[w]:
                     logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-                logger.info(f"Worker {w} contract information extracted: "
-                            f"Contract Type: {contract_type[w]}, "
-                            f"Total L: {total_l[w]}, "
-                            f"Total L DOM: {total_l_dom[w]}, "
-                            f"C2D: {c2d[w]}, "
-                            f"C3D: {c3d[w]}, "
-                            f"L_D: {l_d[w]}, "
-                            f"L_Q: {l_q[w]}, "
-                            f"CXX: {cxx[w]}, "
-                            f"T_LQ: {t_lq[w]}, "
-                            f"5 ou 6: {first_week_5_6[w]}, "
-                            f"Data Admissao: {data_admissao[w]}, "
-                            f"Data Demissao: {data_demissao[w]}")
+                #logger.info(f"Worker {w} contract information extracted: "
+                #            f"Contract Type: {contract_type[w]}, "
+                #            f"Total L: {total_l[w]}, "
+                #            f"Total L DOM: {total_l_dom[w]}, "
+                #            f"C2D: {c2d[w]}, "
+                #            f"C3D: {c3d[w]}, "
+                #            f"L_D: {l_d[w]}, "
+                #            f"L_Q: {l_q[w]}, "
+                #            f"CXX: {cxx[w]}, "
+                #            f"T_LQ: {t_lq[w]}, "
+                #            f"5 ou 6: {first_week_5_6[w]}, "
+                #            f"Data Admissao: {data_admissao[w]}, "
+                #            f"Data Demissao: {data_demissao[w]}")
         
         for w in workers:
+            #if contract_type[w] == 8:
+            #    print(w, first_week_5_6[w])
+
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
@@ -818,15 +819,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 for day in week_to_days[week]:
                         
                         # Get the rows for the current week and day
-                         # Use WW column instead of isocalendar().week for consistency
+                        # Use WW column instead of isocalendar().week for consistency
                         shift_entries = matriz_calendario_gd[
                             (matriz_calendario_gd['ww'] == week) & 
                             (matriz_calendario_gd['data'].dt.day_of_year == day) & 
                             (matriz_calendario_gd['colaborador'] == w)
                         ]
                         
-                        #logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
-
                         # Check for morning shifts ('M') for the current worker
                         if not shift_entries[shift_entries['tipo_turno'] == "M"].empty:
                             # Assign morning shift to the worker for that week
@@ -872,8 +871,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "special_days": special_days,                         # 4
             "closed_holidays": closed_holidays,                   # 5
             "empty_days": empty_days,                             # 6
-            "worker_holiday": worker_holiday,                     # 7
-            "missing_days": missing_days,                         # 8
+            "worker_absences": worker_absences,                     # 7
+            "vacation_days": vacation_days,                         # 8
             "working_days": working_days,                         # 9
             "non_holidays": non_holidays,                         # 10
             "start_weekday": start_weekday,                       # 11
@@ -923,49 +922,104 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.error(f"Error in read_data_salsa: {e}", exc_info=True)
         raise
 
-def data_treatment(worker_holiday, fixed_days_off, week_to_days_salsa, start_weekday, closed_holidays, work_days_per_week):
+def consecutive_days(vacations_in_week, nbr_vacations, cut_off, days):
+    if nbr_vacations <= 2:
+        #print("week too short")
+        return False
+    if cut_off == 5:
+        if not all(day in vacations_in_week for day in days[2:5]):
+            print(f"holidays not in a row {vacations_in_week}")
+            return False
+        if vacations_in_week[-1] != days[4]:
+            print(f"holidays dont end on friday {vacations_in_week[-1]} {days[4]}")
+            return False
+    elif cut_off == 6:
+        if not all(day in vacations_in_week for day in days[3:6]):
+            print(f"holidays not in a row {vacations_in_week}")
+            return False
+        if vacations_in_week[-1] != days[5]:
+            print(f"holidays dont end on saturday {vacations_in_week[-1]} {days[5]}")
+            return False
+    return True
+
+def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week):
     fixed_LQs = []
     for week, days in week_to_days_salsa.items():
-        if (len(days) <= 6):
+        if len(days) <= 6:
             continue
+
         days_set = set(days)
-        holiday_days_in_week = days_set.intersection(worker_holiday)
+        days_off = days_set.intersection(fixed_days_off.union(fixed_LQs))
+        absences_in_week = days_set.intersection(absences.union(closed_holidays))
+        nbr_absences = len(absences_in_week)
+        vacations_in_week = days_set.intersection(vacations.union(closed_holidays))
+        nbr_vacations = len(vacations_in_week)
+
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
 
-            if len(list(holiday_days_in_week)) >= 5:
+            if nbr_absences < 5:
+                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
+                    continue
 
-                atributing_days = list(sorted(days_set - closed_holidays))
+            if len(days_off) >= 2:
+                logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
+                continue
 
+            atributing_days = sorted(days_set - closed_holidays)
+            if len(days_off) == 1:
+                logger.warning(f"For week with absences {week}, {w} already has {days_off} day off")
+                only_day_off = sorted(days_off)[0]
+                if only_day_off == atributing_days[-1] and only_day_off == days[6] and atributing_days[-2] == days[5]:
+                    l2 = atributing_days[-2]
+                    absences -= {l2}
+                    vacations -= {l2}
+                    fixed_LQs.append(l2)
+
+                elif only_day_off == atributing_days[-2] and only_day_off == days[5] and atributing_days[-1] == days[6]:
+                    l1 = atributing_days[-1]
+                    absences -= {l1}
+                    vacations -= {l1}
+                    fixed_days_off |= {l1}
+                    fixed_days_off -= {only_day_off}
+                    fixed_LQs.append(only_day_off)
+                else:
+                    #last day insured not to be an already fixed day off
+                    l1 = sorted(set(atributing_days) - {only_day_off})[-1]
+                    absences -= {l1}
+                    vacations -= {l1}
+                    fixed_days_off |= {l1}
+            else:
                 l1 = atributing_days[-1]
                 l2 = atributing_days[-2]
 
                 if l1 == days[6] and l2 == days[5]:
-
-                    worker_holiday -= {l2, l1}
+                    absences -= {l2, l1}
+                    vacations -= {l2, l1}
                     fixed_days_off |= {l1}
                     fixed_LQs.append(l2)
-
                 else:
-                    worker_holiday -= {l2,l1}
+                    absences -= {l2,l1}
+                    vacations -= {l2,l1}
                     fixed_days_off |= {l2,l1}
+                
         else:
-            days_off_in_week = days_set.intersection(fixed_days_off)
-            if (len(days_off_in_week) > 1):
-                logger.error(f"for week {week} this worker has {days_off_in_week} when they should only have 1 day off")
-
-            if len(list(holiday_days_in_week)) >= 5:
-
-                atributing_days = list(sorted(days_set - closed_holidays))
-
-                l1 = atributing_days[-1]
-                worker_holiday -= {l1}
-                fixed_days_off |= {l1}
+            if len(days_off) > 0:
+                logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
+                continue
+            if nbr_absences <= 6:
+                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 6, days) == False:
+                    continue
+            atributing_days = sorted(days_set - closed_holidays)
+            l1 = atributing_days[-1]
+            absences -= {l1}
+            vacations -= {l1}
+            fixed_days_off |= {l1}
     
-    return worker_holiday, fixed_days_off, fixed_LQs
+    return absences, vacations, fixed_days_off, fixed_LQs
 
-def populate_every_week(first_week_5_6, data_admissao, week_to_days):
+def populate_week_seed_5_6(first_week_5_6, data_admissao, week_to_days):
     nbr_weeks = len(week_to_days)
-    work_days_per_week = np.full(nbr_weeks, 5)  # default all 5s
+    work_days_per_week = np.full(nbr_weeks, 5)
 
     # Find starting week, default to week 0 if not found
     week = next((wk for wk, val in week_to_days.items() if data_admissao in val), 1) - 1
@@ -973,3 +1027,37 @@ def populate_every_week(first_week_5_6, data_admissao, week_to_days):
     work_days_per_week[week:] = np.tile(np.array([first_week_5_6, other]), (nbr_weeks // 2) + 1)[:nbr_weeks - week]
 
     return work_days_per_week.astype(int)
+
+def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days):
+    nbr_weeks = len(week_to_days)
+    work_days_per_week = np.full(nbr_weeks, 5)
+    week_5_days = 0
+    for week, days in week_to_days.items():
+        days_set = set(days)
+        days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+        if len(days_off_week) > 1:
+            week_5_days = week - 1
+            break
+
+    if week_5_days % 2 == 0:
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+                    f"with days {days_off_week} since its even, first week will start with 5")
+        work_days_per_week= np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+    else:
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+                    f"with days {days_off_week} since its odd, first week will start with 6")
+        work_days_per_week= np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+
+    return work_days_per_week.astype(int)
+
+def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, work_days_per_week):
+    for week, days in week_to_days.items():
+
+        days_set = set(days)
+        actual_days_off = len(days_set.intersection(fixed_days_off.union(fixed_LQs)))
+        expected_days_off = 7 - work_days_per_week[week - 1]
+
+        if actual_days_off > expected_days_off:
+            logger.error(f"For worker {w}, in week {week} by contract they're supposed to work "
+                         f"{work_days_per_week[week - 1]} days but have received {actual_days_off} "
+                         f"days off: {days_set.intersection(fixed_days_off.union(fixed_LQs))}. Process will be Infeasible!")

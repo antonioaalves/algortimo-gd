@@ -238,8 +238,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             special_days = adapted_data['special_days']
             closed_holidays = adapted_data['closed_holidays']
             empty_days = adapted_data['empty_days']
-            worker_holiday = adapted_data['worker_holiday']
-            missing_days = adapted_data['missing_days']
+            worker_absences = adapted_data['worker_absences']
+            vacation_days = adapted_data['vacation_days']
             working_days = adapted_data['working_days']
             non_holidays = adapted_data['non_holidays']
             start_weekday = adapted_data['start_weekday']
@@ -318,6 +318,16 @@ class SalsaAlgorithm(BaseAlgorithm):
             # workers_complete = [w for w in workers_complete if w not in DROP_WORKERS]
             # workers_complete_cycle = [w for w in workers_complete_cycle if w not in DROP_WORKERS]
 
+            # # 2) dicionários por worker
+            # for dct in [
+            #     working_days, worker_absences, missing_days, empty_days, free_day_complete_cycle,
+            #     contract_type, c2d, c3d, l_d, l_q, t_lq, data_admissao, data_demissao,
+            #     first_day, last_day, total_l, total_l_dom, fixed_days_off, fixed_LQs, role_by_worker
+            # ]:
+            #     if isinstance(dct, dict):
+            #         for worker_id in DROP_WORKERS:
+            #             dct.pop(worker_id, None)
+
             # # 3) mapas (w, week, ...) → limpar chaves desses workers
             # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] not in DROP_WORKERS}
 
@@ -329,8 +339,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             model = cp_model.CpModel()
             self.model = model
             
-            shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_holiday,
-                                       missing_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
+            # Create decision variables
+            shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences,
+                                       vacation_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
                                        fixed_M, fixed_T, start_weekday, workers_past, fixed_compensation_days)
             
             self.logger.info("Decision variables created for SALSA")
@@ -358,21 +369,21 @@ class SalsaAlgorithm(BaseAlgorithm):
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
             
             # SALSA specific constraints
-            salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type)
+            salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
             
             self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
             salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
             
-            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year, worker_holiday)
+            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday)
 
             salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
 
-            first_day_not_free(model, shift, workers, working_days, first_day, working_shift)
+            first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
 
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
             if country == "spain":
-                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_holiday)
+                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
                         
             self.logger.info("All SALSA constraints applied")
             
