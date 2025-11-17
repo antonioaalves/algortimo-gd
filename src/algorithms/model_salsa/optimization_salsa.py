@@ -1,5 +1,6 @@
 from base_data_project.log_config import get_logger
 from src.config import PROJECT_NAME
+import numpy as np
 
 logger = get_logger(PROJECT_NAME)
 
@@ -20,7 +21,7 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
     HEAVY_PENALTY = 300  # Penalty for days with no workers
     MIN_WORKER_PENALTY_SHIFT = 600  # Penalty for breaking minimum worker requirements per shift
     MIN_WORKER_PENALTY_DAY = 6000  # Penalty for breaking minimum worker requirements per day
-    SUNDAY_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced Sunday free days ALL YEAR
+    SUNDAY_YEAR_BALANCE_PENALTY = 10  # Penalty for unbalanced Sunday free days ALL YEAR
     C2D_YEAR_BALANCE_PENALTY = 8  # Penalty for unbalanced C2D free days ALL YEAR
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
     SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing Sundays across workers
@@ -301,77 +302,29 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
                 objective_terms.append(INCONSISTENT_SHIFT_PENALTY * inconsistent_shifts)
 
     # 5.1 Balance sundays free days 
-    sunday_balance_penalties = []
-    worker_sundays = {}
-    sunday_free_vars = {}
+    parts = np.array_split(days_of_year, 12) 
+    sunday_parts=[]
+    for part in parts:
+        sunday_part=[d for d in part if d in sundays]
+        sunday_parts.append(sunday_part)
 
-    for w in workers + workers_past:
-        worker_sundays[w] = [d for d in sundays if d in working_days[w]]
-        sunday_free_vars[w] = []
+    for w in workers:
+        list_of_free_sundays_per_semester=[]
+        for part in sunday_parts:
+            free_sundays_semester=sum(shift[(w, d, 'L')] for d in part if (w,d,'L') in shift)
+            list_of_free_sundays_per_semester.append(free_sundays_semester)
         
-        if len(worker_sundays[w]) <= 1:
-            continue
+        max_free_sundays = model.NewIntVar(0, len(sundays), f"max_free_semester_sundays_{w}")
+        min_free_sundays = model.NewIntVar(0, len(sundays), f"min_free_semester_sundays_{w}") 
         
-        # Create variables for Sunday free days (L shifts)
-        for sunday in worker_sundays[w]:
-            sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
-            
-            # Link to actual L shift assignment
-            model.Add(shift.get((w, sunday, "L"), 0) >= 1).OnlyEnforceIf(sunday_free)
-            model.Add(shift.get((w, sunday, "L"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
-            sunday_free_vars[w].append(sunday_free)
+        model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
+        model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
+
+        semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
+        model.Add(semester_diff == max_free_sundays - min_free_sundays)
         
-        # Calculate target spacing between Sunday free days
-        total_sunday_free = min(15, len(sunday_free_vars[w]))
-        
-        # For even distribution, we want to minimize variance in spacing
-        # We'll divide the year into segments and try to have roughly equal distribution
-        num_segments = min(4, total_sunday_free)  # Use 5 segments or fewer if not enough Sundays
-        if num_segments > 1:
-            segment_size = total_sunday_free // num_segments
-            for segment in range(num_segments):
-                start_idx = segment * segment_size
-                end_idx = (segment + 1) * segment_size if segment < num_segments - 1 else total_sunday_free
+        objective_terms.append(SUNDAY_YEAR_BALANCE_PENALTY * semester_diff)
                 
-                segment_sundays = sunday_free_vars[w][start_idx:end_idx]
-                
-                # Create variables for deviation from ideal distribution
-                segment_free_count = sum(segment_sundays)
-                
-                # Handle remainder when total doesn't divide evenly
-                remainder = total_sunday_free % num_segments
-                # First 'remainder' segments get one extra
-                ideal_count = segment_size + (1 if segment < remainder else 0)
-                
-                # Maximum possible deviation bounds
-                max_over = len(segment_sundays)  # All Sundays in segment could be free
-                max_under = ideal_count  # Could have 0 instead of ideal_count
-                
-                # Create penalty variables for over/under allocation
-                over_penalty = model.NewIntVar(0, max_over, f"sunday_over_{w}_{segment}")
-                under_penalty = model.NewIntVar(0, max_under, f"sunday_under_{w}_{segment}")
-                
-                # Correctly calculate deviations (handling negative cases)
-                model.Add(over_penalty >= segment_free_count - ideal_count)
-                model.Add(over_penalty >= 0)  # Ensure non-negative
-                
-                model.Add(under_penalty >= ideal_count - segment_free_count)
-                model.Add(under_penalty >= 0)  # Ensure non-negative
-                
-                # Store in optimization details
-                optimization_details['point_5_1_sunday_balance']['variables'].append({
-                                    'worker': w,
-                                    'segment': segment,
-                                    'over_penalty': over_penalty,
-                                    'under_penalty': under_penalty,
-                                    'ideal_count': ideal_count,
-                                    'segment_sundays': [worker_sundays[w][i] for i in range(start_idx, min(end_idx, len(worker_sundays)))]
-                                    })
-                    
-                sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * over_penalty)
-                sunday_balance_penalties.append(SUNDAY_YEAR_BALANCE_PENALTY * under_penalty)
-    
-    objective_terms.extend(sunday_balance_penalties)
 
     # 7 Balancing number of sundays free days across the workers (SIMPLIFIED - NO SCALE FACTOR)
     sunday_balance_across_workers_penalties = []
@@ -379,10 +332,21 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
     # Create constraint variables for each worker's total Sunday free days
     sunday_free_worker_vars = {}
     workers_with_sundays = [] 
+    worker_sundays = {}
+    sunday_free_vars = {}
 
     for w in workers + workers_past:
+        worker_sundays[w] = [d for d in sundays if d in working_days[w]]
+        sunday_free_vars[w] = []
         if len(worker_sundays[w]) == 0:
             continue
+        for sunday in worker_sundays[w]:
+            sunday_free = model.NewBoolVar(f"sunday_free_{w}_{sunday}")
+            
+            # Link to actual L shift assignment
+            model.Add(shift.get((w, sunday, "L"), 0) >= 1).OnlyEnforceIf(sunday_free)
+            model.Add(shift.get((w, sunday, "L"), 0) == 0).OnlyEnforceIf(sunday_free.Not())
+            sunday_free_vars[w].append(sunday_free)
         
         workers_with_sundays.append(w)
         # Create constraint variable for total Sunday free days
@@ -650,10 +614,6 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
             }
 
             objective_terms.append(MANAGER_MANAGER_CONFLICT_PENALTY * mgr_overlap)
-
-
-        
-
 
 
     model.Minimize(sum(objective_terms))
