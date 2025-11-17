@@ -416,7 +416,10 @@ def salsa_optimization(model, days_of_year, workers_complete, working_shift, shi
         for saturday in saturdays:
             if saturday in working_days[w] and saturday + 1 in working_days[w]:
                 # Quality weekend is True if LQ on Saturday
-                has_lq_saturday = shift[(w, saturday, "LQ")]
+                if ((w, saturday, 'LQ') in shift):
+                    has_lq_saturday = shift[(w, saturday, "LQ")]
+                else:
+                    has_lq_saturday = 0
                 quality_weekend_2_dict[(w, saturday)] = has_lq_saturday
                 quality_weekend_vars[w].append(has_lq_saturday)
         
