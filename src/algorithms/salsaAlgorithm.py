@@ -64,6 +64,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             "shifts": ["M", "T", "L", "LQ", 'LD', "F", "A", "V", "-"],
             "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
             "working_shifts": ['M', 'T', 'LD'],
+            "real_working_shifts": ['M', 'T'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -291,6 +292,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             shifts = self.parameters["shifts"]
             check_shift = self.parameters["check_shifts"]
             working_shift = self.parameters["working_shifts"]
+            real_working_shift = self.parameters["real_working_shifts"]
             
             if country != "spain":
                 shifts.remove("LD")
@@ -383,7 +385,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
             if country == "spain":
-                compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
+                compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
                         
             self.logger.info("All SALSA constraints applied")
             
