@@ -5,7 +5,84 @@ import numpy as np
 logger = get_logger(PROJECT_NAME)
 
 
-def salsa_optimization(model, days_of_year, workers, shift, pessObj, working_days, closed_holidays, week_to_days, sundays, role_by_worker):
+def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past):
+    # Store the pos_diff and neg_diff variables for later access
+    pos_diff_dict = {}
+    neg_diff_dict = {}
+    no_workers_penalties = {}
+    min_workers_penalties_shift = {}
+    min_workers_penalties_day = {}
+    inconsistent_shift_penalties = {}
+
+    # Create the objective function with heavy penalties
+    objective_terms = []
+    PESS_OBJ_PENALTY = 1000  # Penalty for deviations from pessObj
+    CONSECUTIVE_FREE_DAY = -1  # Bonus for consecutive free days
+    HEAVY_PENALTY = 300  # Penalty for days with no workers
+    MIN_WORKER_PENALTY_SHIFT = 600  # Penalty for breaking minimum worker requirements per shift
+    MIN_WORKER_PENALTY_DAY = 6000  # Penalty for breaking minimum worker requirements per day
+    SUNDAY_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced Sunday free days ALL YEAR
+    C2D_YEAR_BALANCE_PENALTY = 8  # Penalty for unbalanced C2D free days ALL YEAR
+    INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
+    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing Sundays across workers
+    C2D_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing C2D across workers
+    MANAGER_KEYHOLDER_CONFLICT_PENALTY = 30000
+    KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY = 50000
+    MANAGER_MANAGER_CONFLICT_PENALTY = 50000
+    hours_scale = 1000
+
+    optimization_details = {
+        'point_1_pessobj_deviations': {
+            'variables': {},
+            'weights': {},
+            'penalty_weight': PESS_OBJ_PENALTY
+        },
+        'point_2_consecutive_free_days': {
+            'variables': [],
+            'weight': CONSECUTIVE_FREE_DAY
+        },
+        'point_3_no_workers': {
+            'variables': {},
+            'penalty_weight': HEAVY_PENALTY
+        },
+        'point_4_1_min_workers': {
+            'variables': {},
+            'penalty_weight': MIN_WORKER_PENALTY_SHIFT
+        },
+        'point_4_2_min_workers': {
+            'variables': {},
+            'penalty_weight': MIN_WORKER_PENALTY_DAY
+        },
+        'point_5_1_sunday_balance': {
+            'variables': [],
+            'penalty_weight': SUNDAY_YEAR_BALANCE_PENALTY
+        },
+        'point_5_2_c2d_balance': {
+            'variables': [],
+            'penalty_weight': C2D_YEAR_BALANCE_PENALTY
+        },
+        'point_6_inconsistent_shifts': {
+            'variables': {},
+            'penalty_weight': INCONSISTENT_SHIFT_PENALTY
+        },
+        'point_7_sunday_balance_across_workers': {
+            'variables': [],
+            'penalty_weight': SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY
+        },
+        'point_7b_lq_balance_across_workers': {
+            'variables': [],
+            'penalty_weight': C2D_BALANCE_ACROSS_WORKERS_PENALTY
+        },
+        'point_8_manager_keyholder_conflicts': {
+            'variables': {},
+            'penalty_weights': {
+                'mgr_kh_same_off': MANAGER_KEYHOLDER_CONFLICT_PENALTY,
+                'kh_overlap': KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY,
+                'mgr_overlap': MANAGER_MANAGER_CONFLICT_PENALTY
+            }
+        }
+    }
+
     scale=10000
     objective_terms = []
     real_working_shift=['M', 'T']
@@ -460,4 +537,4 @@ def salsa_optimization(model, days_of_year, workers, shift, pessObj, working_day
     
     model.Minimize(sum(objective_terms))
 
-
+    return optimization_details
