@@ -310,7 +310,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             if sunday_vars:
                 free_sundays_semester = sum(sunday_vars)
             else:
-                # Nenhum domingo livre neste semestre → variável constante 0
                 free_sundays_semester = model.NewIntVar(0, 0, f"free_sundays_empty_{w}_{idx}")
 
             list_of_free_sundays_per_semester.append(free_sundays_semester)
@@ -335,31 +334,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     
       
-    
-  #  parts = np.array_split(days_of_year, 6) 
-  #  sunday_parts=[]
-  #  for part in parts:
-  #      sunday_part=[d for d in part if d in sundays]
-  #      sunday_parts.append(sunday_part)
-
-  #  for w in workers:
-  #      list_of_free_sundays_per_semester=[]
-  #      for part in sunday_parts:
-  #         free_sundays_semester=sum(shift[(w, d, 'L')] for d in part if (w, d, 'L') in shift)
-  #          list_of_free_sundays_per_semester.append(free_sundays_semester)
-        
-  #      max_free_sundays = model.NewIntVar(0, len(sundays), f"max_free_semester_sundays_{w}")
-  #      min_free_sundays = model.NewIntVar(0, len(sundays), f"min_free_semester_sundays_{w}") 
-        
-  #      model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
-  #      model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
-
-  #      semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-  #      model.Add(semester_diff == max_free_sundays - min_free_sundays)
-        
-  #      objective_terms.append(semester_diff*sunday_imbalance_weight)   
-            
-
     # 7. Balancing LQ's across the year
 
         
@@ -398,30 +372,13 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
 
 
-    #for w in workers:
-    #    list_of_free_LQs_per_semester=[]
-    #    for part in parts:   
-    #        LQs_semester = sum(shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift)
-    #        list_of_free_LQs_per_semester.append(LQs_semester)    
-             
-    #    max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
-    #    min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}") 
-            
-    #    model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
-    #    model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
-            
-    #    semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-    #    model.Add(semester_diff == max_free_LQs - min_free_LQs)
-        
-    #   objective_terms.append(semester_diff*LQ_imbalance_weight)          
-        
     # 8. Weeks of inconsistent shifts error
     
     
     for w in workers:
         inconsistent_weeks = []
 
-        for week, days in week_to_days:
+        for week, days in week_to_days.items():
 
             shift_M = model.NewBoolVar(f"shift_M_{w}_{week}")
             M_vars = [shift[(w, d, 'M')] for d in days if (w, d, 'M') in shift]
@@ -452,27 +409,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     objective_terms.append(sum(inconsistent_weeks) * inconsistent_number_of_weeks_weight)
 
 
-  #  for w in workers:
-  #      inconsistent_weeks=[]
-  #      for week, days in week_to_days:
-  #          
-  #          shift_M=model.NewBoolVar(f"shift_M_{w}_{week}")
-  #          model.AddBoolOr([shift[(w, d, 'M')] for d in days if (w, d, 'M') in shift ]).OnlyEnforceIf(shift_M)
-  #          model.AddBoolAnd([shift[(w, d, 'M')].Not() for d in days if (w, d, 'M') in shift]).OnlyEnforceIf(shift_M.Not())
-            
-  #          shift_T=model.NewBoolVar(f"shift_T_{w}_{week}")
-  #          model.AddBoolOr([shift[(w, d, 'T')] for d in days if (w, d, 'T') in shift]).OnlyEnforceIf(shift_T)
-  #          model.AddBoolAnd([shift[(w, d, 'T')].Not() for d in days if (w, d, 'T') in shift]).OnlyEnforceIf(shift_T.Not())
-           
-  #         is_inconsistent=model.NewBoolVar(f"is_inconsistent_{w}_{week}")
-  #         model.AddBoolAnd([shift_M, shift_T]).OnlyEnforceIf(is_inconsistent)
-  #          model.AddBoolOr([shift_M.Not(), shift_T.Not()]).OnlyEnforceIf(is_inconsistent.Not())
-
-#            inconsistent_weeks.append(is_inconsistent)
-            
-            
- #       objective_terms.append(sum(inconsistent_weeks)*inconsistent_number_of_weeks_weight)   
-            
 
     # 9. No managers/keyholders error
 
