@@ -17,7 +17,7 @@ def add_var(model, shift, w, days, code, start_weekday):
 
 def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, 
                        empty_days, closed_holidays, fixed_days_off, fixed_LQs, fixed_M, fixed_T,
-                       start_weekday, past_workers, fixed_compensation_days):
+                       start_weekday, past_workers, fixed_compensation_days, contract_type):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
     shifts2 = shifts.copy()
@@ -78,6 +78,9 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
             if d not in blocked_days:
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
+                if contract_type.get(w, 0) == 4:
+                    shift[(w, d, '-')] = model.NewBoolVar(f"{w}_Day{d}_-")
+
 
         add_var(model, shift, w, absence_set, 'A', start_weekday)
         add_var(model, shift, w, vacation - fixed_days_set - fixed_LQs_set, 'V', start_weekday)

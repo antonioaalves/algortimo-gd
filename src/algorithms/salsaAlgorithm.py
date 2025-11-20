@@ -20,7 +20,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
     LQ_attribution, compensation_days, assign_week_shift, working_day_shifts, salsa_2_consecutive_free_days,
     salsa_2_day_quality_weekend, salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free,
-    free_days_special_days
+    free_days_special_days, dynamic_empty_day
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -342,7 +342,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences,
                                        vacation_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       fixed_M, fixed_T, start_weekday, workers_past, fixed_compensation_days)
+                                       fixed_M, fixed_T, start_weekday, workers_past, fixed_compensation_days, contract_type)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -384,7 +384,9 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             if country == "spain":
                 compensation_days(model, shift, workers_complete, working_days, holidays, start_weekday, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
-                        
+
+            dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_days)
+
             self.logger.info("All SALSA constraints applied")
             
             # =================================================================

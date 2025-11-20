@@ -189,8 +189,6 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
             # If all 11 days have a working shift, that would exceed our limit of 10 consecutive days
             model.Add(consecutive_days <= max_days)
 
-
-
 def LQ_attribution(model, shift, workers, working_days, c2d):
     # #constraint for maximum of LD days in a year
     for w in workers:
@@ -589,3 +587,14 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
         logger.info(f"Worker {w}, Sundays {worker_sundays}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
 
+def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_set):
+    for w in workers:
+        if contract_type.get(w, 0) == 4:
+            for week, days in week_to_days.items():
+                # Sum shifts across days and shift types
+                empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
+                if len(working_days[w].intersection(days)) == 7:
+                    model.Add(empty_shifts == 1)
+                else:
+                    days_set = set(days)
+                    model.Add(sum(shift[(w, d, '-')] for d in (days_set - set(empty_set[w])) if (w, d, '-') in shift) == 0)
