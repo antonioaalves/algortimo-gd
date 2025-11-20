@@ -986,7 +986,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
 
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
 
-            if nbr_absences < 5:
+            if nbr_absences < 5 and nbr_vacations < 6:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
                     continue
 
@@ -1035,7 +1035,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
             if len(days_off) > 0:
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
                 continue
-            if nbr_absences <= 6:
+            if nbr_absences <= 6 and nbr_vacations < 7:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 6, days) == False:
                     continue
             atributing_days = sorted(days_set - closed_holidays)
