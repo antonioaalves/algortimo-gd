@@ -1,4 +1,10 @@
-select ea.CODIGO, FK_COLABORADOR, MATRICULA, DATA_INI, DATA_FIM, TIPO_AUSENCIA, FK_MOTIVO_AUSENCIA
+select ea.CODIGO as codigo, 
+FK_COLABORADOR as employee_id,
+MATRICULA as matricula,
+DATA_INI as data_ini,
+DATA_FIM as data_fim,
+TIPO_AUSENCIA as tipo_ausencia,
+FK_MOTIVO_AUSENCIA as fk_motivo_ausencia
 from  wfm.esc_ausencia ea
 inner join wfm.esc_colaborador ec  on ec.codigo = ea.fk_colaborador 
 where  1=1

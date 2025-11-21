@@ -57,10 +57,10 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
         
         # REQUIRED COLUMNS CHECK
         required_columns = [
-            'COLABORADOR',  # Employee identifier (matricula)
-            'DATA',         # Date
-            'TIPO_TURNO',   # Shift type (M, T, MoT, P, etc.)
-            'HORARIO',      # Work status (H, L, F, V, etc.)
+            'employee_id',  # Employee identifier
+            'schedule_day', # Schedule date
+            'tipo_turno',   # Shift type (M, T, MoT, P, etc.)
+            'horario',      # Work status (H, L, F, V, etc.)
         ]
         
         missing_columns = [col for col in required_columns if col not in df_calendario.columns]
@@ -68,15 +68,15 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
             return False, f"df_calendario missing required columns: {missing_columns}"
         
         # DATA TYPE VALIDATION
-        # Check DATA column is datetime
-        if not pd.api.types.is_datetime64_any_dtype(df_calendario['DATA']):
-            return False, "df_calendario['DATA'] column is not datetime type"
+        # Check schedule_day column is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_calendario['schedule_day']):
+            return False, "df_calendario['schedule_day'] column is not datetime type"
         
         # Check for null values in critical columns
         null_checks = {
-            'COLABORADOR': df_calendario['COLABORADOR'].isnull().sum(),
-            'DATA': df_calendario['DATA'].isnull().sum(),
-            'TIPO_TURNO': df_calendario['TIPO_TURNO'].isnull().sum(),
+            'employee_id': df_calendario['employee_id'].isnull().sum(),
+            'schedule_day': df_calendario['schedule_day'].isnull().sum(),
+            'tipo_turno': df_calendario['tipo_turno'].isnull().sum(),
         }
         
         null_columns = [col for col, null_count in null_checks.items() if null_count > 0]
@@ -86,19 +86,19 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
             # Don't fail, just warn - nulls might be valid in some cases
         
         # CONTENT VALIDATION
-        # Check TIPO_TURNO values are valid
+        # Check tipo_turno values are valid
         valid_tipo_turno = ['M', 'T', 'MoT', 'P', 'F', 'L', 'V', 'A', 'DFS', 'OUT', 'NL', '-']
-        invalid_tipos = df_calendario[~df_calendario['TIPO_TURNO'].isin(valid_tipo_turno)]['TIPO_TURNO'].unique()
+        invalid_tipos = df_calendario[~df_calendario['tipo_turno'].isin(valid_tipo_turno)]['tipo_turno'].unique()
         if len(invalid_tipos) > 0:
-            logger.warning(f"df_calendario contains unexpected TIPO_TURNO values: {invalid_tipos}")
+            logger.warning(f"df_calendario contains unexpected tipo_turno values: {invalid_tipos}")
             # Don't fail - might be new valid types
         
-        # Check HORARIO values are valid (if column exists)
-        if 'HORARIO' in df_calendario.columns:
-            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D']
-            invalid_horarios = df_calendario[~df_calendario['HORARIO'].isin(valid_horario)]['HORARIO'].unique()
+        # Check horario values are valid (if column exists)
+        if 'horario' in df_calendario.columns:
+            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D', '']
+            invalid_horarios = df_calendario[~df_calendario['horario'].isin(valid_horario)]['horario'].unique()
             if len(invalid_horarios) > 0:
-                logger.warning(f"df_calendario contains unexpected HORARIO values: {invalid_horarios}")
+                logger.warning(f"df_calendario contains unexpected horario values: {invalid_horarios}")
         
         # DATE RANGE VALIDATION (if provided)
         if start_date and end_date:
@@ -106,8 +106,8 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
                 start_dt = pd.to_datetime(start_date)
                 end_dt = pd.to_datetime(end_date)
                 
-                min_date = df_calendario['DATA'].min()
-                max_date = df_calendario['DATA'].max()
+                min_date = df_calendario['schedule_day'].min()
+                max_date = df_calendario['schedule_day'].max()
                 
                 if min_date > start_dt:
                     logger.warning(f"df_calendario min date ({min_date}) is after start_date ({start_dt})")
@@ -119,7 +119,7 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
                 logger.warning(f"Could not validate date range: {e}")
         
         # EMPLOYEE COUNT CHECK
-        unique_employees = df_calendario['COLABORADOR'].nunique()
+        unique_employees = df_calendario['employee_id'].nunique()
         if unique_employees == 0:
             return False, "df_calendario has 0 unique employees"
         

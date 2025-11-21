@@ -296,6 +296,17 @@ class DescansosDataModel(BaseDataModel):
             except Exception as e:
                 self.logger.error(f"Error loading df_festivos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
+            
+            # Treat df_festivos (rename 'database' to 'schedule_day', handle duplicates)
+            try:
+                from src.data_models.functions.data_treatment_functions import treat_df_feriados
+                success, df_festivos, error_msg = treat_df_feriados(df_festivos)
+                if not success:
+                    self.logger.error(f"Festivos treatment failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+            except Exception as e:
+                self.logger.error(f"Error treating df_festivos: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
 
             # Load start_date2 and end_date2
             try:
@@ -2719,7 +2730,7 @@ class DescansosDataModel(BaseDataModel):
             def assign_dia_tipo(group):
                 has_F = (group['TIPO_TURNO'] == 'F').any()  # grupo tem pelo menos 1 F
                 # aplica a lógica linha a linha
-                group['DIA_TIPO'] = group.apply(
+                group['dia_tipo'] = group.apply(
                     lambda row: 'domYf' if ((has_F or row['WD'] == 'Sun') and row['HORARIO'] != 'F') else row['WD'],
                     axis=1
                 )
@@ -2754,7 +2765,7 @@ class DescansosDataModel(BaseDataModel):
                 admission_date = row['data_admissao'] if pd.notna(row['data_admissao']) else pd.Timestamp('1900-01-01')
                 if row['DATA'] >= admission_date:
                     return row['HORARIO']
-                elif row['DATA'] < admission_date and row['DIA_TIPO'] == 'domYf':
+                elif row['DATA'] < admission_date and row['dia_tipo'] == 'domYf':
                     return 'L_'
                 else:
                     return 'NL'

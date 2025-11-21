@@ -179,7 +179,7 @@ if not sec_to_proc.empty:
                                 data_manager, process_manager = create_components(
                                     use_db=True,  # Always use database 
                                     no_tracking=False,
-                                    config=config_manager,
+                                    config=config_manager.system_config,
                                     project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
                                 )
                                 

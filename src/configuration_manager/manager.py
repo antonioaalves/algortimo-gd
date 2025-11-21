@@ -109,6 +109,49 @@ class ConfigurationManager:
         """
         return self.system.project_name
     
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Dictionary-like get method for backward compatibility with legacy code.
+        
+        This allows ConfigurationManager to be used where a dict is expected.
+        Maps common keys to their corresponding attributes.
+        
+        Args:
+            key: Configuration key to retrieve
+            default: Default value if key not found
+            
+        Returns:
+            The configuration value or default
+            
+        Example:
+            config.get('project_name')  # Returns config.project_name
+            config.get('storage_strategy')  # Returns config.system.storage_strategy
+        """
+        # Map common dictionary keys to ConfigurationManager attributes
+        key_mappings = {
+            'project_name': lambda: self.system.project_name,
+            'environment': lambda: self.system.environment,
+            'use_db': lambda: self.system.use_db,
+            'project_root_dir': lambda: self.system.project_root_dir,
+            'storage_strategy': lambda: self.system.storage_strategy,
+            'available_algorithms': lambda: self.system.available_algorithms,
+            'logging': lambda: self.system.logging_config,
+            'algorithm_defaults': lambda: self.parameters.get_algorithm_defaults(),
+            'stages': lambda: self.stages.stages,
+        }
+        
+        if key in key_mappings:
+            try:
+                return key_mappings[key]()
+            except (AttributeError, KeyError):
+                return default
+        
+        # Try to access as attribute on system config
+        if hasattr(self.system, key):
+            return getattr(self.system, key, default)
+        
+        return default
+    
     def get_storage_config(self) -> Dict[str, Any]:
         """
         Get storage configuration for data containers.

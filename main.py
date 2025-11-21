@@ -33,7 +33,7 @@ setup_logger(
 logger = get_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'))
 
 # Import components that might use logging after logger is initialized
-from src.services.example_service import AlgoritmoGDService
+from src.services.algoritmo_gd import AlgoritmoGDService
 
 @click.group()
 def cli():
@@ -71,7 +71,7 @@ def run_process(use_db, no_tracking):
             data_manager, process_manager = create_components(
                 use_db=use_db, 
                 no_tracking=no_tracking, 
-                config=config_manager, 
+                config=config_manager.system_config, 
                 project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
             )
 
@@ -97,7 +97,7 @@ def run_process(use_db, no_tracking):
         click.echo()
         
         with data_manager:
-            external_call_dict = config_manager.parameter_config.get('external_call_data', {})
+            external_call_dict = config_manager.parameters.external_call_data
             logger.debug(f"External call dict: {external_call_dict}")
             # Create service with data and process managers
             service = AlgoritmoGDService(

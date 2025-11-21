@@ -58,10 +58,10 @@ class AlgoritmoGDService(BaseService):
         # Work around the config property issue
         if process_manager:
             try:
-                process_manager.config = config_manager
+                process_manager.config = config_manager.system
             except AttributeError:
                 # If config is a property without setter, use __dict__ directly
-                process_manager.__dict__['config'] = config_manager
+                process_manager.__dict__['config'] = config_manager.system
 
         super().__init__(
             data_manager=data_manager, 
@@ -407,9 +407,6 @@ class AlgoritmoGDService(BaseService):
                 self.logger.info(f"Looking for defaults with stage_sequence: {stage_sequence}, type: {type(stage_sequence)}")
                 stage_config = self.config_manager.stages.stages.get('processing', {})
                 decisions = stage_config.get('decisions', {})
-
-                self.logger.info(f"DEBUG: Decisions: {decisions}")
-                self.logger.info(f"DEBUG: Decisions type: {type(decisions)}")
 
                 # Get algorithm name from current_decisions (set in treat_params_substage)
                 algorithm_name = self.process_manager.current_decisions.get(stage_sequence, {}).get('algorithm_name', '')
@@ -1145,10 +1142,8 @@ class AlgoritmoGDService(BaseService):
                 # Get calendario info
                 valid_load_calendario_info = self.data_model.load_calendario_info(
                     data_manager=self.data_manager, 
-                    process_id=self.external_data['current_process_id'],
                     posto_id=posto_id,
-                    start_date=self.external_data['start_date'],
-                    end_date=self.external_data['end_date']
+                    process_id=self.external_data['current_process_id'],
                 )
                 if not valid_load_calendario_info:
                     #self.logger.error("Error loading calendario info")

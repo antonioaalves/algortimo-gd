@@ -1,7 +1,7 @@
-SELECT DISTINCT cpehd.PROCESS_ID,
-		cpehd.EMPLOYEE_ID,
-		ec.MATRICULA,
-		cpehd.SCHEDULE_DAY,
+SELECT DISTINCT cpehd.PROCESS_ID as process_id,
+		cpehd.EMPLOYEE_ID as employee_id,
+		ec.MATRICULA as matricula,
+		cpehd.SCHEDULE_DAY as schedule_day,
 		TIPO_DIA,
 		DESCANSO,
 		/*--HORA_INICIO

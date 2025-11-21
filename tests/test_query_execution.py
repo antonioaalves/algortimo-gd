@@ -30,7 +30,7 @@ def test_query_execution():
         
         # Create data manager
         print("\n1. Creating data manager...")
-        data_manager, _ = create_components(use_db=True, config=config_manager)
+        data_manager, _ = create_components(use_db=True, config=config_manager.system_config)
         print("✓ Data manager created successfully")
         
         # Test connection
@@ -199,7 +199,7 @@ def test_database_connection_only():
         from base_data_project.utils import create_components
         
         print("Creating data manager...")
-        data_manager, _ = create_components(use_db=True, config=config_manager)
+        data_manager, _ = create_components(use_db=True, config=config_manager.system_config)
         
         print("Testing connection...")
         with data_manager:

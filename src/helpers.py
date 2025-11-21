@@ -1274,9 +1274,10 @@ def ocorrencia_b(sequencia: List[float]) -> float:
     
     return -1  # Case where there are not enough pairs, return -1
 
-def count_open_holidays(matriz_festivos: pd.DataFrame, tipo_contrato: int) -> List[int]:
+def count_open_holidays(df_festivos: pd.DataFrame, tipo_contrato: int) -> List[int]:
     """
     Helper method to count open holidays based on contract type.
+    For 2-day and 3-day contract types, we need to count the number of days that he is working on a feriado.
     
     Args:
         matriz_festivos: DataFrame with holiday data
@@ -1287,19 +1288,20 @@ def count_open_holidays(matriz_festivos: pd.DataFrame, tipo_contrato: int) -> Li
     """
     try:
         # Convert data column to datetime if not already
-        matriz_festivos['data'] = pd.to_datetime(matriz_festivos['data'])
+        logger.info(f"DEBUG: df_festivos columns: {df_festivos.columns}")
+        df_festivos['schedule_day'] = pd.to_datetime(df_festivos['schedule_day'])
         
         if tipo_contrato == 3:
             # Count holidays Monday to Thursday (weekday 0-3)
-            weekday_holidays = matriz_festivos[
-                (matriz_festivos['data'].dt.weekday >= 0) & 
-                (matriz_festivos['data'].dt.weekday <= 3)
+            weekday_holidays = df_festivos[
+                (df_festivos['schedule_day'].dt.weekday >= 0) & 
+                (df_festivos['schedule_day'].dt.weekday <= 3)
             ]
         elif tipo_contrato == 2:
             # Count holidays Monday to Friday (weekday 0-4)
-            weekday_holidays = matriz_festivos[
-                (matriz_festivos['data'].dt.weekday >= 0) & 
-                (matriz_festivos['data'].dt.weekday <= 4)
+            weekday_holidays = df_festivos[
+                (df_festivos['schedule_day'].dt.weekday >= 0) & 
+                (df_festivos['schedule_day'].dt.weekday <= 4)
             ]
         else:
             weekday_holidays = pd.DataFrame()
@@ -1374,15 +1376,15 @@ def calcular_folgas2(semana_df):
     ]
     
     l_res = 0
-    if (len(dias_trabalho[dias_trabalho['DIA_TIPO'] == 'domYf']) > 0 and 
+    if (len(dias_trabalho[dias_trabalho['dia_tipo'] == 'domYf']) > 0 and 
         len(dias_trabalho[(dias_trabalho['WDAY'] == 7) & 
                          (dias_trabalho['HORARIO'] == 'H') & 
-                         (dias_trabalho['DIA_TIPO'] != 'domYf')]) > 0):
+                         (dias_trabalho['dia_tipo'] != 'domYf')]) > 0):
         l_res = 1
     
     # Identify holidays
     feriados = semana_df[
-        (semana_df['DIA_TIPO'] == 'domYf') & 
+        (semana_df['dia_tipo'] == 'domYf') & 
         (semana_df['WDAY'] != 1) & 
         semana_df['HORARIO'].isin(['H', 'OUT'])
     ]
@@ -1406,12 +1408,12 @@ def calcular_folgas3(semana_df):
     ]
     
     # Work days Friday and Saturday
-    dias_h = len(dias_trabalho[dias_trabalho['DIA_TIPO'] != 'domYf'])
+    dias_h = len(dias_trabalho[dias_trabalho['dia_tipo'] != 'domYf'])
     l_res = max(min(dias_h, semana_h - 3), 0)
     
     # Identify holidays
     feriados = semana_df[
-        (semana_df['DIA_TIPO'] == 'domYf') & 
+        (semana_df['dia_tipo'] == 'domYf') & 
         (semana_df['WDAY'] != 1)
     ]
     

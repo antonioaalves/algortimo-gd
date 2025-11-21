@@ -183,6 +183,12 @@ data/csvs/*
 # Secundary scripts
 secundary-scripts/
 
+# Documentation (generated/working docs)
+docs/
+
+# SQL queries directory
+src/sql_querys/
+
 # Output and processing results
 output/
 results/
@@ -196,6 +202,8 @@ reports/
 *.xls
 *.json
 !src/settings/*.json
+# Exception: ignore sensitive connection parameters
+src/settings/oracle_connection_parameters.json
 *.parquet
 *.pickle
 *.pkl

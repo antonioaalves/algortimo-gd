@@ -13,7 +13,8 @@
             "GD_consideraFestivos",
             "GD_convenioBD",
             "NUM_DIAS_CONS",
-            "codigos_motivo_ausencia"
+            "codigos_motivo_ausencia",
+            "l_dom_days"
         ],
 
         "parameters_defaults": {
@@ -32,16 +33,17 @@
                 2101,
                 8999,
                 3028
-            ]
+            ],
+            "l_dom_days": [1]
         }
     }, 
     
     "external_call_data": {
-        "current_process_id": 5613,
+        "current_process_id": 10890,
         "api_proc_id": 999,
-        "wfm_proc_id": 5613,
+        "wfm_proc_id": 10890,
         "wfm_user": "WFM",
-        "start_date": "2025-01-01",
+        "start_date": "2025-12-01",
         "end_date": "2025-12-31",
         "wfm_proc_colab": ""
     }

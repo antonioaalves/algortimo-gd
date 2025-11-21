@@ -128,7 +128,7 @@ class BaseDescansosDataModel(ABC):
                 # df_estimativas borns as an empty dataframe
                 df_estimativas = pd.DataFrame()
 
-                columns_select = ['nome', 'emp', 'fk_colaborador', 'fk_tipo_posto', 'loja', 'secao', 'h_tm_in', 'h_tm_out', 'h_tt_in', 'h_tt_out', 'h_seg_in', 'h_seg_out', 'h_ter_in', 'h_ter_out', 'h_qua_in', 'h_qua_out', 'h_qui_in', 'h_qui_out', 'h_sex_in', 'h_sex_out', 'h_sab_in', 'h_sab_out', 'h_dom_in', 'h_dom_out', 'h_fer_in', 'h_fer_out'] # TODO: define what columns to select
+                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto', 'loja', 'secao', 'h_tm_in', 'h_tm_out', 'h_tt_in', 'h_tt_out', 'h_seg_in', 'h_seg_out', 'h_ter_in', 'h_ter_out', 'h_qua_in', 'h_qua_out', 'h_qui_in', 'h_qui_out', 'h_sex_in', 'h_sex_out', 'h_sab_in', 'h_sab_out', 'h_dom_in', 'h_dom_out', 'h_fer_in', 'h_fer_out'] # TODO: define what columns to select
                 self.logger.info(f"Columns to select: {columns_select}")
             except Exception as e:
                 self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
@@ -159,15 +159,15 @@ class BaseDescansosDataModel(ABC):
                 return False, "errSubproc", str(e)
 
             try:
-                self.logger.info("Loading df_feriados from data manager")
-                # feriados information
-                query_path = _config.paths.sql_auxiliary_paths.get('df_feriados', '')
-                if query_path == '':
-                    self.logger.warning("df_feriados query path not found in config")
-                df_feriados = data_manager.load_data('df_feriados', query_file=query_path)
-                self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
+                self.logger.info("Getting df_feriados from auxiliary_data (already loaded and treated)")
+                # Use already-loaded and treated df_feriados from auxiliary_data
+                df_feriados = self.auxiliary_data.get('df_feriados', pd.DataFrame())
+                if df_feriados.empty:
+                    self.logger.warning("df_feriados not found in auxiliary_data or is empty")
+                else:
+                    self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
             except Exception as e:
-                self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
+                self.logger.error(f"Error getting df_feriados from auxiliary_data: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
             try:
@@ -216,7 +216,6 @@ class BaseDescansosDataModel(ABC):
                 self.raw_data['df_estimativas'] = df_estimativas.copy()
                 self.auxiliary_data['df_turnos'] = df_turnos.copy()
                 self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
-                self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_faixa_horario'] = df_faixa_horario.copy()
                 self.auxiliary_data['df_orcamento'] = df_orcamento.copy()
                 self.auxiliary_data['df_granularidade'] = df_granularidade.copy()
@@ -368,8 +367,8 @@ class BaseDescansosDataModel(ABC):
                 self.logger.info(f"Processing df_turnos data - Initial shape: {df_turnos.shape}")
                 # Filter df_turnos by fk_tipo_posto
                 # TODO: change this to be filtered by the employees from valid_emp that belong to this fk_tipo_posto
-                employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == fk_tipo_posto]['fk_colaborador']
-                df_turnos = df_turnos[df_turnos['fk_colaborador'] == employees_id_list_from_posto].copy()
+                employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == fk_tipo_posto]['employee_id']
+                df_turnos = df_turnos[df_turnos['employee_id'] == employees_id_list_from_posto].copy()
                 self.logger.info(f"After filtering by fk_tipo_posto={fk_tipo_posto}, df_turnos shape: {df_turnos.shape}")
                 
                 # Define time columns for min/max calculations
@@ -395,7 +394,7 @@ class BaseDescansosDataModel(ABC):
                 df_turnos['h_tt_in'] = df_turnos['h_tt_in'].fillna(df_turnos[columns_in].min(axis=1, skipna=True))
                 
                 # Select relevant columns
-                df_turnos = df_turnos[['emp', 'fk_tipo_posto', 'min_in1', 'h_tm_out', 'h_tt_in', 'max_out2']].copy()
+                df_turnos = df_turnos[['matricula', 'fk_tipo_posto', 'min_in1', 'h_tm_out', 'h_tt_in', 'max_out2']].copy()
                 
                 # Fill remaining missing values
                 df_turnos['min_in1'] = df_turnos['min_in1'].fillna(df_turnos['h_tt_in'])
@@ -460,6 +459,11 @@ class BaseDescansosDataModel(ABC):
             
             # Merge with estrutura_wfm
             df_estrutura_wfm_filtered = df_estrutura_wfm[df_estrutura_wfm['fk_tipo_posto'] == fk_tipo_posto].copy()
+            
+            # Ensure fk_unidade is string for consistent merge operations (it's an identifier like 'U0038', not a number)
+            if 'fk_unidade' in df_estrutura_wfm_filtered.columns:
+                df_estrutura_wfm_filtered['fk_unidade'] = df_estrutura_wfm_filtered['fk_unidade'].astype(str)
+            
             df_turnos = pd.merge(df_estrutura_wfm_filtered, df_turnos, on='fk_tipo_posto', how='left')
             self.logger.info(f"After merge with estrutura_wfm, df_turnos shape: {df_turnos.shape}")
             
@@ -472,39 +476,23 @@ class BaseDescansosDataModel(ABC):
             df_unidade = pd.DataFrame({'fk_unidade': [fk_unidade]})
             df_data = df_data.assign(key=1).merge(df_unidade.assign(key=1), on='key').drop('key', axis=1)
             
+            # Ensure fk_unidade is string to match df_turnos (it's an identifier like 'U0038', not a number)
+            # This prevents type mismatch errors during merge
+            df_data['fk_unidade'] = df_data['fk_unidade'].astype(str)
+            
             # Process holidays
-            df_feriados_filtered = df_feriados[df_feriados['fk_unidade'] == fk_unidade].copy()
+            # df_feriados from auxiliary_data is already treated and filtered for the date range
+            # Just filter by fk_unidade and rename column for merge
+            #if 'fk_unidade' in df_feriados.columns:
+            #    df_feriados['fk_unidade'] = df_feriados['fk_unidade'].astype(str)
+            df_feriados_filtered = df_feriados.copy()
             
             if len(df_feriados_filtered) > 0:
-                # df_feriados_filtered['data'] = pd.to_datetime(df_feriados_filtered['data'])
-
-                if len(df_feriados_filtered) > 0:
-                    # Check what columns are available
-                    self.logger.info(f"df_feriados_filtered columns: {df_feriados_filtered.columns.tolist()}")
-                    
-                    # Check if 'data' column exists, otherwise try 'database'
-                    if 'data' in df_feriados_filtered.columns:
-                        df_feriados_filtered['data'] = pd.to_datetime(df_feriados_filtered['data'])
-                    elif 'database' in df_feriados_filtered.columns:
-                        df_feriados_filtered['data'] = pd.to_datetime(df_feriados_filtered['database'])
-                    else:
-                        self.logger.error(f"No date column found in df_feriados_filtered. Available columns: {df_feriados_filtered.columns.tolist()}")
-                        # Set to empty DataFrame if no date column
-                        df_feriados_filtered = pd.DataFrame()
-                else:
-                    self.logger.info("df_feriados_filtered is empty, skipping date conversion")                
-
+                self.logger.info(f"df_feriados_filtered columns: {df_feriados_filtered.columns.tolist()}")
                 df_feriados_filtered['tipo_dia'] = 'feriado'
                 
-                # Filter holidays by date range
-                start_dt = pd.to_datetime(start_date)
-                end_dt = pd.to_datetime(end_date)
-                year = start_dt.year
-                
-                mask = ((df_feriados_filtered['data'] >= start_dt) & (df_feriados_filtered['data'] <= end_dt)) | \
-                    (df_feriados_filtered['data'] < pd.to_datetime('2000-12-31'))
-                df_feriados_filtered = df_feriados_filtered[mask].copy()
-                df_feriados_filtered['data'] = pd.Series(df_feriados_filtered['data']).apply(lambda x: x.replace(year=year))
+                # Rename 'schedule_day' to 'data' for merge with df_data
+                df_feriados_filtered = df_feriados_filtered.rename(columns={'schedule_day': 'data'})
                 
                 # Merge with data
                 df_data = pd.merge(df_data, pd.DataFrame(df_feriados_filtered[['fk_unidade', 'data', 'tipo_dia']]), 
@@ -983,7 +971,24 @@ class BaseDescansosDataModel(ABC):
 
                 self.rare_data['df_results'] = results.get('core_results', {}).get('formatted_schedule', pd.DataFrame())
                 #self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
-                self.rare_data['df_results'].to_csv(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
+                
+                # Save CSV file for debugging (using config manager if available)
+                try:
+                    if hasattr(self, 'config_manager') and hasattr(self.config_manager, 'paths'):
+                        output_dir = self.config_manager.paths.get_output_dir()
+                    else:
+                        # Fallback to hardcoded path if config_manager not available
+                        output_dir = os.path.join(root_dir, 'data', 'output')
+                    
+                    process_id = self.external_call_data.get("current_process_id", "")
+                    posto_id = self.auxiliary_data.get("current_posto_id", "")
+                    self.rare_data['df_results'].to_csv(
+                        os.path.join(output_dir, f'df_results-{process_id}-{posto_id}.csv'),
+                        index=False,
+                        encoding='utf-8'
+                    )
+                except Exception as csv_error:
+                    self.logger.warning(f"Failed to save df_results CSV file: {csv_error}")
                     
                 results_df = self.rare_data.get('df_results', {})
                 #with open(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}.json'), 'w', encoding='utf-8') as f:
@@ -1028,7 +1033,7 @@ class BaseDescansosDataModel(ABC):
             final_df = self.rare_data['df_results'].copy()
             df_colaborador = self.medium_data['df_colaborador'].copy()
             self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
-            df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao', 'data_demissao']]
+            df_colaborador = df_colaborador[['employee_id', 'matricula', 'data_admissao', 'data_demissao']]
 
             # Adding validation to fall gracefully
             if final_df.empty:
@@ -1094,10 +1099,27 @@ class BaseDescansosDataModel(ABC):
             self.logger.info("Converting types out")
             final_df = convert_types_out(pd.DataFrame(final_df))
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
-            final_df = final_df.drop(columns=['matricula_int', 'horario', 'fk_colaborador', 'data_admissao', 'matricula_int', 'colaborador'])
+            final_df = final_df.drop(columns=['matricula_int', 'horario', 'employee_id', 'data_admissao', 'matricula_int', 'colaborador'])
             final_df = final_df.rename(columns={'matricula': 'colaborador'})
             final_df['colaborador'] = final_df['colaborador'].astype(str)
-            final_df.to_csv(os.path.join('data', 'output', f'df_insert_results-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
+            
+            # Save CSV file for debugging (using config manager if available)
+            try:
+                if hasattr(self, 'config_manager') and hasattr(self.config_manager, 'paths'):
+                    output_dir = self.config_manager.paths.get_output_dir()
+                else:
+                    # Fallback to hardcoded path if config_manager not available
+                    output_dir = os.path.join(root_dir, 'data', 'output')
+                
+                process_id = self.external_call_data.get("current_process_id", "")
+                posto_id = self.auxiliary_data.get("current_posto_id", "")
+                final_df.to_csv(
+                    os.path.join(output_dir, f'df_insert_results-{process_id}-{posto_id}.csv'),
+                    index=False,
+                    encoding='utf-8'
+                )
+            except Exception as csv_error:
+                self.logger.warning(f"Failed to save final_df CSV file: {csv_error}")
             #self.formatted_data['stage1_schedule'].to_csv(os.path.join('data', 'output', f'stage1_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
             #self.formatted_data['stage2_schedule'].to_csv(os.path.join('data', 'output', f'stage2_schedule-{self.external_call_data.get("current_process_id", "")}.csv'), index=False, encoding='utf-8')
             self.logger.info("format_results completed successfully. Storing final_df in formatted_data.")
