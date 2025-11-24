@@ -36,16 +36,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
 
         required_parameters = ['admissao_proporcional']
-        missing_parameters = [param for param in required_parameters if param not in algorithm_treatment_params['treatment_params'] ]
         logger.info(f"algorithm_treatment_params: {algorithm_treatment_params}")
         
         if missing_dataframes:
             raise ValueError(f"Missing required DataFrames: {missing_dataframes}")
-        
-        if missing_parameters:
-            raise ValueError(f"Missing required parameters: {missing_parameters}")
-        
-    
+
         
         # Extract DataFrames
         #matriz_colaborador_gd = pd.read_csv('src/algorithms/model_salsa/data/matriz_colaborador_salsa.csv', engine='python')
@@ -56,8 +51,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
 
-        admissao_proporcional = algorithm_treatment_params['treatment_params']['admissao_proporcional']
-        num_dias_cons = int(algorithm_treatment_params['constraint_params']['NUM_DIAS_CONS'])
+        admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
+        num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
 
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
@@ -89,7 +84,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'data_admissao', 'data_demissao','L_DOM_SALSA', 'L_RES', 'L_RES2', 'seed_5_6', 'n_sem_a_folga']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
-        required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno', 'carga_diaria']
+        required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'horario', 'carga_diaria']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
         required_estimativas_cols = ['data', 'turno', 'media_turno', 'max_turno', 'min_turno', 'pess_obj', 'sd_turno', 'fk_tipo_posto', 'wday' ]
         required_estimativas_cols = [s.lower() for s in required_estimativas_cols]
@@ -252,7 +247,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         ]['data'].dt.dayofyear.unique().tolist())
         
         closed_holidays = sorted(matriz_calendario_gd[
-            matriz_calendario_gd['tipo_turno'] == "F"
+            matriz_calendario_gd['horario'] == "F"
         ]['data'].dt.dayofyear.unique().tolist())
         
         special_days = sorted(set(holidays))
@@ -397,14 +392,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 continue
             else:
                 logger.info(f"PAST WORKERS: Calendar data found for worker {w}")
-            shift_M[w] = worker_calendar[worker_calendar['tipo_turno'] == 'M']['data'].dt.dayofyear.tolist()
-            shift_T[w] = worker_calendar[worker_calendar['tipo_turno'] == 'T']['data'].dt.dayofyear.tolist()
-            fixed_LQs[w] = worker_calendar[worker_calendar['tipo_turno'] == 'LQ']['data'].dt.dayofyear.tolist()
-            fixed_days_off[w] = worker_calendar[worker_calendar['tipo_turno'] == 'L']['data'].dt.dayofyear.tolist()
-            fixed_compensation_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'LD']['data'].dt.dayofyear.tolist()
-            empty_days[w] = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-            missing_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            worker_holiday[w] = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
+            shift_M[w] = worker_calendar[worker_calendar['horario'] == 'M']['data'].dt.dayofyear.tolist()
+            shift_T[w] = worker_calendar[worker_calendar['horario'] == 'T']['data'].dt.dayofyear.tolist()
+            fixed_LQs[w] = worker_calendar[worker_calendar['horario'] == 'LQ']['data'].dt.dayofyear.tolist()
+            fixed_days_off[w] = worker_calendar[worker_calendar['horario'] == 'L']['data'].dt.dayofyear.tolist()
+            fixed_compensation_days[w] = worker_calendar[worker_calendar['horario'] == 'LD']['data'].dt.dayofyear.tolist()
+            empty_days[w] = worker_calendar[worker_calendar['horario'] == '-']['data'].dt.dayofyear.tolist()
+            missing_days[w] = worker_calendar[worker_calendar['horario'] == 'V']['data'].dt.dayofyear.tolist()
+            worker_holiday[w] = worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP')]['data'].dt.dayofyear.tolist()
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
 
@@ -437,16 +432,16 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
 
             # Find days with specific statuses
-            empty_days[w] = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-            missing_days[w] = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            worker_holiday[w] = worker_calendar[(worker_calendar['tipo_turno'] == 'A') | (worker_calendar['tipo_turno'] == 'AP')]['data'].dt.dayofyear.tolist()
-            fixed_days_off[w] = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
-            free_day_complete_cycle[w] = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
+            empty_days[w] = worker_calendar[worker_calendar['horario'] == '-']['data'].dt.dayofyear.tolist()
+            missing_days[w] = worker_calendar[worker_calendar['horario'] == 'V']['data'].dt.dayofyear.tolist()
+            worker_holiday[w] = worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP')]['data'].dt.dayofyear.tolist()
+            fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L')]['data'].dt.dayofyear.tolist()
+            free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = []
-            shift_M[w] = worker_calendar[worker_calendar['tipo_turno'] == 'M']['data'].dt.dayofyear.tolist()
-            shift_T[w] = worker_calendar[worker_calendar['tipo_turno'] == 'T']['data'].dt.dayofyear.tolist()
+            shift_M[w] = worker_calendar[worker_calendar['horario'] == 'M']['data'].dt.dayofyear.tolist()
+            shift_T[w] = worker_calendar[worker_calendar['horario'] == 'T']['data'].dt.dayofyear.tolist()
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
             if w not in past_workers :

@@ -15,7 +15,7 @@ from base_data_project.utils import create_components
 # Import project-specific components
 from src.settings.log_parameters import log_parameters
 from src.configuration_manager.instance import get_config
-from src.services.example_service import AlgoritmoGDService
+from src.services.algoritmo_gd import AlgoritmoGDService
 
 config_manager = get_config()
 
