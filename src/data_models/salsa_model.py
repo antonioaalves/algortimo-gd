@@ -518,6 +518,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
+                self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
@@ -562,6 +563,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Treat params
             self.logger.info(f"Treating parameters in load_process_data")
             df_params = self.auxiliary_data['df_params'].copy()
+            algorithm_treatment_params = self.algorithm_treatment_params
             params_names_list = self.config_manager.parameters.get_parameter_names()
             params_defaults = self.config_manager.parameters.get_parameter_defaults()
             self.logger.info(f"df_params before treatment:\n{df_params}")
@@ -585,9 +587,14 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Workaround feito para registar o nome do algoritmo - assim usa-se uma funcionalidade base do base-data-project
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
+
+                if param_name == 'NUM_DIAS_CONS':
+                    algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
             self.logger.info(f"Treating parameters completed successfully")
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name
+            # Store algorithm_treatment_params in auxiliary_data
+            self.auxiliary_data['algorithm_treatment_params'] = algorithm_treatment_params
             return True, "", ""
         except Exception as e:
             self.logger.error(f"Error treating parameters: {e}", exc_info=True)
@@ -708,6 +715,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['employees_id_list_for_posto'] = employees_id_list_for_posto
                 self.auxiliary_data['employees_id_90_list'] = employees_id_90_list
                 self.auxiliary_data['past_employees_id_list'] = past_employees_id_list
+
+                # Save important information in algorithm_treatment_params
+                self.algorithm_treatment_params['employees_id_list_for_posto'] = employees_id_list_for_posto
+                self.algorithm_treatment_params['employees_id_90_list'] = employees_id_90_list
+
                 self.logger.info(f"load_colaborador_info completed successfully.")
                 return True, "", ""
             except KeyError as e:

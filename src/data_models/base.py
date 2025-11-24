@@ -959,6 +959,7 @@ class BaseDescansosDataModel(ABC):
 
             try:
                 self.logger.info(f"Running algorithm {algorithm_name}")
+                self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
                 results = algorithm.run(data=self.medium_data, algorithm_treatment_params=self.algorithm_treatment_params)
 
                 if not results:
