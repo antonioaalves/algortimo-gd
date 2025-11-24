@@ -195,14 +195,15 @@ def assign_week_shift(model, shift, workers, week_to_days, working_days, worker_
 def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
     #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
-    for w in workers:
-        for d in working_days[w]:
-            total_shifts = []
-            for s in check_shift:
-                if (w, d, s) in shift:
-                    total_shifts.append(shift[(w, d, s)])
-            if total_shifts:
-                model.add_exactly_one(total_shifts)
+    if workers:
+        for w in workers:
+            for d in working_days[w]:
+                total_shifts = []
+                for s in check_shift:
+                    if (w, d, s) in shift:
+                        total_shifts.append(shift[(w, d, s)])
+                if total_shifts:
+                    model.add_exactly_one(total_shifts)
     for w in workers_complete_cycle:
         for d in working_days[w]:
             # Ensure that the worker can only have M, T, L, LQ, LD and F in working days

@@ -186,12 +186,13 @@ class SalsaAlgorithm(BaseAlgorithm):
             # 5. FINAL VALIDATION AND LOGGING
             # =================================================================
             workers = data_dict['workers']
+
             days_of_year = data_dict['days_of_year']
             special_days = data_dict['special_days']
             working_days = data_dict['working_days']
 
             # Validate critical data
-            if not workers:
+            if not workers and not data_dict['workers_complete']:
                 raise ValueError("No valid workers found after processing")
             
             if not days_of_year:
@@ -200,7 +201,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Log final statistics
             self.logger.info("[OK] Data adaptation completed successfully")
             self.logger.info(f"[STATS] Final statistics:")
-            self.logger.info(f"   Total workers: {len(workers)}")
+            self.logger.info(f"   Total workers: {len(workers + data_dict['workers_complete'])}")
             self.logger.info(f"   Total days: {len(days_of_year)}")
             self.logger.info(f"   Working days: {len(working_days)}")
             self.logger.info(f"   Special days: {len(special_days)}")
@@ -355,37 +356,38 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             # Basic constraint: each worker has exactly one shift per day
             shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
-            
-            # Week working days constraint based on contract type
-            week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week)
-            
-            # Maximum continuous working days constraint
-            maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
-            
-            LQ_attribution(model, shift, workers, working_days, c2d)           
-            
-            # Worker week shift assignments
-            assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
-            
+
             # Working day shifts constraint
             working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
             
-            # SALSA specific constraints
-            salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
+            if workers:
+                # Week working days constraint based on contract type
+                week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week)
             
-            self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
-            salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
+                # Maximum continuous working days constraint
+                maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
             
-            salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday)
+                LQ_attribution(model, shift, workers, working_days, c2d)           
+            
+                # Worker week shift assignments
+                assign_week_shift(model, shift, workers, week_to_days, working_days, worker_week_shift)
+            
+                # SALSA specific constraints
+                salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
+            
+                self.logger.info(f"Salsa 2 day quality weekend workers workers: {workers}, c2d: {c2d}")
+                salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays)
+            
+                salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday)
 
-            salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
+                salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
 
-            first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
+                first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
 
-            free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
+                free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom)
 
-            if country == "spain":
-                compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
+                if country == "spain":
+                    compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
                         
             self.logger.info("All SALSA constraints applied")
             
@@ -396,7 +398,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past)  # role_by_worker)
+                                             first_day, last_day, role_by_worker, work_day_hours, workers_past)
 
             # =================================================================
             # SOLVE THE MODEL
