@@ -152,7 +152,10 @@ class BaseDescansosDataModel(ABC):
                 query_path = _config.paths.sql_auxiliary_paths.get('df_estrutura_wfm', '')
                 if query_path == '':
                     self.logger.warning("df_estrutura_wfm query path not found in config")
-                df_estrutura_wfm = data_manager.load_data('df_estrutura_wfm', query_file=query_path)
+                df_estrutura_wfm = data_manager.load_data(
+                    'df_estrutura_wfm', 
+                    query_file=query_path
+                )
                 self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_estrutura_wfm: {e}", exc_info=True)
@@ -176,7 +179,10 @@ class BaseDescansosDataModel(ABC):
                 query_path = _config.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
                 if query_path == '':
                     self.logger.warning("df_faixa_horario query path not found in config")
-                df_faixa_horario = data_manager.load_data('df_faixa_horario', query_file=query_path)
+                df_faixa_horario = data_manager.load_data(
+                    'df_faixa_horario',
+                    query_file=query_path
+                )
                 self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_faixa_horario: {e}", exc_info=True)
@@ -190,7 +196,13 @@ class BaseDescansosDataModel(ABC):
                     self.logger.warning("df_orcamento query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
                 end_date_quoted = "'" + end_date + "'"
-                df_orcamento = data_manager.load_data('df_orcamento', query_file=query_path, posto_id=posto_id, start_date=start_date_quoted, end_date=end_date_quoted)
+                df_orcamento = data_manager.load_data(
+                    'df_orcamento', 
+                    query_file=query_path, 
+                    posto_id=posto_id, 
+                    start_date=start_date_quoted, 
+                    end_date=end_date_quoted
+                )
                 self.logger.info(f"df_orcamento shape (rows {df_orcamento.shape[0]}, columns {df_orcamento.shape[1]}): {df_orcamento.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_orcamento: {e}", exc_info=True)
@@ -204,7 +216,13 @@ class BaseDescansosDataModel(ABC):
                     self.logger.warning("df_granularidade query path not found in config")
                 start_date_quoted = "'" + start_date + "'"
                 end_date_quoted = "'" + end_date + "'"
-                df_granularidade = data_manager.load_data('df_granularidade', query_file=query_path, start_date=start_date_quoted, end_date=end_date_quoted, posto_id=posto_id)
+                df_granularidade = data_manager.load_data(
+                    'df_granularidade', 
+                    query_file=query_path, 
+                    start_date=start_date_quoted, 
+                    end_date=end_date_quoted, 
+                    posto_id=posto_id
+                )
                 self.logger.info(f"df_granularidade shape (rows {df_granularidade.shape[0]}, columns {df_granularidade.shape[1]}): {df_granularidade.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_granularidade: {e}", exc_info=True)

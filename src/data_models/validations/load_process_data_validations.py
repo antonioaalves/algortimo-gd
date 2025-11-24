@@ -149,7 +149,7 @@ def validate_df_folgas_ciclos(df_folgas_ciclos: pd.DataFrame) -> bool:
         return False
     
     # Check if the tipo_dia has only "F" (folga/fixed day-off)
-    if not df_folgas_ciclos['tipo_dia'].isin(['F']).all():
+    if not df_folgas_ciclos['tipo_dia'].isin(['L']).all():
         return False
         
     return True
