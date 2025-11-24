@@ -1508,9 +1508,9 @@ class SalsaDataModel(BaseDescansosDataModel):
             
             # Store processed dataframes in raw_data
             try:
-                self.raw_data['df_colaborador'] = df_colaborador.copy()
-                self.raw_data['df_calendario'] = df_calendario.copy()
-                self.raw_data['df_estimativas'] = df_estimativas.copy()
+                self.medium_data['df_colaborador'] = df_colaborador.copy()
+                self.medium_data['df_calendario'] = df_calendario.copy()
+                self.medium_data['df_estimativas'] = df_estimativas.copy()
                 self.logger.info("Stored processed dataframes in raw_data")
             except Exception as e:
                 self.logger.error(f"Error storing processed dataframes: {e}", exc_info=True)
