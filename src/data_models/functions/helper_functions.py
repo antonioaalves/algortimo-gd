@@ -1375,7 +1375,7 @@ def get_employees_id_90_list(employees_id_list_for_posto: List[str], df_colabora
         df_colaborador = df_colaborador[mask]
 
         # Second mask is to get the employees that are considered CICLO COMPLETO
-        mask = df_colaborador['seq_turno'].str.upper() == 'CICLO' & df_colaborador['ciclo'].str.upper() == 'COMPLETO'
+        mask = (df_colaborador['seq_turno'].str.upper() == 'CICLO') & (df_colaborador['ciclo'].str.upper() == 'COMPLETO')
         employees_id_90_list = df_colaborador[mask]['employee_id'].to_list()
 
         return True, employees_id_90_list, ""
