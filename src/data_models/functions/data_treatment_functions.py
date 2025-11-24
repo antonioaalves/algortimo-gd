@@ -3366,6 +3366,9 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         
         # Add WD (3-letter weekday name)
         df_result['wd'] = df_result[date_col].dt.day_name().str[:3]
+
+        # Add year column
+        df_result['year'] = df_result[date_col].dt.year
         
         # Add ID column if requested (usually for calendario)
         if add_id_col:
