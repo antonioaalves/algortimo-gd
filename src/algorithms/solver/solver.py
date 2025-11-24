@@ -9,15 +9,15 @@ from openpyxl.styles import PatternFill
 import logging
 from typing import Dict, Any, List, Tuple, Optional, Callable
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
-from src.config import ROOT_DIR
+from src.configuration_manager.instance import get_config as get_config_manager
 import os
 import psutil
 from src.algorithms.solver.solver_callback import SolutionCallback
 from src.algorithms.helpers_algorithm import analyze_optimization_results
 
-# Set up logger
-logger = get_logger(PROJECT_NAME)
+# Get project name and set up logger
+project_name = get_config_manager().system.project_name
+logger = get_logger(project_name)
 
 #----------------------------------------SOLVER-----------------------------------------------------------
 def solve(
@@ -35,7 +35,7 @@ def solve(
     use_phase_saving: bool = True,
     log_search_progress: bool = 0,
     log_callback: Optional[Callable[[str], None]] = None,
-    output_filename: str = os.path.join(ROOT_DIR, 'data', 'output', 'working_schedule.xlsx'),
+    output_filename: str = os.path.join(get_config_manager().paths.get_output_dir(), 'working_schedule.xlsx'),
     debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter
     optimization_details: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:

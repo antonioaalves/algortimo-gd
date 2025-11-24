@@ -17,21 +17,24 @@ from base_data_project.log_config import setup_logger
 from base_data_project.utils import create_components
 
 # Import project-specific components
-from src.config import CONFIG, PROJECT_NAME
+from src.configuration_manager.instance import get_config
 from src.services.example_service import ExampleService
 
+# Get shared configuration manager instance
+config_manager = get_config()
+
 # Set up logger
-logger = setup_logger(PROJECT_NAME, log_level=logging.INFO)
+logger = setup_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'), log_level=logging.INFO)
 
 # Create Flask app
 app = Flask(__name__)
 
 # Create data and process managers
 data_manager, process_manager = create_components(
-    use_db=CONFIG.get('use_db', False),
+    use_db=config_manager.system_config.get('use_db', False),
     no_tracking=False,
-    config=CONFIG,
-    project_name=PROJECT_NAME
+    config=config_manager.system_config,
+    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
 )
 
 # Create service
@@ -46,7 +49,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'project': PROJECT_NAME
+        'project': config_manager.system_config.get('project_name', 'algoritmo_GD')
     })
 
 @app.route('/process', methods=['POST'])

@@ -4,10 +4,10 @@ import numpy as np
 from typing import Dict, Any, List, Tuple, Optional
 import logging
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config as get_config_manager
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(get_config_manager().system.project_name)
 
 def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ...]:
     """

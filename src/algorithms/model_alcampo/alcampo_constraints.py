@@ -705,8 +705,9 @@ def maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d)
 def assigns_solution_days(new_model, new_shift, workers_complete, workers_complete_cycle, days_of_year, schedule_df, working_days, start_weekday, shifts):
     # Import logger
     from base_data_project.log_config import get_logger
-    from src.config import PROJECT_NAME
-    logger = get_logger(PROJECT_NAME)
+    from src.configuration_manager.instance import get_config as get_config_manager
+    
+    logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
     
     day_changed = []
     shift_mapping = {s: idx for idx, s in enumerate(shifts)}

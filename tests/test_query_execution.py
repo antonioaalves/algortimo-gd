@@ -19,9 +19,10 @@ def test_query_execution():
     print("=== Query Execution Test ===")
     
     try:
-        # Import your config
-        from src.config import CONFIG
-        print("✓ Config imported successfully")
+        # Import configuration manager
+        from src.configuration_manager.manager import ConfigurationManager
+        config_manager = ConfigurationManager()
+        print("✓ Configuration manager imported successfully")
         
         # Import the data manager factory
         from base_data_project.utils import create_components
@@ -29,7 +30,7 @@ def test_query_execution():
         
         # Create data manager
         print("\n1. Creating data manager...")
-        data_manager, _ = create_components(use_db=True, config=CONFIG)
+        data_manager, _ = create_components(use_db=True, config=config_manager.system_config)
         print("✓ Data manager created successfully")
         
         # Test connection
@@ -50,7 +51,7 @@ def test_query_execution():
             
             # Get the specific entity and query file we're testing
             print("\n4. Testing specific entity query...")
-            entities = CONFIG.get('available_entities_processing', {})
+            entities = config_manager.paths.available_entities_processing
             entity_name = 'valid_emp'  # The one that's failing
             
             if entity_name not in entities:
@@ -157,9 +158,10 @@ def test_config_paths():
     print("\n=== Config Paths Test ===")
     
     try:
-        from src.config import CONFIG
+        from src.configuration_manager.manager import ConfigurationManager
+        config_manager = ConfigurationManager()
         
-        entities = CONFIG.get('available_entities_processing', {})
+        entities = config_manager.paths.available_entities_processing
         
         for entity_name, query_path in entities.items():
             print(f"\nEntity: {entity_name}")
@@ -192,11 +194,12 @@ def test_database_connection_only():
     print("\n=== Database Connection Only Test ===")
     
     try:
-        from src.config import CONFIG
+        from src.configuration_manager.manager import ConfigurationManager
+        config_manager = ConfigurationManager()
         from base_data_project.utils import create_components
         
         print("Creating data manager...")
-        data_manager, _ = create_components(use_db=True, config=CONFIG)
+        data_manager, _ = create_components(use_db=True, config=config_manager.system_config)
         
         print("Testing connection...")
         with data_manager:

@@ -8,9 +8,9 @@ from base_data_project.data_manager.managers.base import BaseDataManager
 from base_data_project.log_config import get_logger
 
 # Local stuff
-from src.config import PROJECT_NAME, CONFIG
+from src.configuration_manager.instance import get_config as get_config_manager
 
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(get_config_manager().system.project_name)
 
 
 def load_valid_emp_csv() -> pd.DataFrame:

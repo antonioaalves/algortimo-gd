@@ -4,13 +4,12 @@ from datetime import datetime
 from typing import  List, Dict, Any, Optional, Tuple
 
 # Local stuff
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config
 from base_data_project.log_config import get_logger
 
+_config_manager = get_config()
 
-
-
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(_config_manager.project_name)
 
 def analyze_optimization_results(solver, optimization_details):
     """
@@ -738,11 +737,11 @@ def _validate_solution(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
             'recommendations': []
         }
     
-def _create_export_info(process_id: int, ROOT_DIR) -> Dict[str, Any]:
+def _create_export_info(process_id: int, project_root_dir: str) -> Dict[str, Any]:
     """Create export information."""
     try:
-        # Get output filename from ROOT_DIR
-        output_filename = os.path.join(ROOT_DIR, 'data', 'output', f'salsa_schedule_{process_id}.xlsx')
+        # Get output filename from project_root_dir
+        output_filename = os.path.join(project_root_dir, 'data', 'output', f'salsa_schedule_{process_id}.xlsx')
         
         return {
             'export_files': {

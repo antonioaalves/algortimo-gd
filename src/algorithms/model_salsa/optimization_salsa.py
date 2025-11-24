@@ -1,7 +1,8 @@
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config
 
-logger = get_logger(PROJECT_NAME)
+_config_manager = get_config()
+logger = get_logger(_config_manager.project_name)
 
 
 def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days,

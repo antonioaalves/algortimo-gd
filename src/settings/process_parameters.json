@@ -1,0 +1,50 @@
+{
+    "process_parameters": {
+        "parameters_names": [
+            "algorithm_name",
+            "GD_gloablMaxThreads",
+            "GD_maxThreads",
+            "gloablMaxThreads",
+            "maxThreads",
+            "maxRetries",
+            "sleepTime",
+            "test_param_scheduling_threshold",
+            "GD_algorithmName",
+            "GD_consideraFestivos",
+            "GD_convenioBD",
+            "NUM_DIAS_CONS",
+            "codigos_motivo_ausencia",
+            "l_dom_days"
+        ],
+
+        "parameters_defaults": {
+            "algorithm_name": "salsa_algorithm",
+            "GD_gloablMaxThreads": 4,
+            "GD_maxThreads": 2,
+            "gloablMaxThreads": 4,
+            "maxThreads": 2,
+            "maxRetries": 3,
+            "sleepTime": 1000,
+            "test_param_scheduling_threshold": 0.75,
+            "GD_algorithmName": "alcampo_algorithm",
+            "GD_consideraFestivos": 1,
+            "GD_convenioBD": "ALCAMPO",
+            "codigos_motivo_ausencia": [
+                2101,
+                8999,
+                3028
+            ],
+            "l_dom_days": [1]
+        }
+    }, 
+    
+    "external_call_data": {
+        "current_process_id": 10890,
+        "api_proc_id": 999,
+        "wfm_proc_id": 10890,
+        "wfm_user": "WFM",
+        "start_date": "2025-12-01",
+        "end_date": "2025-12-31",
+        "wfm_proc_colab": ""
+    }
+}

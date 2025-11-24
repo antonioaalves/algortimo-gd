@@ -13,19 +13,22 @@ from base_data_project.log_config import setup_logger, get_logger
 from base_data_project.utils import create_components
 
 # Import project-specific components
-from src.config import CONFIG, PROJECT_NAME
+from src.settings.log_parameters import log_parameters
+from src.configuration_manager.instance import get_config
 from src.services.example_service import AlgoritmoGDService
+
+config_manager = get_config()
 
 # Initialize logger with configuration first
 setup_logger(
-    project_name=PROJECT_NAME,
-    log_level=CONFIG.get('log_level', 'INFO'),
-    log_dir=CONFIG.get('log_dir', 'logs'),
-    console_output=CONFIG.get('console_output', True)
+    project_name=config_manager.system.project_name,
+    log_level=config_manager.system.logging_config.get('log_level', 'INFO'),
+    log_dir=config_manager.system.logging_config.get('log_dir', 'logs'),
+    console_output=True
 )
 
 # Then get the logger instance for use throughout the file
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(config_manager.system.project_name)
 
 def run_batch_process(data_manager, process_manager, algorithm="example_algorithm", external_call_dict=None, external_raw_connection=None):
     """
@@ -49,8 +52,8 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             process_manager=process_manager,
             external_call_dict=external_call_dict or {},
             external_raw_connection=external_raw_connection,
-            config=CONFIG,
-            project_name=PROJECT_NAME
+            config_manager=config_manager,
+            project_name=config_manager.system.project_name
         )
         
         # Initialize a new process
@@ -72,7 +75,8 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             # Execute stage without user interaction
             if stage == 'processing':
                 # Prepare algorithm parameters if needed
-                algorithm_params = CONFIG.get('algorithm_defaults', {}).get(algorithm, {})
+                #algorithm_params = CONFIG.get('algorithm_defaults', {}).get(algorithm, {})
+                algorithm_params = config_manager.parameters.get_parameter_defaults()
                 success = service.execute_stage(stage, algorithm_name=algorithm, algorithm_params=algorithm_params)
             else:
                 success = service.execute_stage(stage)
@@ -101,8 +105,9 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
             click.echo()
         
         # Display output location
-        output_dir = os.path.abspath(CONFIG.get('output_dir', "data/output"))
-        
+        #output_dir = os.path.abspath(CONFIG.get('output_dir', "data/output"))
+        output_dir = os.path.join(config_manager.system.project_root_dir, 'data', 'output')
+
         click.echo(click.style("Output Files:", fg="blue", bold=True))
         click.echo(f"Results have been saved to: {output_dir}")
         click.echo()
@@ -132,7 +137,7 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
     """
     # Display header
     click.clear()
-    click.echo(click.style(f"=== {PROJECT_NAME} (Batch Mode) ===", fg="green", bold=True))
+    click.echo(click.style(f"=== {config_manager.system.project_name} (Batch Mode) ===", fg="green", bold=True))
     click.echo(click.style(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", fg="green"))
     click.echo()
     
@@ -175,12 +180,16 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
         # Create spinner for initialization
         with click.progressbar(length=100, label="Initializing") as bar:
             # Create and configure components (same as main.py)
+            logger.info(f"DEBUG: About to call create_components with no_tracking={no_tracking}")
             data_manager, process_manager = create_components(
                 use_db=use_db, 
                 no_tracking=no_tracking, 
-                config=CONFIG, 
-                project_name=PROJECT_NAME
+                config=config_manager, 
+                project_name=config_manager.system.project_name
             )
+            logger.info(f"DEBUG: create_components returned data_manager={data_manager} and process_manager={process_manager}")
+            logger.info(f"DEBUG: data_manager type: {type(data_manager)}")
+            logger.info(f"DEBUG: process_manager type: {type(process_manager)}")
 
             # Debug logging for process manager (same as main.py)
             logger.debug("=== DEBUG PROCESS MANAGER ===")
@@ -207,7 +216,7 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
         
         with data_manager:
             # Get external call data from CONFIG and override with command line arguments
-            external_call_dict = CONFIG.get('external_call_data', {}).copy()
+            external_call_dict = config_manager.parameters.external_call_data
             
             # Override with command line arguments if provided
             if external_args:
