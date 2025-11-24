@@ -18,7 +18,7 @@ from base_data_project.utils import create_components
 
 # Import project-specific components
 from src.configuration_manager.instance import get_config
-from src.services.example_service import ExampleService
+from src.services.algoritmo_gd import AlgoritmoGDService
 
 # Get shared configuration manager instance
 config_manager = get_config()
@@ -38,7 +38,7 @@ data_manager, process_manager = create_components(
 )
 
 # Create service
-service = ExampleService(
+service = AlgoritmoGDService(
     data_manager=data_manager,
     process_manager=process_manager
 )

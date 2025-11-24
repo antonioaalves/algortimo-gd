@@ -405,8 +405,6 @@ class SalsaDataModel(BaseDescansosDataModel):
             if not success:
                 self.logger.error(f"Feriados treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
-            
-            self.logger.info(f"DEBUG AFTER TREATMENT: df_feriados columns: {df_feriados.columns.tolist()}")
 
             if not validate_df_feriados(df_feriados):
                 self.logger.error(f"df_feriados is invalid: {df_feriados}")
@@ -477,6 +475,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if parameters_cfg.empty or len(parameters_cfg) == 0:
                     self.logger.error(f"parameters_cfg is empty")
                     return False, "errSubproc", "parameters_cfg is empty"
+
                 # Store the value to then validate it
                 parameters_cfg = str(parameters_cfg["WFM.S_PCK_CORE_PARAMETER.GETCHARATTR('ADMISSAO_PROPORCIONAL')"].iloc[0]).lower()
                 self.logger.info(f"parameters_cfg: {parameters_cfg}")
@@ -525,6 +524,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
                     return False, "errSubproc", "No data was loaded into auxiliary_data"
+
             except KeyError as e:
                 self.logger.error(f"KeyError: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -613,8 +613,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 employees_id_list_for_posto = self.auxiliary_data['employees_id_by_posto_dict'].get(posto_id, [])
                 case_type = self.auxiliary_data['case_type']
                 # External call data values
-                start_date = self.external_call_data['start_date']
-                end_date = self.external_call_data['end_date']
+                first_date_passado = self.auxiliary_data['first_date_passado']
+                last_date_passado = self.auxiliary_data['last_date_passado']
                 process_id = self.external_call_data['current_process_id']
                 wfm_proc_colab = self.external_call_data['wfm_proc_colab']
                 # Colabs information, similar to valid_emp
@@ -661,8 +661,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                     entity='df_contratos', 
                     query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_contratos'), 
                     colabs_id=create_employee_query_string(past_employees_id_list), 
-                    start_date=start_date, 
-                    end_date=end_date, 
+                    start_date=first_date_passado, 
+                    end_date=last_date_passado, 
                     process_id=process_id
                 )
                 self.logger.info(f"df_contratos shape (rows {df_contratos.shape[0]}, columns {df_contratos.shape[1]}): {df_contratos.columns.tolist()}")
