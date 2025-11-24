@@ -588,4 +588,5 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
         worker_sundays = [d for d in sundays if d in working_days[w]]
         logger.info(f"Worker {w}, Sundays {worker_sundays}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
+        print('Dom', w, total_l_dom.get(w, 0))
 

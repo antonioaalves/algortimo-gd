@@ -1,12 +1,13 @@
 from base_data_project.log_config import get_logger
 from src.config import PROJECT_NAME
 import numpy as np
+import math 
 
 logger = get_logger(PROJECT_NAME)
 
 
 def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past):
-    # Store the pos_diff and neg_diff variables for later access
+   
     pos_diff_dict = {}
     neg_diff_dict = {}
     no_workers_penalties = {}
@@ -87,6 +88,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     objective_terms = []
     real_working_shift=['M', 'T']
 
+
     # Weights:
         
     excess_min_worst_scenario=(3/4) * sum(
@@ -120,15 +122,17 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     percentage_of_importance_consec_free_days=1
     no_consec_free_days_weight=int(scale*percentage_of_importance_consec_free_days/no_consec_free_days_min_worst_scenario)
 
-    sunday_imbalance_per_semeste_min_worst_scenario=5
+    sunday_imbalance_per_semeste_min_worst_scenario=3
     percentage_of_importance_sunday_balance=1
     sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
+    sunday_imbalance_weight_average=int(math.ceil(sunday_imbalance_weight/len(workers)))
 
     LQ_imbalance_per_semeste_min_worst_scenario=2
     percentage_of_importance_LQ_balance=1
     LQ_imbalance_weight=int(scale*percentage_of_importance_LQ_balance/LQ_imbalance_per_semeste_min_worst_scenario)
+    LQ_imbalance_weight_average=int(math.ceil(LQ_imbalance_weight/len(workers)))
 
-    inconsistent_number_of_weeks_min_worst_scenario=52
+    inconsistent_number_of_weeks_min_worst_scenario=52*len(workers)
     percentage_of_importance_consistent_number_of_weeks=1
     inconsistent_number_of_weeks_weight=int(scale*percentage_of_importance_consistent_number_of_weeks/inconsistent_number_of_weeks_min_worst_scenario)
 
@@ -283,7 +287,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     objective_terms.append(objective_consecutive_free_days*no_consec_free_days_weight)
 
 
-    # 6. Balancing sundays across the year  
+    # 6. Balancing sundays across the year (average)
 
     parts = np.array_split(days_of_year, 6) 
     sunday_parts=[]
@@ -306,7 +310,43 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
         model.Add(semester_diff == max_free_sundays - min_free_sundays)
         
-        objective_terms.append(semester_diff*sunday_imbalance_weight)   
+        objective_terms.append(semester_diff*sunday_imbalance_weight_average)  
+
+    #6.1 Control the worst-case outcome sundays
+    
+   
+    diff_per_worker = []
+
+    for w in workers:
+        list_of_free_sundays_per_semester = []
+
+        for idx, part in enumerate(sunday_parts):
+            sunday_vars = [shift[(w, d, 'L')] for d in part if (w, d, 'L') in shift]
+
+            if sunday_vars:
+                free_sundays_semester = sum(sunday_vars)
+            else:
+                free_sundays_semester = model.NewIntVar(0, 0, f"free_sundays_empty_{w}_{idx}")
+
+            list_of_free_sundays_per_semester.append(free_sundays_semester)
+
+        max_free_sundays = model.NewIntVar(0, len(sundays), f"max_free_semester_sundays_{w}")
+        min_free_sundays = model.NewIntVar(0, len(sundays), f"min_free_semester_sundays_{w}")
+
+        model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
+        model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
+
+        semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
+        model.Add(semester_diff == max_free_sundays - min_free_sundays)
+
+        diff_per_worker.append(semester_diff)
+
+
+    max_diff_worker = model.NewIntVar(0, len(sundays), "max_diff_worker")
+    model.AddMaxEquality(max_diff_worker, diff_per_worker)
+
+    
+    objective_terms.append(max_diff_worker * sunday_imbalance_weight)  
             
 
     # 7. Balancing LQ's across the year
@@ -326,7 +366,45 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
         model.Add(semester_diff == max_free_LQs - min_free_LQs)
         
-        objective_terms.append(semester_diff*LQ_imbalance_weight)   
+        objective_terms.append(semester_diff*LQ_imbalance_weight_average)  
+
+
+   # 7.1 Control the worst-case outcome LQs 
+
+
+    diff_per_worker_LQ = []
+
+    for w in workers:
+        list_of_free_LQs_per_semester = []
+
+        for part_index, part in enumerate(parts):
+            LQs_vars = [shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift]
+
+            if LQs_vars:
+                LQs_semester = sum(LQs_vars)
+            else:
+                LQs_semester = model.NewIntVar(0, 0, f"LQs_empty_{w}_{part_index}")
+
+            list_of_free_LQs_per_semester.append(LQs_semester)
+
+        max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
+        min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}")
+
+        if list_of_free_LQs_per_semester:
+            model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
+            model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
+        else:
+            model.Add(max_free_LQs == 0)
+            model.Add(min_free_LQs == 0)
+
+        semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
+        model.Add(semester_diff == max_free_LQs - min_free_LQs)
+
+        diff_per_worker_LQ.append(semester_diff)
+    
+    max_diff_LQ = model.NewIntVar(0, len(sundays), "max_diff_LQ")
+    model.AddMaxEquality(max_diff_LQ, diff_per_worker_LQ)
+    objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
             
         
     # 8. Weeks of inconsistent shifts error
