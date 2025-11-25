@@ -2,11 +2,12 @@ from base_data_project.log_config import get_logger
 from src.config import PROJECT_NAME
 import numpy as np
 import math 
+from src.algorithms.model_salsa.read_salasa import workers_complete
 
 logger = get_logger(PROJECT_NAME)
 
 
-def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past):
+def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past):
    
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -148,7 +149,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     percentage_of_importance_keyholders=1
     same_free_day_keyholders_weight=int(scale*percentage_of_importance_keyholders/same_free_day_keyholders_min_worst_scenario)
     
-    workers_not_complete=[w for w in workers if w not in workers_complete]
+    workers_not_complete=[w for w in workers if w not in workers_complete_cycle]
 
     # 1. Excess and deficit error
 
