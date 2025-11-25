@@ -51,7 +51,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         add_var(model, shift, w, fixed_days_set, 'L', start_weekday)
         add_var(model, shift, w, fixed_LQs_set, 'LQ', start_weekday)
         add_var(model, shift, w, closed_set, 'F', start_weekday)
-        add_var(model, shift, w, empty_days_set, '-', start_weekday)
+        add_var(model, shift, w, empty_set, '-', start_weekday)
 
     shifts2 = shifts.copy()
     shifts2.remove('A')
