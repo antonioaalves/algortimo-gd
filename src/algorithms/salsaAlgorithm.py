@@ -18,9 +18,8 @@ from src.configuration_manager.instance import get_config as get_config_manager
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    LQ_attribution, compensation_days, working_day_shifts, salsa_2_consecutive_free_days,
-    salsa_2_day_quality_weekend, salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free,
-    free_days_special_days
+    LQ_attribution, compensation_days, working_day_shifts, salsa_2_consecutive_free_days, salsa_2_day_quality_weekend,
+    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -257,9 +256,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             c2d = adapted_data['c2d']
             c3d = adapted_data['c3d']
             l_d = adapted_data['l_d']
-            l_q = adapted_data['l_q']
             cxx = adapted_data['cxx']
-            t_lq = adapted_data['t_lq']
             matriz_estimativas_gd = adapted_data['matriz_estimativas_gd']
             pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
