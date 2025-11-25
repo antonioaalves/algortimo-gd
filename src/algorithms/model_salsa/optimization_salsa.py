@@ -148,6 +148,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     percentage_of_importance_keyholders=1
     same_free_day_keyholders_weight=int(scale*percentage_of_importance_keyholders/same_free_day_keyholders_min_worst_scenario)
     
+    workers_not_complete=[w for w in workers if w not in workers_complete]
 
     # 1. Excess and deficit error
 
@@ -294,8 +295,8 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     for part in parts:
         sunday_part=[d for d in part if d in sundays]
         sunday_parts.append(sunday_part)
-
-    for w in workers:
+    
+    for w in workers_not_complete :
         list_of_free_sundays_per_semester=[]
         for part in sunday_parts:
             free_sundays_semester=sum(shift[(w, d, 'L')] for d in part if (w,d,'L') in shift)
@@ -317,7 +318,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
    
     diff_per_worker = []
 
-    for w in workers:
+    for w in workers_not_complete:
         list_of_free_sundays_per_semester = []
 
         for idx, part in enumerate(sunday_parts):
@@ -351,7 +352,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     # 7. Balancing LQ's across the year
 
-    for w in workers:
+    for w in workers_not_complete:
         list_of_free_LQs_per_semester=[]
         for part in parts:   
             LQs_semester = sum(shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift)
@@ -374,7 +375,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     diff_per_worker_LQ = []
 
-    for w in workers:
+    for w in workers_not_complete:
         list_of_free_LQs_per_semester = []
 
         for part_index, part in enumerate(parts):
