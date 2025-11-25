@@ -154,11 +154,11 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
 
     excess_diff_vars = []
     deficit_diff_vars = []
-
+    day_counter=0
     for d in days_of_year:
         for s in real_working_shift:
             target = pessObj.get((d, s), 0)
-            assigned_workers = sum(shift[(w, d, s)] for w in workers if (w,d,s) in shift)
+            assigned_workers = sum(shift[(w, d, s)]*work_day_hours[w][day_counter]  for w in workers if (w,d,s) in shift)
             
             # Variables for excess and deficit
             excess = model.NewIntVar(0, len(workers), f'excess_{d}_{s}')
@@ -173,7 +173,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
             excess_diff_vars.append(excess)
             deficit_diff_vars.append(deficit)
 
-
+    day_counter+=1
     objective_excess = sum(excess_diff_vars[i] for i in range(len(excess_diff_vars)))
     objective_terms.append(objective_excess*excess_weight)
 
@@ -184,11 +184,11 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     # 2. No workers in a day error
 
     zero_assigned_vars = []
-
+    day_counter=0
     for d in days_of_year:
         for s in real_working_shift:
             target = pessObj.get((d,s), 0)
-            assigned_workers = sum(shift[(w,d,s)] for w in workers if (w,d,s) in shift)
+            assigned_workers = sum(shift[(w,d,s)]*work_day_hours[w][day_counter] for w in workers if (w,d,s) in shift)
             
             if target > 0:
                 
@@ -199,7 +199,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
                 model.Add(assigned_workers != 0).OnlyEnforceIf(zero_assigned.Not())
                 
                 zero_assigned_vars.append(zero_assigned)
-
+    day_counter+=1
     objective_zero = sum(zero_assigned_vars[i] for i in range(len(zero_assigned_vars)))
     objective_terms.append(objective_zero*no_workers_weight)
 
