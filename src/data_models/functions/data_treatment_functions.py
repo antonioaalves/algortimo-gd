@@ -3371,7 +3371,7 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         if use_case == 0:
             unique_dates = sorted(df_result[date_col].unique())
             date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
-            df_result['index'] = df_result[date_col].map(date_to_index)
+            df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
         elif use_case == 1:
             # Fixed indexing: 23-12-[year-1] to 04-01-[year+1]
             # This ensures index matches between df_estimativas (01-01 to 31-12) and df_calendario (23-12 to 04-01)
@@ -3393,6 +3393,9 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
                 if pd.isna(max_index):
                     max_index = 0
                 df_result['index'] = df_result['index'].fillna(max_index + 1)
+            
+            # Convert to int to ensure integer values, not floats
+            df_result['index'] = df_result['index'].astype(int)
         
         # Add WDAY (1=Monday, 7=Sunday)
         df_result['wday'] = df_result[date_col].dt.dayofweek + 1
