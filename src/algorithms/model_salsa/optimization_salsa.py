@@ -2,7 +2,6 @@ from base_data_project.log_config import get_logger
 from src.config import PROJECT_NAME
 import numpy as np
 import math 
-from src.algorithms.model_salsa.read_salasa import workers_complete
 
 logger = get_logger(PROJECT_NAME)
 
@@ -88,8 +87,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     scale=10000
     objective_terms = []
     real_working_shift=['M', 'T']
-
-
+    workers_not_complete=[w for w in workers if w not in workers_complete_cycle]
+    
     # Weights:
         
     excess_min_worst_scenario=(3/4) * sum(
@@ -149,7 +148,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     percentage_of_importance_keyholders=1
     same_free_day_keyholders_weight=int(scale*percentage_of_importance_keyholders/same_free_day_keyholders_min_worst_scenario)
     
-    workers_not_complete=[w for w in workers if w not in workers_complete_cycle]
+    
 
     # 1. Excess and deficit error
 
@@ -209,7 +208,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
 
     list_of_sundays_per_worker = []
 
-    for w in workers:
+    for w in workers_not_complete:
         sunday_free = sum(shift[(w, d, 'L')] for d in sundays if (w, d, 'L') in shift)
         list_of_sundays_per_worker.append(sunday_free)
 
@@ -230,7 +229,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
 
     list_of_LQs_per_worker = []
 
-    for w in workers:
+    for w in workers_not_complete:
         LQs = sum(shift[(w, d-1, 'LQ')] for d in sundays if (w, d-1, 'LQ') in shift)
         list_of_LQs_per_worker.append(LQs)
 
