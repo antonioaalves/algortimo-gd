@@ -851,10 +851,13 @@ class BaseDescansosDataModel(ABC):
             # Add date-related columns (Step 3G/6E from func_inicializa guide)
             try:
                 self.logger.info("Adding date-related columns to estimativas (WDAY, WW, WD)")
+                main_year = self.auxiliary_data.get('main_year')
                 success, output_final, error_msg = add_date_related_columns(
                     df=output_final,
                     date_col='data',
-                    add_id_col=False
+                    add_id_col=False,
+                    use_case=1,
+                    main_year=main_year
                 )
                 if not success:
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
