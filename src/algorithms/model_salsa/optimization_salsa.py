@@ -125,12 +125,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     sunday_imbalance_per_semeste_min_worst_scenario=3
     percentage_of_importance_sunday_balance=1
     sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
-    sunday_imbalance_weight_average=int(math.ceil(sunday_imbalance_weight/len(workers)))
+    sunday_imbalance_weight_average=int(math.ceil(sunday_imbalance_weight/len(workers_not_complete)))
 
     LQ_imbalance_per_semeste_min_worst_scenario=2
     percentage_of_importance_LQ_balance=1
     LQ_imbalance_weight=int(scale*percentage_of_importance_LQ_balance/LQ_imbalance_per_semeste_min_worst_scenario)
-    LQ_imbalance_weight_average=int(math.ceil(LQ_imbalance_weight/len(workers)))
+    LQ_imbalance_weight_average=int(math.ceil(LQ_imbalance_weight/len(workers_not_complete)))
 
     inconsistent_number_of_weeks_min_worst_scenario=52*len(workers)
     percentage_of_importance_consistent_number_of_weeks=1
