@@ -286,14 +286,33 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
                 #logger.info(f"DEBUG: col_indices: {col_indices}")
                 if len(col_indices) >= 2:
                     #logger.info(f"DEBUG: fk_motivo_ausencia: {fk_motivo_ausencia}, type: {type(fk_motivo_ausencia)}")
-                    if fk_motivo_ausencia == 1:
-                        # Vacation
-                        reshaped_final_3.iloc[row_index, col_indices[0]] = "V"
-                        reshaped_final_3.iloc[row_index, col_indices[1]] = "V"
+                    # Get current values
+                    current_morning = reshaped_final_3.iloc[row_index, col_indices[0]]
+                    current_afternoon = reshaped_final_3.iloc[row_index, col_indices[1]]
+                    
+                    # TODO: check for codigo_motivo_ausencia in config.py
+                    if fk_motivo_ausencia in codigos_motivo_ausencia:
+                        # Vacation - check if current value is "-"
+                        if current_morning == "-":
+                            reshaped_final_3.iloc[row_index, col_indices[0]] = "V-"
+                        else:
+                            reshaped_final_3.iloc[row_index, col_indices[0]] = "V"
+                        
+                        if current_afternoon == "-":
+                            reshaped_final_3.iloc[row_index, col_indices[1]] = "V-"
+                        else:
+                            reshaped_final_3.iloc[row_index, col_indices[1]] = "V"
                     else:
-                        # Other absence
-                        reshaped_final_3.iloc[row_index, col_indices[0]] = val
-                        reshaped_final_3.iloc[row_index, col_indices[1]] = val
+                        # Other absence - check if current value is "-" and val is "A"
+                        if current_morning == "-" and val == "A":
+                            reshaped_final_3.iloc[row_index, col_indices[0]] = "A-"
+                        else:
+                            reshaped_final_3.iloc[row_index, col_indices[0]] = val
+                        
+                        if current_afternoon == "-" and val == "A":
+                            reshaped_final_3.iloc[row_index, col_indices[1]] = "A-"
+                        else:
+                            reshaped_final_3.iloc[row_index, col_indices[1]] = val
         
         return reshaped_final_3
         
@@ -326,17 +345,25 @@ def insert_dayoffs_override(df_core_pro_emp_horario_det: pd.DataFrame,
         df_core_dayoffs = df_core_pro_emp_horario_det[
             df_core_pro_emp_horario_det['tipo_dia'] == 'F'
         ].copy()
+
+        df_core_no_work = df_core_pro_emp_horario_det[
+            df_core_pro_emp_horario_det['tipo_dia'] == 'S'
+        ].copy()
         
-        logger.info(f"Filtered day-offs: {len(df_core_dayoffs)} records")
+        #logger.info(f"Filtered day-offs (F): {len(df_core_dayoffs)} records")
+        #logger.info(f"Filtered no-work days (S): {len(df_core_no_work)} records")
         
-        if df_core_dayoffs.empty:
-            logger.info("No day-off records found, returning unchanged matrix")
+        if df_core_dayoffs.empty and df_core_no_work.empty:
+            logger.info("No special day records found, returning unchanged matrix")
             return reshaped_final_3
             
         # Convert schedule_day to string format (YYYY-MM-DD)
-        df_core_dayoffs['schedule_day_str'] = pd.to_datetime(df_core_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
+        if not df_core_dayoffs.empty:
+            df_core_dayoffs['schedule_day_str'] = pd.to_datetime(df_core_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
+            logger.info(f"Processing {len(df_core_dayoffs)} day-off records")
         
-        logger.info(f"Processing {len(df_core_dayoffs)} day-off records")
+        if not df_core_no_work.empty:
+            df_core_no_work['schedule_day_str'] = pd.to_datetime(df_core_no_work['schedule_day']).dt.strftime('%Y-%m-%d')
         
         # Process each day-off record
         for _, dayoff_row in df_core_dayoffs.iterrows():
@@ -385,7 +412,46 @@ def insert_dayoffs_override(df_core_pro_emp_horario_det: pd.DataFrame,
                 #else:
                 #    logger.info(f"No absence found to override for employee {employee_id} (matricula: {matricula}) on {schedule_day} (current: {current_morning}, {current_afternoon})")
             
-        
+        for _, no_work_row in df_core_no_work.iterrows():
+            # Step 1: Extract no-work day information
+            employee_id = str(no_work_row['employee_id'])
+            matricula = str(no_work_row['matricula']) if 'matricula' in no_work_row else None
+            schedule_day = no_work_row['schedule_day_str']
+            
+            # Step 2: Find employee row index in reshaped_final_3
+            employee_row_idx = None
+            search_value = matricula if matricula else employee_id
+            
+            for row_idx, row_data in reshaped_final_3.iterrows():
+                if search_value in row_data.values:
+                    employee_row_idx = row_idx
+                    break
+            
+            if employee_row_idx is None:
+                logger.warning(f"Employee {employee_id} (matricula: {matricula}) not found in schedule matrix for no-work day")
+                continue
+            
+            # Step 3: Find column indices for this date
+            col_indices = []
+            for col_idx, col_data in reshaped_final_3.items():
+                if schedule_day in col_data.values:
+                    col_indices.append(col_idx)
+            
+            if len(col_indices) >= 2:
+                # Step 4: Override A -> AV and V -> VV
+                current_morning = reshaped_final_3.iloc[employee_row_idx, col_indices[0]]
+                current_afternoon = reshaped_final_3.iloc[employee_row_idx, col_indices[1]]
+                
+                if current_morning == "A":
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "A-"
+                if current_afternoon == "A":
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "A-"
+                
+                if current_morning == "V":
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[0]] = "V-"
+                if current_afternoon == "V":
+                    reshaped_final_3.iloc[employee_row_idx, col_indices[1]] = "V-"
+
         logger.info("Completed insert_dayoffs_override processing")
         return reshaped_final_3
         
@@ -767,32 +833,48 @@ def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str, l
             dia_semana = row['dia_semana']
             intervalo = row['intervalo']
             max_exit = row['max_exit']
-            
+           
+            # Log every row to understand the mapping
+            #log_msg = f"[TRADS-MAP] tipo_dia='{tipo_dia}', descanso='{descanso}', horario_ind='{horario_ind}', dia_semana={dia_semana}, intervalo={intervalo}, max_exit={max_exit}"
+           
             if tipo_dia == 'F' and (dia_semana == 1 or dia_semana == 8):
+                #logger.info(f"{log_msg} → 'L_DOM' (tipo_dia='F' on Sunday/Monday)")
                 return 'L_DOM'
             elif tipo_dia == 'F':
+                #logger.info(f"{log_msg} → 'L' (tipo_dia='F': free/holiday)")
                 return 'L'
-            elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'N':
+            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'N':
+                #logger.info(f"{log_msg} → 'MoT' (Active + no rest + no individual schedule)")
                 return 'MoT'
-            elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'S' and max_exit >= lim_sup_manha:
+            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit >= lim_sup_manha:
+                #logger.info(f"{log_msg} → 'T' (Active + no rest + horario_ind='S' + max_exit >= {lim_sup_manha})")
                 return 'T'
-            elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'S' and max_exit < lim_sup_manha:
+            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit < lim_sup_manha:
+                #logger.info(f"{log_msg} → 'M' (Active + no rest + horario_ind='S' + max_exit < {lim_sup_manha})")
                 return 'M'
             elif tipo_dia == 'S':
+                #logger.info(f"{log_msg} → '-' (tipo_dia='S': suspended/missing)")
                 return '-'
             elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo >= 1:
+                #logger.info(f"{log_msg} → 'P' (Active + rest/night + break >= 1h)")
                 return 'P'
             elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit >= lim_sup_manha:
+                #logger.info(f"{log_msg} → 'T' (Active + rest/night + break < 1h + max_exit >= {lim_sup_manha})")
                 return 'T'
             elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit < lim_sup_manha:
+                #logger.info(f"{log_msg} → 'M' (Active + rest/night + break < 1h + max_exit < {lim_sup_manha})")
                 return 'M'
             elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit >= lim_sup_manha:
+                #logger.info(f"{log_msg} → 'T' (Active + no rest + individual='Y' + max_exit >= {lim_sup_manha})")
                 return 'T'
             elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit < lim_sup_manha:
+                #logger.info(f"{log_msg} → 'M' (Active + no rest + individual='Y' + max_exit < {lim_sup_manha})")
                 return 'M'
             elif tipo_dia == 'N':
+                #logger.info(f"{log_msg} → 'NL' (tipo_dia='N': night shift)")
                 return 'NL'
             else:
+                #logger.warning(f"{log_msg} → '-' (NO CONDITION MATCHED - this is why you get '-'!)")
                 return '-'
         
         df_cycle90_info_filtered['codigo_trads'] = df_cycle90_info_filtered.apply(get_trads_code, axis=1)

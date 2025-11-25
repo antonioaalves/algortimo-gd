@@ -2211,7 +2211,7 @@ class DescansosDataModel(BaseDataModel):
             # Treat df_core_pro_emp_horario_det and df_contratos
             try:
                 self.logger.info("Treating df_core_pro_emp_horario_det")
-                # TODO: add fk_colaborador
+                # add fk_colaborador to df_core_pro_emp_horario_det
                 df_colaboradores = matriz_ma[['matricula', 'fk_colaborador']].dropna(subset=['fk_colaborador'])
                 df_colaboradores.columns = ['matricula', 'fk_colaborador']
                 df_core_pro_emp_horario_det = df_core_pro_emp_horario_det.merge(df_colaboradores, left_on='employee_id', right_on='fk_colaborador', how='left')

@@ -116,7 +116,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 120  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -299,7 +299,7 @@ def solve(
                         time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
 
                     day_counter += 1
-                logger.info(f"days worked: {special_days_worked[w]}"
+                logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 # Store statistics for this worker
@@ -374,7 +374,7 @@ def solve(
                         time_worked_day_M_after[day_counter] += work_day_hours[w][day_counter]
 
                     day_counter += 1
-                logger.info(f"days worked: {special_days_worked[w]}"
+                logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 # Store statistics for this worker

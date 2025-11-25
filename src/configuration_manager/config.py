@@ -9,13 +9,15 @@ import subprocess
 # It is here to not create a circular import
 PROJECT_NAME = "algoritmo_GD"
 
+# Workaround to be removed in the future
+CODIGOS_MOTIVO_AUSENCIA = [2101, 8999, 3028]
+
 # Local stuff
 from src.helpers import get_oracle_url_cx
 
 # Get application root directory
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
-# Add R configuration to CONFIG dictionary
 
 CONFIG = {
     # Database configuration
@@ -46,9 +48,9 @@ CONFIG = {
     
     # File paths for CSV data sources
     'external_call_data': {
-        'current_process_id': 5552,#253762,# 249468,
+        'current_process_id': 5530,#253762,# 249468,
         'api_proc_id': 999,
-        'wfm_proc_id': 5552,
+        'wfm_proc_id': 5530,
         'wfm_user': 'WFM',
         'start_date': '2025-01-01',
         'end_date': '2025-12-31',
