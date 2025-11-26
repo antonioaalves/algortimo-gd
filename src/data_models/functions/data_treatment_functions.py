@@ -1170,8 +1170,17 @@ def date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, main_year: 
             # If column doesn't exist, create it as NaT (no termination dates)
             df_result['data_demissao'] = pd.NaT
         
-        # Define fields to adjust
-        fields_to_adjust = ['l_d', 'l_dom', 'l_q', 'l_total', 'c2d', 'c3d']
+        # Define fields to adjust along with desired rounding strategy
+        fields_to_adjust = ['ld', 'l_dom', 'lq', 'l_total', 'c2d', 'c3d', 'cxx']
+        rounding_map = {
+            'l_total': np.round,
+            'l_dom': np.round,
+            'c2d': np.floor,
+            'c3d': np.floor,
+            'ld': np.round,
+            'lq': np.round,
+            'cxx': np.round,
+        }
         
         # SCENARIO A: Late hire only (hired after start_date, still active)
         late_hire_mask = (
@@ -1200,7 +1209,8 @@ def date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, main_year: 
             # Apply adjustments vectorized
             for field in fields_to_adjust:
                 if field in df_result.columns:
-                    df_result.loc[late_hire_mask, field] = np.ceil(
+                    rounder = rounding_map.get(field, np.ceil)
+                    df_result.loc[late_hire_mask, field] = rounder(
                         df_result.loc[late_hire_mask, field] * div_factors
                     )
             
@@ -1238,7 +1248,8 @@ def date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, main_year: 
             # Apply adjustments vectorized
             for field in fields_to_adjust:
                 if field in df_result.columns:
-                    df_result.loc[early_term_mask, field] = np.ceil(
+                    rounder = rounding_map.get(field, np.ceil)
+                    df_result.loc[early_term_mask, field] = rounder(
                         df_result.loc[early_term_mask, field] * div_factors
                     )
             
@@ -1276,7 +1287,8 @@ def date_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame, main_year: 
             # Apply adjustments vectorized
             for field in fields_to_adjust:
                 if field in df_result.columns:
-                    df_result.loc[both_adjust_mask, field] = np.ceil(
+                    rounder = rounding_map.get(field, np.ceil)
+                    df_result.loc[both_adjust_mask, field] = rounder(
                         df_result.loc[both_adjust_mask, field] * div_factors
                     )
             
@@ -1553,12 +1565,12 @@ def add_l_d_to_df_colaborador(
     """
     try:
         # Define use_case for totals treatment calculations
-        logger.info(f"Adding l_d column to df_colaborador.")
+        logger.info(f"Adding ld column to df_colaborador.")
 
         df_result = df_colaborador.copy()
 
         if use_case == 0:
-            df_result['l_d'] = 0
+            df_result['ld'] = 0
 
         elif use_case == 1:
             # First mask
@@ -3373,12 +3385,12 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
             date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
             df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
         elif use_case == 1:
-            # Fixed indexing: 23-12-[year-1] to 04-01-[year+1]
+            # Fixed indexing: 22-12-[year-1] to 04-01-[year+1]
             # This ensures index matches between df_estimativas (01-01 to 31-12) and df_calendario (23-12 to 04-01)
             if main_year is None:
                 return False, pd.DataFrame(), "Input validation failed: main_year is required when use_case=1"
             
-            # Create fixed date range: 23-12-[year-1] to 04-01-[year+1]
+            # Create fixed date range: 22-12-[year-1] to 04-01-[year+1]
             start_date = pd.Timestamp(year=main_year - 1, month=12, day=22)
             end_date = pd.Timestamp(year=main_year + 1, month=1, day=4)
             fixed_date_range = pd.date_range(start=start_date, end=end_date, freq='D')

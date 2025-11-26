@@ -2,6 +2,7 @@
 
 # Dependencies
 import os
+import numpy as np
 import pandas as pd
 import datetime as dt
 from typing import List, Optional, Tuple, Dict
@@ -457,6 +458,41 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
     logger.info(f"convert_ciclos_to_horario: tipo_dia='N' count: {n_count}, horario='NL' count: {nl_count}")
     
     return df_result
+
+def convert_fields_to_int(df: pd.DataFrame, fields: List[str]) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Convert fields to int.
+    """
+    try:
+        if len(df) == 0:
+            return False, pd.DataFrame(), "Input validation failed: empty dataframe"
+
+        logger.info(f"convert_fields_to_int: starting conversion for fields={fields}")
+        logger.info(f"convert_fields_to_int: dtypes BEFORE -> {df[fields].dtypes.to_dict()}")
+
+        for field in fields:
+            if field not in df.columns:
+                logger.warning(f"convert_fields_to_int: field '{field}' not in dataframe, skipping")
+                continue
+
+            converted = pd.to_numeric(df[field], errors='coerce')
+            na_count = converted.isna().sum()
+            logger.info(
+                f"convert_fields_to_int: field='{field}' "
+                f"min={converted.min(skipna=True)}, max={converted.max(skipna=True)}, "
+                f"na_count={na_count}"
+            )
+
+            if na_count > 0:
+                return False, pd.DataFrame(), f"Error in convert_fields_to_int: {field} contains NaN values"
+
+            df[field] = converted.astype(np.int64)
+
+        logger.info(f"convert_fields_to_int: dtypes AFTER  -> {df[fields].dtypes.to_dict()}")
+        return True, df, ""
+    except Exception as e:
+        logger.error(f"Error in convert_fields_to_int: {str(e)}")
+        return False, pd.DataFrame(), f"Error in convert_fields_to_int: {str(e)}"
 
 def load_pre_ger_scheds(df_pre_ger: pd.DataFrame, employees_tot: List[str]) -> Tuple[pd.DataFrame, List[str]]:
     """

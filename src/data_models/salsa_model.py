@@ -27,7 +27,8 @@ from src.data_models.functions.helper_functions import (
     create_employee_query_string,
     count_holidays_in_period,
     count_sundays_in_period,
-    count_open_holidays
+    count_open_holidays,
+    convert_fields_to_int
 )
 from src.data_models.functions.data_treatment_functions import (
     separate_df_ciclos_completos_folgas_ciclos,
@@ -519,6 +520,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
                 self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
+                self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
@@ -594,7 +596,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name
             # Store algorithm_treatment_params in auxiliary_data
-            self.auxiliary_data['algorithm_treatment_params'] = algorithm_treatment_params
+            self.algorithm_treatment_params = algorithm_treatment_params
             return True, "", ""
         except Exception as e:
             self.logger.error(f"Error treating parameters: {e}", exc_info=True)
@@ -1362,7 +1364,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding l_total failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-
                 # TODO: Add totals adjustments for admission date
                 success, df_colaborador, error_msg = date_adjustments_to_df_colaborador(
                     df_colaborador=df_colaborador,
@@ -1499,6 +1500,16 @@ class SalsaDataModel(BaseDescansosDataModel):
             )
             if not success:
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
+                return False, "errSubproc", error_msg
+
+
+            # Final type coercion: ensure counters are stored as integers
+            success, df_colaborador, error_msg = convert_fields_to_int(
+                df=df_colaborador,
+                fields=['ld', 'l_dom', 'lq', 'l_total', 'c2d', 'c3d', 'cxx']
+            )
+            if not success:
+                self.logger.error(f"Final conversion of fields to int failed: {error_msg}")
                 return False, "errSubproc", error_msg
 
             # Dateframe date filtering (3.b)
