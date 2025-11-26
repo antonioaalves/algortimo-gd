@@ -3373,12 +3373,12 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
             date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
             df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
         elif use_case == 1:
-            # Fixed indexing: 23-12-[year-1] to 04-01-[year+1]
+            # Fixed indexing: 22-12-[year-1] to 04-01-[year+1]
             # This ensures index matches between df_estimativas (01-01 to 31-12) and df_calendario (23-12 to 04-01)
             if main_year is None:
                 return False, pd.DataFrame(), "Input validation failed: main_year is required when use_case=1"
             
-            # Create fixed date range: 23-12-[year-1] to 04-01-[year+1]
+            # Create fixed date range: 22-12-[year-1] to 04-01-[year+1]
             start_date = pd.Timestamp(year=main_year - 1, month=12, day=22)
             end_date = pd.Timestamp(year=main_year + 1, month=1, day=4)
             fixed_date_range = pd.date_range(start=start_date, end=end_date, freq='D')
