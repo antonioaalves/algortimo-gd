@@ -673,7 +673,7 @@ def treat_df_folgas_ciclos(df_folgas_ciclos: pd.DataFrame) -> Tuple[bool, pd.Dat
     
     This function standardizes day-off cycle records by:
     - Filtering to essential columns (employee_id, matricula, schedule_day, tipo_dia)
-    - Converting day-off type codes from 'F' (feriado/folga) to 'L' (libre/day-off)
+    - Converting day-off type codes from 'F' (feriado/folga) to 'L' (libranza/day-off)
     
     Business Context:
         Fixed cycles represent predefined rest day patterns for employees who don't
@@ -703,6 +703,9 @@ def treat_df_folgas_ciclos(df_folgas_ciclos: pd.DataFrame) -> Tuple[bool, pd.Dat
 
         # convert the values of tipo_dia to "F"
         df_folgas_ciclos['tipo_dia'] = df_folgas_ciclos['tipo_dia'].replace('F', 'L')
+
+        # convert the values of tipo_dia to "F"
+        df_folgas_ciclos['tipo_dia'] = df_folgas_ciclos['tipo_dia'].replace('S', '-')
         
         return True, df_folgas_ciclos, ""
     except Exception as e:
@@ -3329,19 +3332,25 @@ def process_special_shift_types(df_calendario: pd.DataFrame, shift_type: str, em
         return False, pd.DataFrame(), error_msg
 
 
-def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False) -> Tuple[bool, pd.DataFrame, str]:
+def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Add date-related columns to dataframe (WDAY, WW, WD).
+    Add date-related columns to dataframe (index, WDAY, WW, WD).
     
     Agnostic function that works for both df_calendario and df_estimativas.
     
     Args:
         df: Input dataframe with date column
-        date_col: Name of date column ('data' for estimativas, 'DATA' for calendario)
-        add_id_col: Whether to add ID column (row index) - usually only for calendario
+        date_col: Name of date column ('data' for estimativas, 'schedule_day' for calendario)
+        add_id_col: Whether to add index column (row index) - usually only for calendario
+        use_case: Processing mode (0=dynamic indexing, 1=fixed indexing for calendario)
+        main_year: Main year for fixed indexing (required when use_case=1)
         
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, dataframe with new columns, error message)
+        
+    Note:
+        The 'index' column assigns sequential IDs (1, 2, 3, ...) to each unique date
+        in chronological order, identifying the position of each day in the calendar range.
     """
     try:
         # INPUT VALIDATION
@@ -3357,6 +3366,36 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         # Ensure date column is datetime
         if not pd.api.types.is_datetime64_any_dtype(df_result[date_col]):
             df_result[date_col] = pd.to_datetime(df_result[date_col])
+        
+        # Add index column: sequential ID for each unique date (1, 2, 3, ...)
+        if use_case == 0:
+            unique_dates = sorted(df_result[date_col].unique())
+            date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
+            df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
+        elif use_case == 1:
+            # Fixed indexing: 23-12-[year-1] to 04-01-[year+1]
+            # This ensures index matches between df_estimativas (01-01 to 31-12) and df_calendario (23-12 to 04-01)
+            if main_year is None:
+                return False, pd.DataFrame(), "Input validation failed: main_year is required when use_case=1"
+            
+            # Create fixed date range: 23-12-[year-1] to 04-01-[year+1]
+            start_date = pd.Timestamp(year=main_year - 1, month=12, day=23)
+            end_date = pd.Timestamp(year=main_year + 1, month=1, day=4)
+            fixed_date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+            
+            # Create mapping: fixed range dates to sequential IDs (23-12 always = 1, 04-01 always = last)
+            date_to_index = {date: idx + 1 for idx, date in enumerate(fixed_date_range)}
+            df_result['index'] = df_result[date_col].map(date_to_index)
+            
+            # Fill any missing indices (dates outside the fixed range) with max+1
+            if df_result['index'].isna().any():
+                max_index = df_result['index'].max()
+                if pd.isna(max_index):
+                    max_index = 0
+                df_result['index'] = df_result['index'].fillna(max_index + 1)
+            
+            # Convert to int to ensure integer values, not floats
+            df_result['index'] = df_result['index'].astype(int)
         
         # Add WDAY (1=Monday, 7=Sunday)
         df_result['wday'] = df_result[date_col].dt.dayofweek + 1
@@ -3374,7 +3413,7 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         if add_id_col:
             df_result['ID'] = range(len(df_result))
         
-        logger.info(f"Added date-related columns: wday, ww, wd" + (" and ID" if add_id_col else ""))
+        logger.info(f"Added date-related columns: index, wday, ww, wd" + (" and ID" if add_id_col else ""))
         return True, df_result, ""
         
     except Exception as e:
@@ -3832,9 +3871,7 @@ def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborado
     """
     Adjust HORARIO based on employee admission dates.
     
-    For dates before admission:
-    - If domYf (Sunday/holiday): set HORARIO to 'L_' (guaranteed day off)
-    - Otherwise: set HORARIO to 'NL' (nao libranza)
+    For any date before admission OR after demission, set HORARIO to '-'.
     
     Args:
         df_calendario: Calendar dataframe with employee schedules
@@ -3861,15 +3898,20 @@ def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborado
             return False, pd.DataFrame(), f"df_calendario missing columns: {missing_cols}"
         
         if 'data_admissao' not in df_colaborador.columns:
-            logger.warning("data_admissao column not found in df_colaborador, skipping admission date adjustment")
+            logger.warning("data_admissao column not found in df_colaborador, skipping admission/demission adjustment")
             return True, df_calendario.copy(), ""
+        
+        demission_available = 'data_demissao' in df_colaborador.columns
         
         # TREATMENT LOGIC
         df_result = df_calendario.copy()
         
         # Ensure both sides have matching data types (string) for merge
         df_result[employee_col] = df_result[employee_col].astype(str).str.strip()
-        admission_data = df_colaborador[[employee_col, 'data_admissao']].copy()
+        merge_cols = [employee_col, 'data_admissao']
+        if demission_available:
+            merge_cols.append('data_demissao')
+        admission_data = df_colaborador[merge_cols].copy()
         admission_data[employee_col] = admission_data[employee_col].astype(str).str.strip()
         
         # Merge admission date into calendario
@@ -3885,31 +3927,33 @@ def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborado
         # Convert dates to datetime if needed
         df_result[date_col] = pd.to_datetime(df_result[date_col])
         df_result['data_admissao'] = pd.to_datetime(df_result['data_admissao'])
+        if demission_available:
+            df_result['data_demissao'] = pd.to_datetime(df_result['data_demissao'])
         
         # Fill missing admission dates with very old date (assume they were always employed)
         df_result['data_admissao'] = df_result['data_admissao'].fillna(pd.Timestamp('1900-01-01'))
+        if demission_available:
+            df_result['data_demissao'] = df_result['data_demissao'].fillna(pd.Timestamp('2099-12-31'))
         
         # Vectorized adjustment
-        # Mask for dates before admission
+        # Mask for dates before admission / after demission
         before_admission = df_result[date_col] < df_result['data_admissao']
+        if demission_available:
+            after_demission = df_result[date_col] > df_result['data_demissao']
+        else:
+            after_demission = pd.Series(False, index=df_result.index)
         
-        # For dates before admission AND domYf: set to 'L_'
-        mask_domyf = before_admission & (df_result[dia_tipo_col] == 'domYf')
-        df_result.loc[mask_domyf, horario_col] = 'L_'
+        outside_contract = before_admission | after_demission
+        df_result.loc[outside_contract, horario_col] = '-'
         
-        # For dates before admission AND NOT domYf: set to 'NL'
-        mask_not_domyf = before_admission & (df_result[dia_tipo_col] != 'domYf')
-        df_result.loc[mask_not_domyf, horario_col] = 'NL'
-        
-        # Drop temporary admission date column
-        df_result = df_result.drop(columns=['data_admissao'])
+        # Drop temporary date columns
+        cols_to_drop = ['data_admissao']
+        if demission_available:
+            cols_to_drop.append('data_demissao')
+        df_result = df_result.drop(columns=cols_to_drop)
         
         # OUTPUT VALIDATION
-        before_count = before_admission.sum()
-        domyf_adjusted = mask_domyf.sum()
-        nl_adjusted = mask_not_domyf.sum()
-        
-        logger.info(f"Adjusted HORARIO for {before_count} dates before admission: {domyf_adjusted} to 'L_', {nl_adjusted} to 'NL'")
+        logger.info(f"Set HORARIO to '-' for {outside_contract.sum()} rows outside admission/demission window")
         
         return True, df_result, ""
         

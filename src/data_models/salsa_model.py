@@ -1105,7 +1105,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_calendario, error_msg = add_date_related_columns(
                     df=df_calendario,
                     date_col='schedule_day',
-                    add_id_col=True
+                    add_id_col=True,
+                    use_case=1,
+                    main_year=main_year
                 )
                 if not success:
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")

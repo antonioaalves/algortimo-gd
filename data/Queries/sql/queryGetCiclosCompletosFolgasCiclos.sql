@@ -22,5 +22,5 @@ WHERE cpehd.PROCESS_ID = {process_id}
     AND (
         (ec.CODIGO IN ({colab90ciclo}))  -- First query condition
         OR 
-        (cpehd.TIPO_DIA = 'F')            -- Second query condition
+        (cpehd.TIPO_DIA in ('F', 'S'))            -- Second query condition
     )
