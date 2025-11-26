@@ -95,7 +95,7 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
         
         # Check horario values are valid (if column exists)
         if 'horario' in df_calendario.columns:
-            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D', '']
+            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'LQ','F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D', '', 'M', 'T', 'MoT', 'P', '0']
             invalid_horarios = df_calendario[~df_calendario['horario'].isin(valid_horario)]['horario'].unique()
             if len(invalid_horarios) > 0:
                 logger.warning(f"df_calendario contains unexpected horario values: {invalid_horarios}")

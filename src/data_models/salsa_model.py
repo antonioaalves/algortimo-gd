@@ -27,7 +27,8 @@ from src.data_models.functions.helper_functions import (
     create_employee_query_string,
     count_holidays_in_period,
     count_sundays_in_period,
-    count_open_holidays
+    count_open_holidays,
+    convert_fields_to_int
 )
 from src.data_models.functions.data_treatment_functions import (
     separate_df_ciclos_completos_folgas_ciclos,
@@ -1363,7 +1364,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding l_total failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-
                 # TODO: Add totals adjustments for admission date
                 success, df_colaborador, error_msg = date_adjustments_to_df_colaborador(
                     df_colaborador=df_colaborador,
@@ -1502,6 +1502,16 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
                 return False, "errSubproc", error_msg
 
+
+            # Final type coercion: ensure counters are stored as integers
+            success, df_colaborador, error_msg = convert_fields_to_int(
+                df=df_colaborador,
+                fields=['ld', 'l_dom', 'lq', 'l_total', 'c2d', 'c3d', 'cxx']
+            )
+            if not success:
+                self.logger.error(f"Final conversion of fields to int failed: {error_msg}")
+                return False, "errSubproc", error_msg
+
             # Dateframe date filtering (3.b)
             try:
                 pass
@@ -1524,6 +1534,19 @@ class SalsaDataModel(BaseDescansosDataModel):
                 output_dir = self.config_manager.paths.get_output_dir()
                 process_id = self.external_call_data.get("current_process_id", "")
                 posto_id = self.auxiliary_data.get("current_posto_id", "")
+
+                # Log dtypes of key quota fields just before export
+                quota_cols = ['l_d', 'l_dom', 'l_q', 'l_total', 'c2d', 'c3d', 'cxx']
+                existing_quota_cols = [c for c in quota_cols if c in df_colaborador.columns]
+                self.logger.info(
+                    f"func_inicializa: df_colaborador quota dtypes BEFORE CSV -> "
+                    f"{df_colaborador[existing_quota_cols].dtypes.to_dict()}"
+                )
+                if existing_quota_cols:
+                    self.logger.info(
+                        "func_inicializa: df_colaborador quota sample row BEFORE CSV -> "
+                        f"{df_colaborador[existing_quota_cols].head(3).to_dict(orient='records')}"
+                    )
                 
                 df_colaborador.to_csv(
                     os.path.join(output_dir, f'df_colaborador-{process_id}-{posto_id}.csv'),
