@@ -407,7 +407,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             if constraint_selections.get("salsa_saturday_L_constraint", {}).get("enabled", True):
                 self.logger.info("Applying constraint: salsa_saturday_L_constraint")
-                salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday, days_of_year)
+                salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday)
             else:
                 self.logger.warning("Skipping constraint: salsa_saturday_L_constraint (disabled in config)")
 
