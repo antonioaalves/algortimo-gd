@@ -519,6 +519,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
                 self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
+                self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
@@ -594,7 +595,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name
             # Store algorithm_treatment_params in auxiliary_data
-            self.auxiliary_data['algorithm_treatment_params'] = algorithm_treatment_params
+            self.algorithm_treatment_params = algorithm_treatment_params
             return True, "", ""
         except Exception as e:
             self.logger.error(f"Error treating parameters: {e}", exc_info=True)
