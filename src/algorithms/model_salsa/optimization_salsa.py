@@ -102,7 +102,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
         pessObj.get((d, s), 0)
         for d in days_of_year
         for s in real_working_shift)
-    percentage_of_importance_no_deficit=1
+    percentage_of_importance_no_deficit=1.4
     deficit_weight=int(scale*percentage_of_importance_no_deficit/deficit_min_worst_scenario)
 
     no_workers_min_worst_scenario=1
@@ -152,6 +152,11 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     percentage_of_importance_excess_and_deficit=1
     excess_and_deficit_weight=int(scale*percentage_of_importance_excess_and_deficit/excess_and_deficit_worst_scenario)
 
+    number_of_deficit_day_worst_scenario=10
+    percentage_of_importance_deficit_day=1
+    deficit_day_weight=int( scale*percentage_of_importance_deficit_day/number_of_deficit_day_worst_scenario )
+    
+    
     # 1. Excess and deficit error
 
     excess_diff_vars = []
@@ -212,7 +217,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
 
 
     objective_terms.append(sum(penalty_vars) * excess_and_deficit_weight)
-
+    #objective_terms.append(sum(day_has_deficit[d] for d in days_of_year) * deficit_day_weight)
 
 
     # 2. No workers in a day error
