@@ -1534,19 +1534,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 output_dir = self.config_manager.paths.get_output_dir()
                 process_id = self.external_call_data.get("current_process_id", "")
                 posto_id = self.auxiliary_data.get("current_posto_id", "")
-
-                # Log dtypes of key quota fields just before export
-                quota_cols = ['l_d', 'l_dom', 'l_q', 'l_total', 'c2d', 'c3d', 'cxx']
-                existing_quota_cols = [c for c in quota_cols if c in df_colaborador.columns]
-                self.logger.info(
-                    f"func_inicializa: df_colaborador quota dtypes BEFORE CSV -> "
-                    f"{df_colaborador[existing_quota_cols].dtypes.to_dict()}"
-                )
-                if existing_quota_cols:
-                    self.logger.info(
-                        "func_inicializa: df_colaborador quota sample row BEFORE CSV -> "
-                        f"{df_colaborador[existing_quota_cols].head(3).to_dict(orient='records')}"
-                    )
                 
                 df_colaborador.to_csv(
                     os.path.join(output_dir, f'df_colaborador-{process_id}-{posto_id}.csv'),
