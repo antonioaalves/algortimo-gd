@@ -2657,9 +2657,14 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
     horario values to ensure fixed rest days are respected.
     
     Day-Off Logic:
-        - Source: tipo_dia = 'F' (folga/day-off) in cycle definition
-        - Target: horario = 'L' (libre/rest day) for both M and T shifts
-        - Mode: OVERRIDE - replaces existing horario values
+        - Source: tipo_dia = 'F' (folga/day-off) or 'S' (no-work) in cycle definition
+        - After treatment: 'F' → 'L', 'S' → '-'
+        - For 'L' values: Target horario = 'L' (libre/rest day) - OVERRIDE mode
+        - For '-' values (no-work days): Special handling:
+          * If current horario is 'A' → sets to 'A-'
+          * If current horario is 'V' → sets to 'V-'
+          * Otherwise → sets to '-'
+        - Mode: OVERRIDE - replaces existing horario values (except F's)
     
     Business Context:
         Fixed cycles represent:
@@ -2670,10 +2675,14 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
     
     Matching Logic:
         - Matches by: (employee_id, schedule_day converted to data)
-        - Filters source for tipo_dia = 'L' (day-off) only
+        - Filters source for tipo_dia = 'L' (day-off) or '-' (no-work) after treatment
         - Overrides all matching dates EXCEPT F's (closed holidays)
         - Uses vectorized MultiIndex for efficient bulk updates
         - Priority: Preserves F's from earlier steps
+        - Special handling for '-' values (no-work days):
+          * If current horario is 'A' → sets to 'A-'
+          * If current horario is 'V' → sets to 'V-'
+          * Otherwise → sets to '-'
     
     Use Cases:
         - Case 0: No processing (return calendar as-is)
@@ -2719,13 +2728,14 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
             
             df_result = df_calendario.copy()
             
-            # Filter for day-offs only (tipo_dia = 'L' after treatment)
+            # Filter for both day-offs (tipo_dia = 'L' after treatment) and no-work days (tipo_dia = '-' after treatment)
+            # Note: treat_df_folgas_ciclos converts 'F' → 'L' and 'S' → '-'
             df_dayoffs = df_core_pro_emp_horario_det[
-                df_core_pro_emp_horario_det['tipo_dia'] == 'L'
+                df_core_pro_emp_horario_det['tipo_dia'].isin(['L', '-'])
             ].copy()
             
             if df_dayoffs.empty:
-                logger.info("No day-off records found, returning original df_calendario")
+                logger.info("No day-off or no-work records found, returning original df_calendario")
                 return True, df_result, ""
             
             # Ensure schedule_day is in string format for matching
@@ -2741,21 +2751,32 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
             # Vectorized lookup: map day-off values to result positions
             mapped_values = result_index.map(dayoffs_lookup)
             
-            # Create mask for day-off records (tipo_dia already normalized to 'L')
-            dayoff_mask = mapped_values == 'L'
-            
             # Create mask to preserve F's (closed holidays) - do not override closed holidays
             preserve_f_mask = df_result['horario'] == 'F'
             
-            # Combine masks: override everything except F's where we have day-off records
-            override_mask = dayoff_mask & ~preserve_f_mask
+            # Process 'L' values (day-offs): override with 'L'
+            dayoff_l_mask = (mapped_values == 'L') & ~preserve_f_mask
+            if dayoff_l_mask.any():
+                df_result.loc[dayoff_l_mask, 'horario'] = 'L'
             
-            # Vectorized assignment: Override with 'L' for all day-offs except F's
-            df_result.loc[override_mask, 'horario'] = 'L'
+            # Process '-' values (no-work days): check if current horario is 'A' or 'V'
+            # If inserting '-' and current is 'A' → 'A-', if current is 'V' → 'V-', otherwise '-'
+            dash_mask = (mapped_values == '-') & ~preserve_f_mask
+            if dash_mask.any():
+                # Get current horario values for rows where we're inserting '-'
+                current_horario = df_result.loc[dash_mask, 'horario']
+                
+                # Vectorized conditional assignment: A → A-, V → V-, otherwise -
+                df_result.loc[dash_mask, 'horario'] = np.where(
+                    current_horario == 'A',
+                    'A-',
+                    np.where(current_horario == 'V', 'V-', '-')
+                )
             
-            filled_count = override_mask.sum()
-            preserved_count = (dayoff_mask & preserve_f_mask).sum()
-            logger.info(f"Applied {filled_count} day-off overrides (L) from df_core_pro_emp_horario_det (preserved {preserved_count} F values)")
+            # Count overrides
+            filled_count = dayoff_l_mask.sum() + dash_mask.sum()
+            preserved_count = ((mapped_values == 'L') & preserve_f_mask).sum() + ((mapped_values == '-') & preserve_f_mask).sum()
+            logger.info(f"Applied {filled_count} day-off/no-work overrides from df_core_pro_emp_horario_det ({dayoff_l_mask.sum()} L, {dash_mask.sum()} -) (preserved {preserved_count} F values)")
             
             return True, df_result, f"Successfully applied {filled_count} day-off overrides"
         else:
@@ -2789,10 +2810,15 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
     
     Matching Logic:
         - Matches by: (employee_id, schedule_day converted to data)
-        - Overrides any value EXCEPT F's (closed holidays) and V's (vacations)
+        - Overrides any value EXCEPT F's (closed holidays) - F's are always preserved
         - Only fills with valid cycle codes (not empty/null/'-')
         - Uses vectorized MultiIndex for performance
-        - Priority: Preserves F's and V's from earlier steps
+        - Priority: Preserves F's from earlier steps
+        - Special handling for '-' values (no-work days from tipo_dia='S'):
+          * If current horario is 'A' → sets to 'A-'
+          * If current horario is 'V' → sets to 'V-'
+          * Otherwise → sets to '-'
+        - Note: V's (vacations) can be overridden by cycle data, but converted to 'V-' when inserting '-'
     
     Use Cases:
         - Case 0: No processing (return calendar as-is)
@@ -2872,16 +2898,30 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             # Note: Allow '-' values (skip days from tipo_dia='S') to override default '0' values
             valid_ciclos_mask = mapped_values.notna() & (mapped_values != '')
             
-            # Create mask to preserve F's (closed holidays) and V's (vacations)
+            # Create mask to preserve F's (closed holidays) - F's should never be overridden
             preserve_f_mask = df_result['horario'] == 'F'
-            preserve_v_mask = df_result['horario'] == 'V'
-            preserve_mask = preserve_f_mask | preserve_v_mask
             
-            # Combine masks: override everything except F's and V's where ciclos has valid data
-            fill_mask = valid_ciclos_mask & ~preserve_mask
+            # Combine masks: override everything except F's where ciclos has valid data
+            fill_mask = valid_ciclos_mask & ~preserve_f_mask
             
-            # Vectorized assignment
-            df_result.loc[fill_mask, 'horario'] = mapped_values[fill_mask]
+            # Special handling for '-' values: check if current horario is 'A' or 'V'
+            # If inserting '-' and current is 'A' → 'A-', if current is 'V' → 'V-', otherwise '-'
+            dash_mask = fill_mask & (mapped_values == '-')
+            if dash_mask.any():
+                # Get current horario values for rows where we're inserting '-'
+                current_horario = df_result.loc[dash_mask, 'horario']
+                
+                # Vectorized conditional assignment: A → A-, V → V-, otherwise -
+                df_result.loc[dash_mask, 'horario'] = np.where(
+                    current_horario == 'A',
+                    'A-',
+                    np.where(current_horario == 'V', 'V-', '-')
+                )
+            
+            # For non-dash values, assign normally (including overriding V's with shift codes)
+            non_dash_mask = fill_mask & (mapped_values != '-')
+            if non_dash_mask.any():
+                df_result.loc[non_dash_mask, 'horario'] = mapped_values[non_dash_mask]
             
             filled_count = fill_mask.sum()
             
@@ -2890,7 +2930,7 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             nl_values_in_result = (df_result['horario'] == 'NL').sum()
             horario_counts_after = df_result['horario'].value_counts()
             
-            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos (preserved {preserve_mask.sum()} F/V values)")
+            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos (preserved {preserve_f_mask.sum()} F values)")
             logger.info(f"add_ciclos_completos: NL values from ciclos lookup: {nl_values_from_ciclos}, NL values in result after merge: {nl_values_in_result}")
             logger.info(f"add_ciclos_completos: horario value counts after merge: {horario_counts_after.to_dict()}")
             
@@ -3393,8 +3433,8 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
                 return False, pd.DataFrame(), "Input validation failed: main_year is required when use_case=1"
             
             # Create fixed date range: 22-12-[year-1] to 04-01-[year+1]
-            start_date = pd.Timestamp(year=main_year - 1, month=12, day=22)
-            end_date = pd.Timestamp(year=main_year + 1, month=1, day=4)
+            start_date = get_monday_of_previous_week(f"{main_year}-01-01")
+            end_date = get_sunday_of_next_week(f"{main_year}-12-31")
             fixed_date_range = pd.date_range(start=start_date, end=end_date, freq='D')
             
             # Create mapping: fixed range dates to sequential IDs (23-12 always = 1, 04-01 always = last)
