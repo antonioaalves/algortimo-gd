@@ -38,3 +38,9 @@
 21082025 15:04:19 ERROR CONNECTING TO DATABASE: Configuration file not found at C:\Users\joao.soares\Documents\GitHub\algortimo-gd\Connection\acessos.txt
 10092025 15:12:29 ERROR CONNECTING TO DATABASE: ORA-12514: Cannot connect to database. Service stardard_pdb1.database.backbone.oraclevcn.com is not registered with the listener at host 10.175.23.29 port 1526. (CONNECTION_ID=p8FfFnJyQtWrwIh5mP7m+g==)
 Help: https://docs.oracle.com/error-help/db/ora-12514/
+26112025 12:26:13 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+26112025 14:41:45 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+27112025 15:20:34 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/

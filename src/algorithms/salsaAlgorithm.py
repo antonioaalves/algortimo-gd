@@ -247,7 +247,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             vacation_days = adapted_data['vacation_days']
             working_days = adapted_data['working_days']
             non_holidays = adapted_data['non_holidays']
-            start_weekday = adapted_data['start_weekday']
             week_to_days = adapted_data['week_to_days']
             matriz_colaborador_gd = adapted_data['matriz_colaborador_gd']
             workers = adapted_data['workers']
@@ -348,7 +347,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences,
                                        vacation_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       shift_M, shift_T, start_weekday, workers_past, fixed_compensation_days)
+                                       shift_M, shift_T, workers_past, fixed_compensation_days)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -407,7 +406,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             if constraint_selections.get("salsa_saturday_L_constraint", {}).get("enabled", True):
                 self.logger.info("Applying constraint: salsa_saturday_L_constraint")
-                salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday)
+                salsa_saturday_L_constraint(model, shift, workers, working_days)
             else:
                 self.logger.warning("Skipping constraint: salsa_saturday_L_constraint (disabled in config)")
 

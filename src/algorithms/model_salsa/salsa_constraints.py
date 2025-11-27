@@ -219,8 +219,6 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
                     for shift_type in ["L", "F", "LQ", "LD"]
                 )
 
-           
-            
             # Link the boolean variable to whether any free shift is assigned
             model.Add(free_shift_sum >= 1).OnlyEnforceIf(free_day)
             model.Add(free_shift_sum == 0).OnlyEnforceIf(free_day.Not())
@@ -290,7 +288,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
                 for d in working_days[w]:
-                    if not (year_range[0] <= d <= year_range[1]):
+                    if not (year_range[0] < d):
                         continue
                     # If the worker can be assigned an LQ shift on this day
                     if (w, d, "LQ") in shift:
@@ -327,14 +325,12 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
             else:
                 # First, identify all potential 2-day quality weekends (Saturday + Sunday)
                 for d in days_of_year:
-                    if not (year_range[0] <= d <= year_range[1]):
+                    if not (year_range[0] < d <= year_range[1]):
                         continue
-                    if d in sundays and (d in working_days[w] or d in closed_holidays) and (d - 1 in working_days[w] or d - 1 in closed_holidays):
+                    if d in sundays and d in working_days[w] and d - 1 in working_days[w]:
                         # Boolean variables to check if the worker is assigned each shift
                         has_L_on_sunday = model.NewBoolVar(f"has_L_on_sunday_{w}_{d}")
                         has_LQ_on_saturday = model.NewBoolVar(f"has_LQ_on_saturday_{w}_{d-1}")
-                        has_F_on_saturday = model.NewBoolVar(f"has_F_on_saturday_{w}_{d-1}")
-                        has_F_on_sunday = model.NewBoolVar(f"has_F_on_sunday_{w}_{d}")
 
 
                         # Connect boolean variables to actual shift assignments
@@ -344,23 +340,14 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         model.Add(shift.get((w, d - 1, "LQ"), 0) >= 1).OnlyEnforceIf(has_LQ_on_saturday)
                         model.Add(shift.get((w, d - 1, "LQ"), 0) == 0).OnlyEnforceIf(has_LQ_on_saturday.Not())
 
-                        model.Add(shift.get((w, d - 1, "F"), 0) >= 1).OnlyEnforceIf(has_F_on_saturday)
-                        model.Add(shift.get((w, d - 1, "F"), 0) == 0).OnlyEnforceIf(has_F_on_saturday.Not())
-
-                        model.Add(shift.get((w, d, "F"), 0) >= 1).OnlyEnforceIf(has_F_on_sunday)
-                        model.Add(shift.get((w, d, "F"), 0) == 0).OnlyEnforceIf(has_F_on_sunday.Not())
 
                         # Create a binary variable to track whether this weekend qualifies as a 2-day quality weekend
                         quality_weekend_2 = model.NewBoolVar(f"quality_weekend_2_{w}_{d}")
 
                         # A weekend is "quality 2" only if both conditions are met: LQ on Saturday and L on Sunday
                         model.AddBoolAnd([has_L_on_sunday, has_LQ_on_saturday]).OnlyEnforceIf(quality_weekend_2)
-                        model.AddBoolAnd([has_L_on_sunday, has_F_on_saturday]).OnlyEnforceIf(quality_weekend_2)
-                        model.AddBoolAnd([has_F_on_sunday, has_LQ_on_saturday]).OnlyEnforceIf(quality_weekend_2)
 
                         model.AddBoolOr([has_L_on_sunday.Not(), has_LQ_on_saturday.Not()]).OnlyEnforceIf(quality_weekend_2.Not())
-                        model.AddBoolOr([has_L_on_sunday.Not(), has_F_on_saturday.Not()]).OnlyEnforceIf(quality_weekend_2.Not())
-                        model.AddBoolOr([has_F_on_sunday.Not(), has_LQ_on_saturday.Not()]).OnlyEnforceIf(quality_weekend_2.Not())
 
                         # Track the quality weekend count
                         quality_2weekend_vars.append(quality_weekend_2)
@@ -371,7 +358,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
                 for d in working_days[w]:
-                    if not (year_range[0] <= d <= year_range[1]):
+                    if not (year_range[0] <= d < year_range[1]):
                         continue
                     # If the worker can be assigned an LQ shift on this day
                     if (w, d, "LQ") in shift:
@@ -405,12 +392,13 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
     return debug_vars
 
-def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekday):
+def salsa_saturday_L_constraint(model, shift, workers, working_days):
     # For each worker, constrain L on Saturday if L on Sunday
     for w in workers:
         for day in working_days[w]:
-            # Get day of week (5 = Saturday)
-            if (day + start_weekday - 2) % 7 == 5:
+            # Get day of week (6 = Saturday)
+            if day % 7 == 6:
+                print(f"saturday day {day}")
                 if day + 1 in working_days[w]:
                     if (w, day, "L") in shift and (w, day + 1, "L") in shift:
                         model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)

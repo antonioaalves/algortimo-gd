@@ -595,18 +595,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     work_days_per_week[w] = [5] * 52
                 if not working_days[w]:
                     logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-                #logger.info(f"Worker {w} contract information extracted: "
-                #            f"Contract Type: {contract_type[w]}, "
-                #            f"Total L: {total_l[w]}, "
-                #            f"Total L DOM: {total_l_dom[w]}, "
-                #            f"C2D: {c2d[w]}, "
-                #            f"C3D: {c3d[w]}, "
-                #            f"L_D: {l_d[w]}, "
-                #            f"CXX: {cxx[w]}, "
-                #            f"T_LQ: {t_lq[w]}, "
-                #            f"5 ou 6: {first_week_5_6[w]}, "
-                #            f"Data Admissao: {data_admissao[w]}, "
-                #            f"Data Demissao: {data_demissao[w]}")
         
         for w in workers:
             if contract_type[w] == 'Contract Error':
@@ -615,7 +603,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if total_l[w] < 0:
                 logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-
         logger.info(f"Contract information extracted for {len(workers)} workers")
 
         # =================================================================

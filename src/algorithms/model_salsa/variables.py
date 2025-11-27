@@ -6,9 +6,9 @@ logger = get_logger(_config_manager.project_name)
 
 #----------------------------------------DECISION VARIABLES----------------------------------------
 
-def add_var(model, shift, w, days, code, start_weekday):
+def add_var(model, shift, w, days, code):
     for d in days:
-        if (code == 'L' and (d + start_weekday - 2) % 7 == 5 and d + 1 in days):
+        if (code == 'L' and d % 7 == 6 and d + 1 in days):
             shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_LQ")
             model.Add(shift[(w, d, 'LQ')] == 1)
         else:
@@ -16,9 +16,9 @@ def add_var(model, shift, w, days, code, start_weekday):
             model.Add(shift[(w, d, code)] == 1)
 
 
-def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, 
-                       empty_days, closed_holidays, fixed_days_off, fixed_LQs, shift_M, shift_T,
-                       start_weekday, past_workers, fixed_compensation_days):
+def decision_variables(model, workers, shifts, first_day, last_day, absences, 
+                       vacation_days, empty_days, closed_holidays, fixed_days_off, 
+                       fixed_LQs, shift_M, shift_T, past_workers, fixed_compensation_days):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 
@@ -43,15 +43,15 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         logger.info(f"\tDEBUG fixed T {sorted(shift_T_set)}")
         logger.info(f"\tDEBUG fixed LDs {sorted(fixed_LD_set)}")
 
-        add_var(model, shift, w, fixed_LD_set, 'LD', start_weekday)
-        add_var(model, shift, w, shift_T_set, 'T', start_weekday)
-        add_var(model, shift, w, shift_M_set, 'M', start_weekday)
-        add_var(model, shift, w, vacation, 'V', start_weekday)
-        add_var(model, shift, w, absence_set, 'A', start_weekday)
-        add_var(model, shift, w, fixed_days_set, 'L', start_weekday)
-        add_var(model, shift, w, fixed_LQs_set, 'LQ', start_weekday)
-        add_var(model, shift, w, closed_set, 'F', start_weekday)
-        add_var(model, shift, w, empty_set, '-', start_weekday)
+        add_var(model, shift, w, fixed_LD_set, 'LD')
+        add_var(model, shift, w, shift_T_set, 'T')
+        add_var(model, shift, w, shift_M_set, 'M')
+        add_var(model, shift, w, vacation, 'V')
+        add_var(model, shift, w, absence_set, 'A')
+        add_var(model, shift, w, fixed_days_set, 'L')
+        add_var(model, shift, w, fixed_LQs_set, 'LQ')
+        add_var(model, shift, w, closed_set, 'F')
+        add_var(model, shift, w, empty_set, '-')
 
     shifts2 = shifts.copy()
     shifts2.remove('A')
@@ -76,8 +76,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         logger.info(f"\tDEBUG vacation {sorted(vacation)}")
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
         logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
-        logger.info(f"\tDEBUG absence {sorted(absence_set)}\n")
-        logger.info(f"\tDEBUG M shift {sorted(shift_M_set)}\n")
+        logger.info(f"\tDEBUG absence {sorted(absence_set)}")
+        logger.info(f"\tDEBUG M shift {sorted(shift_M_set)}")
         logger.info(f"\tDEBUG T shift {sorted(shift_T_set)}\n")
  
         blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set
@@ -91,10 +91,10 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                 if d in shift_T_set:
                     shift[(w, d, 'T')] = model.NewBoolVar(f"{w}_Day{d}_T")
 
-        add_var(model, shift, w, absence_set, 'A', start_weekday)
-        add_var(model, shift, w, vacation - fixed_days_set - fixed_LQs_set, 'V', start_weekday)
-        add_var(model, shift, w, fixed_days_set - empty_set, 'L', start_weekday)
-        add_var(model, shift, w, fixed_LQs_set - empty_set, 'LQ', start_weekday)
-        add_var(model, shift, w, closed_holidays - empty_set, 'F', start_weekday)
-        add_var(model, shift, w, empty_set, '-', start_weekday)
+        add_var(model, shift, w, absence_set, 'A')
+        add_var(model, shift, w, vacation - fixed_days_set - fixed_LQs_set, 'V')
+        add_var(model, shift, w, fixed_days_set - empty_set, 'L')
+        add_var(model, shift, w, fixed_LQs_set - empty_set, 'LQ')
+        add_var(model, shift, w, closed_holidays - empty_set, 'F')
+        add_var(model, shift, w, empty_set, '-')
     return shift
