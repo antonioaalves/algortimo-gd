@@ -321,7 +321,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Calculate domingos and festivos amount
             num_sundays_year = count_sundays_in_period(
                 first_day_year_str=first_year_date,
-                last_day_year_str=last_day_passado,
+                last_day_year_str=last_year_date,
                 start_date_str=start_date,
                 end_date_str=end_date
             )
@@ -395,8 +395,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                     'df_feriados', 
                     query_file=self.config_manager.paths.sql_processing_paths['df_feriados'], 
                     unit_id="'" + str(unit_id) + "'", 
-                    start_date=start_date, 
-                    end_date=end_date)
+                    start_date=first_day_passado, 
+                    end_date=last_day_passado)
                 self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)

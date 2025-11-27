@@ -2493,7 +2493,8 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
             logger.info(f"Found {matches_found} matches from df_calendario_passado")
             
             # Create mask for valid values from passado (not empty/null)
-            valid_passado_mask = mapped_values.notna() & (mapped_values != '') & (mapped_values != '-')
+            # Note: Allow '-' values (from type='N' conversion) to override default '0' values
+            valid_passado_mask = mapped_values.notna() & (mapped_values != '')
             
             # Create mask to preserve F's (closed holidays) and V's (vacations)
             preserve_f_mask = df_result['horario'] == 'F'
@@ -2868,7 +2869,8 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             logger.info(f"Found {matches_found} matches from df_ciclos_completos")
             
             # Create mask for valid values from ciclos (not empty/null)
-            valid_ciclos_mask = mapped_values.notna() & (mapped_values != '') & (mapped_values != '-')
+            # Note: Allow '-' values (skip days from tipo_dia='S') to override default '0' values
+            valid_ciclos_mask = mapped_values.notna() & (mapped_values != '')
             
             # Create mask to preserve F's (closed holidays) and V's (vacations)
             preserve_f_mask = df_result['horario'] == 'F'
