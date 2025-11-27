@@ -291,7 +291,7 @@ def insert_holidays_absences(employees_tot: List[str], ausencias_total: pd.DataF
                     current_afternoon = reshaped_final_3.iloc[row_index, col_indices[1]]
                     
                     # TODO: check for codigo_motivo_ausencia in config.py
-                    if fk_motivo_ausencia in codigos_motivo_ausencia:
+                    if fk_motivo_ausencia in []:
                         # Vacation - check if current value is "-"
                         if current_morning == "-":
                             reshaped_final_3.iloc[row_index, col_indices[0]] = "V-"
