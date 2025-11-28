@@ -365,14 +365,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 continue
             
             # Find days with specific statuses
-            empty_days[w] = worker_calendar[(worker_calendar['horario'] == '-') | (worker_calendar['horario'] == 'A-') | (worker_calendar['horario'] == 'V-')]['index'].tolist()
+            empty_days[w] = worker_calendar[(worker_calendar['horario'] == '-') | (worker_calendar['horario'] == 'A-') | (worker_calendar['horario'] == 'V-') | (worker_calendar['horario'] == '0')]['index'].tolist()
             vacation_days[w] = worker_calendar[(worker_calendar['horario'] == 'V') | (worker_calendar['horario'] == 'V-')]['index'].tolist()
             worker_absences[w] = worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP') | (worker_calendar['horario'] == 'A-')]['index'].tolist()
             fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L')]['index'].tolist()
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
-            fixed_LQs[w] = {}
+            fixed_LQs[w] = set()
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
     

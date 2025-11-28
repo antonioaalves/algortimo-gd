@@ -270,8 +270,6 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
                 for d in working_days[w]:
-                    if not (year_range[0] < d):
-                        continue
                     # If the worker can be assigned an LQ shift on this day
                     if (w, d, "LQ") in shift:
                         # This boolean captures if this day could be part of a quality weekend
@@ -307,8 +305,6 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
             else:
                 # First, identify all potential 2-day quality weekends (Saturday + Sunday)
                 for d in days_of_year:
-                    if not (year_range[0] < d <= year_range[1]):
-                        continue
                     if d in sundays and d in working_days[w] and d - 1 in working_days[w]:
                         # Boolean variables to check if the worker is assigned each shift
                         has_L_on_sunday = model.NewBoolVar(f"has_L_on_sunday_{w}_{d}")
@@ -340,8 +336,6 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
                 for d in working_days[w]:
-                    if not (year_range[0] <= d < year_range[1]):
-                        continue
                     # If the worker can be assigned an LQ shift on this day
                     if (w, d, "LQ") in shift:
                         # This boolean captures if this day could be part of a quality weekend
@@ -380,7 +374,6 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days):
         for day in working_days[w]:
             # Get day of week (6 = Saturday)
             if day % 7 == 6:
-                print(f"saturday day {day}")
                 if day + 1 in working_days[w]:
                     if (w, day, "L") in shift and (w, day + 1, "L") in shift:
                         model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
