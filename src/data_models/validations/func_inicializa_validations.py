@@ -87,7 +87,7 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
         
         # CONTENT VALIDATION
         # Check tipo_turno values are valid
-        valid_tipo_turno = ['M', 'T', 'MoT', 'P', 'F', 'L', 'V', 'A', 'DFS', 'OUT', 'NL', '-']
+        valid_tipo_turno = ['M', 'T', 'MoT', 'P', 'F', 'L', 'V', 'A', 'DFS', 'OUT', 'NL', '-',]
         invalid_tipos = df_calendario[~df_calendario['tipo_turno'].isin(valid_tipo_turno)]['tipo_turno'].unique()
         if len(invalid_tipos) > 0:
             logger.warning(f"df_calendario contains unexpected tipo_turno values: {invalid_tipos}")
@@ -95,7 +95,7 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
         
         # Check horario values are valid (if column exists)
         if 'horario' in df_calendario.columns:
-            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'LQ','F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D', '', 'M', 'T', 'MoT', 'P', '0']
+            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'LQ','F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D', '', 'M', 'T', 'MoT', 'P', '0''-' 'A-' 'V-']
             invalid_horarios = df_calendario[~df_calendario['horario'].isin(valid_horario)]['horario'].unique()
             if len(invalid_horarios) > 0:
                 logger.warning(f"df_calendario contains unexpected horario values: {invalid_horarios}")

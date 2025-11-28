@@ -1108,7 +1108,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df=df_calendario,
                     date_col='schedule_day',
                     add_id_col=True,
-                    use_case=1,
+                    use_case=0,
                     main_year=main_year
                 )
                 if not success:
