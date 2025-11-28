@@ -1161,30 +1161,78 @@ class BaseDescansosDataModel(ABC):
             #self.logger.info(f"DEBUG: final_df: {final_df}")
 
             self.logger.info("Merging with df_colaborador")
-            # Convert matricula to int for matching (remove leading zeros)
-            df_colaborador['matricula_int'] = df_colaborador['matricula'].astype(str).str.lstrip('0').astype(int)
-            #self.logger.info(f"DEBUG: df_colaborador matricula_int: {df_colaborador['matricula_int'].tolist()}")
-            final_df = pd.merge(final_df, df_colaborador, left_on='colaborador', right_on='matricula_int', how='left')
+            # The colaborador column contains employee_id values, so merge on employee_id
+            # Convert colaborador to int to ensure proper matching
+            final_df['colaborador'] = final_df['colaborador'].astype(int)
+            df_colaborador['employee_id'] = df_colaborador['employee_id'].astype(int)
+            
+            # Log merge info for debugging
+            self.logger.info(f"DEBUG: final_df colaborador unique values (first 10): {final_df['colaborador'].unique()[:10]}")
+            self.logger.info(f"DEBUG: df_colaborador employee_id unique values (first 10): {df_colaborador['employee_id'].unique()[:10]}")
+            
+            final_df = pd.merge(final_df, df_colaborador, left_on='colaborador', right_on='employee_id', how='left')
+            
+            # Ensure matricula column is present using employee_id_matriculas_map
+            # The merge should bring matricula from df_colaborador, but we use the map to ensure it's complete
+            if hasattr(self, 'auxiliary_data') and 'employee_id_matriculas_map' in self.auxiliary_data:
+                employee_id_matriculas_map = self.auxiliary_data['employee_id_matriculas_map']
+                self.logger.info("Ensuring matricula column is complete using employee_id_matriculas_map")
+                # Map employee_id (colaborador) to matricula - this will fill any missing or override if needed
+                final_df['matricula'] = final_df['colaborador'].map(employee_id_matriculas_map)
+                # Fill any missing values from the merge result if available
+                if 'matricula' in df_colaborador.columns:
+                    merge_matricula = df_colaborador.set_index('employee_id')['matricula']
+                    missing_mask = final_df['matricula'].isna()
+                    if missing_mask.any():
+                        final_df.loc[missing_mask, 'matricula'] = final_df.loc[missing_mask, 'colaborador'].map(merge_matricula)
+                missing_matriculas = final_df['matricula'].isna().sum()
+                if missing_matriculas > 0:
+                    self.logger.warning(f"Could not map matricula for {missing_matriculas} rows using employee_id_matriculas_map")
+            elif 'matricula' not in final_df.columns:
+                self.logger.error("matricula column not found after merge and employee_id_matriculas_map not available")
+            
+            # Check merge success
+            unmatched_rows = final_df['data_admissao'].isna().sum()
+            if unmatched_rows > 0:
+                self.logger.warning(f"Merge resulted in {unmatched_rows} rows with missing data_admissao (out of {len(final_df)} total rows)")
+                self.logger.warning(f"Unmatched colaborador values (first 10): {final_df[final_df['data_admissao'].isna()]['colaborador'].unique()[:10]}")
+            
             #self.logger.info(f"DEBUG: final_df: {final_df}")
             self.logger.info("Filtering dates greater than each employee's admission date")
             initial_rows = len(final_df)
             # Convert data_admissao to datetime if not already
             #self.logger.info(f"DEBUG: data_admissao: {final_df['data_admissao']}, type: {type(final_df['data_admissao'])}")
-            final_df['data_admissao'] = pd.to_datetime(final_df['data_admissao'], format='%Y-%m-%d')
+            final_df['data_admissao'] = pd.to_datetime(final_df['data_admissao'], format='%Y-%m-%d', errors='coerce')
             
             # Handle data_demissao: replace "0" or non-date values with NaT before conversion
             final_df['data_demissao'] = final_df['data_demissao'].replace(['0', 0], pd.NaT)
             final_df['data_demissao'] = pd.to_datetime(final_df['data_demissao'], format='%Y-%m-%d', errors='coerce')
             #self.logger.info(f"DEBUG: data_admissao: {final_df['data_admissao']}, type: {type(final_df['data_admissao'])}")
-            # Filter per employee: each row's date must be > that employee's admission date
+            
+            # First, filter out rows where data_admissao is NaT (unmatched from merge)
+            rows_before_na_filter = len(final_df)
+            final_df = final_df[final_df['data_admissao'].notna()].copy()
+            rows_after_na_filter = len(final_df)
+            if rows_before_na_filter != rows_after_na_filter:
+                self.logger.warning(f"Filtered out {rows_before_na_filter - rows_after_na_filter} rows with missing data_admissao (unmatched from merge)")
+            
+            # Filter per employee: each row's date must be >= that employee's admission date
             if 'data' in final_df.columns:
                 final_df['data'] = pd.to_datetime(final_df['data'])
+                rows_before_date_filter = len(final_df)
                 final_df = final_df[final_df['data'] >= final_df['data_admissao']].copy()
+                rows_after_date_filter = len(final_df)
+                if rows_before_date_filter != rows_after_date_filter:
+                    self.logger.info(f"Filtered out {rows_before_date_filter - rows_after_date_filter} rows where date < data_admissao")
                 #self.logger.info(f"DEBUG: data: {final_df['data']}, type: {type(final_df['data'])}")
             elif 'date' in final_df.columns:
                 final_df['date'] = pd.to_datetime(final_df['date'])
-                #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
+                rows_before_date_filter = len(final_df)
                 final_df = final_df[final_df['date'] >= final_df['data_admissao']].copy()
+                rows_after_date_filter = len(final_df)
+                if rows_before_date_filter != rows_after_date_filter:
+                    self.logger.info(f"Filtered out {rows_before_date_filter - rows_after_date_filter} rows where date < data_admissao")
+                #self.logger.info(f"DEBUG: date: {final_df['date']}, type: {type(final_df['date'])}")
 
             # Filter per employee: each row's date must be < that employee's demission date (only if demission date exists)
             if 'data' in final_df.columns:
@@ -1206,9 +1254,19 @@ class BaseDescansosDataModel(ABC):
             self.logger.info("Converting types out")
             final_df = convert_types_out(pd.DataFrame(final_df))
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
-            final_df = final_df.drop(columns=['matricula_int', 'horario', 'employee_id', 'data_admissao', 'matricula_int', 'colaborador'])
-            final_df = final_df.rename(columns={'matricula': 'colaborador'})
-            final_df['colaborador'] = final_df['colaborador'].astype(str)
+            # Drop columns that exist (matricula_int may not exist if merge used employee_id)
+            # Keep matricula for insertion - we'll create colaborador from it
+            cols_to_drop = ['horario', 'employee_id', 'data_admissao', 'colaborador']
+            cols_to_drop = [col for col in cols_to_drop if col in final_df.columns]
+            final_df = final_df.drop(columns=cols_to_drop)
+            
+            # Rename matricula to colaborador for final output, but keep matricula for insertion
+            if 'matricula' in final_df.columns:
+                # Create colaborador from matricula for output format, but keep matricula for insertion
+                final_df['colaborador'] = final_df['matricula'].copy()
+                final_df['colaborador'] = final_df['colaborador'].astype(str)
+            else:
+                self.logger.error("matricula column not found after merge and mapping - insertion may fail")
             
             # Save CSV file for debugging (using config manager if available)
             try:
