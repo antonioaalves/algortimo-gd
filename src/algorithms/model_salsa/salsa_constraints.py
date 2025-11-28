@@ -1,27 +1,9 @@
 from math import floor, ceil
 from base_data_project.log_config import get_logger
+from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_days_calc
 
 logger = get_logger('algoritmo_GD')
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days):
-    compensation_days = []
-    weeks_added = 0
-    current_week = special_day_week
-
-    while weeks_added < week_compensation_limit and current_week < 53:
-        current_week += 1
-
-        week_days = set(week_to_days.get(current_week, []))
-
-        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off).union(fixed_LQs))
-
-        available_days = working_days.intersection(week_days - all_days_off)
-
-        if len(available_days) > 0:
-            weeks_added += 1
-            compensation_days.extend(available_days)
-
-    return compensation_days
 
 def compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days):
     possible_compensation_days = {}
