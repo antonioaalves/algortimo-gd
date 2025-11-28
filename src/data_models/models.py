@@ -23,7 +23,8 @@ from src.helpers import (
     add_trads_code, assign_90_cycles, load_pre_ger_scheds, get_limit_mt,
     count_dates_per_year, load_wfm_scheds, func_turnos, adjusted_isoweek,
     custom_round, calcular_folgas2, calcular_folgas3, insert_holidays_absences, insert_closed_days,
-    get_param_for_posto, convert_types_out, bulk_insert_with_query, insert_dayoffs_override
+    get_param_for_posto, convert_types_out, bulk_insert_with_query, insert_dayoffs_override,
+    get_colabs_passado
 )
 from src.load_csv_functions.load_valid_emp import load_valid_emp_csv
 from src.algorithms.factory import AlgorithmFactory
@@ -242,6 +243,17 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.error(f"Error loading valid_emp: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            # Get new valid employees from new service
+            try:
+                query_path = entities_dict['df_mpd_valid_employees']
+                process_id_str = "'" + str(self.external_call_data['current_process_id']) + "'"
+                df_mpd_valid_employees = data_manager.load_data('df_mpd_valid_employees', query_file=query_path, process_id=process_id_str)
+
+                # Use data treatment function to get colabs list
+                pass
+            except Exception as e:
+                self.logger.error(f"Error loading df_mpd_valid_employees: {e}", exc_info=True)
+                return False, "errSubproc", str(e)            
 
             # Load important info into memory
             try:
@@ -382,6 +394,7 @@ class DescansosDataModel(BaseDataModel):
                 # Copy the dataframes into the apropriate dict
                 # AUX DATA
                 self.auxiliary_data['valid_emp'] = valid_emp.copy()
+                self.auxiliary_data['df_mpd_valid_employees'] = df_mpd_valid_employees.copy()
                 self.auxiliary_data['params_lq'] = params_lq.copy()
                 self.auxiliary_data['params_df'] = params_df.copy()
                 self.auxiliary_data['df_festivos'] = df_festivos.copy()
@@ -875,11 +888,15 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info("Setting up calendario passado dates")
                 # Calendario passado - FIXED: Added proper type conversion
                 main_year = str(self.auxiliary_data.get('main_year', ''))
+                start_date_dt = pd.to_datetime(self.external_call_data['start_date'])
                 if not main_year:
                     self.logger.warning("main_year not found in auxiliary_data")
                     main_year = pd.to_datetime(start_date).year
                 
-                first_date_passado = f"{main_year}-01-01"
+                if start_date_dt <= pd.to_datetime(main_year + '-01-01'):
+                    first_date_passado = (pd.to_datetime(main_year + '-01-01') - pd.Timedelta(days=7)).strftime('%Y-%m-%d')
+                else:
+                    first_date_passado = f"{main_year}-01-01"
                 self.logger.info(f"first_date_passado: {first_date_passado}")
                 
                 last_date_passado = pd.to_datetime(self.external_call_data.get('end_date', end_date))
@@ -895,12 +912,19 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info("Filtering employees by admission date")
                 df_colaborador = self.raw_data['df_colaborador']
                 start_date_dt = pd.to_datetime(start_date)
+                wfm_proc_colab = self.external_call_data['wfm_proc_colab']
+                df_mpd_valid_employees = self.auxiliary_data['df_mpd_valid_employees'].copy()
 
                 # Fixed: Added proper error handling
-                colabs_passado = df_colaborador[
-                    pd.to_datetime(df_colaborador['data_admissao']) < start_date_dt
-                ]['fk_colaborador'].tolist()
-                self.logger.info(f"Found {len(colabs_passado)} employees with past admission dates: {colabs_passado}")
+                if wfm_proc_colab is None or wfm_proc_colab == '' or wfm_proc_colab == "None":
+                    colabs_passado = []
+                    #self.logger.info(f"Found {len(colabs_passado)} employees with past admission dates: {colabs_passado}")
+                else:
+                    self.logger.info(f"wfm_proc_colab: {wfm_proc_colab}, df_mpd_valid_employees: {df_mpd_valid_employees}, fk_tipo_posto: {posto_id}")
+                    success, colabs_passado, error_message = get_colabs_passado(wfm_proc_colab=wfm_proc_colab, df_mpd_valid_employees=df_mpd_valid_employees, fk_tipo_posto=posto_id)
+                    if not success:
+                        self.logger.error(f"Error getting colabs_passado: {error_message}")
+                        return False
             except Exception as e:
                 self.logger.error(f"Error filtering employees by admission date: {e}", exc_info=True)
                 colabs_passado = []
@@ -919,13 +943,14 @@ class DescansosDataModel(BaseDataModel):
                     # Fix: Create a proper comma-separated list of numbers without any quotes
                     self.logger.info(f"colabs_passado has more than one value: {colabs_passado}")
                     colabs_str = ','.join(str(x) for x in colabs_passado)
-                self.logger.info(f"colabs_str: {colabs_str}")
+                    self.logger.info(f"colabs_str: {colabs_str}")
             except Exception as e:
                 self.logger.error(f"Error treating colabs_passado str: {e}", exc_info=True)
                 colabs_str = ''
 
             try:
                 # Only query if we have employees and the date range makes sense
+                self.logger.info(f"colabs_passado: {colabs_passado}, start_date_dt: {start_date_dt}, first_date_passado: {first_date_passado}, last_date_passado: {last_date_passado}")
                 if len(colabs_passado) > 0 and start_date_dt != pd.to_datetime(first_date_passado):
                     self.logger.info("Loading df_calendario_passado since conditions are met")
                     #query_path = CONFIG.get('available_entities_aux', {}).get('df_calendario_passado', '')
@@ -942,6 +967,11 @@ class DescansosDataModel(BaseDataModel):
                             colabs=colabs_str
                         )
                         self.logger.info(f"df_calendario_passado shape (rows {df_calendario_passado.shape[0]}, columns {df_calendario_passado.shape[1]}): {df_calendario_passado.columns.tolist()}")
+                        self.logger.info(f"df_calendario_passado RAW DATA (first 10 rows):\n{df_calendario_passado.head(10)}")
+                        if 'TYPE' in df_calendario_passado.columns and 'SUBTYPE' in df_calendario_passado.columns:
+                            self.logger.info(f"TYPE/SUBTYPE combinations found in raw data:\n{df_calendario_passado[['TYPE', 'SUBTYPE']].value_counts().head(20)}")
+                        elif 'type' in df_calendario_passado.columns and 'subtype' in df_calendario_passado.columns:
+                            self.logger.info(f"type/subtype combinations found in raw data:\n{df_calendario_passado[['type', 'subtype']].value_counts().head(20)}")
                 else:
                     self.logger.info("Conditions not met for loading df_calendario_passado")
                     df_calendario_passado = pd.DataFrame()
@@ -959,11 +989,17 @@ class DescansosDataModel(BaseDataModel):
                     emp_pre_ger = []
                     df_count = pd.DataFrame()
                 else:
+                    self.logger.info(f"Calling load_wfm_scheds with df_calendario_passado shape: {df_calendario_passado.shape}")
                     reshaped_final_3, emp_pre_ger, df_count = load_wfm_scheds(
                         df_calendario_passado,  # Your DataFrame with historical schedule data
                         df_calendario_passado['employee_id'].unique().tolist()  # List of employee IDs
                     )
                     self.logger.info(f"Successfully processed historical calendar data - reshaped_final_3: {reshaped_final_3.shape}, emp_pre_ger: {len(emp_pre_ger)}, df_count: {df_count.shape}")
+                    self.logger.info(f"reshaped_final_3 AFTER load_wfm_scheds (first 5 rows, first 10 cols):\n{reshaped_final_3.iloc[:5, :10]}")
+                    if reshaped_final_3.shape[0] > 1:
+                        self.logger.info(f"TURNO row (row 1): {reshaped_final_3.iloc[1, :15].tolist()}")
+                    if reshaped_final_3.shape[0] > 2:
+                        self.logger.info(f"First employee data (row 2): {reshaped_final_3.iloc[2, :15].tolist()}")
             except Exception as e:
                 self.logger.error(f"Error in load_wfm_scheds: {e}", exc_info=True)
                 reshaped_final_3 = pd.DataFrame()
@@ -1076,6 +1112,8 @@ class DescansosDataModel(BaseDataModel):
                 self.auxiliary_data['df_count'] = df_count.copy()
                 self.auxiliary_data['df_core_pro_emp_horario_det'] = df_core_pro_emp_horario_det.copy()
                 self.raw_data['df_calendario'] = df_calendario.copy()
+
+                self.auxiliary_data['colabs_passado_list'] = colabs_passado
 
                 # TODO: remove this
                 self.logger.info(f"df_calendario shape: {df_calendario.shape}")
@@ -2173,7 +2211,7 @@ class DescansosDataModel(BaseDataModel):
             # Treat df_core_pro_emp_horario_det and df_contratos
             try:
                 self.logger.info("Treating df_core_pro_emp_horario_det")
-                # TODO: add fk_colaborador
+                # add fk_colaborador to df_core_pro_emp_horario_det
                 df_colaboradores = matriz_ma[['matricula', 'fk_colaborador']].dropna(subset=['fk_colaborador'])
                 df_colaboradores.columns = ['matricula', 'fk_colaborador']
                 df_core_pro_emp_horario_det = df_core_pro_emp_horario_det.merge(df_colaboradores, left_on='employee_id', right_on='fk_colaborador', how='left')
@@ -2529,6 +2567,45 @@ class DescansosDataModel(BaseDataModel):
                 matrizA_og = self.raw_data['df_colaborador'].copy()
                 algorithm_name = self.auxiliary_data['GD_algorithmName']
                 df_contratos = self.auxiliary_data['df_contratos'].copy()
+                
+                # Debug original calendar data
+                self.logger.info(f"Original calendar data shape: {matriz2_og.shape}")
+                empty_cells_original = matriz2_og.isnull().sum().sum()
+                if empty_cells_original > 0:
+                    self.logger.warning(f"Original calendar data contains {empty_cells_original} empty/NaN values")
+                self.logger.info(f"Original calendar data sample:\n{matriz2_og.head()}")
+
+                # Integrate historical calendar data if available
+                try:
+                    df_calendario_passado = self.auxiliary_data.get('df_calendario_passado', pd.DataFrame())
+                    if not df_calendario_passado.empty:
+                        self.logger.info(f"Integrating historical calendar data - shape: {df_calendario_passado.shape}")
+                        self.logger.info(f"Historical data sample (first 5 rows, first 10 cols):\n{df_calendario_passado.iloc[:5, :10]}")
+                        self.logger.info(f"matriz2_og BEFORE integration (first 5 rows, first 10 cols):\n{matriz2_og.iloc[:5, :10]}")
+                        
+                        # Check for empty/NaN values in historical data
+                        empty_cells = df_calendario_passado.isnull().sum().sum()
+                        if empty_cells > 0:
+                            self.logger.warning(f"Historical calendar data contains {empty_cells} empty/NaN values")
+                            # Fill empty values with '-' to avoid propagating NaN values
+                            df_calendario_passado = df_calendario_passado.fillna('-')
+                        
+                        # Merge historical calendar data with main calendar matrix
+                        # The historical data is already in the correct matrix format from load_wfm_scheds
+                        if matriz2_og.shape[1] == df_calendario_passado.shape[1]:
+                            # Same number of columns, can concatenate directly
+                            self.logger.info(f"Column counts match ({matriz2_og.shape[1]} == {df_calendario_passado.shape[1]}), concatenating...")
+                            matriz2_og = pd.concat([matriz2_og, df_calendario_passado], ignore_index=True)
+                            self.logger.info(f"Successfully integrated historical calendar data - new shape: {matriz2_og.shape}")
+                            self.logger.info(f"matriz2_og AFTER integration (last 5 rows, first 10 cols):\n{matriz2_og.iloc[-5:, :10]}")
+                        else:
+                            self.logger.warning(f"Historical calendar data has different structure - matriz2_og: {matriz2_og.shape[1]} cols, historical: {df_calendario_passado.shape[1]} cols")
+                            self.logger.warning(f"matriz2_og column 0-5: {matriz2_og.iloc[0, :5].tolist()}")
+                            self.logger.warning(f"df_calendario_passado column 0-5: {df_calendario_passado.iloc[0, :5].tolist()}")
+                    else:
+                        self.logger.info("No historical calendar data to integrate")
+                except Exception as e:
+                    self.logger.error(f"Error integrating historical calendar data: {e}", exc_info=True)
 
                 #DEBUG - TODO: remove
                 #matrizB_og.to_csv(os.path.join('data', 'output', f'df_estimativas_debug_inicializa-{self.external_call_data.get("current_process_id", "")}-{self.auxiliary_data.get("current_posto_id", "")}.csv'), index=False, encoding='utf-8')
