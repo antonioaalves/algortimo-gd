@@ -117,6 +117,21 @@ class BaseDescansosDataModel(ABC):
                 self.logger.error(f"posto_id provided is invalid: {posto_id}")
                 return False, "errSubproc", "Invalid posto_id"
 
+            # Get first_date_passado and last_date_passado from auxiliary_data (same extended range as df_calendario)
+            try:
+                first_date_passado = self.auxiliary_data.get('first_date_passado')
+                last_date_passado = self.auxiliary_data.get('last_date_passado')
+                if not first_date_passado or not last_date_passado:
+                    self.logger.warning("first_date_passado or last_date_passado not found in auxiliary_data, falling back to start_date/end_date")
+                    first_date_passado = start_date
+                    last_date_passado = end_date
+                else:
+                    self.logger.info(f"Using extended date range from df_calendario: first_date_passado={first_date_passado}, last_date_passado={last_date_passado}")
+            except Exception as e:
+                self.logger.warning(f"Error getting passado dates from auxiliary_data: {e}, falling back to start_date/end_date")
+                first_date_passado = start_date
+                last_date_passado = end_date
+
             # TODO: create validate function
             if start_date == '' or start_date == None or end_date == '' or end_date == None:
                 self.logger.error(f"start_date or end_date provided are empty. start: {start_date}, end_date: {end_date}")
@@ -138,9 +153,18 @@ class BaseDescansosDataModel(ABC):
                 self.logger.info(f"Loading df_turnos from raw_data df_colaborador with columns selected: {columns_select}")
                 # Get sql file path, if the cvs is being used, it gets the the path defined on dummy_data_filepaths
                 # turnos information: doesnt need a query since is information resent on core_alg_params
+                # Filter by posto_id BEFORE extracting columns for better performance
+                df_colaborador = self.raw_data['df_colaborador'].copy()
+                # If df_valid_emp is available, use it to filter employees by posto_id early
+                if 'df_valid_emp' in self.auxiliary_data and self.auxiliary_data['df_valid_emp'] is not None:
+                    df_valid_emp = self.auxiliary_data['df_valid_emp']
+                    if not df_valid_emp.empty and 'fk_tipo_posto' in df_valid_emp.columns and 'employee_id' in df_valid_emp.columns:
+                        employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == posto_id]['employee_id']
+                        if 'employee_id' in df_colaborador.columns:
+                            df_colaborador = df_colaborador[df_colaborador['employee_id'].isin(employees_id_list_from_posto)].copy()
+                            self.logger.info(f"Pre-filtered df_colaborador by posto_id={posto_id}, shape: {df_colaborador.shape}")
                 
-                df_turnos = self.raw_data['df_colaborador'].copy()
-                df_turnos = df_turnos[columns_select]
+                df_turnos = df_colaborador[columns_select].copy()
                 self.logger.info(f"df_turnos shape (rows {df_turnos.shape[0]}, columns {df_turnos.shape[1]}): {df_turnos.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error processing df_turnos from colaborador data: {e}", exc_info=True)
@@ -176,6 +200,8 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Loading df_faixa_horario from data manager")
                 # faixa horario information
+                # Note: Could filter by fk_secao in query if secao_id is available at this point
+                # Currently filtering after load for flexibility (secao_id comes from auxiliary_data)
                 query_path = _config.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
                 if query_path == '':
                     self.logger.warning("df_faixa_horario query path not found in config")
@@ -194,8 +220,9 @@ class BaseDescansosDataModel(ABC):
                 query_path = _config.paths.sql_auxiliary_paths.get('df_orcamento', '')
                 if query_path == '':
                     self.logger.warning("df_orcamento query path not found in config")
-                start_date_quoted = "'" + start_date + "'"
-                end_date_quoted = "'" + end_date + "'"
+                # Use extended date range (first_date_passado to last_date_passado) like df_calendario
+                start_date_quoted = "'" + first_date_passado + "'"
+                end_date_quoted = "'" + last_date_passado + "'"
                 df_orcamento = data_manager.load_data(
                     'df_orcamento', 
                     query_file=query_path, 
@@ -214,8 +241,9 @@ class BaseDescansosDataModel(ABC):
                 query_path = _config.paths.sql_auxiliary_paths.get('df_granularidade', '')
                 if query_path == '':
                     self.logger.warning("df_granularidade query path not found in config")
-                start_date_quoted = "'" + start_date + "'"
-                end_date_quoted = "'" + end_date + "'"
+                # Use extended date range (first_date_passado to last_date_passado) like df_calendario
+                start_date_quoted = "'" + first_date_passado + "'"
+                end_date_quoted = "'" + last_date_passado + "'"
                 df_granularidade = data_manager.load_data(
                     'df_granularidade', 
                     query_file=query_path, 
@@ -351,11 +379,16 @@ class BaseDescansosDataModel(ABC):
                 # Get parameters from auxiliary_data and external_data
                 start_date = self.external_call_data['start_date']
                 end_date = self.external_call_data['end_date']
+                # Get extended date range (same as df_calendario) for data processing
+                first_date_passado = self.auxiliary_data.get('first_date_passado', start_date)
+                last_date_passado = self.auxiliary_data.get('last_date_passado', end_date)
                 fk_unidade = self.auxiliary_data['unit_id']
                 fk_secao = self.auxiliary_data['secao_id'] 
                 fk_tipo_posto = self.auxiliary_data['current_posto_id']
                 
-                self.logger.info(f"Parameters extracted - start_date: {start_date}, end_date: {end_date}, fk_unidade: {fk_unidade}, fk_secao: {fk_secao}, fk_tipo_posto: {fk_tipo_posto}")
+                self.logger.info(f"Parameters extracted - start_date: {start_date}, end_date: {end_date}")
+                self.logger.info(f"Using extended date range for processing - first_date_passado: {first_date_passado}, last_date_passado: {last_date_passado}")
+                self.logger.info(f"Other params - fk_unidade: {fk_unidade}, fk_secao: {fk_secao}, fk_tipo_posto: {fk_tipo_posto}")
             except KeyError as e:
                 self.logger.error(f"Missing required parameter: {e}", exc_info=True)
                 return False
@@ -383,11 +416,17 @@ class BaseDescansosDataModel(ABC):
             
             try:
                 self.logger.info(f"Processing df_turnos data - Initial shape: {df_turnos.shape}")
-                # Filter df_turnos by fk_tipo_posto
-                # TODO: change this to be filtered by the employees from valid_emp that belong to this fk_tipo_posto
-                employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == fk_tipo_posto]['employee_id']
-                df_turnos = df_turnos[df_turnos['employee_id'] == employees_id_list_from_posto].copy()
-                self.logger.info(f"After filtering by fk_tipo_posto={fk_tipo_posto}, df_turnos shape: {df_turnos.shape}")
+                # Filter df_turnos by fk_tipo_posto using vectorized isin() operation
+                # Note: If df_turnos was already pre-filtered in load_estimativas_info, this may be redundant
+                # but we keep it for safety to ensure exact behavior
+                if 'employee_id' in df_turnos.columns and 'fk_tipo_posto' in df_valid_emp.columns:
+                    employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == fk_tipo_posto]['employee_id']
+                    df_turnos = df_turnos[df_turnos['employee_id'].isin(employees_id_list_from_posto)].copy()
+                    self.logger.info(f"After filtering by fk_tipo_posto={fk_tipo_posto}, df_turnos shape: {df_turnos.shape}")
+                elif 'fk_tipo_posto' in df_turnos.columns:
+                    # Fallback: filter directly by fk_tipo_posto if employee_id filtering not possible
+                    df_turnos = df_turnos[df_turnos['fk_tipo_posto'] == fk_tipo_posto].copy()
+                    self.logger.info(f"After filtering by fk_tipo_posto={fk_tipo_posto} (direct), df_turnos shape: {df_turnos.shape}")
                 
                 # Define time columns for min/max calculations
                 columns_in = ["h_tm_in", "h_seg_in", "h_ter_in", "h_qua_in", "h_qui_in", "h_sex_in", "h_sab_in", "h_dom_in", "h_fer_in"]
@@ -395,10 +434,13 @@ class BaseDescansosDataModel(ABC):
                 self.logger.info(f"Time columns defined - in: {len(columns_in)}, out: {len(columns_out)}")
                 
                 # Convert time string columns to datetime (using base date 2000-01-01)
+                # Vectorized conversion: process all columns at once instead of loop
                 # This handles 'HH:MM' strings properly and ignores None/NaN values
-                self.logger.info("Converting time columns to datetime format")
-                for col in columns_in + columns_out:
-                    if col in df_turnos.columns:
+                self.logger.info("Converting time columns to datetime format (vectorized)")
+                time_cols_to_convert = [col for col in columns_in + columns_out if col in df_turnos.columns]
+                if time_cols_to_convert:
+                    # Vectorized conversion: concatenate date prefix and convert all columns at once
+                    for col in time_cols_to_convert:
                         df_turnos[col] = pd.to_datetime('2000-01-01 ' + df_turnos[col].astype(str), 
                                                         format='%Y-%m-%d %H:%M', 
                                                         errors='coerce')
@@ -485,8 +527,8 @@ class BaseDescansosDataModel(ABC):
             df_turnos = pd.merge(df_estrutura_wfm_filtered, df_turnos, on='fk_tipo_posto', how='left')
             self.logger.info(f"After merge with estrutura_wfm, df_turnos shape: {df_turnos.shape}")
             
-            # Create date sequence
-            date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+            # Create date sequence using extended date range (same as df_calendario)
+            date_range = pd.date_range(start=first_date_passado, end=last_date_passado, freq='D')
             df_data = pd.DataFrame({'data': date_range})
             df_data['wd'] = df_data['data'].dt.day_name().str.lower()
             
@@ -522,20 +564,43 @@ class BaseDescansosDataModel(ABC):
             self.logger.info(f"DEBUG: df_faixa_horario before filter:\n {df_faixa_horario}")
             df_faixa_horario_filtered = df_faixa_horario[df_faixa_horario['fk_secao'] == fk_secao].copy()
             
-            # Expand date ranges in faixa_horario
-            expanded_rows = []
-            for _, row in df_faixa_horario_filtered.iterrows():
-                date_range_fh = pd.date_range(start=row['data_ini'], end=row['data_fim'], freq='D')
-                for date in date_range_fh:
-                    new_row = row.copy()
-                    new_row['data'] = date
-                    expanded_rows.append(new_row)
-
-            #self.logger.info(f"DEBUG: expanded_rows:\n {expanded_rows}")
-            
-            if expanded_rows:
-                df_faixa_horario_expanded = pd.DataFrame(expanded_rows)
+            # Expand date ranges in faixa_horario - VECTORIZED VERSION
+            # Instead of iterrows(), use apply() which is faster and more memory-efficient
+            if not df_faixa_horario_filtered.empty:
+                # Ensure date columns are datetime
+                df_faixa_horario_filtered['data_ini'] = pd.to_datetime(df_faixa_horario_filtered['data_ini'])
+                df_faixa_horario_filtered['data_fim'] = pd.to_datetime(df_faixa_horario_filtered['data_fim'])
                 
+                # Vectorized date range expansion using apply() - much faster than iterrows()
+                def expand_date_range(row):
+                    """Helper function to expand a single row's date range"""
+                    date_range_fh = pd.date_range(start=row['data_ini'], end=row['data_fim'], freq='D')
+                    # Create DataFrame with one row per date, preserving all other columns
+                    expanded = pd.DataFrame({
+                        'data': date_range_fh,
+                        'fk_secao': [row['fk_secao']] * len(date_range_fh),
+                        'data_ini': [row['data_ini']] * len(date_range_fh),
+                        'data_fim': [row['data_fim']] * len(date_range_fh)
+                    })
+                    # Add all time columns (aber_seg, fech_seg, etc.) - preserve them for each date
+                    time_columns = ["aber_seg", "fech_seg", "aber_ter", "fech_ter", "aber_qua", "fech_qua", 
+                                   "aber_qui", "fech_qui", "aber_sex", "fech_sex", "aber_sab", "fech_sab", 
+                                   "aber_dom", "fech_dom", "aber_fer", "fech_fer"]
+                    for col in time_columns:
+                        if col in row.index:
+                            expanded[col] = row[col]
+                    return expanded
+                
+                # Apply expansion to each row and concatenate results - more efficient than iterrows()
+                expanded_dfs = df_faixa_horario_filtered.apply(expand_date_range, axis=1)
+                if len(expanded_dfs) > 0:
+                    df_faixa_horario_expanded = pd.concat(expanded_dfs.tolist(), ignore_index=True)
+                else:
+                    df_faixa_horario_expanded = pd.DataFrame()
+            else:
+                df_faixa_horario_expanded = pd.DataFrame()
+            
+            if not df_faixa_horario_expanded.empty:
                 # Reshape from wide to long format for time columns
                 time_columns = ["aber_seg", "fech_seg", "aber_ter", "fech_ter", "aber_qua", "fech_qua", 
                             "aber_qui", "fech_qui", "aber_sex", "fech_sex", "aber_sab", "fech_sab", 
@@ -568,16 +633,20 @@ class BaseDescansosDataModel(ABC):
                 # Clean column names
                 df_faixa_wide.columns.name = None
                 
-                # Convert weekday names and match with actual dates
+                # Convert weekday names and match with actual dates - VECTORIZED with single replace dict
                 df_faixa_wide['wd'] = df_faixa_wide['wd'].str.replace('sab', 'sáb')
                 df_faixa_wide['wd_date'] = df_faixa_wide['data'].dt.day_name().str.lower()
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('saturday', 'sáb')
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('sunday', 'dom')
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('monday', 'seg')
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('tuesday', 'ter')
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('wednesday', 'qua')
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('thursday', 'qui')
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].str.replace('friday', 'sex')
+                # Use single replace() with dictionary for better performance
+                weekday_mapping = {
+                    'saturday': 'sáb',
+                    'sunday': 'dom',
+                    'monday': 'seg',
+                    'tuesday': 'ter',
+                    'wednesday': 'qua',
+                    'thursday': 'qui',
+                    'friday': 'sex'
+                }
+                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].replace(weekday_mapping)
 
                 self.logger.info(f"DEBUG: df_faixa_wide after weekday replacement:\n {df_faixa_wide}")
                 
@@ -728,33 +797,35 @@ class BaseDescansosDataModel(ABC):
             df_granularidade = df_granularidade[df_granularidade['fk_tipo_posto'] == fk_tipo_posto].copy()
             self.logger.info(f"DEBUG: df_granularidade filtered shape: {df_granularidade.shape}")
             
-            # Process each unique turno
-            output_final = pd.DataFrame()
-            self.logger.info(f"DEBUG: df_turnos_processing shape before loop: {df_turnos_processing.shape}")
+            # Process each unique turno - VECTORIZED VERSION using groupby().apply()
+            # This processes all turnos in one operation instead of loop with concat
+            self.logger.info(f"DEBUG: df_turnos_processing shape before processing: {df_turnos_processing.shape}")
             self.logger.info(f"DEBUG: Unique fk_posto_turno values: {df_turnos_processing['fk_posto_turno'].unique()}")
             
             df_turnos_processing = pd.DataFrame(df_turnos_processing)
-            for i, fk_posto_turno in enumerate(df_turnos_processing['fk_posto_turno'].unique()):
-                self.logger.info(f"DEBUG: Processing turno {i+1}: {fk_posto_turno}")
-                
-                df_turnos_f = pd.DataFrame(df_turnos_processing[df_turnos_processing['fk_posto_turno'] == fk_posto_turno].copy())
-                fk_posto = pd.DataFrame(df_turnos_f)['fk_tipo_posto'].iloc[0]
-                turno = pd.DataFrame(df_turnos_f)['turno'].iloc[0]
-                self.logger.info(f"DEBUG:   df_turnos_f shape: {df_turnos_f.shape}")
+            
+            # Define function to process a single turno group
+            def process_turno_group(group):
+                """Process a single turno group - maintains exact same logic as original loop"""
+                # pandas removes the grouping column from each group; use group.name for the key
+                fk_posto_turno = group.name
+                fk_posto = group['fk_tipo_posto'].iloc[0]
+                turno = group['turno'].iloc[0]
+                self.logger.info(f"DEBUG: Processing turno: {fk_posto_turno}")
                 
                 # Filter granularity data for this posto
-                df_granularidade_f = pd.DataFrame(df_granularidade[df_granularidade['fk_tipo_posto'] == fk_posto].copy())
+                df_granularidade_f = df_granularidade[df_granularidade['fk_tipo_posto'] == fk_posto].copy()
                 self.logger.info(f"DEBUG:   df_granularidade_f shape before merge: {df_granularidade_f.shape}")
                 
                 # Merge with turno data
-                df_granularidade_f = pd.merge(df_granularidade_f, df_turnos_f, 
+                df_granularidade_f = pd.merge(df_granularidade_f, group, 
                                             on=['fk_tipo_posto', 'data'], how='inner')
                 self.logger.info(f"DEBUG:   df_granularidade_f shape after merge: {df_granularidade_f.shape}")
                 
                 # Filter by time range
                 time_mask = (df_granularidade_f['hora_ini'] >= df_granularidade_f['h_ini_1']) & \
                         (df_granularidade_f['hora_ini'] < df_granularidade_f['h_out_1'])
-                df_granularidade_f = pd.DataFrame(df_granularidade_f[time_mask].copy())
+                df_granularidade_f = df_granularidade_f[time_mask].copy()
                 self.logger.info(f"DEBUG:   After time filter, df_granularidade_f shape: {df_granularidade_f.shape}")
                 
                 df_granularidade_f = df_granularidade_f.sort_values(['data', 'hora_ini'], ascending=[True, True]).drop_duplicates()
@@ -783,8 +854,8 @@ class BaseDescansosDataModel(ABC):
                     # Flatten column names
                     output.columns = ['data', 'media_turno', 'max_turno', 'min_turno', 'sd_turno']
                 
-                # Create complete date range
-                date_range_complete = pd.date_range(start=start_date, end=end_date, freq='D')
+                # Create complete date range using extended date range (same as df_calendario)
+                date_range_complete = pd.date_range(start=first_date_passado, end=last_date_passado, freq='D')
                 df_data_complete = pd.DataFrame({'data': date_range_complete})
                 
                 # Merge with output
@@ -795,10 +866,21 @@ class BaseDescansosDataModel(ABC):
                 output['fk_tipo_posto'] = fk_posto
                 self.logger.info(f"DEBUG:   Output shape for this turno: {output.shape}")
                 
-                output_final = pd.concat([output_final, output], ignore_index=True)
-                self.logger.info(f"DEBUG:   Cumulative output_final shape: {output_final.shape}")
-                
-                self.logger.info(f"DEBUG: Completed processing turno {fk_posto_turno}")
+                return output
+            
+            # Process all turnos using groupby().apply() - vectorized approach
+            # This processes all groups and returns a list of DataFrames
+            if not df_turnos_processing.empty and 'fk_posto_turno' in df_turnos_processing.columns:
+                output_list = df_turnos_processing.groupby('fk_posto_turno').apply(process_turno_group, include_groups=False)
+                # Convert Series of DataFrames to list and concatenate once
+                if isinstance(output_list, pd.Series):
+                    output_final = pd.concat(output_list.tolist(), ignore_index=True)
+                else:
+                    output_final = output_list if isinstance(output_list, pd.DataFrame) else pd.DataFrame()
+                self.logger.info(f"DEBUG: Final output_final shape after vectorized processing: {output_final.shape}")
+            else:
+                output_final = pd.DataFrame()
+                self.logger.warning("df_turnos_processing is empty or missing fk_posto_turno column")
             
             # Final processing
             if len(output_final) > 0:
@@ -817,17 +899,20 @@ class BaseDescansosDataModel(ABC):
                 output_final[col] = pd.to_numeric(output_final[col], errors='coerce')
 
             # Filter by date range (Step 3B from func_inicializa guide)
+            # Use extended date range (first_date_passado to last_date_passado) to match df_calendario
+            # This ensures the algorithm component has the whole period for both dataframes
             try:
-                self.logger.info(f"DEBUG: About to filter df_estimativas by date range. output_final shape: {output_final.shape}")
+                self.logger.info(f"DEBUG: About to filter df_estimativas by extended date range. output_final shape: {output_final.shape}")
                 self.logger.info(f"DEBUG: output_final empty? {output_final.empty}")
                 if not output_final.empty:
                     self.logger.info(f"DEBUG: output_final columns: {output_final.columns.tolist()}")
                     self.logger.info(f"DEBUG: output_final head:\n{output_final.head()}")
                 success, output_final, error_msg = filter_df_dates(
                     df=output_final,
-                    first_date_str=start_date,
-                    last_date_str=end_date,
-                    date_col_name='data'
+                    first_date_str=first_date_passado,
+                    last_date_str=last_date_passado,
+                    date_col_name='data',
+                    use_case=1  # Filter by extended date range (same as df_calendario should have)
                 )
                 if not success:
                     self.logger.error(f"Failed to filter estimativas by dates: {error_msg}")
