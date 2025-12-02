@@ -1636,3 +1636,82 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
         error_msg = f"Error converting employee_id_matriculas_map to dictionary: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return False, {}, error_msg
+
+
+def filter_insert_results(df: pd.DataFrame, start_date: str, end_date: str, wfm_proc_colab: str = '') -> pd.DataFrame:
+    """
+    Filter the results dataframe by date range and optionally by a specific employee.
+    
+    This function is called before insertion to ensure we only insert data within the 
+    process date range and for the specific employee if one is specified.
+    
+    Args:
+        df: DataFrame containing the results to be filtered
+        start_date: Start date of the process (YYYY-MM-DD format)
+        end_date: End date of the process (YYYY-MM-DD format)
+        wfm_proc_colab: Employee ID to filter by. If empty string, no employee filtering is applied.
+        
+    Returns:
+        pd.DataFrame: Filtered dataframe
+    """
+    try:
+        if df.empty:
+            logger.warning("filter_insert_results: Input dataframe is empty")
+            return df
+        
+        initial_rows = len(df)
+        logger.info(f"filter_insert_results: Starting with {initial_rows} rows")
+        
+        # Convert start_date and end_date to datetime
+        start_dt = pd.to_datetime(start_date, format='%Y-%m-%d')
+        end_dt = pd.to_datetime(end_date, format='%Y-%m-%d')
+        logger.info(f"Filtering by date range: {start_date} to {end_date}")
+        
+        # Identify the date column (could be 'data' or 'date')
+        date_col = None
+        if 'data' in df.columns:
+            date_col = 'data'
+        elif 'date' in df.columns:
+            date_col = 'date'
+        else:
+            logger.error("filter_insert_results: No date column found (expected 'data' or 'date')")
+            return df
+        
+        # Convert date column to datetime if not already
+        df[date_col] = pd.to_datetime(df[date_col])
+        
+        # Filter by date range
+        df_filtered = df[(df[date_col] >= start_dt) & (df[date_col] <= end_dt)].copy()
+        rows_after_date_filter = len(df_filtered)
+        logger.info(f"After date range filter: {rows_after_date_filter} rows (removed {initial_rows - rows_after_date_filter} rows)")
+        
+        # Filter by employee if wfm_proc_colab is specified
+        if wfm_proc_colab and wfm_proc_colab != '':
+            # Identify the employee column (could be 'colaborador', 'employee_id', or 'matricula')
+            employee_col = None
+            if 'colaborador' in df_filtered.columns:
+                employee_col = 'colaborador'
+            elif 'employee_id' in df_filtered.columns:
+                employee_col = 'employee_id'
+            elif 'matricula' in df_filtered.columns:
+                employee_col = 'matricula'
+            else:
+                logger.warning("filter_insert_results: No employee column found, skipping employee filter")
+                return df_filtered
+            
+            logger.info(f"Filtering by employee: {wfm_proc_colab} (using column '{employee_col}')")
+            
+            # Convert to string for comparison
+            df_filtered[employee_col] = df_filtered[employee_col].astype(str)
+            wfm_proc_colab_str = str(wfm_proc_colab)
+            
+            df_filtered = df_filtered[df_filtered[employee_col] == wfm_proc_colab_str].copy()
+            rows_after_employee_filter = len(df_filtered)
+            logger.info(f"After employee filter: {rows_after_employee_filter} rows (removed {rows_after_date_filter - rows_after_employee_filter} rows)")
+        
+        logger.info(f"filter_insert_results: Final result has {len(df_filtered)} rows (removed {initial_rows - len(df_filtered)} total rows)")
+        return df_filtered
+        
+    except Exception as e:
+        logger.error(f"Error in filter_insert_results: {str(e)}", exc_info=True)
+        return df
