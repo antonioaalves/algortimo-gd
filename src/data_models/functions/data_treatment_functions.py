@@ -2434,18 +2434,24 @@ def add_seq_turno(df_calendario: pd.DataFrame, df_colaborador: pd.DataFrame):
         # Preserve any horario values already filled (e.g., closed holidays)
         prefilled_mask = df_result['horario'].notna() & (df_result['horario'] != '')
 
+        # Normalize pattern to uppercase for consistent matching
+        df_result['pattern_upper'] = df_result['pattern'].str.upper()
+        
         # Vectorized horario assignment using np.select
         conditions = [
             # Special patterns that work both shifts
-            df_result['pattern'].isin(['MoT', 'P', 'CICLO']),
+            df_result['pattern_upper'].isin(['MOT', 'P']),
+            # CICLO employees get 'MoT' as default (flexible - overridden by add_ciclos_completos where data exists)
+            df_result['pattern_upper'] == 'CICLO',
             # Morning pattern matches morning shift
-            (df_result['pattern'] == 'M') & (df_result['tipo_turno'] == 'M'),
+            (df_result['pattern_upper'] == 'M') & (df_result['tipo_turno'] == 'M'),
             # Afternoon pattern matches afternoon shift
-            (df_result['pattern'] == 'T') & (df_result['tipo_turno'] == 'T'),
+            (df_result['pattern_upper'] == 'T') & (df_result['tipo_turno'] == 'T'),
         ]
         
         choices = [
-            df_result['pattern'],  # MoT/P/CICLO: use the pattern value
+            df_result['pattern'],  # MoT/P: use the pattern value
+            'MoT',                 # CICLO: default to MoT (flexible scheduling)
             'M',                   # Morning shift on morning week
             'T',                   # Afternoon shift on afternoon week
         ]
@@ -2456,8 +2462,8 @@ def add_seq_turno(df_calendario: pd.DataFrame, df_colaborador: pd.DataFrame):
         if update_mask.any():
             df_result.loc[update_mask, 'horario'] = calculated_horario[update_mask.to_numpy()]
         
-        # Drop temporary helper column
-        df_result = df_result.drop('pattern', axis=1)
+        # Drop temporary helper columns
+        df_result = df_result.drop(['pattern', 'pattern_upper'], axis=1, errors='ignore')
         
         # OUTPUT VALIDATION
         if 'horario' not in df_result.columns:
