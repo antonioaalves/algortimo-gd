@@ -1349,7 +1349,7 @@ def get_past_employees_id_list(wfm_proc_colab: str, df_mpd_valid_employees: pd.D
             if int(colabs_a_gerar[0]) != wfm_proc_colab:
                 return False, [], "The employee is not present in the df_mpd_valid_employees query."
 
-            colabs_passado = [int(x) for x in df['fk_colaborador'].unique()]
+            colabs_passado = [int(x) for x in df['employee_id'].unique()]
             #colabs_passado.remove(wfm_proc_colab)
             logger.info(f"Created colabs_passado list: {colabs_passado}")
 

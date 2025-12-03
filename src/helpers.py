@@ -76,15 +76,19 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         if connection is None:
             logger.error("ERROR: No database connection available")
             return 0
-            
-        if hasattr(connection, 'cursor') and callable(getattr(connection, 'cursor')):
+        
+        # Check for SQLAlchemy connection first (has dbapi_connection attribute)
+        if hasattr(connection, 'dbapi_connection'):
+            if connection.dbapi_connection is not None:
+                cursor_context = connection.dbapi_connection.cursor()
+                logger.info(f"DEBUG: using SQLAlchemy dbapi_connection cursor")
+            else:
+                logger.error("ERROR: SQLAlchemy connection's dbapi_connection is None")
+                return 0
+        elif hasattr(connection, 'cursor') and callable(getattr(connection, 'cursor')):
             # Direct cx_Oracle connection
             cursor_context = connection.cursor()
             logger.info(f"DEBUG: using direct cx_Oracle cursor")
-        elif hasattr(connection, 'connection') and hasattr(connection.connection, 'cursor'):
-            # SQLAlchemy wrapped connection - get the raw connection
-            cursor_context = connection.connection.cursor()
-            logger.info(f"DEBUG: using SQLAlchemy wrapped cursor")
         else:
             logger.error(f"ERROR: Unknown connection type: {type(connection)}")
             return 0
@@ -105,14 +109,14 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
             logger.info(f"DEBUG: query executed successfully")
             
             # Handle commit for both connection types
-            if hasattr(connection, 'commit') and callable(getattr(connection, 'commit')):
+            if hasattr(connection, 'dbapi_connection') and connection.dbapi_connection is not None:
+                # SQLAlchemy connection - commit via dbapi_connection
+                connection.dbapi_connection.commit()
+                logger.info(f"DEBUG: committed SQLAlchemy dbapi_connection")
+            elif hasattr(connection, 'commit') and callable(getattr(connection, 'commit')):
                 # Direct cx_Oracle connection
                 connection.commit()
                 logger.info(f"DEBUG: committed cx_Oracle connection")
-            elif hasattr(connection, 'connection') and hasattr(connection.connection, 'commit'):
-                # SQLAlchemy wrapped connection
-                connection.connection.commit()
-                logger.info(f"DEBUG: committed SQLAlchemy connection")
         
         logger.info(f"DEBUG: set_process_errors returning 1 (success)")
         return 1

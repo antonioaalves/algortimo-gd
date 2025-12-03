@@ -764,6 +764,7 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
         # Convert employee_id to string BEFORE validation to ensure type consistency
         # (employee_id comes as int from SQL but needs to be string for comparisons)
         df_colaborador['employee_id'] = df_colaborador['employee_id'].astype(str)
+        employees_id_list = [str(x) for x in employees_id_list]
         
         # INPUT VALIDATION
         # TODO: add validations

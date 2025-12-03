@@ -681,7 +681,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_contratos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador=df_colaborador, employees_id_list=employees_id_list_for_posto)
+            success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador=df_colaborador, employees_id_list=past_employees_id_list)
             if not success:
                 self.logger.error(f"Colaborador treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg

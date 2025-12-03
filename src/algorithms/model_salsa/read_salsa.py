@@ -50,7 +50,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
             partial_generation = True 
-            partial_workers = algorithm_treatment_params['colabs_id_list']
+            partial_workers = algorithm_treatment_params['employees_id_list_for_posto']
             logger.debug(f"wfm_proc {wfm_proc}, {type(wfm_proc)}")
         else:
             partial_generation = False
@@ -103,7 +103,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         workers_calendario_complete = set(matriz_calendario_gd['employee_id'].dropna().astype(int))
         if partial_generation == True:
             for w in partial_workers:
-                partial_workers_complete = set(matriz_colaborador_gd['employee_id'][matriz_colaborador_gd['fk_colaborador'] == w].dropna().astype(int))
+                partial_workers_complete = set(matriz_colaborador_gd['employee_id'][matriz_colaborador_gd['employee_id'] == w].dropna().astype(int))
                 logger.info(f"Unique workers found:")
                 logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador_complete)} workers")
                 logger.info(f"  - In matriz_calendario_complete: {len(workers_calendario_complete)} workers")
@@ -372,7 +372,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
-            fixed_LQs[w] = {}
+            fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
     
