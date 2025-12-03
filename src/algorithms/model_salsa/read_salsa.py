@@ -372,7 +372,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
-            fixed_LQs[w] = set()
+            fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
     
