@@ -180,16 +180,16 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
         # Create spinner for initialization
         with click.progressbar(length=100, label="Initializing") as bar:
             # Create and configure components (same as main.py)
-            logger.info(f"DEBUG: About to call create_components with no_tracking={no_tracking}")
+            #logger.info(f"DEBUG: About to call create_components with no_tracking={no_tracking}")
             data_manager, process_manager = create_components(
                 use_db=use_db, 
                 no_tracking=no_tracking, 
                 config=config_manager, 
                 project_name=config_manager.system.project_name
             )
-            logger.info(f"DEBUG: create_components returned data_manager={data_manager} and process_manager={process_manager}")
-            logger.info(f"DEBUG: data_manager type: {type(data_manager)}")
-            logger.info(f"DEBUG: process_manager type: {type(process_manager)}")
+            #logger.info(f"DEBUG: create_components returned data_manager={data_manager} and process_manager={process_manager}")
+            #logger.info(f"DEBUG: data_manager type: {type(data_manager)}")
+            #logger.info(f"DEBUG: process_manager type: {type(process_manager)}")
 
             # Debug logging for process manager (same as main.py)
             logger.debug("=== DEBUG PROCESS MANAGER ===")
