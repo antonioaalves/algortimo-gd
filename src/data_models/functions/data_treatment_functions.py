@@ -802,6 +802,8 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
             df_colaborador['lqs'] = pd.to_numeric(df_colaborador['lqs'], errors='coerce')
             df_colaborador['data_admissao'] = pd.to_datetime(df_colaborador['data_admissao'], errors='coerce')
             df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce')
+            df_colaborador['seq_turno'] = df_colaborador['seq_turno'].fillna('').astype(str)
+            df_colaborador['ciclo'] = df_colaborador['ciclo'].fillna('').astype(str)
             
             # Convert matricula to string for consistency (already did employee_id before validation)
             df_colaborador['matricula'] = df_colaborador['matricula'].astype(str)
