@@ -51,7 +51,7 @@ def analyze_optimization_results(solver, optimization_details):
         }
         
         point_1_results['total_penalty'] += penalty
-    
+    logger.info(point_1_results)
     results['point_1_pessobj_deviations'] = point_1_results
     
     # Point 2: Consecutive free days bonus

@@ -65,7 +65,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences,
  
         empty_set = empty_days[w]
         vacation = vacation_days[w] - empty_set
-        fixed_LQs_set = set(fixed_LQs[w]) - vacation - closed_holidays
+        fixed_LQs_set = fixed_LQs[w] - vacation - closed_holidays
         fixed_days_set = fixed_days_off[w] - vacation - fixed_LQs_set
         absence_set = absences[w] - fixed_days_set - fixed_LQs_set - vacation - empty_set
         shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set
