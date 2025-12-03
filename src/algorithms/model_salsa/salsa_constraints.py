@@ -45,7 +45,7 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
         # Now collect all possible compensation days for this worker
         for d in worked_holidays[w].keys():  # Use keys from worked_holidays[w] to ensure alignment
             if d in possible_compensation_days[w]:
-                print(possible_compensation_days[w][d])
+                #print(possible_compensation_days[w][d])
                 all_possible_comp_days.update(possible_compensation_days[w][d])
         for d in working_days[w]:
             if (w, d, 'LD') in shift:

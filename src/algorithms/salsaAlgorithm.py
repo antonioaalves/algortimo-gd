@@ -236,7 +236,6 @@ class SalsaAlgorithm(BaseAlgorithm):
                 adapted_data = self.data_processed
             
             # Extract data elements
-            matriz_calendario_gd = adapted_data['matriz_calendario_gd']
             days_of_year = adapted_data['days_of_year']
             sundays = adapted_data['sundays']
             holidays = adapted_data['holidays']
@@ -246,24 +245,15 @@ class SalsaAlgorithm(BaseAlgorithm):
             worker_absences = adapted_data['worker_absences']
             vacation_days = adapted_data['vacation_days']
             working_days = adapted_data['working_days']
-            non_holidays = adapted_data['non_holidays']
             week_to_days = adapted_data['week_to_days']
-            matriz_colaborador_gd = adapted_data['matriz_colaborador_gd']
             workers = adapted_data['workers']
             contract_type = adapted_data['contract_type']
-            total_l = adapted_data['total_l']
             total_l_dom = adapted_data['total_l_dom']
             c2d = adapted_data['c2d']
-            c3d = adapted_data['c3d']
-            l_d = adapted_data['l_d']
-            cxx = adapted_data['cxx']
-            matriz_estimativas_gd = adapted_data['matriz_estimativas_gd']
             pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
-            max_workers = adapted_data['max_workers']
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
-            free_day_complete_cycle = adapted_data['free_day_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
             first_day = adapted_data['first_registered_day']
             admissao_proporcional = adapted_data['admissao_proporcional']
@@ -444,7 +434,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
 
-            debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, working_shift, shift, pessObj,
+            debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, real_working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
                                              first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
 

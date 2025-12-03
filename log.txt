@@ -44,3 +44,25 @@ Help: https://docs.oracle.com/error-help/db/ora-01017/
 Help: https://docs.oracle.com/error-help/db/ora-01017/
 27112025 15:20:34 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
 Help: https://docs.oracle.com/error-help/db/ora-01017/
+28112025 10:03:52 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+28112025 10:35:55 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+28112025 14:40:42 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+28112025 14:59:54 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+02122025 09:55:19 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+02122025 10:13:46 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+02122025 11:34:18 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+02122025 12:19:23 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+02122025 16:06:05 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+02122025 16:59:16 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/
+02122025 17:18:32 ERROR CONNECTING TO DATABASE: ORA-01017: invalid username/password; logon denied
+Help: https://docs.oracle.com/error-help/db/ora-01017/

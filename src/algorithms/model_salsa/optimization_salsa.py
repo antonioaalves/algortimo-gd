@@ -103,7 +103,6 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             neg_diff_dict[(d, s)] = neg_diff
 
             target = pessObj.get((d, s), 0)
-            
             # Add constraints to ensure that the positive and negative deviations are correctly computed
             model.Add(pos_diff >= assigned_workers - target)  # If excess, pos_diff > 0
             model.Add(pos_diff >= 0)  # Ensure pos_diff is non-negative
@@ -566,7 +565,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
 
     lq_free_worker_vars = {}
     workers_with_lq = []
-    saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year and year_range[0] <= s <= year_range[1]]
+    saturdays = [s - 1 for s in sundays if (s - 1) in days_of_year and year_range[0] < s <= year_range[1]]
 
     for w in all_workers:
         # Only consider weekends where the worker is actually exposed:
