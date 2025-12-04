@@ -252,6 +252,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             c2d = adapted_data['c2d']
             pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
+            max_workers = adapted_data['max_workers']
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
@@ -275,6 +276,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             workers_past = adapted_data['workers_past']
             fixed_compensation_days = adapted_data['fixed_compensation_days']
             year_range = adapted_data["year_range"]
+            unique_dates = adapted_data["unique_dates"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -435,16 +437,16 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, real_working_shift, shift, pessObj,
-                                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
+                                             working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d,
                                              first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
 
             # =================================================================
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            
             schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, pessObj, workers_past,
-                              output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'),
+                              pd.Series(['Worker'] + (unique_dates)),
+                              output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                               optimization_details=optimization_details )
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")

@@ -30,6 +30,7 @@ def solve(
     work_day_hours: Dict[int, List[int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
+    unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
@@ -116,7 +117,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 10  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -445,6 +446,7 @@ def solve(
             logger.info(f"  Worker {worker_id}: {stats}")
         
         logger.info("[OK] Solver completed successfully")
+        df.columns = unique_dates_row
         return df , results
         
     except Exception as e:

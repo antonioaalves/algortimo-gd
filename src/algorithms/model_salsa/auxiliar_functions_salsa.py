@@ -28,11 +28,7 @@ def consecutive_days(vacations_in_week, nbr_vacations, cut_off, days):
 
 def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences, vacations_in_week, fixed_days_off, fixed_LQs, year_range, days_off, total, flag):
     if flag == 5:
-        if 13 in absences and 14 not in absences:
-            print("1")
         if total == 6 and len(days_off) == 0:
-            if 13 in absences and 14 not in absences:
-                print("2")
             last = absences_in_week[-1]
             if not(year_range[0] <= last <= year_range[1]):
                 last = vacations_in_week[-1]
@@ -124,7 +120,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
 
             if len(days_off) >= 2:
-                logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
+                #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
             
             if nbr_absences < 5 and nbr_vacations < 6:

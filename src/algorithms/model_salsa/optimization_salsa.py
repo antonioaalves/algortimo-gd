@@ -6,14 +6,15 @@ logger = get_logger(_config_manager.project_name)
 
 
 def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessObj, working_days,
-                       closed_holidays, min_workers,week_to_days, sundays, c2d, first_day, last_day,
-                       role_by_worker, work_day_hours, workers_past, year_range):
+                       closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, 
+                       first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
     no_workers_penalties = {}
     min_workers_penalties_shift = {}
     min_workers_penalties_day = {}
+    max_workers_penalties_shift = {}
     inconsistent_shift_penalties = {}
 
     # Create the objective function with heavy penalties
@@ -22,6 +23,7 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
     CONSECUTIVE_FREE_DAY = -1  # Bonus for consecutive free days
     HEAVY_PENALTY = 300  # Penalty for days with no workers
     MIN_WORKER_PENALTY_SHIFT = 600  # Penalty for breaking minimum worker requirements per shift
+    MAX_WORKER_PENALTY_SHIFT = 300  # Penalty for breaking maximum worker requirements per shift
     MIN_WORKER_PENALTY_DAY = 6000  # Penalty for breaking minimum worker requirements per day
     SUNDAY_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced Sunday free days ALL YEAR
     C2D_YEAR_BALANCE_PENALTY = 8  # Penalty for unbalanced C2D free days ALL YEAR
@@ -52,6 +54,10 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
             'penalty_weight': MIN_WORKER_PENALTY_SHIFT
         },
         'point_4_2_min_workers': {
+            'variables': {},
+            'penalty_weight': MIN_WORKER_PENALTY_DAY
+        },
+        'point_4_3_min_workers': {
             'variables': {},
             'penalty_weight': MIN_WORKER_PENALTY_DAY
         },
@@ -256,6 +262,36 @@ def salsa_optimization(model, days_of_year, workers, working_shift, shift, pessO
         
         # Add penalty to the objective function
         objective_terms.append(MIN_WORKER_PENALTY_DAY * shortfall)
+        day_counter += 1
+
+    # 4.3 Penalize breaking max worker requirements per shift
+    day_counter = 0
+    for d in days_of_year:
+        if d in closed:
+            day_counter += 1
+            logger.info(f"4.3: Skiping day {d}")
+            continue
+        for s in working_shift:
+            max_req = max_workers.get((d, s), 8)
+            if max_req > 0:  # Only penalize when there's a minimum requirement
+                # Calculate the number of assigned workers for this day and shift
+                assigned_workers = sum(shift[(w, d, s)] * int(work_day_hours[w][day_counter]) for w in all_workers if (w, d, s) in shift)
+                
+                # Create a variable to represent the shortfall from the minimum
+                overfall = model.NewIntVar(0, 1000, f"min_overfall_{d}_{s}")
+                model.Add(overfall >= assigned_workers - max_req)
+                model.Add(overfall >= 0)
+                
+                # Store the variable
+                max_workers_penalties_shift[(d, s)] = overfall
+
+                optimization_details['point_4_3_min_workers']['variables'][(d, s)] = {
+                    'overfall': overfall,
+                    'max_required': max_req
+                }
+                
+                # Add penalty to the objective function
+                objective_terms.append(MAX_WORKER_PENALTY_SHIFT * overfall)
         day_counter += 1
 
     # 5.1 Balance sundays free days 
