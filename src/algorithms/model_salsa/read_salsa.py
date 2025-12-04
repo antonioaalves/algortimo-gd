@@ -201,13 +201,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         unique_dates = sorted(matriz_calendario_gd['schedule_day'].unique())
 
         if unique_dates:
+            unique_dates = [x.strftime('%Y-%m-%d') for x in unique_dates]
             # Get start weekday from the first date in the calendar data (not estimativas)
             # Sort calendar by date to get the actual first date
             matriz_calendario_sorted = matriz_calendario_gd.sort_values('schedule_day')
             first_date_row = matriz_calendario_sorted.iloc[0]
 
             # Get the year from the first date and create January 1st of that year
-            year =matriz_estimativas_gd.loc[
+            year = matriz_estimativas_gd.loc[
                 (matriz_estimativas_gd['data'].dt.month == 6) &
                 (matriz_estimativas_gd['data'].dt.day == 25),
                 'data'].dt.year.iloc[0]
@@ -776,6 +777,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "workers_past": workers_past,                        
             "fixed_compensation_days": fixed_compensation_days,  
             "year_range": year_range,
+            "unique_dates": unique_dates,
             }
         
     except Exception as e:
