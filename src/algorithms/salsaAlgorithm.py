@@ -80,7 +80,7 @@ class SalsaAlgorithm(BaseAlgorithm):
         
         # Set project name if not provided
         if project_name is None:
-            project_name = get_config_manager().system_config.get('project_name', 'algoritmo_GD')
+            project_name = get_config_manager().system.project_name
         
         # Initialize the parent class with algorithm name and parameters
         super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=project_name)

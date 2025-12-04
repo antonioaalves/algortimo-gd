@@ -204,8 +204,14 @@ class SalsaDataModel(BaseDescansosDataModel):
             'stage2_schedule': None,
         }
         # External call data coming from the product - See data lifecycle to understand what this data is
+        # Use runtime external_data if provided, otherwise fall back to JSON defaults
         self.logger.info(f"DEBUGGING: config_manager: {self.config_manager}")
-        self.external_call_data = self.config_manager.parameters.external_call_data if self.config_manager else {}
+        if external_data:
+            self.external_call_data = external_data
+            self.logger.info(f"Using runtime external_data: current_process_id={external_data.get('current_process_id')}")
+        else:
+            self.external_call_data = self.config_manager.parameters.external_call_data if self.config_manager else {}
+            self.logger.info(f"Using JSON defaults: current_process_id={self.external_call_data.get('current_process_id')}")
         
         self.logger.info("SalsaDescansosDataModel initialized")
 

@@ -22,7 +22,7 @@ config_manager = get_config()
 # Initialize logger with configuration first
 setup_logger(
     project_name=config_manager.system.project_name,
-    log_level=config_manager.system.logging_config.get('log_level', 'INFO'),
+    log_level=config_manager.system.get_log_level(),
     log_dir=config_manager.system.logging_config.get('log_dir', 'logs'),
     console_output=True
 )
