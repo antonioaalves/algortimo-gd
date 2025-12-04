@@ -446,7 +446,7 @@ def solve(
             logger.info(f"  Worker {worker_id}: {stats}")
         
         logger.info("[OK] Solver completed successfully")
-        df.iloc[0] = unique_dates_row
+        df.columns = unique_dates_row
         return df , results
         
     except Exception as e:
