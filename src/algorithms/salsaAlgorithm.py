@@ -252,6 +252,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             c2d = adapted_data['c2d']
             pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
+            max_workers = adapted_data['max_workers']
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             week_to_days_salsa = adapted_data['week_to_days_salsa']
@@ -435,7 +436,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
 
             debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, real_working_shift, shift, pessObj,
-                                             working_days, closed_holidays, min_workers, week_to_days, sundays, c2d,
+                                             working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d,
                                              first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
 
             # =================================================================

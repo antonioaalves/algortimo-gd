@@ -32,14 +32,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         # 1. VALIDATE INPUT data
         # =================================================================
-        required_dataframes = ['df_colaborador', 'df_estimativas', 'df_calendario']
-        missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
-
         logger.info(f"algorithm_treatment_params: {algorithm_treatment_params}")
         
-        if missing_dataframes:
-            raise ValueError(f"Missing required DataFrames: {missing_dataframes}")
-
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
@@ -371,7 +365,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L')]['index'].tolist()
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
-            #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
+            logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
@@ -691,7 +685,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         # If estimativas has specific data, process it
         if not matriz_estimativas_gd.empty: 
-            for d in range(max_day + 1): 
+            for d in days_of_year: 
                 # Process pess_obj for working_shift
                 for s in working_shift:
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['index'] == d) & (matriz_estimativas_gd['turno'] == s)]
@@ -704,12 +698,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         pess_obj[(d, s)] = 0
                         min_workers[(d, s)] = 0
                         max_workers[(d, s)] = 0
-
+                    #print(f"day {d} and shift {s}: pessobj {pess_obj[(d, s)]/8}, min_workers {min_workers[(d, s)]/8}, max_workers {max_workers[(d, s)]/8}")
             logger.info(f"Processing estimativas data with {len(matriz_estimativas_gd)} records")
-            logger.info(f"  - pess_obj: {len(pess_obj)} entries")
-            logger.info(f"  - min_workers: {len(min_workers)} entries")
-            logger.info(f"  - max_workers: {len(max_workers)} entries")
-    
+            logger.info(f"  - pess_obj: {len(pess_obj)/2} entries")
+            logger.info(f"  - min_workers: {len(min_workers)/2} entries")
+            logger.info(f"  - max_workers: {len(max_workers)/2} entries")
         # =================================================================
         # 12. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
