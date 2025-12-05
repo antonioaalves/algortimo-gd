@@ -707,7 +707,7 @@ def assigns_solution_days(new_model, new_shift, workers_complete, workers_comple
     from base_data_project.log_config import get_logger
     from src.configuration_manager.instance import get_config as get_config_manager
     
-    logger = get_logger(get_config_manager().system_config.get('project_name', 'algoritmo_GD'))
+    logger = get_logger(get_config_manager().system.project_name)
     
     day_changed = []
     shift_mapping = {s: idx for idx, s in enumerate(shifts)}

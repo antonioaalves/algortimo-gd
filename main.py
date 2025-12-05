@@ -23,14 +23,14 @@ config_manager = get_config()
 
 # Initialize logger with configuration first
 setup_logger(
-    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD'),
-    log_level=config_manager.system_config.get('logging', {}).get('log_level', 'INFO'),
-    log_dir=config_manager.system_config.get('logging', {}).get('log_dir', 'logs'),
+    project_name=config_manager.system.project_name,
+    log_level=config_manager.system.get_log_level(),
+    log_dir=config_manager.system.logging_config.get('log_dir', 'logs'),
     console_output=True
 )
 
 # Then get the logger instance for use throughout the file
-logger = get_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'))
+logger = get_logger(config_manager.system.project_name)
 
 # Import components that might use logging after logger is initialized
 from src.services.algoritmo_gd import AlgoritmoGDService
@@ -51,7 +51,7 @@ def run_process(use_db, no_tracking):
     """
     # Display header
     click.clear()
-    click.echo(click.style(f"=== {config_manager.system_config.get('project_name', 'algoritmo_GD')} Interactive Mode ===", fg="green", bold=True))
+    click.echo(click.style(f"=== {config_manager.system.project_name} Interactive Mode ===", fg="green", bold=True))
     click.echo(click.style(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", fg="green"))
     click.echo()
     
@@ -71,8 +71,8 @@ def run_process(use_db, no_tracking):
             data_manager, process_manager = create_components(
                 use_db=use_db, 
                 no_tracking=no_tracking, 
-                config=config_manager.system_config, 
-                project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
+                config=config_manager, 
+                project_name=config_manager.system.project_name
             )
 
             # Debug logging for process manager
@@ -105,7 +105,7 @@ def run_process(use_db, no_tracking):
                 process_manager=process_manager,
                 external_call_dict=external_call_dict,
                 config=config_manager,
-                project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
+                project_name=config_manager.system.project_name
             )
             
             # Initialize process

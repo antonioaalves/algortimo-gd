@@ -85,9 +85,16 @@ class AlgoritmoGDService(BaseService):
             'wfm_user': external_call_dict.get('wfm_user', 0),                       # arg3
             'start_date': external_call_dict.get('start_date', 0),                   # arg4
             'end_date': external_call_dict.get('end_date', 0),                       # arg5
-            'wfm_proc_colab': external_call_dict.get('wfm_proc_colab', None),        # arg6 - Changed default from 0 to None
+            'wfm_proc_colab': external_call_dict.get('wfm_proc_colab', ''),          # arg6 - empty string is valid business case (all employees)
             'child_number': external_call_dict.get('child_number', 1),               # arg7
         } if external_call_dict is not None else {}
+
+        # Sync runtime values to data model's external_call_data
+        # This ensures that when running from orquestrador.py with runtime values,
+        # the data model uses those instead of stale JSON defaults
+        if self.external_data and self.data_model:
+            self.data_model.external_call_data.update(self.external_data)
+            self.logger.info(f"Synced runtime external_call_data to data model: current_process_id={self.external_data.get('current_process_id')}")
 
         # Process tracking
         self.stage_handler = process_manager.get_stage_handler() if process_manager else None
@@ -112,7 +119,8 @@ class AlgoritmoGDService(BaseService):
             from base_data_project.data_manager.managers.managers import DBDataManager
             if isinstance(data_manager, DBDataManager):
                 try:
-                    self.raw_connection = data_manager.session.connection().connection
+                    pool_conn = data_manager.engine.raw_connection()
+                    self.raw_connection = pool_conn.dbapi_connection
                     self.logger.info("Database connection established for error logging")
                 except Exception as e:
                     self.logger.warning(f"Failed to establish database connection for error logging: {e}")
@@ -134,17 +142,18 @@ class AlgoritmoGDService(BaseService):
         # Check if current connection is valid before creating new one
         if self.raw_connection:
             try:
-                # Test connection based on type (same logic as helpers.py)
+                # Test connection based on type
                 if hasattr(self.raw_connection, 'ping') and callable(getattr(self.raw_connection, 'ping')):
                     # Direct cx_Oracle connection - use ping
                     self.raw_connection.ping()
                     self.logger.debug("Existing cx_Oracle connection is valid, reusing it")
                     return
-                elif hasattr(self.raw_connection, 'connection'):
-                    # SQLAlchemy raw connection - test with simple query
-                    with self.raw_connection.connection.cursor() as cursor:
-                        cursor.execute("SELECT 1 FROM DUAL")
-                        cursor.fetchone()
+                elif hasattr(self.raw_connection, 'dbapi_connection') and self.raw_connection.dbapi_connection is not None:
+                    # SQLAlchemy raw connection - test with simple query via dbapi_connection
+                    cursor = self.raw_connection.dbapi_connection.cursor()
+                    cursor.execute("SELECT 1 FROM DUAL")
+                    cursor.fetchone()
+                    cursor.close()
                     self.logger.debug("Existing SQLAlchemy connection is valid, reusing it")
                     return
             except Exception as e:
@@ -152,9 +161,15 @@ class AlgoritmoGDService(BaseService):
                 self.raw_connection = None
             
         # Get fresh connection from data_manager's engine
-        if hasattr(self.data_manager, 'engine'):
-            self.raw_connection = self.data_manager.engine.raw_connection()
-            self.logger.debug("Got fresh raw connection from data_manager engine")
+        if hasattr(self.data_manager, 'engine') and self.data_manager.engine is not None:
+            try:
+                # Get a fresh connection from the pool and extract the DBAPI connection
+                pool_conn = self.data_manager.engine.raw_connection()
+                self.raw_connection = pool_conn.dbapi_connection
+                self.logger.debug("Got fresh DBAPI connection from engine pool")
+            except Exception as e:
+                self.logger.warning(f"Failed to get fresh connection: {e}")
+                self.raw_connection = None
         else:
             self.raw_connection = None
 

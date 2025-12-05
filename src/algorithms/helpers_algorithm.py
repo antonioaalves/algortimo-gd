@@ -409,7 +409,7 @@ def _calculate_comprehensive_stats(algorithm_results: pd.DataFrame, start_date: 
         total_workers = len(algorithm_results) if not algorithm_results.empty else 0
         
         # Get day columns (all columns except 'Worker')
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+        day_columns = [col for col in algorithm_results.columns if col != 'Worker']
         total_days = len(day_columns)
         
         # Calculate date range
@@ -504,7 +504,7 @@ def _validate_constraints(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
             return constraint_validation
         
         # Get day columns
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+        day_columns = [col for col in algorithm_results.columns if col != 'Worker']
         
         # Check for continuous working days violations
         continuous_violations = []
@@ -560,7 +560,7 @@ def _calculate_quality_metrics(algorithm_results: pd.DataFrame) -> Dict[str, Any
         total_workers = len(algorithm_results) if not algorithm_results.empty else 0
         
         # Get day columns
-        day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+        day_columns = [col for col in algorithm_results.columns if col != 'Worker']
 
         
         # SALSA-specific metrics
@@ -621,10 +621,11 @@ def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date
         
         # Database format (long format) - convert from wide to long
         if 'Worker' in algorithm_results.columns:
-            day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+            day_columns = [col for col in algorithm_results.columns if col != 'Worker']
             
             if day_columns:
                 # Melt the DataFrame to long format
+                # Note: 'Day' column will contain the date strings from column names (e.g., '2025-12-22')
                 melted_df = pd.melt(
                     algorithm_results,
                     id_vars=['Worker'],
@@ -633,27 +634,15 @@ def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date
                     value_name='Shift'
                 )
                 
-                # Clean up the Day column to extract day numbers
-                logger.info(f"DEBUG: melted_df['Day'] type: {type(melted_df['Day'])}")
-                logger.info(f"DEBUG: melted_df['Day'].str.replace('Day ', ''): {melted_df['Day'].str.replace('Day ', '')}")
-                melted_df['Day'] = melted_df['Day'].str.replace('Day_', '').astype(int)
+                logger.info(f"DEBUG: melted_df columns: {melted_df.columns.tolist()}, shape: {melted_df.shape}")
                 
-                # Convert day numbers to actual dates if start_date is available
-                if start_date:
-                    try:
-                        base_date = pd.to_datetime(start_date)
-                        melted_df['Date'] = melted_df['Day'].apply(lambda x: base_date + pd.Timedelta(days=x-1))
-                        melted_df['Date'] = melted_df['Date'].dt.strftime('%Y-%m-%d')
-                    except:
-                        melted_df['Date'] = melted_df['Day'].astype(str)
-                else:
-                    melted_df['Date'] = melted_df['Day'].astype(str)
-                
-                # Rename columns and select relevant ones
-                formatted_schedules['database_format'] = melted_df[['Worker', 'Date', 'Shift']].copy()
-                formatted_schedules['database_format'].rename(columns={'Worker': 'colaborador'}, inplace=True)
-                formatted_schedules['database_format'].rename(columns={'Shift': 'horario'}, inplace=True)
-                formatted_schedules['database_format'].rename(columns={'Date': 'data'}, inplace=True)
+                # Select relevant columns and rename to expected format
+                formatted_schedules['database_format'] = melted_df[['Worker', 'Day', 'Shift']].copy()
+                formatted_schedules['database_format'].rename(columns={
+                    'Worker': 'colaborador',
+                    'Day': 'data',
+                    'Shift': 'horario'
+                }, inplace=True)
 
         return formatted_schedules
     except Exception as e:
@@ -697,7 +686,7 @@ def _validate_solution(algorithm_results: pd.DataFrame) -> Dict[str, Any]:
                 validation_errors.append("Missing 'Worker' column")
             
             # Check for day columns
-            day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
+            day_columns = [col for col in algorithm_results.columns if col != 'Worker']
             if not day_columns:
                 validation_errors.append("No day columns found")
             

@@ -23,12 +23,12 @@ config_manager = get_config()
 
 # Initialize logger
 setup_logger(
-    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD'),
-    log_level=config_manager.system_config.get('logging', {}).get('log_level', 'INFO'),
-    log_dir=config_manager.system_config.get('logging', {}).get('log_dir', 'logs'),
+    project_name=config_manager.system.project_name,
+    log_level=config_manager.system.get_log_level(),
+    log_dir=config_manager.system.logging_config.get('log_dir', 'logs'),
     console_output=True
 )
-logger = get_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'))
+logger = get_logger(config_manager.system.project_name)
 
 # SET INITIAL PATH -----------------------------------
 import platform
@@ -185,8 +185,8 @@ if not sec_to_proc.empty:
                                 data_manager, process_manager = create_components(
                                     use_db=True,  # Always use database 
                                     no_tracking=False,
-                                    config=config_manager.system_config,
-                                    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
+                                    config=config_manager,
+                                    project_name=config_manager.system.project_name
                                 )
                                 
                                 # Build external call dict with same parameters
@@ -199,9 +199,8 @@ if not sec_to_proc.empty:
                                     'end_date': str(data_fim),
                                 }
                                 
-                                # Add wfm-proc-colab if it exists
-                                if wfm_proc_colab is not None:
-                                    external_call_dict['wfm_proc_colab'] = str(wfm_proc_colab)
+                                # Add wfm-proc-colab - use empty string when NULL (valid business case)
+                                external_call_dict['wfm_proc_colab'] = str(wfm_proc_colab) if wfm_proc_colab is not None else ''
                                 
                                 # Call the function directly - pass the orquestrador connection to avoid session limit
                                 with data_manager:

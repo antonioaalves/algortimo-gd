@@ -34,7 +34,13 @@ class AlcampoDataModel(BaseDescansosDataModel):
         super().__init__(data_container=data_container, project_name=project_name)
         
         # External call data coming from the product
-        self.external_call_data = self.config_manager.parameters.external_call_data if self.config_manager else {}
+        # Use runtime external_data if provided, otherwise fall back to JSON defaults
+        if external_data:
+            self.external_call_data = external_data
+            self.logger.info(f"Using runtime external_data: current_process_id={external_data.get('current_process_id')}")
+        else:
+            self.external_call_data = self.config_manager.parameters.external_call_data if self.config_manager else {}
+            self.logger.info(f"Using JSON defaults: current_process_id={self.external_call_data.get('current_process_id')}")
         
         self.logger.info("AlcampoDataModel initialized")
     

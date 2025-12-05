@@ -26,7 +26,8 @@ from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.functions.helper_functions import (
     count_dates_per_year,
     convert_types_out,
-    bulk_insert_with_query
+    bulk_insert_with_query,
+    filter_insert_results
 )
 from src.data_models.functions.data_treatment_functions import (
     adjust_estimativas_special_days,
@@ -1198,6 +1199,18 @@ class BaseDescansosDataModel(ABC):
                 self.logger.warning(f"Unmatched colaborador values (first 10): {final_df[final_df['data_admissao'].isna()]['colaborador'].unique()[:10]}")
             
             #self.logger.info(f"DEBUG: final_df: {final_df}")
+            
+            # Filter by process date range and employee (if specified)
+            self.logger.info("Filtering by process date range and employee (if specified)")
+            start_date = self.external_call_data.get("start_date", "")
+            end_date = self.external_call_data.get("end_date", "")
+            wfm_proc_colab = self.external_call_data.get("wfm_proc_colab", "")
+            
+            if start_date and end_date:
+                final_df = filter_insert_results(final_df, start_date, end_date, wfm_proc_colab)
+            else:
+                self.logger.warning("start_date or end_date not found in external_call_data, skipping date range filter")
+            
             self.logger.info("Filtering dates greater than each employee's admission date")
             initial_rows = len(final_df)
             # Convert data_admissao to datetime if not already

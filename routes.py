@@ -24,17 +24,17 @@ from src.services.algoritmo_gd import AlgoritmoGDService
 config_manager = get_config()
 
 # Set up logger
-logger = setup_logger(config_manager.system_config.get('project_name', 'algoritmo_GD'), log_level=logging.INFO)
+logger = setup_logger(config_manager.system.project_name, log_level=logging.INFO)
 
 # Create Flask app
 app = Flask(__name__)
 
 # Create data and process managers
 data_manager, process_manager = create_components(
-    use_db=config_manager.system_config.get('use_db', False),
+    use_db=config_manager.system.use_db,
     no_tracking=False,
-    config=config_manager.system_config,
-    project_name=config_manager.system_config.get('project_name', 'algoritmo_GD')
+    config=config_manager,
+    project_name=config_manager.system.project_name
 )
 
 # Create service
@@ -49,7 +49,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'project': config_manager.system_config.get('project_name', 'algoritmo_GD')
+        'project': config_manager.system.project_name
     })
 
 @app.route('/process', methods=['POST'])
