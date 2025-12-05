@@ -188,7 +188,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
         logger.info(f"  - Total special days: {len(special_days)} days")
 
-        
         # =================================================================
         # 8. CALCULATE ADDITIONAL PARAMETERS
         # =================================================================
@@ -365,8 +364,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_absences[w] = worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP') | (worker_calendar['horario'] == 'A-')]['index'].tolist()
             fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L')]['index'].tolist()
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
-            work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
-            logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
+            work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
+            #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
@@ -533,7 +532,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
-                total_l_dom[w] = int(worker_row.get('l_dom_salsa', 0))
+                total_l_dom[w] = int(worker_row.get('l_dom', 0))
                 c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
