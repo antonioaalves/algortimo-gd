@@ -1351,6 +1351,7 @@ class BaseDescansosDataModel(ABC):
                 return False
 
             try:
+                query_path = self.config_manager.paths.sql_processing_paths['insert_results_df']
                 valid_insertion = bulk_insert_with_query(
                     data_manager=data_manager, 
                     data=final_df, 
