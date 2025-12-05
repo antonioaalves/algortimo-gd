@@ -459,26 +459,16 @@ class SalsaAlgorithm(BaseAlgorithm):
                 logger.info(f"Filtering schedule by partial_workers_complete: {partial_workers_complete}")
                 
                 if isinstance(schedule_df, pd.DataFrame) and not schedule_df.empty:
-                    # Keep the first row (header/metadata) and rows for specific workers
+                    # Filter to keep only rows for specific workers
+                    # Note: DataFrame headers are column names, not data rows - no need to preserve "first row"
                     if 'Worker' in schedule_df.columns:
-                        # Filter to keep first row and rows with workers in partial_workers_complete
-                        first_row = schedule_df.iloc[:1]  # First row
-                        worker_rows = schedule_df[schedule_df['Worker'].isin(partial_workers_complete)]
-                        
-                        # Combine first row with filtered worker rows
-                        schedule_df = pd.concat([first_row, worker_rows], ignore_index=True)
-                        
-                        logger.info(f"Filtered schedule: kept first row + {len(worker_rows)} worker rows for workers {partial_workers_complete}")
+                        schedule_df = schedule_df[schedule_df['Worker'].isin(partial_workers_complete)]
+                        logger.info(f"Filtered schedule: {len(schedule_df)} rows for workers {partial_workers_complete}")
                     
                     elif 'colaborador' in schedule_df.columns:
                         # Alternative column name
-                        first_row = schedule_df.iloc[:1]  # First row
-                        worker_rows = schedule_df[schedule_df['colaborador'].isin(partial_workers_complete)]
-                        
-                        # Combine first row with filtered worker rows
-                        schedule_df = pd.concat([first_row, worker_rows], ignore_index=True)
-                        
-                        logger.info(f"Filtered schedule: kept first row + {len(worker_rows)} worker rows for workers {partial_workers_complete}")
+                        schedule_df = schedule_df[schedule_df['colaborador'].isin(partial_workers_complete)]
+                        logger.info(f"Filtered schedule: {len(schedule_df)} rows for workers {partial_workers_complete}")
                     
                     else:
                         # If no worker column found, try to filter by index or other method
@@ -612,13 +602,13 @@ class SalsaAlgorithm(BaseAlgorithm):
             quality_metrics = _calculate_quality_metrics(algorithm_results)
 
             # Convert free days codes in wfm codes FO and FC
-            algorithm_results = _convert_free_days(algorithm_results, self.data_processed)
+            # TODO: Rewrite _convert_free_days to work with date columns instead of Day_* format
+            # algorithm_results = _convert_free_days(algorithm_results, self.data_processed)
 
             logger.info(f"DEBUG: schedule after convert: {algorithm_results.head(5)}")
             
             # Format schedule for different outputs
             formatted_schedules = _format_schedules(algorithm_results, self.start_date, self.end_date)
-            formatted_schedules['database_format'] = formatted_schedules['database_format'].rename(columns={'Worker': 'colaborador'})
 
             # Get solver status (if available)
             solver_status = getattr(self, 'solver_status', 'OPTIMAL')
@@ -646,10 +636,10 @@ class SalsaAlgorithm(BaseAlgorithm):
                 'export_info': _create_export_info(self.process_id, root_dir),
                 'summary': {
                     'status': 'completed',
-                    'message': f'Successfully scheduled {stats["workers"]["total_workers"]} workers over {stats["time_coverage"]["total_days"]} days using SALSA algorithm',
+                    'message': f'Successfully scheduled {stats.get("workers", {}).get("total_workers", len(algorithm_results))} workers over {stats.get("time_coverage", {}).get("total_days", 0)} days using SALSA algorithm',
                     'key_metrics': {
-                        'total_assignments': stats['shifts']['total_assignments'],
-                        'coverage_percentage': stats['time_coverage']['coverage_percentage'],
+                        'total_assignments': stats.get('shifts', {}).get('total_assignments', 0),
+                        'coverage_percentage': stats.get('time_coverage', {}).get('coverage_percentage', 0),
                         'constraint_satisfaction': constraint_validation.get('overall_satisfaction', 100)
                     }
                 }
