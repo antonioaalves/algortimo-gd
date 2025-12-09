@@ -277,6 +277,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             fixed_compensation_days = adapted_data['fixed_compensation_days']
             year_range = adapted_data["year_range"]
             unique_dates = adapted_data["unique_dates"]
+            period = adapted_data["period"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -404,7 +405,8 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             if constraint_selections.get("salsa_2_free_days_week", {}).get("enabled", True):
                 self.logger.info("Applying constraint: salsa_2_free_days_week")
-                salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
+                salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional,
+                                       data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
             else:
                 self.logger.warning("Skipping constraint: salsa_2_free_days_week (disabled in config)")
 
@@ -423,7 +425,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Compensation days - check both country and config flag
             if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
                 self.logger.info("Applying constraint: compensation_days (Spain-specific)")
-                compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
+                compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, 
+                                  fixed_days_off, fixed_LQs, worker_absences, vacation_days, period,shift_T, shift_M, fixed_compensation_days)
             elif country != "spain":
                 self.logger.info("Skipping constraint: compensation_days (not applicable for non-Spain)")
             else:
