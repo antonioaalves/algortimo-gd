@@ -114,7 +114,7 @@ def connect_to_oracle_with_config():
         host = config.database.host
         port = getattr(config.database, 'port', 1521)
         service_name = getattr(config.database, 'service_name', 'XE')
-        user = getattr(config.database, 'user', None)
+        user = getattr(config.database, 'username', None)  # Note: attribute is 'username' not 'user'
         password = getattr(config.database, 'password', None)
         schema = getattr(config.database, 'schema', 'WFM')
         

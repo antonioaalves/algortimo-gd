@@ -48,8 +48,8 @@ from src.orquestrador_functions.Data_Handlers.GetGlobalData import get_all_param
 from src.orquestrador_functions.Logs.message_loader import get_messages, set_messages
 from src.orquestrador_functions.Classes.AlgorithmPrepClasses.ConnectionHandler import ConnectionHandler
 
-# Setup database connection
-connection_object = ConnectionHandler(path=path_ficheiros_global)
+# Setup database connection (uses config_manager credentials - no path required)
+connection_object = ConnectionHandler()
 connection_object.connect_to_database()
 connection = connection_object.get_connection()
 connection = connection_object.ensure_connection()
