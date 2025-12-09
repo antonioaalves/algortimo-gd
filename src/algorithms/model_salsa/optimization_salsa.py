@@ -95,14 +95,14 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
         pessObj.get((d, s), 0)
         for d in days_of_year
         for s in real_working_shift)
-    percentage_of_importance_no_excess=1
+    percentage_of_importance_no_excess=0 
     excess_weight=int(scale*percentage_of_importance_no_excess/excess_min_worst_scenario)
 
-    deficit_min_worst_scenario= (1/7) * sum(
+    deficit_min_worst_scenario= (1/10) * sum(
         pessObj.get((d, s), 0)
         for d in days_of_year
         for s in real_working_shift)
-    percentage_of_importance_no_deficit=1.4
+    percentage_of_importance_no_deficit=2
     deficit_weight=int(scale*percentage_of_importance_no_deficit/deficit_min_worst_scenario)
 
     no_workers_min_worst_scenario=1
@@ -182,8 +182,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
             model.Add(excess >= assigned_workers - target)
             model.Add(deficit >= target - assigned_workers)
 
-        excess_diff_vars.append((d, s, excess))
-        deficit_diff_vars.append((d, s, deficit))
+            excess_diff_vars.append((d, s, excess))
+            deficit_diff_vars.append((d, s, deficit))
 
         day_counter += 1
 
