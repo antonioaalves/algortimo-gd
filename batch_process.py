@@ -3,10 +3,16 @@
 
 import time
 import os
+##
+import cx_Oracle
+cx_Oracle.init_oracle_client(lib_dir=r"C:\oracle\instantclient_21_19")
+##
 import click
 import sys
 from typing import Dict, Any
 from datetime import datetime
+
+
 
 # Import base_data_project components
 from base_data_project.log_config import setup_logger, get_logger
