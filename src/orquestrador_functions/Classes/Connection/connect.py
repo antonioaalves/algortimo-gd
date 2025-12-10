@@ -20,6 +20,12 @@ logger = get_logger(get_config_manager().project_name)
 
 def connect_to_oracle(acessos_path, log_file="log.txt"):
     """
+    DEPRECATED: Use connect_to_oracle_with_config() instead.
+    
+    This function relied on an 'acessos.txt' file which is no longer used.
+    Database credentials are now managed through oracle_connection_parameters.json
+    via the centralized config_manager.
+    
     Establishes a connection to an Oracle database using credentials from an access file
     and sets the current schema.
 
@@ -29,7 +35,16 @@ def connect_to_oracle(acessos_path, log_file="log.txt"):
 
     Returns:
         connection (cx_Oracle.Connection): Oracle connection object if successful, None otherwise.
+    
+    .. deprecated::
+        Use :func:`connect_to_oracle_with_config` instead.
     """
+    import warnings
+    warnings.warn(
+        "connect_to_oracle() is deprecated. Use connect_to_oracle_with_config() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     try:
         config = get_config_manager()
         
@@ -147,15 +162,30 @@ def connect_to_oracle_with_config():
 
 def ensure_connection(connection, path):
     """
+    DEPRECATED: Use ensure_connection_with_config() instead.
+    
+    This function relied on an 'acessos.txt' file which is no longer used.
+    Database credentials are now managed through oracle_connection_parameters.json
+    via the centralized config_manager.
+    
     Ensures that the database connection is active.
     
     Args:
         connection (cx_Oracle.Connection or None): Current database connection.
-        path (str): Path for reconnecting if connection is lost.
+        path (str): Path for reconnecting if connection is lost (DEPRECATED - not used).
     
     Returns:
         cx_Oracle.Connection: A valid database connection.
+    
+    .. deprecated::
+        Use :func:`ensure_connection_with_config` instead.
     """
+    import warnings
+    warnings.warn(
+        "ensure_connection() is deprecated. Use ensure_connection_with_config() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     try:
         # Check if connection exists and is valid
         if connection is None:

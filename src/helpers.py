@@ -12,10 +12,9 @@ from typing import List, Dict, Any, Optional, Tuple
 
 # Local stuff
 from src.configuration_manager.instance import get_config as get_config_manager
-from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
-from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
 
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
@@ -57,8 +56,7 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         # Only call ensure_connection for direct cx_Oracle connections
         # SQLAlchemy connections manage their own lifecycle
         if hasattr(connection, 'ping') and callable(getattr(connection, 'ping')):
-            connection_path = os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection")
-            connection = ensure_connection(connection, connection_path)
+            connection = ensure_connection_with_config(connection)
             logger.info(f"DEBUG: ensured cx_Oracle connection")
         else:
             logger.info(f"DEBUG: using SQLAlchemy connection as-is")
