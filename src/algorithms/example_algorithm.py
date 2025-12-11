@@ -9,10 +9,10 @@ from datetime import datetime
 from base_data_project.algorithms.base import BaseAlgorithm
 
 # Import project-specific components
-from src.config import PROJECT_NAME
+#from src.config import PROJECT_NAME
 
 # Set up logger
-logger = logging.getLogger(PROJECT_NAME)
+#logger = logging.getLogger(PROJECT_NAME)
 
 class ExampleAlgorithm(BaseAlgorithm):
     """

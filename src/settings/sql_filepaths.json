@@ -1,0 +1,36 @@
+{
+    "hierarchy": ["data", "Queries", "sql"],
+    "sql_processing_paths": {
+        "valid_emp": "queryGetValidEmployees_v2.sql",
+        "df_fk_colaborador_matricula": "queryGetEscColaborador.sql",
+        "df_messages": "",
+        "params_algo": "",
+        "params_lq": "qry_params_LQ.sql",
+        "df_festivos": "qry_festivos.sql",
+        "df_closed_days": "qry_closed_days.sql",
+        "params_df": "queryGetAlgoParameters.sql",
+        "parameters_cfg": "queryGetParametersCFG.sql",
+        "insert_results_df": "insert_results.sql",
+        "df_mpd_valid_employees": "getProcessMpdEmployees.sql",
+        "df_feriados": "queryGetFeriados.sql"
+    },
+    "sql_auxiliary_paths": {
+        "df_ausencias_ferias": "queryGetAusencias.sql",
+        "df_ciclos_90": "queryGet90CyclesInfo.sql",
+        "df_estrutura_wfm": "queryGetEstruturaWFM.sql",
+        "df_feriados": "queryGetFeriadosAbertos.sql",
+        "df_faixa_horario": "queryGetEscFaixaHorario.sql",
+        "df_orcamento": "queryGetEscOrcamento.sql",
+        "df_calendario_passado": "queryGetCoreSchedule.sql",
+        "df_granularidade": "queryGetEscEstimado.sql",
+        "df_days_off": "queryGetDaysOff.sql",
+        "df_contratos": "queryGetCoreProEmpContract.sql",
+        "df_core_pro_emp_horario_det": "queryGetCoreProEmpHorarioDet.sql",
+        "df_ciclos_completos_folgas_ciclos": "queryGetCiclosCompletosFolgasCiclos.sql"
+    },
+    "available_entities_raw": {
+        "df_calendario": "",
+        "df_colaborador": "qry_ma.sql",
+        "df_estimativas": ""
+    }
+}

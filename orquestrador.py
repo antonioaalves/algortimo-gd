@@ -16,16 +16,19 @@ import pandas as pd
 from base_data_project.log_config import setup_logger, get_logger
 from base_data_project.utils import create_components
 from batch_process import run_batch_process
-from src.config import CONFIG, PROJECT_NAME
+from src.configuration_manager.instance import get_config
+
+# Get shared configuration manager instance
+config_manager = get_config()
 
 # Initialize logger
 setup_logger(
-    project_name=PROJECT_NAME,
-    log_level=CONFIG.get('log_level', 'INFO'),
-    log_dir=CONFIG.get('log_dir', 'logs'),
-    console_output=CONFIG.get('console_output', True)
+    project_name=config_manager.system.project_name,
+    log_level=config_manager.system.get_log_level(),
+    log_dir=config_manager.system.logging_config.get('log_dir', 'logs'),
+    console_output=True
 )
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(config_manager.system.project_name)
 
 # SET INITIAL PATH -----------------------------------
 import platform
@@ -45,8 +48,8 @@ from src.orquestrador_functions.Data_Handlers.GetGlobalData import get_all_param
 from src.orquestrador_functions.Logs.message_loader import get_messages, set_messages
 from src.orquestrador_functions.Classes.AlgorithmPrepClasses.ConnectionHandler import ConnectionHandler
 
-# Setup database connection
-connection_object = ConnectionHandler(path=path_ficheiros_global)
+# Setup database connection (uses config_manager credentials - no path required)
+connection_object = ConnectionHandler()
 connection_object.connect_to_database()
 connection = connection_object.get_connection()
 connection = connection_object.ensure_connection()
@@ -182,8 +185,8 @@ if not sec_to_proc.empty:
                                 data_manager, process_manager = create_components(
                                     use_db=True,  # Always use database 
                                     no_tracking=False,
-                                    config=CONFIG,
-                                    project_name=PROJECT_NAME
+                                    config=config_manager,
+                                    project_name=config_manager.system.project_name
                                 )
                                 
                                 # Build external call dict with same parameters
@@ -196,9 +199,8 @@ if not sec_to_proc.empty:
                                     'end_date': str(data_fim),
                                 }
                                 
-                                # Add wfm-proc-colab if it exists
-                                if wfm_proc_colab is not None:
-                                    external_call_dict['wfm_proc_colab'] = str(wfm_proc_colab)
+                                # Add wfm-proc-colab - use empty string when NULL (valid business case)
+                                external_call_dict['wfm_proc_colab'] = str(wfm_proc_colab) if wfm_proc_colab is not None else ''
                                 
                                 # Call the function directly - pass the orquestrador connection to avoid session limit
                                 with data_manager:
