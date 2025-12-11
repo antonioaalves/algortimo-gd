@@ -190,6 +190,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # 5. FINAL VALIDATION AND LOGGING
             # =================================================================
             workers = data_dict['workers']
+
             days_of_year = data_dict['days_of_year']
             special_days = data_dict['special_days']
             working_days = data_dict['working_days']
@@ -204,7 +205,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Log final statistics
             self.logger.info("[OK] Data adaptation completed successfully")
             self.logger.info(f"[STATS] Final statistics:")
-            self.logger.info(f"   Total workers: {len(workers)}")
+            self.logger.info(f"   Total workers: {len(workers + data_dict['workers_complete'])}")
             self.logger.info(f"   Total days: {len(days_of_year)}")
             self.logger.info(f"   Working days: {len(working_days)}")
             self.logger.info(f"   Special days: {len(special_days)}")
