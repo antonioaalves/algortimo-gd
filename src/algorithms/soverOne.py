@@ -10,10 +10,10 @@ from base_data_project.algorithms.base import BaseAlgorithm
 from base_data_project.log_config import get_logger
 
 # Import project-specific components
-from src.config import PROJECT_NAME, CONFIG
+from src.configuration_manager.instance import get_config as get_config_manager
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(get_config_manager().system.project_name)
 
 class SolverOne(BaseAlgorithm):
     """

@@ -16,21 +16,24 @@ from base_data_project.utils import create_components
 from base_data_project.process_management.manager import ProcessManager
 
 # Import project-specific components
-from src.config import CONFIG, PROJECT_NAME
+from src.configuration_manager.instance import get_config
+
+# Get shared configuration manager instance
+config_manager = get_config()
 
 # Initialize logger with configuration first
 setup_logger(
-    project_name=PROJECT_NAME,
-    log_level=CONFIG.get('log_level', logging.INFO),
-    log_dir=CONFIG.get('log_dir', 'logs'),
-    console_output=CONFIG.get('console_output', True)
+    project_name=config_manager.system.project_name,
+    log_level=config_manager.system.get_log_level(),
+    log_dir=config_manager.system.logging_config.get('log_dir', 'logs'),
+    console_output=True
 )
 
 # Then get the logger instance for use throughout the file
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(config_manager.system.project_name)
 
 # Import components that might use logging after logger is initialized
-from src.services.example_service import AlgoritmoGDService
+from src.services.algoritmo_gd import AlgoritmoGDService
 
 @click.group()
 def cli():
@@ -48,7 +51,7 @@ def run_process(use_db, no_tracking):
     """
     # Display header
     click.clear()
-    click.echo(click.style(f"=== {PROJECT_NAME} Interactive Mode ===", fg="green", bold=True))
+    click.echo(click.style(f"=== {config_manager.system.project_name} Interactive Mode ===", fg="green", bold=True))
     click.echo(click.style(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", fg="green"))
     click.echo()
     
@@ -68,8 +71,8 @@ def run_process(use_db, no_tracking):
             data_manager, process_manager = create_components(
                 use_db=use_db, 
                 no_tracking=no_tracking, 
-                config=CONFIG, 
-                project_name=PROJECT_NAME
+                config=config_manager, 
+                project_name=config_manager.system.project_name
             )
 
             # Debug logging for process manager
@@ -94,15 +97,15 @@ def run_process(use_db, no_tracking):
         click.echo()
         
         with data_manager:
-            external_call_dict = CONFIG.get('external_call_data', {})
+            external_call_dict = config_manager.parameters.external_call_data
             logger.debug(f"External call dict: {external_call_dict}")
             # Create service with data and process managers
             service = AlgoritmoGDService(
                 data_manager=data_manager,
                 process_manager=process_manager,
                 external_call_dict=external_call_dict,
-                config=CONFIG,
-                project_name=PROJECT_NAME
+                config=config_manager,
+                project_name=config_manager.system.project_name
             )
             
             # Initialize process

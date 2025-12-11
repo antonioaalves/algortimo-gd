@@ -5,12 +5,12 @@ from typing import Dict, Any, List, Tuple, Optional
 from datetime import date, datetime
 import logging
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config
 
-
+_config_manager = get_config()
 
 # Set up logger
-logger = get_logger(PROJECT_NAME)
+logger = get_logger(_config_manager.project_name)
 
 def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Tuple[Any, ...]:
     """

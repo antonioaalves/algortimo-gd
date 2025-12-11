@@ -10,7 +10,7 @@ THIS IS THE SETTERS FOR THE FUNCTIONS REGARDING THE WFM PROCESSES AND CONTROL OF
 @author: jason.vogensen
 """
 import os
-from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 
 # COMMENTED OUT - Use the function from src.helpers instead
 # def set_process_errors(connection, pathOS, user, fk_process, type_error, process_type, error_code, description, employee_id, schedule_day):
@@ -71,7 +71,7 @@ def set_process_param_status(connection, pathOS, user, process_id, new_status):
     Returns:
         int: 1 if successful, 0 otherwise.
     """
-    connection = ensure_connection(connection, os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection"))
+    connection = ensure_connection_with_config(connection)
     query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_parameter_status.sql')
     try:
         # Load the query from file
@@ -108,7 +108,7 @@ def set_process_status(connection, pathOS, user, process_id, status='P'):
     Returns:
         int: 1 if successful, 0 otherwise.
     """
-    connection = ensure_connection(connection, os.path.join(pathOS, "src", "orquestrador_functions", "Classes", "Connection"))
+    connection = ensure_connection_with_config(connection)
     query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_status.sql')
     
     try:
