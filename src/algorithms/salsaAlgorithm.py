@@ -195,7 +195,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             working_days = data_dict['working_days']
 
             # Validate critical data
-            if not workers:
+            if not workers and not data_dict['workers_complete']:
                 raise ValueError("No valid workers found after processing")
             
             if not days_of_year:
@@ -355,80 +355,80 @@ class SalsaAlgorithm(BaseAlgorithm):
             else:
                 self.logger.warning("Skipping constraint: shift_day_constraint (disabled in config)")
             
-            # Week working days constraint based on contract type
-            if constraint_selections.get("week_working_days_constraint", {}).get("enabled", True):
-                self.logger.info("Applying constraint: week_working_days_constraint")
-                week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week)
-            else:
-                self.logger.warning("Skipping constraint: week_working_days_constraint (disabled in config)")
-            
-            # Maximum continuous working days constraint
-            if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
-                self.logger.info("Applying constraint: maximum_continuous_working_days")
-                maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
-            else:
-                self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
-            
-            # LQ attribution constraint
-            if constraint_selections.get("LQ_attribution", {}).get("enabled", True):
-                self.logger.info("Applying constraint: LQ_attribution")
-                LQ_attribution(model, shift, workers, working_days, c2d, year_range)
-            else:
-                self.logger.warning("Skipping constraint: LQ_attribution (disabled in config)")
-            
             # Working day shifts constraint
             if constraint_selections.get("working_day_shifts", {}).get("enabled", True):
                 self.logger.info("Applying constraint: working_day_shifts")
                 working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
             else:
                 self.logger.warning("Skipping constraint: working_day_shifts (disabled in config)")
-            
-            # SALSA specific constraints
-            if constraint_selections.get("salsa_2_consecutive_free_days", {}).get("enabled", True):
-                self.logger.info("Applying constraint: salsa_2_consecutive_free_days")
-                salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
-            else:
-                self.logger.warning("Skipping constraint: salsa_2_consecutive_free_days (disabled in config)")
-            
-            if constraint_selections.get("salsa_2_day_quality_weekend", {}).get("enabled", True):
-                self.logger.info(f"Applying constraint: salsa_2_day_quality_weekend (workers: {len(workers)}, c2d configured)")
-                salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays, year_range)
-            else:
-                self.logger.warning("Skipping constraint: salsa_2_day_quality_weekend (disabled in config)")
-            
-            if constraint_selections.get("salsa_saturday_L_constraint", {}).get("enabled", True):
-                self.logger.info("Applying constraint: salsa_saturday_L_constraint")
-                salsa_saturday_L_constraint(model, shift, workers, working_days)
-            else:
-                self.logger.warning("Skipping constraint: salsa_saturday_L_constraint (disabled in config)")
-
-            if constraint_selections.get("salsa_2_free_days_week", {}).get("enabled", True):
-                self.logger.info("Applying constraint: salsa_2_free_days_week")
-                salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
-            else:
-                self.logger.warning("Skipping constraint: salsa_2_free_days_week (disabled in config)")
-
-            if constraint_selections.get("first_day_not_free", {}).get("enabled", True):
-                self.logger.info("Applying constraint: first_day_not_free")
-                first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
-            else:
-                self.logger.warning("Skipping constraint: first_day_not_free (disabled in config)")
-
-            if constraint_selections.get("free_days_special_days", {}).get("enabled", True):
-                self.logger.info("Applying constraint: free_days_special_days")
-                free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range)
-            else:
-                self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
-
-            # Compensation days - check both country and config flag
-            if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
-                self.logger.info("Applying constraint: compensation_days (Spain-specific)")
-                compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
-            elif country != "spain":
-                self.logger.info("Skipping constraint: compensation_days (not applicable for non-Spain)")
-            else:
-                self.logger.warning("Skipping constraint: compensation_days (disabled in config)")
-                        
+            if workers:
+                # Week working days constraint based on contract type
+                if constraint_selections.get("week_working_days_constraint", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: week_working_days_constraint")
+                    week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week)
+                else:
+                    self.logger.warning("Skipping constraint: week_working_days_constraint (disabled in config)")
+                
+                # Maximum continuous working days constraint
+                if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: maximum_continuous_working_days")
+                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
+                else:
+                    self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
+                
+                # LQ attribution constraint
+                if constraint_selections.get("LQ_attribution", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: LQ_attribution")
+                    LQ_attribution(model, shift, workers, working_days, c2d, year_range)
+                else:
+                    self.logger.warning("Skipping constraint: LQ_attribution (disabled in config)")
+                            
+                # SALSA specific constraints
+                if constraint_selections.get("salsa_2_consecutive_free_days", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: salsa_2_consecutive_free_days")
+                    salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
+                else:
+                    self.logger.warning("Skipping constraint: salsa_2_consecutive_free_days (disabled in config)")
+                
+                if constraint_selections.get("salsa_2_day_quality_weekend", {}).get("enabled", True):
+                    self.logger.info(f"Applying constraint: salsa_2_day_quality_weekend (workers: {len(workers)}, c2d configured)")
+                    salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays, year_range)
+                else:
+                    self.logger.warning("Skipping constraint: salsa_2_day_quality_weekend (disabled in config)")
+                
+                if constraint_selections.get("salsa_saturday_L_constraint", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: salsa_saturday_L_constraint")
+                    salsa_saturday_L_constraint(model, shift, workers, working_days)
+                else:
+                    self.logger.warning("Skipping constraint: salsa_saturday_L_constraint (disabled in config)")
+    
+                if constraint_selections.get("salsa_2_free_days_week", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: salsa_2_free_days_week")
+                    salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
+                else:
+                    self.logger.warning("Skipping constraint: salsa_2_free_days_week (disabled in config)")
+    
+                if constraint_selections.get("first_day_not_free", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: first_day_not_free")
+                    first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
+                else:
+                    self.logger.warning("Skipping constraint: first_day_not_free (disabled in config)")
+    
+                if constraint_selections.get("free_days_special_days", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: free_days_special_days")
+                    free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range)
+                else:
+                    self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
+    
+                # Compensation days - check both country and config flag
+                if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
+                    self.logger.info("Applying constraint: compensation_days (Spain-specific)")
+                    compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
+                elif country != "spain":
+                    self.logger.info("Skipping constraint: compensation_days (not applicable for non-Spain)")
+                else:
+                    self.logger.warning("Skipping constraint: compensation_days (disabled in config)")
+                            
             self.logger.info("All enabled SALSA constraints applied")
             
             # =================================================================
