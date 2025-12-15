@@ -2913,8 +2913,10 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
         - Uses vectorized MultiIndex for performance
         - Preservation rules:
           * F's (closed holidays): Always preserved, never overridden
-          * A's (absences): Preserved from shift codes, but '-' converts to 'A-'
-          * V's (vacations): Preserved from shift codes, but '-' converts to 'V-'
+          * A's (absences): Preserved from regular shift codes, but 'L' and '-' can override
+          * V's (vacations): Preserved from regular shift codes, but 'L' and '-' can override
+        - Special handling for 'L' values (day-offs):
+          * Can override A's and V's (but not F's)
         - Special handling for '-' values (no-work days from tipo_dia='S'):
           * If current horario is 'A' → sets to 'A-'
           * If current horario is 'V' → sets to 'V-'
@@ -3020,14 +3022,19 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
                     np.where(current_horario == 'V', 'V-', '-')
                 )
             
-            # For non-dash values, assign normally but preserve F's, A's and V's
-            # A's and V's should NOT be overridden by shift codes (only by '-' which is handled above)
-            non_dash_mask = valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask & (mapped_values != '-')
-            if non_dash_mask.any():
-                df_result.loc[non_dash_mask, 'horario'] = mapped_values[non_dash_mask]
+            # Process 'L' values: L can override A's and V's (but not F's)
+            l_mask = valid_ciclos_mask & ~preserve_f_mask & (mapped_values == 'L')
+            if l_mask.any():
+                df_result.loc[l_mask, 'horario'] = 'L'
             
-            # Calculate fill_mask for logging purposes (combines dash and non-dash updates)
-            fill_mask = dash_mask | non_dash_mask
+            # For other non-dash, non-L values, assign normally but preserve F's, A's and V's
+            # A's and V's should NOT be overridden by regular shift codes (only by '-' or 'L')
+            other_mask = valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask & (mapped_values != '-') & (mapped_values != 'L')
+            if other_mask.any():
+                df_result.loc[other_mask, 'horario'] = mapped_values[other_mask]
+            
+            # Calculate fill_mask for logging purposes (combines dash, L, and other updates)
+            fill_mask = dash_mask | l_mask | other_mask
             
             filled_count = fill_mask.sum()
             
@@ -3036,7 +3043,9 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             nl_values_in_result = (df_result['horario'] == 'NL').sum()
             horario_counts_after = df_result['horario'].value_counts()
             
-            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos (preserved {preserve_f_mask.sum()} F values, {preserve_av_mask.sum()} A/V values)")
+            # Count A/V values that were preserved (not overridden by regular shift codes, but may have been overridden by L or -)
+            preserved_av_from_shifts = (preserve_av_mask & valid_ciclos_mask & (mapped_values != '-') & (mapped_values != 'L')).sum()
+            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos ({dash_mask.sum()} -, {l_mask.sum()} L, {other_mask.sum()} other) (preserved {preserve_f_mask.sum()} F values, {preserved_av_from_shifts} A/V from shift codes)")
             logger.info(f"add_ciclos_completos: NL values from ciclos lookup: {nl_values_from_ciclos}, NL values in result after merge: {nl_values_in_result}")
             logger.info(f"add_ciclos_completos: horario value counts after merge: {horario_counts_after.to_dict()}")
             
