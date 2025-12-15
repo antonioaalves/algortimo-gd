@@ -1314,13 +1314,13 @@ def adjusted_isoweek(date) -> int:
     
     return week
 
-def get_past_employees_id_list(wfm_proc_colab: str, df_mpd_valid_employees: pd.DataFrame, fk_tipo_posto: str, employees_id_list_for_posto: List[str]) -> Tuple[bool, List[int], str]:
+def get_past_employees_id_list(wfm_proc_colab: str, df_valid_emp: pd.DataFrame, fk_tipo_posto: str, employees_id_list_for_posto: List[str]) -> Tuple[bool, List[int], str]:
     """
     Get employees from the past (colabs_passado) for a specific job position type. this variabe is going to contain wfm_proc_colab and everytime we need, we pop it out.
     
     Args:
         wfm_proc_colab: The employee ID to exclude from the past employees list
-        df_mpd_valid_employees: DataFrame containing valid employees data
+        df_valid_emp: DataFrame containing valid employees data
         fk_tipo_posto: Job position type filter
         
     Returns:
@@ -1334,8 +1334,8 @@ def get_past_employees_id_list(wfm_proc_colab: str, df_mpd_valid_employees: pd.D
             colabs_passado = employees_id_list_for_posto
         # CASE 2: SINGLE-COLAB EXECUTION
         else:
-            df = df_mpd_valid_employees[df_mpd_valid_employees['fk_tipo_posto'] == fk_tipo_posto]
-            mask = (df['gera_horario_ind'] == 'Y') & (df['existe_horario_ind'] == 'N')
+            df = df_valid_emp[df_valid_emp['fk_tipo_posto'] == fk_tipo_posto]
+            mask = (df['gerar_dados'] == 'Y')
             colabs_a_gerar = df[mask]['employee_id'].unique()
 
             wfm_proc_colab = int(wfm_proc_colab)
@@ -1347,7 +1347,7 @@ def get_past_employees_id_list(wfm_proc_colab: str, df_mpd_valid_employees: pd.D
                 return False, [], "There should be only one employee for allocation."
 
             if int(colabs_a_gerar[0]) != wfm_proc_colab:
-                return False, [], "The employee is not present in the df_mpd_valid_employees query."
+                return False, [], "The employee is not present in the df_valid_emp query."
 
             colabs_passado = [int(x) for x in df['employee_id'].unique()]
             #colabs_passado.remove(wfm_proc_colab)

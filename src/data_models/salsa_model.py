@@ -312,18 +312,6 @@ class SalsaDataModel(BaseDescansosDataModel):
             )
             self.logger.info(f"first_day_passado: {first_day_passado}, last_day_passado: {last_day_passado}")
 
-            # Load employee ids from service 
-            try:
-                df_mpd_valid_employees = data_manager.load_data(
-                    'df_mpd_valid_employees', 
-                    query_file=self.config_manager.paths.sql_processing_paths['df_mpd_valid_employees'], 
-                    process_id="'" + str(self.external_call_data['current_process_id']) + "'"
-                )
-                self.logger.info(f"df_mpd_valid_employees shape (rows {df_mpd_valid_employees.shape[0]}, columns {df_mpd_valid_employees.shape[1]}): {df_mpd_valid_employees.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_mpd_valid_employees: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
-
             # Calculate domingos and festivos amount
             num_sundays_year = count_sundays_in_period(
                 first_day_year_str=first_year_date,
@@ -505,7 +493,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['df_params'] = df_params.copy()
                 self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_closed_days'] = df_closed_days.copy()
-                self.auxiliary_data['df_mpd_valid_employees'] = df_mpd_valid_employees.copy()
                 self.auxiliary_data['df_fk_colaborador_matricula'] = df_fk_colaborador_matricula.copy()
                 self.auxiliary_data['unit_id'] = unit_id 
                 self.auxiliary_data['secao_id'] = secao_id
@@ -632,8 +619,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 last_date_passado = self.auxiliary_data['last_date_passado']
                 process_id = self.external_call_data['current_process_id']
                 wfm_proc_colab = self.external_call_data['wfm_proc_colab']
-                # Colabs information, similar to valid_emp
-                df_mpd_valid_employees = self.auxiliary_data['df_mpd_valid_employees']
+                df_valid_emp = self.auxiliary_data['df_valid_emp']
             except Exception as e:
                 self.logger.error(f"Error loading colaborador info: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -642,7 +628,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 success, past_employees_id_list, error_msg = get_past_employees_id_list(
                     wfm_proc_colab=wfm_proc_colab,
-                    df_mpd_valid_employees=df_mpd_valid_employees,
+                    df_valid_emp=df_valid_emp,
                     fk_tipo_posto=posto_id,
                     employees_id_list_for_posto=employees_id_list_for_posto,
                 )

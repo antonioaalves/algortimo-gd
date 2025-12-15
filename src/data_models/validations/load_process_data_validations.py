@@ -63,6 +63,8 @@ def validate_df_valid_emp(df_valid_emp: pd.DataFrame) -> bool:
         return False
     if 'prioridade_folgas' not in df_valid_emp.columns:
         return False
+    if 'gerar_dados' not in df_valid_emp.columns:
+        return False
     return True
 
 # Be careful with this one, it may end up being a list of strings
