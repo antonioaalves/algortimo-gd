@@ -1,12 +1,12 @@
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config
+_config_manager = get_config()
+logger = get_logger(_config_manager.project_name)
 import numpy as np
 import math 
 
-logger = get_logger(PROJECT_NAME)
 
-
-def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, working_shift, shift, pessObj, working_days, closed_holidays, min_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past):
+def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, real_working_shift, shift, pessObj, working_days, closed_holidays, min_workers,max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range):
    
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -86,7 +86,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
 
     scale=10000
     objective_terms = []
-    real_working_shift=['M', 'T']
     workers_not_complete=[w for w in workers if w not in workers_complete_cycle]
     
     # Weights:
@@ -395,7 +394,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     list_of_sundays_per_worker = []
 
     for w in workers_not_complete:
-        sunday_free = sum(shift[(w, d, 'L')] for d in sundays if (w, d, 'L') in shift)
+        sunday_free = sum(shift[(w, d, 'L')] for d in sundays if (w, d, 'L') in shift and year_range[0] <= d <= year_range[1])
         list_of_sundays_per_worker.append(sunday_free)
 
 
@@ -416,7 +415,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     list_of_LQs_per_worker = []
 
     for w in workers_not_complete:
-        LQs = sum(shift[(w, d-1, 'LQ')] for d in sundays if (w, d-1, 'LQ') in shift)
+        LQs = sum(shift[(w, d-1, 'LQ')] for d in sundays if (w, d-1, 'LQ') in shift and year_range[0] < d  <= year_range[1])
         list_of_LQs_per_worker.append(LQs)
 
 
@@ -689,5 +688,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
 
 
     return optimization_details
+
 
 

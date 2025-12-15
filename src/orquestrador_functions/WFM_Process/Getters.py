@@ -9,7 +9,7 @@ THIS IS THE GETTERS FOR THE FUNCTIONS REGARDING THE WFM PROCESSES AND CONTROL OF
 @author: jason.vogensen
 """
 
-from src.orquestrador_functions.Classes.Connection.connect import ensure_connection
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 import os
 import pandas as pd
 import cx_Oracle
@@ -27,8 +27,8 @@ def get_process_valid_emp(pathOS, process_id,connection):
     
     # Load database connection details
     try:
-        # Assuming `setConnectionWFM` is a function that returns an open connection
-        connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+        # Ensure connection is active using config_manager
+        connection = ensure_connection_with_config(connection)
         
         # Read SQL query from file
         query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Getters', "get_process_valid_employess.sql")
@@ -79,7 +79,7 @@ def get_process_by_status(pathOS, user, process_type, event_type, status, connec
         pd.DataFrame: A dataframe containing processes by status.
     """
     try:
-        connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+        connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
         query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters","get_process_by_status.sql")
@@ -119,7 +119,7 @@ def get_process_by_id(pathOS, process_id, connection):
         pd.DataFrame: A dataframe containing the process by ID.
     """
     try:
-        connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+        connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
         query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters", "get_process_by_id.sql")
@@ -155,7 +155,7 @@ def get_total_process_by_status(pathOS, connection):
         pd.DataFrame: A dataframe containing the total number of processes by status.
     """
     try:
-        connection = ensure_connection(connection, os.path.join(pathOS, "Connection"))
+        connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
         query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters", "get_total_process_by_status.sql")

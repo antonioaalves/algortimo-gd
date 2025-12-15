@@ -1,0 +1,30 @@
+{
+    "data": {
+        "csvs": {},
+        "intermediate": {},
+        "output": {},
+        "Queries": {
+            "GlobalData": {},
+            "sql": {},
+            "WFM_Process": {}
+        },
+        "logs": {}
+    },
+    "src": {
+        "configuration_manager": {
+            "config": {},
+            "path_config": {},
+            "parameter_config": {}
+        },
+        "algorithms": {
+            "model_alcampo": {},
+            "model_salsa": {},
+            "model_salsa_v2": {},
+            "R_algorithms": {},
+            "shift_scheduler": {},
+            "solver": {}
+        },
+        "get_functions": {},
+        "load_csv_functions": {}
+    }
+}
