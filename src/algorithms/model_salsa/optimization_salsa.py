@@ -98,15 +98,15 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     percentage_of_importance_no_excess=0 
     excess_weight=int(scale*percentage_of_importance_no_excess/excess_min_worst_scenario)
 
-    deficit_min_worst_scenario= (1/10) * sum(
+    deficit_min_worst_scenario= (1/8) * sum(
         pessObj.get((d, s), 0)
         for d in days_of_year
         for s in real_working_shift)
-    percentage_of_importance_no_deficit=2
+    percentage_of_importance_no_deficit=1.4
     deficit_weight=int(scale*percentage_of_importance_no_deficit/deficit_min_worst_scenario)
 
     no_workers_min_worst_scenario=1
-    percentage_of_importance_workers=1
+    percentage_of_importance_workers=1.6
     no_workers_weight=int(scale*percentage_of_importance_workers/no_workers_min_worst_scenario)
 
     sundays_diff_min_worst_scenario=2
@@ -119,7 +119,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     LQs_diff_weight=int(scale*percentage_of_importance_LQs_equal/LQs_diff_min_worst_scenario)
 
     no_consec_free_days_min_worst_scenario=52*2*len(workers)
-    percentage_of_importance_consec_free_days=1
+    percentage_of_importance_consec_free_days=0.5
     no_consec_free_days_weight=int(scale*percentage_of_importance_consec_free_days/no_consec_free_days_min_worst_scenario)
 
     sunday_imbalance_per_semeste_min_worst_scenario=3
@@ -137,14 +137,14 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     inconsistent_number_of_weeks_weight=int(scale*percentage_of_importance_consistent_number_of_weeks/inconsistent_number_of_weeks_min_worst_scenario)
 
     no_key_shift_min_worst_scenario=1
-    percentage_of_importance_key=1
+    percentage_of_importance_key=1.5
     no_key_weight=int(scale*percentage_of_importance_key/no_key_shift_min_worst_scenario)
 
-    same_free_day_manager_min_worst_scenario= 4    #?
+    same_free_day_manager_min_worst_scenario= 4    
     percentage_of_importance_managers=1
     same_free_day_manager_weight=int(scale*percentage_of_importance_managers/same_free_day_manager_min_worst_scenario)
 
-    same_free_day_keyholders_min_worst_scenario= 4 #? # This includes the manegers 
+    same_free_day_keyholders_min_worst_scenario= 4  # This includes the manegers 
     percentage_of_importance_keyholders=1
     same_free_day_keyholders_weight=int(scale*percentage_of_importance_keyholders/same_free_day_keyholders_min_worst_scenario)
 
@@ -156,12 +156,96 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
     percentage_of_importance_deficit_day=1
     deficit_day_weight=int( scale*percentage_of_importance_deficit_day/number_of_deficit_day_worst_scenario )
     
-    free_days_per_day_worst_case_scenario=6
-    number_free_days_per_day_worst_case_scenario=2
+    free_days_per_day_worst_case_scenario=3
+    number_free_days_exceeded_worst_case_scenario=10
     percentage_of_total_exceeded_days_weight=1
-    total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_per_day_worst_case_scenario)
+    total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_exceeded_worst_case_scenario)
+
+
+    day_deficit_hours_worst_case_scenario=8 #in a shift
+    percentage_of_importance_day_deficit=1
+    max_deficit_weight=int(scale*percentage_of_importance_day_deficit/day_deficit_hours_worst_case_scenario) 
+
+    
+    deficit_over_x_worst_case=12 #value of x in hours
+    percentage_of_importance_day_deficit_over_x=1
+    num_days_deficit_over_x_worst_case= 5
+    deficit_over_x_day_weight=int(scale*percentage_of_importance_day_deficit_over_x/num_days_deficit_over_x_worst_case)
+
 
     # 1. Excess and deficit error
+
+    #excess_diff_vars = []
+    #deficit_diff_vars = []
+    #day_counter = 0
+    
+
+    #for d in days_of_year:
+     #   for s in real_working_shift:
+
+      #      target = pessObj.get((d, s), 0)
+      #      assigned_workers = sum(
+      #          shift[(w, d, s)] * work_day_hours[w][day_counter]
+      #          for w in workers if (w, d, s) in shift
+      #      )
+
+      #      excess  = model.NewIntVar(0, len(workers)*8, f'excess_{d}_{s}')
+      #      deficit = model.NewIntVar(0, target*8, f'deficit_{d}_{s}')
+
+      #      model.Add(excess >= assigned_workers - target)
+      #      model.Add(deficit >= target - assigned_workers)
+
+      #      excess_diff_vars.append((d, s, excess))
+      #      deficit_diff_vars.append((d, s, deficit))
+
+      #  day_counter += 1
+
+    #objective_excess  = sum(excess for (_,_,excess)  in excess_diff_vars)
+    #objective_deficit = sum(deficit for (_,_,deficit) in deficit_diff_vars)
+
+    #objective_terms.append(objective_excess  * excess_weight)
+    #objective_terms.append(objective_deficit * deficit_weight)
+
+    #max_deficit = model.NewIntVar(0, 100, 'max_deficit')
+    #for (_, _, deficit) in deficit_diff_vars:
+    #    model.Add(max_deficit >= deficit)   
+
+    #objective_terms.append(max_deficit * max_deficit_weight)    
+
+    #day_has_excess  = {}
+    #day_has_deficit = {}
+    #day_has_both    = {}
+    #penalty_vars = []
+
+    #for d in days_of_year:
+
+    #    day_has_excess[d]  = model.NewBoolVar(f'day_{d}_has_excess')
+    #    day_has_deficit[d] = model.NewBoolVar(f'day_{d}_has_deficit')
+    #    day_has_both[d]    = model.NewBoolVar(f'day_{d}_has_both')
+
+    #    for (dd, s, excess) in excess_diff_vars:
+    #        if dd == d:
+    #            model.Add(excess > 0).OnlyEnforceIf(day_has_excess[d])
+    #            model.Add(excess <= 0).OnlyEnforceIf(day_has_excess[d].Not())
+
+    #    for (dd, s, deficit) in deficit_diff_vars:
+    #        if dd == d:
+    #            model.Add(deficit > 0).OnlyEnforceIf(day_has_deficit[d])
+    #            model.Add(deficit <= 0).OnlyEnforceIf(day_has_deficit[d].Not())
+
+    #    model.AddBoolAnd([day_has_excess[d], day_has_deficit[d]]).OnlyEnforceIf(day_has_both[d])
+    #    model.AddBoolOr([day_has_excess[d].Not(), day_has_deficit[d].Not()]).OnlyEnforceIf(day_has_both[d].Not())
+
+    #    penalty_vars.append(day_has_both[d])
+
+
+    #objective_terms.append(sum(penalty_vars) * excess_and_deficit_weight)
+    #objective_terms.append(sum(day_has_deficit[d] for d in days_of_year) * deficit_day_weight)
+
+
+    # ===============================
+    # 1.1 Excess and deficit per shift
+    # ===============================
 
     excess_diff_vars = []
     deficit_diff_vars = []
@@ -186,42 +270,101 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, wor
             deficit_diff_vars.append((d, s, deficit))
 
         day_counter += 1
+    
 
-    objective_excess  = sum(excess for (_,_,excess)  in excess_diff_vars)
-    objective_deficit = sum(deficit for (_,_,deficit) in deficit_diff_vars)
+    # ===============================
+    # 1.2. Daily totals
+    # ===============================
 
-    objective_terms.append(objective_excess  * excess_weight)
-    objective_terms.append(objective_deficit * deficit_weight)
+    daily_deficit = {}
+    daily_excess  = {}
+
+    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 8
+    max_daily_excess_possible  = len(real_working_shift)*len(workers) * 8
+
+    for d in days_of_year:
+        daily_deficit[d] = model.NewIntVar(0, max_daily_deficit_possible, f'daily_deficit_{d}')
+        daily_excess[d]  = model.NewIntVar(0, max_daily_excess_possible,  f'daily_excess_{d}')
+
+        model.Add(daily_deficit[d] == sum(deficit for (dd, s, deficit) in deficit_diff_vars if dd == d))
+        model.Add(daily_excess[d]  == sum(excess for (dd, s, excess) in excess_diff_vars if dd == d))
+
+    # ===============================
+    # 1.3. Max deficit across all shifts
+    # ===============================
+
+    max_deficit = model.NewIntVar(0, max_daily_deficit_possible, 'max_deficit')
+    for (_, _, deficit) in deficit_diff_vars:
+        model.Add(max_deficit >= deficit)
+
+    objective_terms.append(sum(excess for (_,_,excess) in excess_diff_vars) * excess_weight)
+    objective_terms.append(sum(deficit for (_,_,deficit) in deficit_diff_vars) * deficit_weight)
+    objective_terms.append(max_deficit * max_deficit_weight)
+
+    # ===============================
+    # 1.4. Day-level Booleans
+    # ===============================
 
     day_has_excess  = {}
     day_has_deficit = {}
     day_has_both    = {}
-    penalty_vars = []
+    penalty_vars    = []
 
     for d in days_of_year:
-
         day_has_excess[d]  = model.NewBoolVar(f'day_{d}_has_excess')
         day_has_deficit[d] = model.NewBoolVar(f'day_{d}_has_deficit')
         day_has_both[d]    = model.NewBoolVar(f'day_{d}_has_both')
 
-        for (dd, s, excess) in excess_diff_vars:
-            if dd == d:
-                model.Add(excess > 0).OnlyEnforceIf(day_has_excess[d])
-                model.Add(excess <= 0).OnlyEnforceIf(day_has_excess[d].Not())
+        # Correção: baseados no total diário
+        model.Add(daily_excess[d] >= 1).OnlyEnforceIf(day_has_excess[d])
+        model.Add(daily_excess[d] == 0).OnlyEnforceIf(day_has_excess[d].Not())
 
-        for (dd, s, deficit) in deficit_diff_vars:
-            if dd == d:
-                model.Add(deficit > 0).OnlyEnforceIf(day_has_deficit[d])
-                model.Add(deficit <= 0).OnlyEnforceIf(day_has_deficit[d].Not())
+        model.Add(daily_deficit[d] >= 1).OnlyEnforceIf(day_has_deficit[d])
+        model.Add(daily_deficit[d] == 0).OnlyEnforceIf(day_has_deficit[d].Not())
 
         model.AddBoolAnd([day_has_excess[d], day_has_deficit[d]]).OnlyEnforceIf(day_has_both[d])
         model.AddBoolOr([day_has_excess[d].Not(), day_has_deficit[d].Not()]).OnlyEnforceIf(day_has_both[d].Not())
 
         penalty_vars.append(day_has_both[d])
 
-
     objective_terms.append(sum(penalty_vars) * excess_and_deficit_weight)
-    objective_terms.append(sum(day_has_deficit[d] for d in days_of_year) * deficit_day_weight)
+
+    # ===============================
+    # 1.5. Contador de dias com déficit > 8h
+    # ===============================
+
+    day_deficit_over_x = {}
+    for d in days_of_year:
+        day_deficit_over_x[d] = model.NewBoolVar(f'day_{d}_deficit_over_x')
+        model.Add(daily_deficit[d] >= deficit_over_x_worst_case +1).OnlyEnforceIf(day_deficit_over_x[d])
+        model.Add(daily_deficit[d] <= deficit_over_x_worst_case ).OnlyEnforceIf(day_deficit_over_x[d].Not())
+
+    num_days_deficit_over_x = model.NewIntVar(0, len(days_of_year), 'num_days_deficit_over_x')
+    model.Add(num_days_deficit_over_x == sum(day_deficit_over_x[d] for d in days_of_year))
+
+    objective_terms.append(num_days_deficit_over_x * deficit_over_x_day_weight)
+
+    # ===============================
+    # 1.6. No workers in a day
+    # ===============================
+
+    zero_assigned_vars = []
+    day_counter = 0
+    for d in days_of_year:
+        for s in real_working_shift:
+            target = pessObj.get((d,s), 0)
+            assigned_workers = sum(shift[(w,d,s)]*work_day_hours[w][day_counter] for w in workers if (w,d,s) in shift)
+
+            if target > 0:
+                zero_assigned = model.NewBoolVar(f'zero_assigned_{d}_{s}')
+                model.Add(assigned_workers == 0).OnlyEnforceIf(zero_assigned)
+                model.Add(assigned_workers != 0).OnlyEnforceIf(zero_assigned.Not())
+                zero_assigned_vars.append(zero_assigned)
+        day_counter += 1
+
+    objective_zero = sum(zero_assigned_vars)
+    objective_terms.append(objective_zero * no_workers_weight)
+
 
 
     # 2. No workers in a day error
