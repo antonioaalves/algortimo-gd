@@ -424,7 +424,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Compensation days - check both country and config flag
                 if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
                     self.logger.info("Applying constraint: holiday_compensation_days (Spain-specific)")
-                    contingente.append(holiday_compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift,
+                    contingente = (holiday_compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift,
                                                                  week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, 2, True))
                 elif country != "spain":
                     self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Spain)")
@@ -454,13 +454,12 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, pessObj, workers_past,
+            schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, pessObj, workers_past, contingente,
                               pd.Series(['Worker'] + (unique_dates)),
                               output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                               optimization_details=optimization_details )
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
-            logger.info(f"Contingente:\n {contingente}")
             # =================================================================
             # FILTER BY PARTIAL WORKERS IF REQUESTED
             # =================================================================

@@ -30,6 +30,7 @@ def solve(
     work_day_hours: Dict[int, List[int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
+    contingente: Dict[int, List[bool]],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -261,7 +262,7 @@ def solve(
                 compensation_days_off[w] = []
 
 
-                logger.debug(f"Processing worker {w}")
+                logger.info(f"Processing worker {w}")
 
                 day_counter = 0
                 for d in days_of_year_sorted:
@@ -337,7 +338,8 @@ def solve(
 
 
                 logger.debug(f"Processing worker {w}")
-
+                true_vars = [v for v in contingente[w] if solver.Value(v) == 1]
+                logger.info(f"contingente: \n{true_vars}")
                 day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
