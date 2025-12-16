@@ -30,7 +30,12 @@ def solve(
     work_day_hours: Dict[int, List[int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
-    contingente: Dict[int, List[bool]],
+    contingente_feriados: Dict[int, List[bool]],
+    contingente_domingos: Dict[int, List[bool]],
+    holiday_ammount: int,
+    sunday_ammount: int,
+    holiday_half_day: bool,
+    sunday_half_day: bool,
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -338,8 +343,22 @@ def solve(
 
 
                 logger.debug(f"Processing worker {w}")
-                true_vars = [v for v in contingente[w] if solver.Value(v) == 1]
-                logger.info(f"contingente: \n{true_vars}")
+                feriados_compensaçao = [v for v in contingente_feriados[w] if solver.Value(v) == 1]
+                logger.info(f"feriados e compensaçoes: \n{feriados_compensaçao}")
+                if holiday_half_day == True:
+                    temp = sorted(feriados_compensaçao.copy())
+                    for i in temp:
+                        #nao esquecer q nao é "d", é preciso ver o dia apartir do nome da variavel
+                        feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{d}")
+
+                domingos_compensaçao = [v for v in contingente_domingos[w] if solver.Value(v) == 1]
+                logger.info(f"domingos e compensaçoes: \n{domingos_compensaçao}")
+                if sunday_half_day == True:
+                    temp = sorted(domingos_compensaçao.copy())
+                    for i in temp:
+                        #nao esquecer q nao é "d", é preciso ver o dia apartir do nome da variavel
+                        domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{d}")
+
                 day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
