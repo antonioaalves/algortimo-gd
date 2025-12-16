@@ -170,6 +170,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_day_deficit_over_x=1
     num_days_deficit_over_x_worst_case= 5
     deficit_over_x_day_weight=int(scale*percentage_of_importance_day_deficit_over_x/num_days_deficit_over_x_worst_case)
+ 
+    deficit_over_y_worst_case=24 #value of x in hours
+    percentage_of_importance_day_deficit_over_y=1
+    num_days_deficit_over_y_worst_case= 2
+    deficit_over_y_day_weight=int(scale*percentage_of_importance_day_deficit_over_y/num_days_deficit_over_y_worst_case)
+
 
 
     # 1. Excess and deficit error
@@ -333,15 +339,24 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     # ===============================
 
     day_deficit_over_x = {}
+    day_deficit_over_y= {} 
     for d in days_of_year:
         day_deficit_over_x[d] = model.NewBoolVar(f'day_{d}_deficit_over_x')
+        day_deficit_over_y[d] = model.NewBoolVar(f'day_{d}_deficit_over_y')
         model.Add(daily_deficit[d] >= deficit_over_x_worst_case +1).OnlyEnforceIf(day_deficit_over_x[d])
         model.Add(daily_deficit[d] <= deficit_over_x_worst_case ).OnlyEnforceIf(day_deficit_over_x[d].Not())
+        model.Add(daily_deficit[d] >= deficit_over_y_worst_case +1).OnlyEnforceIf(day_deficit_over_y[d])
+        model.Add(daily_deficit[d] <= deficit_over_y_worst_case ).OnlyEnforceIf(day_deficit_over_y[d].Not())
 
     num_days_deficit_over_x = model.NewIntVar(0, len(days_of_year), 'num_days_deficit_over_x')
     model.Add(num_days_deficit_over_x == sum(day_deficit_over_x[d] for d in days_of_year))
 
     objective_terms.append(num_days_deficit_over_x * deficit_over_x_day_weight)
+
+    num_days_deficit_over_y = model.NewIntVar(0, len(days_of_year), 'num_days_deficit_over_y')
+    model.Add(num_days_deficit_over_y == sum(day_deficit_over_y[d] for d in days_of_year))
+
+    objective_terms.append(num_days_deficit_over_y * deficit_over_y_day_weight)
 
     # ===============================
     # 1.6. No workers in a day
@@ -507,8 +522,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     objective_terms.append(total_exceeded_days*total_exceeded_days_weight)
 
     # 6. Balancing sundays across the year (average)
-
-    parts = np.array_split(days_of_year, 6) 
+    days_of_year_real= [d for d in days_of_year if year_range[0] <= d <= year_range[1]]
+    parts = np.array_split(days_of_year_real, 6) 
     sunday_parts=[]
     for part in parts:
         sunday_part=[d for d in part if d in sundays]
