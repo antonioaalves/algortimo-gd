@@ -5,7 +5,8 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_day
 logger = get_logger('algoritmo_GD')
 
 
-def holiday_compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days):
+def holiday_compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift, week_compensation_limit,
+                              fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, half_day):
     possible_compensation_days = {}
     worked_holidays = {}
 
@@ -88,7 +89,7 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
                 # Extract just the assignment variables
                 assignment_vars = [var for _, var in d_assignment_vars]
                 # At most one assignment can be true
-                model.Add(sum(assignment_vars) <= 2)
+                model.Add(sum(assignment_vars) <= 1)
 
         # For each special day, ensure it gets a compensation day if worked
         for d in worked_holidays[w].keys():
@@ -111,9 +112,11 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
         # Total compensation days used
         total_comp_days_used = sum(comp_day_usage[w].values())
         # Enforce equality: number of LDs == number of worked holidays
-        model.Add(total_comp_days_used == total_worked_holidays)
+        model.Add(total_comp_days_used == total_worked_holidays * ammount)
+        return d_assignment_vars
 
-def sunday_compensation_days(model, shift, workers, working_days, sundays, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days):
+def sunday_compensation_days(model, shift, workers, working_days, sundays, week_to_days, working_shift, week_compensation_limit,
+                             fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, half_day):
     possible_compensation_days = {}
     worked_sundays = {}
 
@@ -216,7 +219,9 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
         # Total compensation days used
         total_comp_days_used = sum(comp_day_usage[w].values())
         # Enforce equality: number of LDs == number of worked holidays
-        model.Add(total_comp_days_used == total_worked_holidays)
+        model.Add(total_comp_days_used == total_worked_holidays * ammount)
+        return special_day_assignment_vars
+
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift

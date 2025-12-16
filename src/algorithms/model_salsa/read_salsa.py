@@ -181,9 +181,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         ]['index'].unique().tolist())
         
         special_days = sorted(set(holidays))
+        holidays = [holidays[0]]
         logger.info(f"Special days identified:")
         logger.info(f"  - Sundays: {len(sundays)} days")
         logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
+        logger.info(f"  - Holidays (non-Sunday): {holidays} days")
         logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
         logger.info(f"  - Total special days: {len(special_days)} days")
 
