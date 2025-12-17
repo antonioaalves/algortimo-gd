@@ -115,19 +115,26 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             valid_workers = set(partial_workers_complete).intersection(workers_calendario_complete)
             past_workers = workers_calendario_complete - set(partial_workers_complete)
             valid_workers_complete = workers_colaborador_complete.intersection(workers_calendario_complete)
+
+            workers = sorted(valid_workers)
+            workers_complete = workers
+            complete = complete = matriz_colaborador_gd[(matriz_colaborador_gd['ciclo'] == 'Completo') & (matriz_colaborador_gd['employee_id'] == w)]
+            workers_complete_cycle = [] if complete.empty else workers
+            if not complete.empty:
+                workers = []
+            workers_past = sorted(past_workers)
         else:
             past_workers = set()
             valid_workers = workers_colaborador.intersection(workers_calendario_complete)
             valid_workers_complete = workers_colaborador_complete.intersection(workers_calendario_complete)
 
+            workers = sorted(valid_workers)
+            workers_complete = sorted(valid_workers_complete)
+            workers_complete_cycle = sorted(set(workers_complete)-set(workers))
+            workers_past = sorted(past_workers)
+
         if not valid_workers_complete:
             raise ValueError("No workers found that are present in all required DataFrames")
-        
-
-        workers = sorted(list(valid_workers))
-        workers_complete = sorted(list(valid_workers_complete))
-        workers_complete_cycle = sorted(set(workers_complete)-set(workers))
-        workers_past = sorted(list(past_workers))
 
         logger.info(f"[OK] Final valid workers: {len(workers)} workers for free day atribution")
         logger.info(f"   Worker IDs: {workers[:10]}{'...' if len(workers) > 10 else ''}")
@@ -327,20 +334,21 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 continue
             else:
                 logger.info(f"PAST WORKERS: Calendar data found for worker {w}")
-            shift_M[w] = worker_calendar[worker_calendar['horario'] == 'M']['index'].tolist()
-            shift_T[w] = worker_calendar[worker_calendar['horario'] == 'T']['index'].tolist()
-            fixed_LQs[w] = worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist()
-            fixed_days_off[w] = worker_calendar[worker_calendar['horario'] == 'L']['index'].tolist()
-            fixed_compensation_days[w] = worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist()
-            empty_days[w] = worker_calendar[worker_calendar['horario'] == '-']['index'].tolist()
-            vacation_days[w] = worker_calendar[worker_calendar['horario'] == 'V']['index'].tolist()
-            worker_absences[w] = worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP')]['index'].tolist()
+            shift_M[w] = set(worker_calendar[worker_calendar['horario'] == 'M']['index'].tolist())
+            shift_T[w] = set(worker_calendar[worker_calendar['horario'] == 'T']['index'].tolist())
+            fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
+            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'] == 'L']['index'].tolist())
+            fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
+            empty_days[w] = set(worker_calendar[worker_calendar['horario'] == '-']['index'].tolist())
+            vacation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'V']['index'].tolist())
+            worker_absences[w] = set(worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP')]['index'].tolist())
             work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
+
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
 
-            first_registered_day[w] = worker_calendar['schedule_day'].min()
-            last_registered_day[w] = worker_calendar['schedule_day'].max()
-            working_days[w] = set(shift_T[w]) | set(fixed_days_off[w]) | set(shift_M[w]) | set(fixed_LQs[w])
+            first_registered_day[w] = worker_calendar['index'].min()
+            last_registered_day[w] = worker_calendar['index'].max()
+            working_days[w] = set(shift_T[w]) | set(fixed_days_off[w]) | set(shift_M[w]) | set(fixed_LQs[w]) | set(fixed_compensation_days)
 
 
         for w in workers_complete:
@@ -372,18 +380,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
-            if w not in past_workers :
-                worker_row = worker_data.iloc[0]
+            worker_row = worker_data.iloc[0]
 
-                # MODIFIED: Fix date handling - don't convert Timestamp to datetime
-                admissao_value = worker_row.get('data_admissao', None)
-                logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
-                demissao_value = worker_row.get('data_demissao', None)
-                logger.info(f"Processing worker {w} with data_demissao: {demissao_value}")
-            else:
-                admissao_value = None
-                demissao_value = None
-                logger.info(f"Worker {w} is a past worker, setting data_admissao and data_demissao to None")
+            # MODIFIED: Fix date handling - don't convert Timestamp to datetime
+            admissao_value = worker_row.get('data_admissao', None)
+            logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
+            demissao_value = worker_row.get('data_demissao', None)
+            logger.info(f"Processing worker {w} with data_demissao: {demissao_value}")
 
             # Convert data_admissao to day of year
             if admissao_value is not None and not pd.isna(admissao_value):
