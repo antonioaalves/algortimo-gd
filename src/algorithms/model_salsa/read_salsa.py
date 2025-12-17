@@ -37,6 +37,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
+        matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
@@ -171,13 +172,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['index'].unique().tolist())
 
-        holidays = sorted(matriz_calendario_gd[
-            (matriz_calendario_gd['wd'] != 'Sun') & 
-            (matriz_calendario_gd["dia_tipo"] == "domYf")
+        holidays = sorted(matriz_feriados_gd[
+            (matriz_feriados_gd['tipo_feriado'] == 'A')
         ]['index'].unique().tolist())
         
-        closed_holidays = set(matriz_calendario_gd[
-            matriz_calendario_gd['horario'] == "F"
+        closed_holidays = set(matriz_feriados_gd[
+            (matriz_feriados_gd['tipo_feriado'] == 'F')
         ]['index'].unique().tolist())
         
         special_days = sorted(set(holidays))
@@ -301,6 +301,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
+
+        holiday_half_day = 2
+        sunday_half_day = 2
+        ld_holiday = True
+        ld_sunday = True
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}
@@ -779,6 +784,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "fixed_compensation_days": fixed_compensation_days,  
             "year_range": year_range,
             "unique_dates": unique_dates,
+            "holiday_half_day": holiday_half_day,
+            "sunday_half_day ": sunday_half_day,
+            "ld_holiday": ld_holiday,
+            "ld_sunday": ld_sunday,
             }
         
     except Exception as e:

@@ -393,13 +393,13 @@ def solve(
                 if holiday_half_day == True:
                     for i in special_days_worked[w]:
                         feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{i}")
-                logger.info(f"feriados e compensaçoes: \n{feriados_compensaçao}")
+                logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao)}")
 
                 domingos_compensaçao = [v for v in contingente_domingos[w] if solver.Value(v) == 1]
                 if sunday_half_day == True:
                     for i in sun[w]:
                         domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")
-                logger.info(f"domingos e compensaçoes: \n{domingos_compensaçao}")
+                logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao)}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {

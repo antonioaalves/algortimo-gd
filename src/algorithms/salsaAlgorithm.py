@@ -140,7 +140,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             if not isinstance(medium_dataframes, dict):
                 raise TypeError(f"Expected medium_dataframes to be dictionary, got {type(medium_dataframes)}")
-            
             # =================================================================
             # 2. VALIDATE REQUIRED DATAFRAMES
             # =================================================================
