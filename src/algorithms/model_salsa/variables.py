@@ -25,15 +25,16 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences,
     closed_set = set(closed_holidays)
     for w in past_workers:
         empty_set = empty_days[w]
-        vacation = vacation_days[w] - empty_set
-        fixed_LQs_set = set(fixed_LQs[w]) - vacation - closed_holidays
-        fixed_days_set = fixed_days_off[w] - vacation - fixed_LQs_set
-        absence_set = absences[w] - fixed_days_set - fixed_LQs_set - vacation - empty_set
-        shift_M_set = set(shift_M[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set
-        shift_T_set = set(shift_T[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set - shift_M_set
-        fixed_LD_set = set(fixed_compensation_days[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set - shift_M_set - shift_T_set
+        vacation = vacation_days[w]
+        fixed_LQs_set = fixed_LQs[w]
+        fixed_days_set = fixed_days_off[w]
+        absence_set = absences[w]
+        shift_M_set = shift_M[w]
+        shift_T_set = shift_T[w]
+        fixed_LD_set = fixed_compensation_days[w]
 
         logger.info(f"For PAST WORKER {w}:")
+        logger.info(f"\tDEBUG closed days {sorted(closed_set)}")
         logger.info(f"\tDEBUG empty days {sorted(empty_set)}")
         logger.info(f"\tDEBUG vacation {sorted(vacation)}")
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
