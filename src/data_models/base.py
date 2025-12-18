@@ -943,7 +943,9 @@ class BaseDescansosDataModel(ABC):
                     date_col='data',
                     add_id_col=False,
                     use_case=1,
-                    main_year=main_year
+                    main_year=main_year,
+                    first_date=first_date_passado,
+                    last_date=last_date_passado
                 )
                 if not success:
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
