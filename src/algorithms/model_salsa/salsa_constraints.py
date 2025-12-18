@@ -5,8 +5,8 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_day
 logger = get_logger('algoritmo_GD')
 
 
-def holiday_compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift, week_compensation_limit,
-                              fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, half_day):
+def holiday_compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift,
+                            week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount):
     possible_compensation_days = {}
     worked_holidays = {}
 
@@ -120,7 +120,7 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
     return contingent
 
 def sunday_compensation_days(model, shift, workers, working_days, sundays, week_to_days, working_shift, week_compensation_limit,
-                             fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, half_day):
+                             fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, holidays):
     possible_compensation_days = {}
     worked_sundays = {}
 
@@ -129,7 +129,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
-        for d in [day for day in sundays[w] if day in working_days[w] - off - LQs]:
+        for d in [day for day in sundays[w] if day in working_days[w] - off - LQs and day not in holidays]:
             # Create a boolean variable to track if the worker worked on this special day
             worked_special_day = model.NewBoolVar(f'worked_special_day_{w}_{d}')
             worked_sundays[w][d] = worked_special_day
