@@ -309,8 +309,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
 
-        holiday_half_day = 2
-        sunday_half_day = 2
+        holiday_half_day = 1
+        sunday_half_day = 1
         ld_holiday = True
         ld_sunday = True
 
@@ -788,7 +788,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "year_range": year_range,
             "unique_dates": unique_dates,
             "holiday_half_day": holiday_half_day,
-            "sunday_half_day ": sunday_half_day,
+            "sunday_half_day": sunday_half_day,
             "ld_holiday": ld_holiday,
             "ld_sunday": ld_sunday,
             }

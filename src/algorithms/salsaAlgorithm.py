@@ -278,9 +278,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             year_range = adapted_data["year_range"]
             unique_dates = adapted_data["unique_dates"]
             holiday_half_day = adapted_data["holiday_half_day"]
-            sunday_half_day = adapted_data["sunday_half_day"]
             ld_holiday = adapted_data["ld_holiday"]
             ld_sunday = adapted_data["ld_sunday"]
+            sunday_half_day = adapted_data["sunday_half_day"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]

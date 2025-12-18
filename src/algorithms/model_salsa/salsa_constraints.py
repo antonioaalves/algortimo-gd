@@ -40,6 +40,7 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
     all_comp_day_vars = {}
     comp_day_usage = {}
     contingent = {}
+    print(holidays)
     for w in workers:
         # Initialize the compensation day usage tracking for this worker
         comp_day_usage[w] = {}
@@ -85,15 +86,14 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
                     
                     # Constraint: If assignment is true, this day must be a valid day off (LD)
                     model.Add(shift[(w, comp_day, 'LD')] == comp_day_used)
+                    print(d_assignment_vars)
 
             # KEY CONSTRAINT: At most one special day can be assigned to this compensation day
             if len(d_assignment_vars) > 1:
                 # Extract just the assignment variables
                 assignment_vars = [var for _, var in d_assignment_vars]
                 # At most one assignment can be true
-                for i in range(1, ammount):
-                    model.Add(sum(assignment_vars) != i)
-                model.Add(sum(assignment_vars) <= ammount)
+                model.Add(sum(assignment_vars) <= 1)
 
         # For each special day, ensure it gets a compensation day if worked
         for d in worked_holidays[w].keys():
@@ -107,7 +107,7 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
             # If the worker worked this special day, ensure one compensation day is assigned
             if comp_day_vars:
                 # Normal case: enforce exactly 1 comp day if worked
-                model.Add(sum(comp_day_vars) == 1).OnlyEnforceIf(worked_holidays[w][d])
+                model.Add(sum(comp_day_vars) == ammount).OnlyEnforceIf(worked_holidays[w][d])
                 model.Add(sum(comp_day_vars) == 0).OnlyEnforceIf(worked_holidays[w][d].Not())
             else:
                 model.Add(worked_holidays[w][d] == 0)
@@ -129,7 +129,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
-        for d in [day for day in sundays[w] if day in working_days[w] - off - LQs and day not in holidays]:
+        for d in [day for day in sundays if day in working_days[w] - off - LQs and day not in holidays]:
             # Create a boolean variable to track if the worker worked on this special day
             worked_special_day = model.NewBoolVar(f'worked_special_day_{w}_{d}')
             worked_sundays[w][d] = worked_special_day
@@ -202,9 +202,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
                 # Extract just the assignment variables
                 assignment_vars = [var for _, var in sunday_assignment_vars]
                 # At most one assignment can be true
-                for i in range(1, ammount):
-                    model.Add(sum(assignment_vars) != i)
-                model.Add(sum(assignment_vars) <= ammount)
+                model.Add(sum(assignment_vars) <= 1)
 
         # For each special day, ensure it gets a compensation day if worked
         for d in worked_sundays[w].keys():
@@ -218,7 +216,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
             # If the worker worked this special day, ensure one compensation day is assigned
             if comp_day_vars:
                 # Normal case: enforce exactly 1 comp day if worked
-                model.Add(sum(comp_day_vars) == 1).OnlyEnforceIf(worked_sundays[w][d])
+                model.Add(sum(comp_day_vars) == ammount).OnlyEnforceIf(worked_sundays[w][d])
                 model.Add(sum(comp_day_vars) == 0).OnlyEnforceIf(worked_sundays[w][d].Not())
             else:
                 model.Add(worked_sundays[w][d] == 0)
