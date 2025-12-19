@@ -24,8 +24,8 @@ def solve(
     model: cp_model.CpModel, 
     days_of_year: List[int], 
     workers: List[int], 
-    special_days: List[int],
     sundays: List[int],    
+    special_days: List[int],
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
     work_day_hours: Dict[int, List[int]],
@@ -389,17 +389,21 @@ def solve(
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
-                feriados_compensaçao = [v for v in contingente_feriados[w] if solver.Value(v) == 1]
-                if holiday_half_day == True:
-                    for i in special_days_worked[w]:
-                        feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{i}")
-                logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao)}")
+                if contingente_feriados:
+                    if contingente_feriados[w] is not None and len(contingente_feriados[w]) > 0:
+                        feriados_compensaçao = [v.Name() for v in contingente_feriados[w] if solver.Value(v) == 1]
+                        if holiday_half_day == True:
+                            for i in special_days_worked[w]:
+                                feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{i}")
+                        logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao)}")
 
-                domingos_compensaçao = [v for v in contingente_domingos[w] if solver.Value(v) == 1]
-                if sunday_half_day == True:
-                    for i in sun[w]:
-                        domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")
-                logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao)}")
+                if contingente_domingos:
+                    if contingente_domingos[w] is not None and len(contingente_domingos[w]) > 0:
+                        domingos_compensaçao = [v for v in contingente_domingos[w] if solver.Value(v) == 1]
+                        if sunday_half_day == True:
+                            for i in sun[w]:
+                                domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")
+                        logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao)}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {

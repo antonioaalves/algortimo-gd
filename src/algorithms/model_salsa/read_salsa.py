@@ -42,6 +42,27 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
 
+        holiday_half_day = True
+        sunday_half_day = True
+        ld_holiday = 2
+        ld_sunday = 1
+
+        #ld_holiday = double(algorithm_treatment_params['ld_holiday_param'])
+        if ld_holiday - (math.floor(ld_holiday)) != 0:
+            ld_holiday = int(math.floor(ld_holiday))
+            holiday_half_day = True
+        else:
+            holiday_half_day = False
+            ld_holiday = int(ld_holiday)
+
+        #ld_sunday = double(algorithm_treatment_params['ld_sunday_param'])
+        if ld_sunday - (math.floor(ld_sunday)) != 0:
+            ld_sunday = int(math.floor(ld_sunday))
+            sunday_half_day = True
+        else:
+            sunday_half_day = False
+            ld_sunday = int(ld_sunday)
+            
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
             partial_generation = True 
@@ -188,7 +209,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         ]['index'].unique().tolist())
         
         special_days = sorted(set(holidays))
-        #holidays = [holidays[0]]
         logger.info(f"Special days identified:")
         logger.info(f"  - Sundays: {len(sundays)} days")
         logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
@@ -308,11 +328,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
-
-        holiday_half_day = 1
-        sunday_half_day = 1
-        ld_holiday = True
-        ld_sunday = True
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}
