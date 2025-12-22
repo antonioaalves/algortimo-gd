@@ -42,12 +42,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
 
-        holiday_half_day = True
-        sunday_half_day = True
-        ld_holiday = 2
-        ld_sunday = 1
+        #holiday_half_day = True
+        #sunday_half_day = True
+        #ld_holiday = 2
+        #ld_sunday = 1
 
-        #ld_holiday = double(algorithm_treatment_params['ld_holiday_param'])
+        ld_holiday = float(algorithm_treatment_params['ld_holiday_param'])
         if ld_holiday - (math.floor(ld_holiday)) != 0:
             ld_holiday = int(math.floor(ld_holiday))
             holiday_half_day = True
@@ -55,14 +55,17 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             holiday_half_day = False
             ld_holiday = int(ld_holiday)
 
-        #ld_sunday = double(algorithm_treatment_params['ld_sunday_param'])
+        ld_sunday = float(algorithm_treatment_params['ld_sunday_param'])
         if ld_sunday - (math.floor(ld_sunday)) != 0:
             ld_sunday = int(math.floor(ld_sunday))
             sunday_half_day = True
         else:
             sunday_half_day = False
             ld_sunday = int(ld_sunday)
-            
+        logger.info(f"Required Compensation Days loaded:")
+        logger.info(f"  - Holiday Compensation Days: {ld_holiday} and half day: {holiday_half_day}")
+        logger.info(f"  - Sunday Compensation Days: {ld_sunday} and half day: {sunday_half_day}")
+        
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
             partial_generation = True 

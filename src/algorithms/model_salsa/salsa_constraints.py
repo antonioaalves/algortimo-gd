@@ -6,7 +6,7 @@ logger = get_logger('algoritmo_GD')
 
 
 def holiday_compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift,
-                            week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount):
+                              week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount):
     possible_compensation_days = {}
     worked_holidays = {}
 
