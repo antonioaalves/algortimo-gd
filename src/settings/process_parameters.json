@@ -14,7 +14,9 @@
             "GD_convenioBD",
             "NUM_DIAS_CONS",
             "codigos_motivo_ausencia",
-            "l_dom_days"
+            "l_dom_days",
+            "ld_sunday_param",
+            "ld_holiday_param"
         ],
 
         "parameters_defaults": {
