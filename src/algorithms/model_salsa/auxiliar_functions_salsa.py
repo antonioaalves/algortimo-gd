@@ -232,7 +232,7 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
             
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days):
+def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days, period):
     compensation_days = []
     weeks_added = 0
     current_week = special_day_week
@@ -242,12 +242,28 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
 
         week_days = set(week_to_days.get(current_week, []))
 
-        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off).union(fixed_LQs))
+        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
 
         available_days = working_days.intersection(week_days - all_days_off)
-
+        if sorted(available_days)[0] >= period[1]:
+            break
         if len(available_days) > 0:
             weeks_added += 1
             compensation_days.extend(available_days)
 
     return compensation_days
+
+def ld_counter(shift_T, shift_M, fixed_ld, period, holidays):
+    holidays_worked_before = []
+    lds = 0
+    for day in range(1, period[0] + 1):
+        if day in holidays:
+            if day in shift_T and day not in shift_M:
+                holidays_worked_before.append(day)
+            elif day in shift_M and day not in shift_T:
+                holidays_worked_before.append(day)
+        if day in fixed_ld:
+            lds += 1
+    del holidays_worked_before[:lds]
+    
+    return holidays_worked_before

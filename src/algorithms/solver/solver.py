@@ -28,7 +28,7 @@ def solve(
     special_days: List[int],
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
-    work_day_hours: Dict[int, List[int]],
+    work_day_hours: Dict[int, Dict[int, int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
     contingente_feriados: Dict[int, List[bool]],
@@ -269,7 +269,6 @@ def solve(
 
                 logger.info(f"Processing worker {w}")
 
-                day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -298,14 +297,13 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_T[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
                             special_days_worked[w].append(d)
-                        time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_M[d - 1] += work_day_hours[w].get(d, 8)
 
-                    day_counter += 1
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
@@ -343,9 +341,7 @@ def solve(
                 compensation_days_off[w] = []
 
 
-                logger.debug(f"Processing worker {w}")
-
-                day_counter = 0
+                logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -376,16 +372,14 @@ def solve(
                             special_days_count += 1
                         elif d in sundays:
                             sun[w].append(d)
-                        time_worked_day_T_after[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
                         elif d in sundays:
                             sun[w].append(d)
-                        time_worked_day_M_after[day_counter] += work_day_hours[w][day_counter]
-
-                    day_counter += 1
+                        time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
@@ -423,7 +417,6 @@ def solve(
             except Exception as e:
                 logger.error(f"Error processing worker {w}: {str(e)}")
                 continue                  
-        
         logger.info(f"Successfully processed {processed_workers} workers")
         
         # =================================================================
