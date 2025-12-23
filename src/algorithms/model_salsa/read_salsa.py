@@ -41,14 +41,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
-        start_date = int(algorithm_treatment_params['start_date'])
-        end_date = int(algorithm_treatment_params['end_date'])
+        start_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
+        end_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
         period = [start_date, end_date]
 
-        #holiday_half_day = True
-        #sunday_half_day = True
-        #ld_holiday = 2
-        #ld_sunday = 1
+        logger.info(f"Start and end Time:")
+        logger.info(f"Start: {start_date}")
+        logger.info(f"End: {end_date}")
 
         ld_holiday = float(algorithm_treatment_params['ld_holiday_param'])
         if ld_holiday - (math.floor(ld_holiday)) != 0:
@@ -65,7 +64,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         else:
             sunday_half_day = False
             ld_sunday = int(ld_sunday)
-        logger.info(f"Required Compensation Days loaded:")
+        logger.info("Required Compensation Days loaded:")
         logger.info(f"  - Holiday Compensation Days: {ld_holiday} and half day: {holiday_half_day}")
         logger.info(f"  - Sunday Compensation Days: {ld_sunday} and half day: {sunday_half_day}")
         

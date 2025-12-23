@@ -18,7 +18,6 @@
             "ld_sunday_param",
             "ld_holiday_param"
         ],
-
         "parameters_defaults": {
             "algorithm_name": "salsa_algorithm",
             "GD_gloablMaxThreads": 4,
@@ -39,11 +38,10 @@
             "l_dom_days": [1]
         }
     }, 
-    
     "external_call_data": {
-        "current_process_id": 27678,
+        "current_process_id": 11645,
         "api_proc_id": 999,
-        "wfm_proc_id": 27678,
+        "wfm_proc_id": 11645,
         "wfm_user": "WFM",
         "start_date": "2026-01-01",
         "end_date": "2026-12-31",
