@@ -344,15 +344,15 @@ def convert_types_in(df: pd.DataFrame) -> pd.DataFrame:
     type_map = {
         ('T', 'M'): 'M',      # Trabajo Mañana -> M
         ('T', 'T'): 'T',      # Trabajo Tarde -> T
-        ('T', 'H'): 'MoT',    # Trabajo Horas -> MoT (Mañana or Tarde)
+        ('T', 'H'): 'MoT',    # Trabajo Manhã ou tarde -> MoT (Mañana or Tarde)
         ('T', 'P'): 'P',      # Trabajo Partido -> P
-        ('F', None): 'L',     # Libre -> L
-        ('F', 'D'): 'LD',     # Libre Domingo -> LD
-        ('F', 'Q'): 'LQ',     # Libre Quincenal -> LQ
-        ('F', 'C'): 'C',      # Libre Compensatorio -> C
-        ('R', None): 'F',     # Rotativo -> F
-        ('N', None): '-',     # No definido -> -
-        ('T', 'A'): 'V',      # Trabajo Ausencia -> V (Vacaciones)
+        ('F', None): 'L',     # Folga -> L
+        ('F', 'D'): 'LD',     # Folga por trabalhar no domingo/feriado -> LD
+        ('F', 'Q'): 'LQ',     # Folga Quincenal -> LQ
+        ('F', 'C'): 'C',      # Folga Compensatorio -> C
+        ('R', None): 'F',     # Feriado fechado -> F
+        ('N', None): '-',     # Dia vazio -> -
+        ('T', 'A'): 'V',      # Férias -> V (Férias)
     }
     
     # Create a copy to avoid modifying the original DataFrame
