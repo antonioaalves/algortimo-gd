@@ -437,7 +437,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
 
-            debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, real_working_shift, shift, pessObj,
+            optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj,
                                              working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d,
                                              first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
 
