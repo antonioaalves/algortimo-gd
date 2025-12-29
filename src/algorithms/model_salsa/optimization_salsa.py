@@ -359,7 +359,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     for d in days_of_year:
         for s in real_working_shift:
             target = pessObj.get((d,s), 0)
-            assigned_workers = sum(shift[(w,d,s)]*work_day_hours[w][day_counter] for w in workers if (w,d,s) in shift)
+            assigned_workers = sum(shift[(w,d,s)] for w in workers if (w,d,s) in shift)
 
             if target > 0:
                 zero_assigned = model.NewBoolVar(f'zero_assigned_{d}_{s}')
