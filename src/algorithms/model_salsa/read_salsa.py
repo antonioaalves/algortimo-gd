@@ -536,7 +536,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
-                total_l_dom[w] = int(worker_row.get('l_dom_salsa', 0))
+                total_l_dom[w] = int(worker_row.get('l_dom', 0))
                 c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))

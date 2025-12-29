@@ -525,4 +525,4 @@ def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year,
                 if day in shift_M[w] or day in shift_T[w]:
                     available_workers += 1
             if available_workers > 1:
-                model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift) >= 1)
+                model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)
