@@ -517,3 +517,12 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
         print('Dom', w, total_l_dom.get(w, 0))
 
+def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T):
+    if len(workers) > 1:
+        for day in days_of_year:
+            available_workers = 0
+            for w in workers:
+                if day in shift_M[w] or day in shift_T[w]:
+                    available_workers += 1
+            if available_workers > 1:
+                model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift) >= 1)
