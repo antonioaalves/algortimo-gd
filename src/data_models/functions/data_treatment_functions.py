@@ -2832,7 +2832,13 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
                 logger.info("No day-off or no-work records found, returning original df_calendario")
                 return True, df_result, ""
             
+            # Ensure employee_id types match (convert to string for consistent matching)
+            df_result['employee_id'] = df_result['employee_id'].astype(str)
+            df_dayoffs['employee_id'] = df_dayoffs['employee_id'].astype(str)
+            
             # Ensure schedule_day is in string format for matching
+            if df_result['schedule_day'].dtype != 'object':
+                df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day']).dt.strftime('%Y-%m-%d')
             if df_dayoffs['schedule_day'].dtype != 'object':
                 df_dayoffs['schedule_day'] = pd.to_datetime(df_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
             
