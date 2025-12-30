@@ -278,6 +278,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             fixed_compensation_days = adapted_data['fixed_compensation_days']
             year_range = adapted_data["year_range"]
             unique_dates = adapted_data["unique_dates"]
+            period = adapted_data["period"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -424,7 +425,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Compensation days - check both country and config flag
                 if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
                     self.logger.info("Applying constraint: compensation_days (Spain-specific)")
-                    compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
+                    compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, period)
                 elif country != "spain":
                     self.logger.info("Skipping constraint: compensation_days (not applicable for non-Spain)")
                 else:
