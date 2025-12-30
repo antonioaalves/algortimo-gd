@@ -363,6 +363,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
             else:
                 self.logger.warning("Skipping constraint: working_day_shifts (disabled in config)")
+
             if workers:
                 # Week working days constraint based on contract type
                 if constraint_selections.get("week_working_days_constraint", {}).get("enabled", True):
@@ -385,7 +386,6 @@ class SalsaAlgorithm(BaseAlgorithm):
                 else:
                     self.logger.warning("Skipping constraint: LQ_attribution (disabled in config)")
                             
-                # SALSA specific constraints
                 if constraint_selections.get("salsa_2_consecutive_free_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: salsa_2_consecutive_free_days")
                     salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
@@ -422,7 +422,6 @@ class SalsaAlgorithm(BaseAlgorithm):
                 else:
                     self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
     
-                # Compensation days - check both country and config flag
                 if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
                     self.logger.info("Applying constraint: compensation_days (Spain-specific)")
                     compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, period)

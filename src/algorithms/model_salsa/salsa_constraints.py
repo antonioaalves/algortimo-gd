@@ -476,10 +476,6 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             if required_free_days >= 0:
                 # Create a sum of free shifts for this worker in the current week
                 free_shift_sum = sum(shift.get((w, d, shift_type), 0) for d in week_work_days for shift_type in ["L", "LQ"])
-                if w in [126, 128] and week_work_days[0] < 9:
-                    print(f"{w}, {required_free_days} {work_days_per_week[w]}")
-                    continue
-
                 if required_free_days == 2:
                     if (len(week_work_days) >= 2):
                         model.Add(free_shift_sum == required_free_days)
