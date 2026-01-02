@@ -240,14 +240,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     excess_diff_vars = []
     deficit_diff_vars = []
-    day_counter = 0
 
     for d in days_of_year:
         for s in real_working_shift:
-
             target = pessObj.get((d, s), 0)
             assigned_workers = sum(
-                shift[(w, d, s)] * work_day_hours[w][day_counter]
+                shift[(w, d, s)] * work_day_hours[w].get(d, 8)
                 for w in workers if (w, d, s) in shift
             )
 
@@ -260,9 +258,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             excess_diff_vars.append((d, s, excess))
             deficit_diff_vars.append((d, s, deficit))
 
-        day_counter += 1
     
-
     # ===============================
     # 1.2. Daily totals
     # ===============================
@@ -362,7 +358,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     # 2 No workers in a day
     
     zero_assigned_vars = []
-    day_counter = 0
     for d in days_of_year_working:
         for s in real_working_shift:  
             target = pessObj.get((d,s), 0)
@@ -373,7 +368,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                 model.Add(assigned_workers == 0).OnlyEnforceIf(zero_assigned)
                 model.Add(assigned_workers >= 1).OnlyEnforceIf(zero_assigned.Not())
                 zero_assigned_vars.append(zero_assigned)
-        day_counter += 1
 
     objective_zero = sum(zero_assigned_vars)
     if percentage_of_importance_workers>0:
@@ -816,9 +810,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                 if same_free_day_keyholders_weight>0:     
                     objective_terms.append(free_keyholders*same_free_day_keyholders_weight)   
                  
-    model.Minimize(sum(objective_terms))
-
-
+    
     return optimization_details
 
 
