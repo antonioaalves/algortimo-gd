@@ -133,11 +133,11 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         pessObj.get((d, s), 0)
         for d in days_of_year_working
         for s in real_working_shift)
-    percentage_of_importance_no_deficit=2
+    percentage_of_importance_no_deficit=3
     deficit_weight=int(scale*percentage_of_importance_no_deficit/deficit_min_worst_scenario)
 
     no_workers_min_worst_scenario=1
-    percentage_of_importance_workers=2
+    percentage_of_importance_workers=0
     no_workers_weight=int(scale*percentage_of_importance_workers/no_workers_min_worst_scenario)
 
     sundays_diff_min_worst_scenario=2
@@ -157,8 +157,10 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
     sunday_imbalance_weight_average=int(math.ceil(sunday_imbalance_weight/len(workers_not_complete)))
     total_sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
-    
-    
+
+    sunday_imbalance_weight_periodicity_min_worst_scenario=1
+    percentage_of_importance_sunday_imbalance_weight_periodicity=1
+    sunday_imbalance_weight_periodicity=int(scale*percentage_of_importance_sunday_imbalance_weight_periodicity/sunday_imbalance_weight_periodicity_min_worst_scenario)
 
     LQ_imbalance_per_semeste_min_worst_scenario=1
     percentage_of_importance_LQ_balance=1
@@ -194,9 +196,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         number_free_days_exceeded_worst_case_scenario= 5 
         percentage_of_total_exceeded_days_weight=1 
     if len(workers) <6:
-        percentage_of_total_exceeded_days_weight=0
+        percentage_of_total_exceeded_days_weight=0    
     total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_exceeded_worst_case_scenario)
-    
     
     day_deficit_hours_worst_case_scenario=8 #in a shift
     percentage_of_importance_day_deficit=2
@@ -375,7 +376,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         day_counter += 1
 
     objective_zero = sum(zero_assigned_vars)
-    objective_terms.append(objective_zero * no_workers_weight)
+    if percentage_of_importance_workers>0:
+        objective_terms.append(objective_zero * no_workers_weight)
 
 
     # 3. Balancing number of sundays free days across the workers 
@@ -650,7 +652,53 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(
             sunday_difference * total_sunday_imbalance_weight
         )
-            
+
+    #6.3 Control the periodicity of excessive free Sundays
+    
+    excess_free_sundays_per_worker = {}
+
+    windows = [
+        sundays[i:i+3]
+        for i in range(len(sundays) - 2)
+    ]
+
+    for w in workers_not_complete:
+        window_violations = []
+
+        for idx, window in enumerate(windows):
+            free_sundays = []
+
+            for d in window:
+                if (w, d, 'L') in shift:
+                    free = shift[(w, d, 'L')]  # 0/1
+                else:
+                    free = model.NewIntVar(0, 0, f"missing_L_{w}_{d}")
+
+                free_sundays.append(free)
+
+            total_free = model.NewIntVar(0, 3, f"free_3s_{w}_{idx}")
+            model.Add(total_free == sum(free_sundays))
+
+            violation = model.NewBoolVar(f"excess_free_sunday_{w}_{idx}")
+            model.Add(total_free >= 2).OnlyEnforceIf(violation)
+            model.Add(total_free <= 1).OnlyEnforceIf(violation.Not())
+
+            window_violations.append(violation)
+
+        total_excess = model.NewIntVar(
+            0, len(window_violations),
+            f"total_excess_free_sundays_{w}"
+        )
+        model.Add(total_excess == sum(window_violations))
+
+        excess_free_sundays_per_worker[w] = total_excess
+
+    total_excess_free_sundays = model.NewIntVar(0, len(sundays) * len(workers_not_complete),"total_excess_free_sundays")
+
+    model.Add(total_excess_free_sundays == sum(excess_free_sundays_per_worker.values()))
+
+    objective_terms.append(total_excess_free_sundays * sunday_imbalance_weight_periodicity)
+       
 
     # 7. Balancing LQ's across the year
 
