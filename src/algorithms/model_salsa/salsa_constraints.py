@@ -5,7 +5,7 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_day
 logger = get_logger('algoritmo_GD')
 
 
-def compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days):
+def compensation_days(model, shift, workers, working_days, holidays, week_to_days, working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, period):
     possible_compensation_days = {}
     worked_holidays = {}
 
@@ -14,7 +14,7 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
-        for d in [day for day in holidays if day in working_days[w] - off - LQs]:
+        for d in [day for day in holidays if (day in working_days[w] - off - LQs) and period[0] <= day < period[1]]:
             # Create a boolean variable to track if the worker worked on this special day
             worked_special_day = model.NewBoolVar(f'worked_special_day_{w}_{d}')
             worked_holidays[w][d] = worked_special_day
@@ -48,9 +48,10 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
                 #print(possible_compensation_days[w][d])
                 all_possible_comp_days.update(possible_compensation_days[w][d])
         for d in working_days[w]:
-            if (w, d, 'LD') in shift:
-                if d not in all_possible_comp_days:
-                    model.Add(shift[(w, d, 'LD')] == 0)  # Never allow LD outside compensation
+            if period[0] <= d < period[1]:
+                if (w, d, 'LD') in shift:
+                    if d not in all_possible_comp_days:
+                        model.Add(shift[(w, d, 'LD')] == 0)  # Never allow LD outside compensation
 
         # For each possible compensation day, create a variable indicating if it's used as a compensation day
         for comp_day in all_possible_comp_days:
@@ -475,7 +476,6 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             if required_free_days >= 0:
                 # Create a sum of free shifts for this worker in the current week
                 free_shift_sum = sum(shift.get((w, d, shift_type), 0) for d in week_work_days for shift_type in ["L", "LQ"])
-
                 if required_free_days == 2:
                     if (len(week_work_days) >= 2):
                         model.Add(free_shift_sum == required_free_days)
@@ -517,3 +517,12 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
         print('Dom', w, total_l_dom.get(w, 0))
 
+def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T):
+    if len(workers) > 1:
+        for day in days_of_year:
+            available_workers = 0
+            for w in workers:
+                if day in shift_M[w] or day in shift_T[w]:
+                    available_workers += 1
+            if available_workers > 1:
+                model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)

@@ -20,6 +20,7 @@ from src.data_models.functions.helper_functions import (
     load_wfm_scheds, 
     get_valid_emp_info,
     get_first_and_last_day_passado_arguments,
+    get_section_employees_id_list,
     get_past_employees_id_list,
     get_employees_id_90_list,
     get_matriculas_for_employee_id,
@@ -324,6 +325,25 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_mpd_valid_employees: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            # Extract all employee IDs from the section for matricula mapping
+            # NOTE: We use section_employees_id_list (from df_mpd_valid_employees) instead of 
+            # employees_id_total_list (from df_valid_emp) because in single-employee mode 
+            # (wfm_proc_colab set), df_valid_emp only contains 1 employee, but we need 
+            # employee_id_matriculas_map with ALL employees to create df_calendario with 
+            # full section context.
+            # TODO: This logic will be abandoned after STRSOL-1180 is implemented.
+            #       After STRSOL-1180, df_valid_emp will have all section employees with a 
+            #       field indicating execution status, so we can use employees_id_total_list directly.
+            try:
+                success, section_employees_id_list, error_msg = get_section_employees_id_list(df_mpd_valid_employees)
+                if not success:
+                    self.logger.error(f"Failed to get section employees list: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.logger.info(f"section_employees_id_list has {len(section_employees_id_list)} employees")
+            except Exception as e:
+                self.logger.error(f"Error getting section employees list: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
             # Calculate domingos and festivos amount
             num_sundays_year = count_sundays_in_period(
                 first_day_year_str=first_year_date,
@@ -337,13 +357,14 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "", ""
 
             # Load fk_colaborador-matricula mapping:
+            # Uses section_employees_id_list to get matriculas for ALL employees in the section
             try:
                 self.logger.info(f"Loading fk_colaborador-matricula mapping from data manager")
 
                 df_fk_colaborador_matricula = data_manager.load_data(
                     'df_fk_colaborador_matricula', 
                     query_file=self.config_manager.paths.sql_processing_paths['df_fk_colaborador_matricula'], 
-                    colabs_id=create_employee_query_string(employees_id_total_list),
+                    colabs_id=create_employee_query_string(section_employees_id_list),
                 )
                 self.logger.info(f"df_fk_colaborador_matricula shape (rows {df_fk_colaborador_matricula.shape[0]}, columns {df_fk_colaborador_matricula.shape[1]}): {df_fk_colaborador_matricula.columns.tolist()}")
 
@@ -516,6 +537,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['first_date_passado'] = first_day_passado
                 self.auxiliary_data['last_date_passado'] = last_day_passado
                 self.auxiliary_data['employees_id_total_list'] = employees_id_total_list
+                self.auxiliary_data['section_employees_id_list'] = section_employees_id_list  # All employees in section (for matricula mapping)
                 self.auxiliary_data['employees_id_by_posto_dict'] = employees_id_by_posto_dict
                 self.auxiliary_data['employee_id_matriculas_map'] = employee_id_matriculas_map.copy()
                 self.auxiliary_data['case_type'] = case_type
@@ -574,6 +596,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             algorithm_treatment_params = self.algorithm_treatment_params
             params_names_list = self.config_manager.parameters.get_parameter_names()
             params_defaults = self.config_manager.parameters.get_parameter_defaults()
+            start_date = self.external_call_data['start_date']
+            end_date = self.external_call_data['end_date']
             self.logger.info(f"df_params before treatment:\n{df_params}")
 
             # Get all parameters in one call
@@ -598,6 +622,9 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 if param_name == 'NUM_DIAS_CONS':
                     algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
+
+            algorithm_treatment_params['start_date'] = start_date
+            algorithm_treatment_params['end_date'] = end_date
             self.logger.info(f"Treating parameters completed successfully")
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name
