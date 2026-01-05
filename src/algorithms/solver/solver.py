@@ -122,7 +122,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 20  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -393,7 +393,7 @@ def solve(
 
                 if contingente_domingos:
                     if contingente_domingos[w] is not None and len(contingente_domingos[w]) > 0:
-                        domingos_compensaçao = [v for v in contingente_domingos[w] if solver.Value(v) == 1]
+                        domingos_compensaçao = [v.Name() for v in contingente_domingos[w] if solver.Value(v) == 1]
                         if sunday_half_day == True:
                             for i in sun[w]:
                                 domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")

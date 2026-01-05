@@ -237,15 +237,16 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
     weeks_added = 0
     current_week = special_day_week
 
-    while weeks_added < week_compensation_limit and current_week < 53:
+    while weeks_added < week_compensation_limit and current_week < len(week_to_days):
         current_week += 1
 
         week_days = set(week_to_days.get(current_week, []))
 
         all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
 
-        available_days = working_days.intersection(week_days - all_days_off)
-        if sorted(available_days)[0] >= period[1]:
+        available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1]}
+        print(available_days)
+        if sorted(week_days)[0] >= period[1]:
             break
         if len(available_days) > 0:
             weeks_added += 1

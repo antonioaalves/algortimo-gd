@@ -189,7 +189,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables
     print(possible_compensation_days)
-    exit(0)
+
     all_comp_day_vars = {}
     comp_day_usage = {}
     contingent = {}
