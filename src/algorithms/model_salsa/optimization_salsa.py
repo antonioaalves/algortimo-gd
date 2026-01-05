@@ -199,11 +199,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_deficit_day=0 
     deficit_day_weight=int( scale*percentage_of_importance_deficit_day/number_of_deficit_day_worst_scenario )
     
+    number_free_days_exceeded_worst_case_scenario= 5 
     if len(workers) >= 6:
         free_days_per_day_worst_case_scenario= len(workers)//2
-        number_free_days_exceeded_worst_case_scenario= 5 
         percentage_of_total_exceeded_days_weight=1 
     if len(workers) <6:
+        free_days_per_day_worst_case_scenario= 2
         percentage_of_total_exceeded_days_weight=0    
     total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_exceeded_worst_case_scenario)
     

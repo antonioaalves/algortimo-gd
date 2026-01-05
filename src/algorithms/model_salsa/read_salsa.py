@@ -345,7 +345,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             shift_M[w] = set(worker_calendar[worker_calendar['horario'] == 'M']['index'].tolist())
             shift_T[w] = set(worker_calendar[worker_calendar['horario'] == 'T']['index'].tolist())
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
-            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'] == 'L']['index'].tolist())
+            fixed_days_off[w] = set(worker_calendar[(worker_calendar['horario'] == 'L') | (worker_calendar['horario'] == 'C')]['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             empty_days[w] = set(worker_calendar[worker_calendar['horario'] == '-']['index'].tolist())
             vacation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'V']['index'].tolist())
