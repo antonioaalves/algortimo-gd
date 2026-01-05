@@ -147,7 +147,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
-        for d in [day for day in sundays if day in working_days[w] - off - LQs and day not in holidays]:
+        for d in [day for day in sundays if day in working_days[w] - off - LQs and day not in holidays and period[0] <= day < period[1]]:
             # Create a boolean variable to track if the worker worked on this special day
             worked_special_day = model.NewBoolVar(f'worked_special_day_{w}_{d}')
             worked_sundays[w][d] = worked_special_day
@@ -167,7 +167,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w],
                                                                       week_to_days, week_compensation_limit.get(w, 2), working_days[w], period)
             
-        for d in ld_counter(shift_T, shift_M, fixed_ld, period, holidays):
+        for d in ld_counter(shift_T, shift_M, fixed_ld, period, sundays):
             worked_special_day = model.NewBoolVar(f'worked_special_day_{w}_{d}')
             worked_sundays[w][d] = worked_special_day
             special_day_shift_vars = [shift.get((w, d, s)) for s in working_shift if (w, d, s) in shift]
@@ -188,10 +188,12 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
 
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables
+    print(possible_compensation_days)
+    exit(0)
     all_comp_day_vars = {}
     comp_day_usage = {}
     contingent = {}
-    for w in workers:        
+    for w in workers:   
         # Initialize the compensation day usage tracking for this worker
         comp_day_usage[w] = {}
         contingent[w] = []

@@ -42,10 +42,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
         start_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
-        end_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
+        end_date = pd.to_datetime(algorithm_treatment_params['end_date']).dayofyear
         period = [start_date, end_date]
 
-        logger.info(f"Start and end Time:")
+        logger.info(f"Period Start and end Time:")
         logger.info(f"Start: {start_date}")
         logger.info(f"End: {end_date}")
 
@@ -64,6 +64,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         else:
             sunday_half_day = False
             ld_sunday = int(ld_sunday)
+        ld_sunday = int(1) #testttiiinngggg, nao pode ir assim
+        ld_holiday = int(0) #testttiiinngggg, nao pode ir assim
         logger.info("Required Compensation Days loaded:")
         logger.info(f"  - Holiday Compensation Days: {ld_holiday} and half day: {holiday_half_day}")
         logger.info(f"  - Sunday Compensation Days: {ld_sunday} and half day: {sunday_half_day}")
@@ -332,6 +334,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
+        period = [start_date + min_day_year - 1, end_date + min_day_year - 1]
+        logger.info(f"Adapted and Final Period Start and end Time:")
+        logger.info(f"Start: {period[0]}")
+        logger.info(f"End: {period[1]}")
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}

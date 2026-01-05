@@ -405,7 +405,8 @@ def solve(
                     'LQ_count': lq_count,
                     'LD_count': ld_count,
                     'special_days_worked': special_days_count,
-                    'unassigned_days': unassigned_days
+                    'sundays_worked': len(sun[w]),
+                    'unassigned_days': unassigned_days,
                 }
                 
                 table_data.append(worker_row)
@@ -415,7 +416,7 @@ def solve(
                 #    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
                                     
             except Exception as e:
-                logger.error(f"Error processing worker {w}: {str(e)}")
+                logger.error(f"Error processing worker {w}: {e}")
                 continue                  
         logger.info(f"Successfully processed {processed_workers} workers")
         
