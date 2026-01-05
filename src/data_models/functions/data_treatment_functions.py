@@ -1035,7 +1035,7 @@ def set_tipo_contrato_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: 
             params_contrato = pd.DataFrame({
                 'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
                 'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
-                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 6, 6]
+                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
             })
 
             df_colaborador = pd.merge(
@@ -1786,8 +1786,8 @@ def add_l_dom_to_df_colaborador(
         # Used by Salsa
         elif use_case == 1:
             # Calculate full-year l_dom values (no date adjustments here - those are done in date_adjustments_to_df_colaborador)
-            # First mask
-            mask_6_bd = (df_result['tipo_contrato'] == 6) & (df_result['convenio'] == convenio_bd)
+            # First mask - handle contract types 6 and 8
+            mask_6_bd = (df_result['tipo_contrato'].isin([6, 8])) & (df_result['convenio'] == convenio_bd)
             if mask_6_bd.any():
                 df_result.loc[mask_6_bd, 'l_dom'] = num_sundays - df_result.loc[mask_6_bd, 'dyf_max_t']
 
@@ -2836,7 +2836,13 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
                 logger.info("No day-off or no-work records found, returning original df_calendario")
                 return True, df_result, ""
             
+            # Ensure employee_id types match (convert to string for consistent matching)
+            df_result['employee_id'] = df_result['employee_id'].astype(str)
+            df_dayoffs['employee_id'] = df_dayoffs['employee_id'].astype(str)
+            
             # Ensure schedule_day is in string format for matching
+            if df_result['schedule_day'].dtype != 'object':
+                df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day']).dt.strftime('%Y-%m-%d')
             if df_dayoffs['schedule_day'].dtype != 'object':
                 df_dayoffs['schedule_day'] = pd.to_datetime(df_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
             
