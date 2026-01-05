@@ -145,7 +145,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     deficit_weight=int(scale*percentage_of_importance_no_deficit/deficit_min_worst_scenario)
 
     no_workers_min_worst_scenario=1
-    percentage_of_importance_workers=0
+    percentage_of_importance_workers=3
     no_workers_weight=int(scale*percentage_of_importance_workers/no_workers_min_worst_scenario)
 
     sundays_diff_min_worst_scenario=2
@@ -179,8 +179,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_consistent_number_of_weeks=0
     inconsistent_number_of_weeks_weight=int(scale*percentage_of_importance_consistent_number_of_weeks/inconsistent_number_of_weeks_min_worst_scenario)
 
+    weekly_diff_min_worst_scenario= 52*4 #number of weeks*hours
+    percentage_of_importance_weekly_diff=0
+    weekly_diff_weight=int(scale*percentage_of_importance_weekly_diff/weekly_diff_min_worst_scenario)
+
     no_key_shift_min_worst_scenario=1
-    percentage_of_importance_key=2
+    percentage_of_importance_key=3
     no_key_weight=int(scale*percentage_of_importance_key/no_key_shift_min_worst_scenario)
 
     same_free_day_manager_min_worst_scenario= 3    
@@ -199,12 +203,13 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_deficit_day=0 
     deficit_day_weight=int( scale*percentage_of_importance_deficit_day/number_of_deficit_day_worst_scenario )
     
+    number_free_days_exceeded_worst_case_scenario= 5 
     if len(workers) >= 6:
         free_days_per_day_worst_case_scenario= len(workers)//2
-        number_free_days_exceeded_worst_case_scenario= 5 
         percentage_of_total_exceeded_days_weight=1 
     if len(workers) <6:
-        percentage_of_total_exceeded_days_weight=0    
+        percentage_of_total_exceeded_days_weight=0
+        free_days_per_day_worst_case_scenario= 2
     total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_exceeded_worst_case_scenario)
     
     day_deficit_hours_worst_case_scenario=8 #in a shift
@@ -348,7 +353,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             model.Add(daily_deficit[d] >= worst_case + 1).OnlyEnforceIf(b)
             model.Add(daily_deficit[d] <= worst_case).OnlyEnforceIf(b.Not())
 
-
     for c, (_, weight) in deficit_cases.items():
 
         num_days = model.NewIntVar(
@@ -362,6 +366,46 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
         objective_terms.append(num_days * weight)
 
+    # ===============================
+    # 1.5.  Diferença absoluta por semana, ignorando semanas sem excesso ou déficit
+    # ===============================
+    
+
+    weekly_diff_vars = []
+
+    for week, days in week_to_days.items():
+        week_excess_vars = [excess for (d, s, excess) in excess_diff_vars if d in days]
+        week_deficit_vars = [deficit for (d, s, deficit) in deficit_diff_vars if d in days]
+
+        # Ignora semanas sem excesso ou déficit
+        if not week_excess_vars or not week_deficit_vars:
+            diff_var = model.NewIntVar(0, 0, f'week_{week}_diff_abs')
+            weekly_diff_vars.append(diff_var)
+            continue
+        # Limites seguros
+        max_excess_limit = 1000  # ou algum valor alto seguro
+        max_deficit_limit = 1000
+
+        # Maior excesso e menor déficit
+        max_excess = model.NewIntVar(0, max_excess_limit, f'week_{week}_max_excess')
+        model.AddMaxEquality(max_excess, week_excess_vars)
+
+        min_deficit = model.NewIntVar(0, max_deficit_limit, f'week_{week}_min_deficit')
+        model.AddMinEquality(min_deficit, week_deficit_vars)
+
+        # Diferença absoluta
+        diff_var = model.NewIntVar(0, max_excess_limit + max_deficit_limit, f'week_{week}_diff_abs')
+        safe_limit = len(workers) * 8 * len(real_working_shift)  # ou outro valor que garanta cobertura
+        temp_diff = model.NewIntVar(-2*safe_limit, 2*safe_limit, f'week_{week}_temp_diff')
+        model.Add(temp_diff == max_excess - min_deficit)
+        model.AddAbsEquality(diff_var, temp_diff)
+
+        weekly_diff_vars.append(diff_var)
+
+    total_weekly_diff = model.NewIntVar(0, len(weekly_diff_vars)*1000, 'total_weekly_diff')
+    model.Add(total_weekly_diff == sum(weekly_diff_vars))
+    if percentage_of_importance_weekly_diff>0:
+        objective_terms.append(total_weekly_diff * weekly_diff_weight)
 
     # 2 No workers in a day
     
