@@ -519,7 +519,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         # soma total de dias relevantes
     model.Add(total_exceeded_days == sum(exceeded[d] for d in days_of_year_working))
 
-    # adicionar ao objetivo
+    
     if total_exceeded_days_weight > 0:
         objective_terms.append(total_exceeded_days * total_exceeded_days_weight)
 
@@ -647,7 +647,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             sunday_difference * total_sunday_imbalance_weight
         )
 
-    #6.3 Control the periodicity of excessive free Sundays
+    #6.3 Control the periodicity of free Sundays
     
     excess_free_sundays_per_worker = {}
 
