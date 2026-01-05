@@ -161,13 +161,13 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     no_consec_free_days_weight=int(scale*percentage_of_importance_consec_free_days/no_consec_free_days_min_worst_scenario)
 
     sunday_imbalance_per_semeste_min_worst_scenario=2
-    percentage_of_importance_sunday_balance=1
+    percentage_of_importance_sunday_balance=0
     sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
     sunday_imbalance_weight_average=int(math.ceil(sunday_imbalance_weight/len(workers_not_complete)))
     total_sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
 
     sunday_imbalance_weight_periodicity_min_worst_scenario=1
-    percentage_of_importance_sunday_imbalance_weight_periodicity=1
+    percentage_of_importance_sunday_imbalance_weight_periodicity=2
     sunday_imbalance_weight_periodicity=int(scale*percentage_of_importance_sunday_imbalance_weight_periodicity/sunday_imbalance_weight_periodicity_min_worst_scenario)
 
     LQ_imbalance_per_semeste_min_worst_scenario=1
@@ -599,7 +599,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
         model.Add(semester_diff == max_free_sundays - min_free_sundays)
         
-        objective_terms.append(semester_diff*sunday_imbalance_weight_average)  
+        if percentage_of_importance_sunday_balance>0:
+            objective_terms.append(semester_diff*sunday_imbalance_weight_average)  
 
 
     #6.1 Control the worst-case outcome sundays
@@ -634,8 +635,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     max_diff_worker = model.NewIntVar(0, len(sundays), "max_diff_worker")
     model.AddMaxEquality(max_diff_worker, diff_per_worker)
 
-    
-    objective_terms.append(max_diff_worker * sunday_imbalance_weight)  
+    if percentage_of_importance_sunday_balance>0:
+        objective_terms.append(max_diff_worker * sunday_imbalance_weight)  
 
     
     # 6.2 Balancing Sundays across the year (global)
@@ -694,7 +695,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     model.Add(sunday_difference == max_sundays - min_sundays)
 
 
-    if sunday_imbalance_weight_average > 0:
+    if percentage_of_importance_sunday_balance > 0:
         objective_terms.append(
             sunday_difference * total_sunday_imbalance_weight
         )
