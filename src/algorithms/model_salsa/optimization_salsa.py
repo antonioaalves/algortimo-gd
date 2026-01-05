@@ -91,6 +91,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     days_of_year_real= [d for d in days_of_year if year_range[0] <= d <= year_range[1] and d not in closed_holidays]
     days_of_year_working= [d for d in days_of_year if d not in closed_holidays]
     workers_not_complete = [w for w in workers if w not in workers_complete_cycle]
+    if len(workers_not_complete) < 1:
+        workers_not_complete = 1
 
     n = int(len(days_of_year_real) / 6)
 
@@ -126,6 +128,9 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         pessObj.get((d, s), 0)
         for d in days_of_year_working
         for s in real_working_shift)
+    if excess_min_worst_scenario < 1:
+        logger.error(f" Estimativas a virem vazias ao longo do ano todo! {excess_min_worst_scenario}")
+        excess_min_worst_scenario = 0.1
     percentage_of_importance_no_excess=0 
     excess_weight=int(scale*percentage_of_importance_no_excess/excess_min_worst_scenario)
 
@@ -133,6 +138,9 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         pessObj.get((d, s), 0)
         for d in days_of_year_working
         for s in real_working_shift)
+    if deficit_min_worst_scenario < 1:
+        logger.error(f" Estimativas a virem vazias ao longo do ano todo! {deficit_min_worst_scenario}")
+        deficit_min_worst_scenario = 0.1
     percentage_of_importance_no_deficit=3
     deficit_weight=int(scale*percentage_of_importance_no_deficit/deficit_min_worst_scenario)
 
@@ -810,7 +818,9 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                 if same_free_day_keyholders_weight>0:     
                     objective_terms.append(free_keyholders*same_free_day_keyholders_weight)   
                  
-    
+
+    model.Minimize(sum(objective_terms))
+
     return optimization_details
 
 
