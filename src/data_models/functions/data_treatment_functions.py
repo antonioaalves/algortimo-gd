@@ -399,47 +399,13 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, case_type: 
             logger.warning(f"Type conversion failed: {e}")
             return False, pd.DataFrame(), f"Type conversion failed: {e}"
 
-        # Transform LQ on Saturday to L if no L/C on following Sunday
+        # Transform all LQ to L
         try:
-            if 'horario' in df_calendario_passado.columns and 'schedule_day_dt' in df_calendario_passado.columns and 'employee_id' in df_calendario_passado.columns:
-                # Identify Saturday rows with LQ
-                saturday_mask = df_calendario_passado['schedule_day_dt'].dt.dayofweek == 5  # 5 = Saturday
-                lq_mask = df_calendario_passado['horario'] == 'LQ'
-                saturday_lq_mask = saturday_mask & lq_mask
-                
-                if saturday_lq_mask.any():
-                    logger.info(f"Found {saturday_lq_mask.sum()} LQ entries on Saturdays, checking for L/C on following Sundays")
-                    
-                    # Create a lookup: (employee_id, date) -> set of horario values for that day
-                    # This handles multiple rows per employee-date (e.g., different tipo_turno)
-                    employee_date_horario = df_calendario_passado.groupby(['employee_id', 'schedule_day_dt'])['horario'].apply(set).reset_index()
-                    employee_date_horario['schedule_day_dt'] = pd.to_datetime(employee_date_horario['schedule_day_dt'])
-                    
-                    # Create a dictionary for fast lookup: (employee_id, date) -> set of horario values
-                    lookup_dict = {}
-                    for _, row in employee_date_horario.iterrows():
-                        key = (str(row['employee_id']), row['schedule_day_dt'])
-                        lookup_dict[key] = row['horario']
-                    
-                    # Process each Saturday LQ row
-                    conversions_count = 0
-                    for idx in df_calendario_passado[saturday_lq_mask].index:
-                        row = df_calendario_passado.loc[idx]
-                        employee_id = str(row['employee_id'])
-                        saturday_date = row['schedule_day_dt']
-                        sunday_date = saturday_date + pd.Timedelta(days=1)
-                        
-                        # Check if Sunday has L or C for this employee (check all rows for that employee-date)
-                        lookup_key = (employee_id, sunday_date)
-                        sunday_horarios = lookup_dict.get(lookup_key, set())
-                        
-                        # If Sunday doesn't have L or C, convert LQ to L
-                        if not (sunday_horarios & {'L', 'C'}):
-                            df_calendario_passado.at[idx, 'horario'] = 'L'
-                            conversions_count += 1
-                    
-                    if conversions_count > 0:
-                        logger.info(f"Converted {conversions_count} LQ entries to L (Saturday without L/C on following Sunday)")
+            if 'horario' in df_calendario_passado.columns:
+                lq_count = (df_calendario_passado['horario'] == 'LQ').sum()
+                if lq_count > 0:
+                    df_calendario_passado.loc[df_calendario_passado['horario'] == 'LQ', 'horario'] = 'L'
+                    logger.info(f"Converted {lq_count} LQ entries to L")
         except Exception as e:
             logger.warning(f"LQ to L transformation failed: {e}")
             # Don't fail the whole function, just log the warning
