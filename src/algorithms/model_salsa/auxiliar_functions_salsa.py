@@ -247,7 +247,11 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
         available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1]}
         print(available_days)
         if sorted(week_days)[0] >= period[1]:
-            break
+            if compensation_days:
+                break
+            else:
+                available_days = {d for d in working_days.intersection(week_days - all_days_off)}
+
         if len(available_days) > 0:
             weeks_added += 1
             compensation_days.extend(available_days)
