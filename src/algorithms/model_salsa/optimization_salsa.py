@@ -187,12 +187,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_key=3
     no_key_weight=int(scale*percentage_of_importance_key/no_key_shift_min_worst_scenario)
 
-    same_free_day_manager_min_worst_scenario= 3    
-    percentage_of_importance_managers=0
+    same_free_day_manager_min_worst_scenario=1    
+    percentage_of_importance_managers=1
     same_free_day_manager_weight=int(scale*percentage_of_importance_managers/same_free_day_manager_min_worst_scenario)
 
-    same_free_day_keyholders_min_worst_scenario= 3  # This includes the managers  
-    percentage_of_importance_keyholders=0
+    same_free_day_keyholders_min_worst_scenario=1   
+    percentage_of_importance_keyholders=1
     same_free_day_keyholders_weight=int(scale*percentage_of_importance_keyholders/same_free_day_keyholders_min_worst_scenario)
 
     excess_and_deficit_worst_scenario=4
@@ -367,10 +367,57 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(num_days * weight)
 
     # ===============================
-    # 1.5.  Diferença absoluta por semana, ignorando semanas sem excesso ou déficit
+    # 1.5.  Diferença absoluta por semana
     # ===============================
-    
 
+
+    #biweekly_diff_vars = []
+    #sorted_weeks = sorted(week_to_days.keys())
+    #safe_limit = len(workers) * 8 * len(real_working_shift)
+
+    #for i in range(len(sorted_weeks) - 1):
+    #    w1, w2 = sorted_weeks[i], sorted_weeks[i + 1]
+    #    days = set(week_to_days[w1] + week_to_days[w2])
+
+    #    excess_vars = [ex for (d, s, ex) in excess_diff_vars if d in days]
+    #    deficit_vars = [df for (d, s, df) in deficit_diff_vars if d in days]
+    #    neg_deficit_vars = [-df for df in deficit_vars]
+        # lista completa
+    #    window_vars = excess_vars + neg_deficit_vars
+    #    if not window_vars:
+    #        diff_var = model.NewIntVar(0, 0, f'biweek_{w1}_{w2}_diff')
+    #        biweekly_diff_vars.append(diff_var)
+    #        continue
+
+        # detectar zeros de excesso e max de déficit
+    #    max_excess = max(excess_vars) if excess_vars else 0
+    #    any_excess_zero = any(ex == 0 for ex in excess_vars)
+    #    any_deficit = any(df > 0 for df in deficit_vars)
+
+        # Determinar min_var de forma compacta:
+        # se existir excesso zero e nenhum déficit → min = 0
+        # senão → min = min(window_vars)
+    #    if any_excess_zero and not any_deficit:
+    #        min_var_val = 0
+    #    else:
+    #        min_var_val = min(window_vars)
+
+    #    max_var_val = max(window_vars)
+    #    diff_var = model.NewIntVar(0, 2 * safe_limit, f'biweek_{w1}_{w2}_diff')
+
+        # fixar diff_var = max_var - min_var
+    #    model.Add(diff_var == max_var_val - min_var_val)
+
+    #    biweekly_diff_vars.append(diff_var)
+
+    # soma total
+    #total_biweekly_diff = model.NewIntVar(0, len(biweekly_diff_vars) * safe_limit, 'total_biweekly_diff')
+    #model.Add(total_biweekly_diff == sum(biweekly_diff_vars))
+
+    #if percentage_of_importance_weekly_diff > 0:
+    #    objective_terms.append(total_biweekly_diff * weekly_diff_weight)
+
+   
     weekly_diff_vars = []
 
     for week, days in week_to_days.items():
@@ -500,7 +547,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
       
     list_of_consecutive_free_days_per_worker = []
     list_of_free_days_per_worker = []
-    is_free_dict = {} #new
+    is_free_dict = {} 
 
     for w in workers:
         consecutive_free_vars = []
@@ -512,7 +559,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             if (w,d,'L') in shift and (w,d,'LQ') in shift:
                 model.Add(is_free == shift[(w, d, 'L')] + shift[(w, d, 'LQ')])
                 free_day_vars.append(is_free)
-                is_free_dict[(w, d)] = is_free #new
+                is_free_dict[(w, d)] = is_free 
 
             
             if d+1 in working_days[w] and (w,d + 1,'L') in shift and (w,d + 1,'LQ') in shift:
@@ -685,7 +732,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     model.AddMaxEquality(max_sundays, sundays_per_part)
     model.AddMinEquality(min_sundays, sundays_per_part)
 
-
     
     sunday_difference = model.NewIntVar(
         0,
@@ -852,18 +898,15 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     workers_with_key=managers+keyholders 
 
     for d in days_of_year_working:
-        for s in real_working_shift:
-            if pessObj.get((d, s), 0)>0:
-                free_manager=model.NewIntVar(0, len(managers), f"free_managers_{d}_{s}")
-                model.Add(free_manager==sum([shift[(w, d, s)].Not() for w in managers if (w,d,s) in shift]))
-                free_keyholders=model.NewIntVar(0, len(keyholders), f"free_keyholders_{d}_{s}")
-                model.Add(free_keyholders==sum([shift[(w, d, s)].Not() for w in keyholders if (w,d,s) in shift]))
-                if same_free_day_manager_weight>0:
+                free_manager=model.NewIntVar(0, len(managers), f"free_managers_{d}")
+                model.Add(free_manager==sum([shift[(w, d, s)] for w in managers for s in ['L', 'LQ', 'LD'] if (w,d,s) in shift]))
+                free_keyholders=model.NewIntVar(0, len(keyholders), f"free_keyholders_{d}")
+                model.Add(free_keyholders==sum([shift[(w, d, s)] for w in keyholders for s in ['L', 'LQ', 'LD'] if (w,d,s) in shift]))
+                if percentage_of_importance_managers>0:
                     objective_terms.append(free_manager*same_free_day_manager_weight)  
-                if same_free_day_keyholders_weight>0:     
-                    objective_terms.append(free_keyholders*same_free_day_keyholders_weight)   
+                if percentage_of_importance_keyholders>0:     
+                    objective_terms.append(free_keyholders*same_free_day_keyholders_weight)  
                  
-
     model.Minimize(sum(objective_terms))
 
     return optimization_details
