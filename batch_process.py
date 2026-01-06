@@ -3,10 +3,13 @@
 
 import time
 import os
+import cx_Oracle
 import click
 import sys
 from typing import Dict, Any
 from datetime import datetime
+
+
 
 # Import base_data_project components
 from base_data_project.log_config import setup_logger, get_logger

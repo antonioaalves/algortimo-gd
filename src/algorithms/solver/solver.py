@@ -263,7 +263,6 @@ def solve(
 
                 logger.debug(f"Processing worker {w}")
 
-                day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -292,14 +291,13 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        time_worked_day_T[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_T[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
                             special_days_worked[w].append(d)
-                        time_worked_day_M[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_M[d - 1] += work_day_hours[w].get(d, 8)
 
-                    day_counter += 1
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
@@ -338,7 +336,6 @@ def solve(
 
                 logger.debug(f"Processing worker {w}")
 
-                day_counter = 0
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -367,14 +364,13 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        time_worked_day_T_after[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
                             special_days_worked[w].append(d)
-                        time_worked_day_M_after[day_counter] += work_day_hours[w][day_counter]
+                        time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
 
-                    day_counter += 1
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 

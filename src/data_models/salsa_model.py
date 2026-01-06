@@ -596,6 +596,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             algorithm_treatment_params = self.algorithm_treatment_params
             params_names_list = self.config_manager.parameters.get_parameter_names()
             params_defaults = self.config_manager.parameters.get_parameter_defaults()
+            start_date = self.external_call_data['start_date']
+            end_date = self.external_call_data['end_date']
             self.logger.info(f"df_params before treatment:\n{df_params}")
 
             # Get all parameters in one call
@@ -620,6 +622,9 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 if param_name == 'NUM_DIAS_CONS':
                     algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
+
+            algorithm_treatment_params['start_date'] = start_date
+            algorithm_treatment_params['end_date'] = end_date
             self.logger.info(f"Treating parameters completed successfully")
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name
