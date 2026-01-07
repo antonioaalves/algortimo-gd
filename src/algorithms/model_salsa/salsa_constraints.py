@@ -59,6 +59,7 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
     all_comp_day_vars = {}
     comp_day_usage = {}
     contingent = {}
+    total_worked_holidays_everyone = {}
     for w in workers:
         # Initialize the compensation day usage tracking for this worker
         comp_day_usage[w] = {}
@@ -130,12 +131,13 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
             else:
                 model.Add(worked_holidays[w][d] == 0)
         # Total worked holidays
-        total_worked_holidays = sum(worked_holidays[w].values())
+        total_worked_holidays_everyone[w] = sum(worked_holidays[w].values())
         # Total compensation days used
         total_comp_days_used = sum(comp_day_usage[w].values())
+         
         # Enforce equality: number of LDs == number of worked holidays
-        model.Add(total_comp_days_used == total_worked_holidays * ammount)
-    return contingent
+        model.Add(total_comp_days_used == total_worked_holidays_everyone[w] * ammount)
+    return contingent, total_worked_holidays_everyone
 
 def sunday_compensation_days(model, shift, workers, working_days, sundays, week_to_days, working_shift, week_compensation_limit,
                              fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, holidays, period, shift_T, shift_M, fixed_ld):
@@ -188,11 +190,11 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
 
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables
-    print(possible_compensation_days)
 
     all_comp_day_vars = {}
     comp_day_usage = {}
     contingent = {}
+    total_worked_sundays_everyone = {}
     for w in workers:   
         # Initialize the compensation day usage tracking for this worker
         comp_day_usage[w] = {}
@@ -260,13 +262,19 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
             else:
                 model.Add(worked_sundays[w][sunday] == 0)
         # Total worked holidays
-        total_worked_holidays = sum(worked_sundays[w].values())
+        total_worked_sundays_everyone[w] = sum(worked_sundays[w].values())
         # Total compensation days used
         total_comp_days_used = sum(comp_day_usage[w].values())
         # Enforce equality: number of LDs == number of worked holidays
-        model.Add(total_comp_days_used == total_worked_holidays * ammount)
-    return contingent
+        model.Add(total_comp_days_used == total_worked_sundays_everyone[w] * ammount)
+    return contingent, total_worked_sundays_everyone
 
+def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, total_worked_holidays_everyone, total_worked_sundays_everyone):
+    for w in workers:
+        if total_worked_holidays_everyone and total_worked_sundays_everyone:
+            if total_worked_holidays_everyone[w] and total_worked_sundays_everyone[w]:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol + total_worked_sundays_everyone[w] * ammount_sun)
+    #falta proteger para caso as variaveis nao existam!!
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
