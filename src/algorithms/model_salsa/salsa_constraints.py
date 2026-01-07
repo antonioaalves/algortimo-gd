@@ -112,6 +112,7 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
         total_worked_holidays = sum(worked_holidays[w].values())
         # Total compensation days used
         total_comp_days_used = sum(comp_day_usage[w].values())
+         
         # Enforce equality: number of LDs == number of worked holidays
         model.Add(total_comp_days_used == total_worked_holidays)
 

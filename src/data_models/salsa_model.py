@@ -1499,7 +1499,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Core dataframes validation failed: {error_msg}")
                     return False, "errValidation", error_msg
                     
-                self.logger.info("Core dataframes validation passed ✓")
+                self.logger.info("Core dataframes validation passed ")
             except Exception as e:
                 self.logger.error(f"Error validating core dataframes: {e}", exc_info=True)
                 return False, "errValidation", str(e)

@@ -37,12 +37,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
+        matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
 
         start_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
-        end_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
+        end_date = pd.to_datetime(algorithm_treatment_params['end_date']).dayofyear
         period = [start_date, end_date]
 
         logger.info(f"Start and end Time:")
@@ -186,20 +187,19 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['index'].unique().tolist())
 
-        holidays = sorted(matriz_calendario_gd[
-            (matriz_calendario_gd['wd'] != 'Sun') & 
-            (matriz_calendario_gd["dia_tipo"] == "domYf")
+        holidays = sorted(matriz_feriados_gd[
+            (matriz_feriados_gd['tipo_feriado'] == 'A')
         ]['index'].unique().tolist())
         
-        closed_holidays = set(matriz_calendario_gd[
-            matriz_calendario_gd['horario'] == "F"
+        closed_holidays = set(matriz_feriados_gd[
+            (matriz_feriados_gd['tipo_feriado'] == 'F')
         ]['index'].unique().tolist())
-        
         special_days = sorted(set(holidays))
 
         logger.info(f"Special days identified:")
         logger.info(f"  - Sundays: {len(sundays)} days")
         logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
+        logger.info(f"  - Holidays: {holidays} days")
         logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
         logger.info(f"  - Total special days: {len(special_days)} days")
 
@@ -315,6 +315,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
+        period = [start_date + min_day_year - 1, end_date + min_day_year - 1]
+        logger.info(f"Adapted and Final Period Start and end Time:")
+        logger.info(f"Start: {period[0]}")
+        logger.info(f"End: {period[1]}")
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}
