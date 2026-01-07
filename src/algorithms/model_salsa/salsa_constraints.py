@@ -114,6 +114,8 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
         total_comp_days_used = sum(comp_day_usage[w].values())
         # Enforce equality: number of LDs == number of worked holidays
         model.Add(total_comp_days_used == total_worked_holidays)
+        model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays)
+        
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift

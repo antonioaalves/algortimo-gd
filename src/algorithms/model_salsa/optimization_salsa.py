@@ -1,4 +1,6 @@
 
+#from multiprocessing import managers
+#from pyexpat import model
 from pyexpat import model
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config
@@ -8,7 +10,7 @@ import numpy as np
 import math 
 
 
-def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, real_working_shift, shift, pessObj, working_days, closed_holidays, min_workers,max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range):
+def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, real_working_shift, shift, pessObj, working_days, closed_holidays, min_workers,max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range, managers, keyholders):
 
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -134,7 +136,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_no_excess=0 
     excess_weight=int(scale*percentage_of_importance_no_excess/excess_min_worst_scenario)
 
-    deficit_min_worst_scenario= (1/8) * sum(
+    deficit_min_worst_scenario=  (1/8)* sum(
         pessObj.get((d, s), 0)
         for d in days_of_year_working
         for s in real_working_shift)
@@ -145,15 +147,15 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     deficit_weight=int(scale*percentage_of_importance_no_deficit/deficit_min_worst_scenario)
 
     no_workers_min_worst_scenario=1
-    percentage_of_importance_workers=3
+    percentage_of_importance_workers=3 
     no_workers_weight=int(scale*percentage_of_importance_workers/no_workers_min_worst_scenario)
 
     sundays_diff_min_worst_scenario=2
-    percentage_of_importance_sundays_equal=1
+    percentage_of_importance_sundays_equal=1 
     sundays_diff_weight=int(scale*percentage_of_importance_sundays_equal/sundays_diff_min_worst_scenario)
 
     LQs_diff_min_worst_scenario=1
-    percentage_of_importance_LQs_equal=1
+    percentage_of_importance_LQs_equal=1 
     LQs_diff_weight=int(scale*percentage_of_importance_LQs_equal/LQs_diff_min_worst_scenario)
 
     no_consec_free_days_min_worst_scenario=52*2*len(workers)
@@ -167,11 +169,11 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     total_sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
 
     sunday_imbalance_weight_periodicity_min_worst_scenario=1
-    percentage_of_importance_sunday_imbalance_weight_periodicity=2
+    percentage_of_importance_sunday_imbalance_weight_periodicity=2 
     sunday_imbalance_weight_periodicity=int(scale*percentage_of_importance_sunday_imbalance_weight_periodicity/sunday_imbalance_weight_periodicity_min_worst_scenario)
 
     LQ_imbalance_per_semeste_min_worst_scenario=1
-    percentage_of_importance_LQ_balance=1
+    percentage_of_importance_LQ_balance=1 
     LQ_imbalance_weight=int(scale*percentage_of_importance_LQ_balance/LQ_imbalance_per_semeste_min_worst_scenario)
     LQ_imbalance_weight_average=int(math.ceil(LQ_imbalance_weight/len(workers_not_complete)))
 
@@ -184,19 +186,19 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     weekly_diff_weight=int(scale*percentage_of_importance_weekly_diff/weekly_diff_min_worst_scenario)
 
     no_key_shift_min_worst_scenario=1
-    percentage_of_importance_key=3
+    percentage_of_importance_key=4 
     no_key_weight=int(scale*percentage_of_importance_key/no_key_shift_min_worst_scenario)
 
     same_free_day_manager_min_worst_scenario=1    
-    percentage_of_importance_managers=1
+    percentage_of_importance_managers=3 
     same_free_day_manager_weight=int(scale*percentage_of_importance_managers/same_free_day_manager_min_worst_scenario)
 
     same_free_day_keyholders_min_worst_scenario=1   
-    percentage_of_importance_keyholders=1
+    percentage_of_importance_keyholders=3 
     same_free_day_keyholders_weight=int(scale*percentage_of_importance_keyholders/same_free_day_keyholders_min_worst_scenario)
 
     excess_and_deficit_worst_scenario=4
-    percentage_of_importance_excess_and_deficit=1
+    percentage_of_importance_excess_and_deficit=1 
     excess_and_deficit_weight=int(scale*percentage_of_importance_excess_and_deficit/excess_and_deficit_worst_scenario)
 
     number_of_deficit_day_worst_scenario=5
@@ -206,49 +208,133 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     number_free_days_exceeded_worst_case_scenario= 5 
     if len(workers) >= 6:
         free_days_per_day_worst_case_scenario= len(workers)//2
-        percentage_of_total_exceeded_days_weight=1 
+        percentage_of_total_exceeded_days_weight=2  
     if len(workers) <6:
         percentage_of_total_exceeded_days_weight=0
-        free_days_per_day_worst_case_scenario= 2
+        free_days_per_day_worst_case_scenario= 2 
     total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_exceeded_worst_case_scenario)
     
     day_deficit_hours_worst_case_scenario=8 #in a shift
-    percentage_of_importance_day_deficit=2
+    percentage_of_importance_day_deficit=2 
     max_deficit_weight=int(scale*percentage_of_importance_day_deficit/day_deficit_hours_worst_case_scenario) 
 
     deficit_over_x_worst_case=8 #value of x in hours
-    percentage_of_importance_day_deficit_over_x=1
+    percentage_of_importance_day_deficit_over_x=1 
     num_days_deficit_over_x_worst_case= 100
     deficit_over_x_day_weight=int(scale*percentage_of_importance_day_deficit_over_x/num_days_deficit_over_x_worst_case)
  
     deficit_over_y_worst_case=12 #value of y in hours
-    percentage_of_importance_day_deficit_over_y=1
+    percentage_of_importance_day_deficit_over_y=1 
     num_days_deficit_over_y_worst_case= 50
     deficit_over_y_day_weight=int(scale*percentage_of_importance_day_deficit_over_y/num_days_deficit_over_y_worst_case)
 
     deficit_over_z_worst_case=16 #value of z in hours
-    percentage_of_importance_day_deficit_over_z=1
+    percentage_of_importance_day_deficit_over_z=1 
     num_days_deficit_over_z_worst_case= 15
     deficit_over_z_day_weight=int(scale*percentage_of_importance_day_deficit_over_z/num_days_deficit_over_z_worst_case)
 
     deficit_over_t_worst_case=20 #value of t in hours
-    percentage_of_importance_day_deficit_over_t=1
+    percentage_of_importance_day_deficit_over_t=1 
     num_days_deficit_over_t_worst_case= 5 
     deficit_over_t_day_weight=int(scale*percentage_of_importance_day_deficit_over_t/num_days_deficit_over_t_worst_case)
 
     deficit_over_k_worst_case=24 #value of k in hours
-    percentage_of_importance_day_deficit_over_k=1
+    percentage_of_importance_day_deficit_over_k=1 
     num_days_deficit_over_k_worst_case= 2
     deficit_over_k_day_weight=int(scale*percentage_of_importance_day_deficit_over_k/num_days_deficit_over_k_worst_case)
 
     deficit_over_q_worst_case=32 #value of q in hours
-    percentage_of_importance_day_deficit_over_q=1
+    percentage_of_importance_day_deficit_over_q=1 
     num_days_deficit_over_q_worst_case= 1
     deficit_over_q_day_weight=int(scale*percentage_of_importance_day_deficit_over_q/num_days_deficit_over_q_worst_case)
 
 
+
+     ####################################################
+
+
+     # 1. No managers/keyholders error
+
+    workers_with_key = managers + keyholders
+    print(managers)
+    print(keyholders)
+    print(workers_with_key)
+    list_shifts_no_keys = [] 
+
+    for d in days_of_year_working:
+        for s in real_working_shift:
+                eligible_keys = [
+                    shift[(w, d, s)]
+                    for w in workers_with_key
+                    if (w, d, s) in shift
+                ]
+
+                if eligible_keys:
+                    no_key = model.NewBoolVar(f"no_key_{d}_{s}")
+                    total_keys = model.NewIntVar(0, len(eligible_keys), f"total_keys_{d}_{s}")
+                    model.Add(total_keys == sum(eligible_keys))
+                    model.Add(total_keys == 0).OnlyEnforceIf(no_key)
+                    model.Add(total_keys >= 1).OnlyEnforceIf(no_key.Not())
+                    list_shifts_no_keys.append(no_key)
+
+    if list_shifts_no_keys:
+        objective_terms.append(sum(list_shifts_no_keys) * no_key_weight)
+
+
+        
+    # 2. Same free day assigned to managers/keyholders error      
+
+     
+        
+    for d in days_of_year_working:
+        free_manager = model.NewIntVar(0, len(managers), f"free_managers_{d}")
+        model.Add(
+            free_manager ==
+            sum(
+                shift[(w, d, s)]
+                for w in managers
+                for s in ['L', 'LQ', 'LD']
+                if (w, d, s) in shift
+            )
+        )
+
+        extra_free_managers = model.NewIntVar(
+            0, len(managers),
+            f"extra_free_managers_{d}"
+        )
+
+        model.Add(extra_free_managers >= free_manager - 1)
+        model.Add(extra_free_managers >= 0)
+
+        
+        objective_terms.append(extra_free_managers * same_free_day_manager_weight)
+
+      
+        free_keyholders = model.NewIntVar(0, len(keyholders), f"free_keyholders_{d}")
+        model.Add(
+            free_keyholders ==
+            sum(
+                shift[(w, d, s)]
+                for w in keyholders
+                for s in ['L', 'LQ', 'LD']
+                if (w, d, s) in shift
+            )
+        )
+
+        extra_free_keyholders = model.NewIntVar(
+            0, len(keyholders),
+            f"extra_free_keyholders_{d}"
+        )
+
+        model.Add(extra_free_keyholders >= free_keyholders - 1)
+        model.Add(extra_free_keyholders >= 0)
+
+        
+        objective_terms.append(extra_free_keyholders * same_free_day_keyholders_weight)
+    
+
     # ===============================
-    # 1.1 Excess and deficit per shift
+    # 3.1 Excess and deficit per shift
     # ===============================
 
     excess_diff_vars = []
@@ -273,7 +359,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     
     # ===============================
-    # 1.2. Daily totals
+    # 3.2. Daily totals
     # ===============================
 
     daily_deficit = {}
@@ -290,7 +376,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         model.Add(daily_excess[d]  == sum(excess for (dd, s, excess) in excess_diff_vars if dd == d))
 
     # ===============================
-    # 1.3. Max deficit across all shifts
+    # 3.3. Max deficit across all shifts
     # ===============================
 
     max_deficit = model.NewIntVar(0, max_daily_deficit_possible, 'max_deficit')
@@ -305,7 +391,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     objective_terms.append(max_deficit * max_deficit_weight)
 
     # ===============================
-    # 1.4. Day-level Booleans
+    # 3.4. Day-level Booleans
     # ===============================
 
     day_has_excess  = {}
@@ -367,7 +453,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(num_days * weight)
 
     # ===============================
-    # 1.5.  Diferença absoluta por semana
+    # 3.5.  Diferença absoluta por semana
     # ===============================
 
 
@@ -454,7 +540,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     if percentage_of_importance_weekly_diff>0:
         objective_terms.append(total_weekly_diff * weekly_diff_weight)
 
-    # 2 No workers in a day
+    # 4 No workers in a day
     
     zero_assigned_vars = []
     for d in days_of_year_working:
@@ -472,8 +558,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     if percentage_of_importance_workers>0:
         objective_terms.append(objective_zero * no_workers_weight)
 
-
-    # 3. Balancing number of sundays free days across the workers 
+   
+    # 5. Balancing number of sundays free days across the workers 
  
     for qi, workers_q in q_groups.items():
     
@@ -508,7 +594,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(sunday_diff_q * sundays_diff_weight)
 
 
-    # 4. Balancing number of LQ across the workers 
+    # 6. Balancing number of LQ across the workers 
 
     
     for qi, workers_q in q_groups.items():
@@ -543,7 +629,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(LQs_diff_q * LQs_diff_weight)
 
 
-    # 5. Not consecutive free days error 
+    # 7. Not consecutive free days error 
       
     list_of_consecutive_free_days_per_worker = []
     list_of_free_days_per_worker = []
@@ -588,34 +674,34 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(objective_consecutive_free_days*no_consec_free_days_weight)
 
 
-    # 5.1 Try not to assign too many free days on the same day with deficit. 
+    # 7.1 Try not to assign too many free days on the same day with deficit. 
     limit = free_days_per_day_worst_case_scenario
 
     total_exceeded_days = model.NewIntVar(0, len(days_of_year_working), "total_exceeded_days")
     exceeded = {}
 
     for d in days_of_year_working:
-        # total de free-days por dia
+
         free_count = model.NewIntVar(0, len(workers), f"free_count_day_{d}")
         free_vars_today = [is_free_dict[(w, d)] for w in workers if (w, d) in is_free_dict]
         model.Add(free_count == sum(free_vars_today))
 
-        # variável binária: free-days excedem o limite
+        
         free_exceeded = model.NewBoolVar(f"free_exceeded_day_{d}")
         model.Add(free_count >= limit + 1).OnlyEnforceIf(free_exceeded)
         model.Add(free_count <= limit).OnlyEnforceIf(free_exceeded.Not())
 
-        # variável binária: há déficit nesse dia
+        
         deficit_positive = model.NewBoolVar(f"deficit_positive_{d}")
         model.Add(daily_deficit[d] >= 1).OnlyEnforceIf(deficit_positive)
         model.Add(daily_deficit[d] <= 0).OnlyEnforceIf(deficit_positive.Not())
 
-        # exceeded[d] = 1 se free-days excedem E há déficit
+        
         exceeded[d] = model.NewBoolVar(f"exceeded_day_{d}")
         model.AddBoolAnd([free_exceeded, deficit_positive]).OnlyEnforceIf(exceeded[d])
         model.AddBoolOr([free_exceeded.Not(), deficit_positive.Not()]).OnlyEnforceIf(exceeded[d].Not())
 
-        # soma total de dias relevantes
+        
     model.Add(total_exceeded_days == sum(exceeded[d] for d in days_of_year_working))
 
     
@@ -623,7 +709,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(total_exceeded_days * total_exceeded_days_weight)
 
 
-    # 6. Balancing sundays across the year (average)
+    # 8. Balancing sundays across the year (average)
     
     parts = np.array_split(days_of_year_real, 12) 
     sunday_parts=[]
@@ -650,7 +736,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             objective_terms.append(semester_diff*sunday_imbalance_weight_average)  
 
 
-    #6.1 Control the worst-case outcome sundays
+    #8.1 Control the worst-case outcome sundays
     
     diff_per_worker = []
 
@@ -686,7 +772,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(max_diff_worker * sunday_imbalance_weight)  
 
     
-    # 6.2 Balancing Sundays across the year (global)
+    # 8.2 Balancing Sundays across the year (global)
    
     parts = np.array_split(days_of_year_real, 12)
 
@@ -746,7 +832,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             sunday_difference * total_sunday_imbalance_weight
         )
 
-    #6.3 Control the periodicity of free Sundays
+    # 8.3 Control the periodicity of free Sundays
     
     excess_free_sundays_per_worker = {}
 
@@ -793,7 +879,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     objective_terms.append(total_excess_free_sundays * sunday_imbalance_weight_periodicity)
        
 
-    # 7. Balancing LQ's across the year
+    # 9. Balancing LQ's across the year
 
     parts = np.array_split(days_of_year_real, 6) 
 
@@ -815,7 +901,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(semester_diff*LQ_imbalance_weight_average)  
 
 
-   # 7.1 Control the worst-case outcome LQs 
+   # 9.1 Control the worst-case outcome LQs 
 
     diff_per_worker_LQ = []
 
@@ -852,7 +938,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
             
         
-    # 8. Weeks of inconsistent shifts error
+    # 10. Weeks of inconsistent shifts error
 
     for w in workers:
         inconsistent_weeks=[]
@@ -876,36 +962,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             objective_terms.append(sum(inconsistent_weeks)*inconsistent_number_of_weeks_weight)   
             
 
-    # 9. No managers/keyholders error
-
-    workers_with_key=[w for w in workers if role_by_worker.get(w, "normal") in ["manager", "keyholder"]]
-    list_shifts_no_keys=[]
-    for d in days_of_year_working:
-        for s in real_working_shift:
-            if pessObj.get((d, s), 0)>0:
-                no_key=model.NewBoolVar(f"no_key_{d}_{s}")
-                model.AddBoolAnd([shift[(w, d, s)].Not() for w in workers_with_key if (w,d,s) in shift]).OnlyEnforceIf(no_key)
-                model.AddBoolOr([shift[(w, d, s)] for w in workers_with_key if (w,d,s) in shift]).OnlyEnforceIf(no_key.Not())
-                list_shifts_no_keys.append(no_key)
-
-    objective_terms.append(sum(list_shifts_no_keys)*no_key_weight)   
-
-        
-    # 10. Same free day assigned to managers/keyholders error      
-
-    managers=[w for w in workers if role_by_worker.get(w, "normal") =="manager"]
-    keyholders=[w for w in workers if role_by_worker.get(w, "normal") =="keyholder"]
-    workers_with_key=managers+keyholders 
-
-    for d in days_of_year_working:
-                free_manager=model.NewIntVar(0, len(managers), f"free_managers_{d}")
-                model.Add(free_manager==sum([shift[(w, d, s)] for w in managers for s in ['L', 'LQ', 'LD'] if (w,d,s) in shift]))
-                free_keyholders=model.NewIntVar(0, len(keyholders), f"free_keyholders_{d}")
-                model.Add(free_keyholders==sum([shift[(w, d, s)] for w in keyholders for s in ['L', 'LQ', 'LD'] if (w,d,s) in shift]))
-                if percentage_of_importance_managers>0:
-                    objective_terms.append(free_manager*same_free_day_manager_weight)  
-                if percentage_of_importance_keyholders>0:     
-                    objective_terms.append(free_keyholders*same_free_day_keyholders_weight)  
                  
     model.Minimize(sum(objective_terms))
 

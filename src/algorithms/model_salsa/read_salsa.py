@@ -42,7 +42,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
 
         start_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
-        end_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
+        end_date = pd.to_datetime(algorithm_treatment_params['end_date']).dayofyear
         period = [start_date, end_date]
 
         logger.info(f"Start and end Time:")
@@ -315,6 +315,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
+        period = [start_date + min_day_year - 1, end_date + min_day_year - 1]
+        logger.info(f"Adapted and Final Period Start and end Time:")
+        logger.info(f"Start: {period[0]}")
+        logger.info(f"End: {period[1]}")
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}
@@ -630,7 +634,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 keyholders.append(w)
 
         for w in workers_complete:
-            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
+            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["employee_id"] == w]
 
             if row.empty:
                 role = "normal"
@@ -792,6 +796,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "year_range": year_range,
             "unique_dates": unique_dates,
             "period": period,
+            "managers": managers,
+            "keyholders": keyholders,
             }
         
     except Exception as e:
