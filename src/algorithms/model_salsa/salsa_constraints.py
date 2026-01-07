@@ -69,11 +69,11 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
         for d in worked_holidays[w].keys():  # Use keys from worked_holidays[w] to ensure alignment
             if d in possible_compensation_days[w]:
                 all_possible_comp_days.update(possible_compensation_days[w][d])
-        for d in working_days[w]:
-            if period[0] <= d < period[1]:
-                if (w, d, 'LD') in shift:
-                    if d not in all_possible_comp_days:
-                        model.Add(shift[(w, d, 'LD')] == 0)  # Never allow LD outside compensation
+        #for d in working_days[w]:
+        #    if period[0] <= d < period[1]:
+        #        if (w, d, 'LD') in shift:
+        #            if d not in all_possible_comp_days:
+        #                model.Add(shift[(w, d, 'LD')] == 0)  # Never allow LD outside compensation
 
         # For each possible compensation day, create a variable indicating if it's used as a compensation day
         for comp_day in all_possible_comp_days:
@@ -270,11 +270,23 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
     return contingent, total_worked_sundays_everyone
 
 def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, total_worked_holidays_everyone, total_worked_sundays_everyone):
-    for w in workers:
-        if total_worked_holidays_everyone and total_worked_sundays_everyone:
-            if total_worked_holidays_everyone[w] and total_worked_sundays_everyone[w]:
+    if total_worked_holidays_everyone is not None and total_worked_sundays_everyone is not None:
+        for w in workers:
+            if w in total_worked_holidays_everyone and w in total_worked_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol + total_worked_sundays_everyone[w] * ammount_sun)
-    #falta proteger para caso as variaveis nao existam!!
+            elif w in total_worked_holidays_everyone:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol)
+            elif w in total_worked_sundays_everyone:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
+    elif total_worked_holidays_everyone is not None:
+        for w in workers:
+            if w in total_worked_holidays_everyone:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol)
+    elif total_worked_sundays_everyone is not None:
+        for w in workers:
+            if w in total_worked_sundays_everyone:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
+
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift

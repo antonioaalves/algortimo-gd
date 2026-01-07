@@ -65,7 +65,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             sunday_half_day = False
             ld_sunday = int(ld_sunday)
         ld_sunday = int(1) #testttiiinngggg, nao pode ir assim
-        ld_holiday = int(0) #testttiiinngggg, nao pode ir assim
+        ld_holiday = int(1) #testttiiinngggg, nao pode ir assim
         logger.info("Required Compensation Days loaded:")
         logger.info(f"  - Holiday Compensation Days: {ld_holiday} and half day: {holiday_half_day}")
         logger.info(f"  - Sunday Compensation Days: {ld_sunday} and half day: {sunday_half_day}")
@@ -614,7 +614,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Escolher a coluna onde vêm os códigos 1/2 (ou texto), por ordem de preferência
         role_col_data = ["prioridade_folgas"]
         role_col = next((c for c in role_col_data if c in matriz_colaborador_gd.columns), None)
-
         #if not role_col:
         #    logger.warning("Nenhuma coluna de nível encontrada entre %s. " "Todos tratados como 'normal'.", possible_role_cols)
         #    
@@ -630,7 +629,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 role = "normal"
             else:
                 raw = row.iloc[0].get(role_col)
-
                 # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
                 # 1 → manager ; 2 → keyholder ; vazio/outros → normal
                 if pd.isna(raw):
@@ -653,7 +651,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 keyholders.append(w)
 
         for w in workers_complete:
-            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
+            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["employee_id"] == w]
 
             if row.empty:
                 role = "normal"

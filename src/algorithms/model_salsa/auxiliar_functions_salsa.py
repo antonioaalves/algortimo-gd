@@ -245,7 +245,6 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
         all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
 
         available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1]}
-        print(available_days)
         if sorted(week_days)[0] >= period[1]:
             if compensation_days:
                 break

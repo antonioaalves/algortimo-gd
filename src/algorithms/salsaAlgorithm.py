@@ -427,6 +427,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
                 # Compensation days - check both country and config flag
                 contingente_f = []
+                total_worked_holidays_everyone = []
                 if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain" and ld_holiday > 0:
                     self.logger.info("Applying constraint: holiday_compensation_days (Spain-specific)")
                     contingente_f, total_worked_holidays_everyone = holiday_compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit,
@@ -437,6 +438,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     self.logger.warning("Skipping constraint: holiday_compensation_days (disabled in config)")
 
                 contingente_d = []
+                total_worked_sundays_everyone = []
                 if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain" and ld_sunday > 0:
                     self.logger.info("Applying constraint: sunday_compensation_days (Spain-specific)")
                     contingente_d, total_worked_sundays_everyone = sunday_compensation_days(model, shift, workers_complete, working_days, sundays, week_to_days, real_working_shift, week_compensation_limit, 
@@ -465,9 +467,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
 
-            optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj,
-                                             working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
+            optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift,
+                                                      pessObj, working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays,
+                                                      c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
 
             # =================================================================
             # SOLVE THE MODEL
