@@ -399,6 +399,17 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, case_type: 
             logger.warning(f"Type conversion failed: {e}")
             return False, pd.DataFrame(), f"Type conversion failed: {e}"
 
+        # Transform all LQ to L
+        try:
+            if 'horario' in df_calendario_passado.columns:
+                lq_count = (df_calendario_passado['horario'] == 'LQ').sum()
+                if lq_count > 0:
+                    df_calendario_passado.loc[df_calendario_passado['horario'] == 'LQ', 'horario'] = 'L'
+                    logger.info(f"Converted {lq_count} LQ entries to L")
+        except Exception as e:
+            logger.warning(f"LQ to L transformation failed: {e}")
+            # Don't fail the whole function, just log the warning
+
         # Clean up columns
         try:
             columns_to_drop = ['schedule_day_dt']

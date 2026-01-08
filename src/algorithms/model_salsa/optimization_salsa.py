@@ -94,35 +94,37 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     days_of_year_working= [d for d in days_of_year if d not in closed_holidays]
     workers_not_complete = [w for w in workers if w not in workers_complete_cycle]
     if len(workers_not_complete) < 1:
-        workers_not_complete = 1
-
+        workers_not_complete_exist = False
+    else:
+        workers_not_complete_exist = True
     n = int(len(days_of_year_real) / 6)
 
     q_groups = {i: [] for i in range(6)}
 
-    for w in workers_not_complete:
-        days_worked = len(working_days[w])
-       
-        if days_worked >= n*5:
-            q_groups[0].append(w)
-        elif days_worked >= n*4:
-            q_groups[1].append(w)
-        elif days_worked >= n*3:
-            q_groups[2].append(w)
-        elif days_worked >= n*2:
-            q_groups[3].append(w)
-        elif days_worked >= n*1:
-            q_groups[4].append(w)
-        else:
-            q_groups[5].append(w)
+    if workers_not_complete_exist:
+        for w in workers_not_complete:
+            days_worked = len(working_days[w])
 
-    
-    q0 = q_groups[0]
-    q1 = q_groups[1]
-    q2 = q_groups[2]
-    q3 = q_groups[3]
-    q4 = q_groups[4]
-    q5 = q_groups[5]
+            if days_worked >= n*5:
+                q_groups[0].append(w)
+            elif days_worked >= n*4:
+                q_groups[1].append(w)
+            elif days_worked >= n*3:
+                q_groups[2].append(w)
+            elif days_worked >= n*2:
+                q_groups[3].append(w)
+            elif days_worked >= n*1:
+                q_groups[4].append(w)
+            else:
+                q_groups[5].append(w)
+
+
+        q0 = q_groups[0]
+        q1 = q_groups[1]
+        q2 = q_groups[2]
+        q3 = q_groups[3]
+        q4 = q_groups[4]
+        q5 = q_groups[5]
 
     # Weights:
         
@@ -165,7 +167,10 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     sunday_imbalance_per_semeste_min_worst_scenario=2
     percentage_of_importance_sunday_balance=0
     sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
-    sunday_imbalance_weight_average=int(math.ceil(sunday_imbalance_weight/len(workers_not_complete)))
+    if workers_not_complete_exist:
+        sunday_imbalance_weight_average=int(math.ceil(sunday_imbalance_weight/len(workers_not_complete)))
+    else:
+        sunday_imbalance_weight_average = int(sunday_imbalance_weight)
     total_sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
 
     sunday_imbalance_weight_periodicity_min_worst_scenario=1
@@ -175,7 +180,10 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     LQ_imbalance_per_semeste_min_worst_scenario=1
     percentage_of_importance_LQ_balance=1 
     LQ_imbalance_weight=int(scale*percentage_of_importance_LQ_balance/LQ_imbalance_per_semeste_min_worst_scenario)
-    LQ_imbalance_weight_average=int(math.ceil(LQ_imbalance_weight/len(workers_not_complete)))
+    if workers_not_complete_exist:
+        LQ_imbalance_weight_average=int(math.ceil(LQ_imbalance_weight/len(workers_not_complete)))
+    else:
+        LQ_imbalance_weight_average = int(LQ_imbalance_weight)
 
     inconsistent_number_of_weeks_min_worst_scenario=52*len(workers)
     percentage_of_importance_consistent_number_of_weeks=0
@@ -788,18 +796,18 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     for part in parts:
         sunday_part=[d for d in part if d in sundays]
         sunday_parts.append(sunday_part)
-    
-    for w in workers_not_complete :
-        list_of_free_sundays_per_semester=[]
-        for part in sunday_parts:
-            free_sundays_semester=sum(shift[(w, d, 'L')] for d in part if (w,d,'L') in shift)
-            list_of_free_sundays_per_semester.append(free_sundays_semester)
-        
-        max_free_sundays = model.NewIntVar(0, len(sundays), f"max_free_semester_sundays_{w}")
-        min_free_sundays = model.NewIntVar(0, len(sundays), f"min_free_semester_sundays_{w}") 
-        
-        model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
-        model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
+    if workers_not_complete_exist:
+        for w in workers_not_complete :
+            list_of_free_sundays_per_semester=[]
+            for part in sunday_parts:
+                free_sundays_semester=sum(shift[(w, d, 'L')] for d in part if (w,d,'L') in shift)
+                list_of_free_sundays_per_semester.append(free_sundays_semester)
+
+            max_free_sundays = model.NewIntVar(0, len(sundays), f"max_free_semester_sundays_{w}")
+            min_free_sundays = model.NewIntVar(0, len(sundays), f"min_free_semester_sundays_{w}") 
+
+            model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
+            model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
 
         semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
         model.Add(semester_diff == max_free_sundays - min_free_sundays)
@@ -811,34 +819,34 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     #8.1 Control the worst-case outcome sundays
     
     diff_per_worker = []
+    if workers_not_complete_exist:
+        for w in workers_not_complete:
+            list_of_free_sundays_per_semester = []
 
-    for w in workers_not_complete:
-        list_of_free_sundays_per_semester = []
+            for idx, part in enumerate(sunday_parts):
+                sunday_vars = [shift[(w, d, 'L')] for d in part if (w, d, 'L') in shift]
 
-        for idx, part in enumerate(sunday_parts):
-            sunday_vars = [shift[(w, d, 'L')] for d in part if (w, d, 'L') in shift]
+                if sunday_vars:
+                    free_sundays_semester = sum(sunday_vars)
+                else:
+                    free_sundays_semester = model.NewIntVar(0, 0, f"free_sundays_empty_{w}_{idx}")
 
-            if sunday_vars:
-                free_sundays_semester = sum(sunday_vars)
-            else:
-                free_sundays_semester = model.NewIntVar(0, 0, f"free_sundays_empty_{w}_{idx}")
+                list_of_free_sundays_per_semester.append(free_sundays_semester)
 
-            list_of_free_sundays_per_semester.append(free_sundays_semester)
+            max_free_sundays = model.NewIntVar(0, len(sundays), f"max_free_semester_sundays_{w}")
+            min_free_sundays = model.NewIntVar(0, len(sundays), f"min_free_semester_sundays_{w}")
 
-        max_free_sundays = model.NewIntVar(0, len(sundays), f"max_free_semester_sundays_{w}")
-        min_free_sundays = model.NewIntVar(0, len(sundays), f"min_free_semester_sundays_{w}")
+            model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
+            model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
 
-        model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
-        model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
+            semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
+            model.Add(semester_diff == max_free_sundays - min_free_sundays)
 
-        semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-        model.Add(semester_diff == max_free_sundays - min_free_sundays)
-
-        diff_per_worker.append(semester_diff)
+            diff_per_worker.append(semester_diff)
 
 
-    max_diff_worker = model.NewIntVar(0, len(sundays), "max_diff_worker")
-    model.AddMaxEquality(max_diff_worker, diff_per_worker)
+        max_diff_worker = model.NewIntVar(0, len(sundays), "max_diff_worker")
+        model.AddMaxEquality(max_diff_worker, diff_per_worker)
 
     if percentage_of_importance_sunday_balance>0:
         objective_terms.append(max_diff_worker * sunday_imbalance_weight)  
@@ -913,101 +921,104 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         for i in range(len(sundays) - 2)
     ]
 
-    for w in workers_not_complete:
-        window_violations = []
+    if workers_not_complete_exist:
+        for w in workers_not_complete:
+            window_violations = []
 
-        for idx, window in enumerate(windows):
-            free_sundays = []
+            for idx, window in enumerate(windows):
+                free_sundays = []
 
-            for d in window:
-                if (w, d, 'L') in shift:
-                    free = shift[(w, d, 'L')]  # 0/1
-                else:
-                    free = model.NewIntVar(0, 0, f"missing_L_{w}_{d}")
+                for d in window:
+                    if (w, d, 'L') in shift:
+                        free = shift[(w, d, 'L')]  # 0/1
+                    else:
+                        free = model.NewIntVar(0, 0, f"missing_L_{w}_{d}")
 
-                free_sundays.append(free)
+                    free_sundays.append(free)
 
-            total_free = model.NewIntVar(0, 3, f"free_3s_{w}_{idx}")
-            model.Add(total_free == sum(free_sundays))
+                total_free = model.NewIntVar(0, 3, f"free_3s_{w}_{idx}")
+                model.Add(total_free == sum(free_sundays))
 
-            violation = model.NewBoolVar(f"excess_free_sunday_{w}_{idx}")
-            model.Add(total_free >= 2).OnlyEnforceIf(violation)
-            model.Add(total_free <= 1).OnlyEnforceIf(violation.Not())
+                violation = model.NewBoolVar(f"excess_free_sunday_{w}_{idx}")
+                model.Add(total_free >= 2).OnlyEnforceIf(violation)
+                model.Add(total_free <= 1).OnlyEnforceIf(violation.Not())
 
-            window_violations.append(violation)
+                window_violations.append(violation)
 
-        total_excess = model.NewIntVar(
-            0, len(window_violations),
-            f"total_excess_free_sundays_{w}"
-        )
-        model.Add(total_excess == sum(window_violations))
+            total_excess = model.NewIntVar(
+                0, len(window_violations),
+                f"total_excess_free_sundays_{w}"
+            )
+            model.Add(total_excess == sum(window_violations))
 
-        excess_free_sundays_per_worker[w] = total_excess
+            excess_free_sundays_per_worker[w] = total_excess
 
-    total_excess_free_sundays = model.NewIntVar(0, len(sundays) * len(workers_not_complete),"total_excess_free_sundays")
+        total_excess_free_sundays = model.NewIntVar(0, len(sundays) * len(workers_not_complete),"total_excess_free_sundays")
 
-    model.Add(total_excess_free_sundays == sum(excess_free_sundays_per_worker.values()))
+        model.Add(total_excess_free_sundays == sum(excess_free_sundays_per_worker.values()))
 
-    objective_terms.append(total_excess_free_sundays * sunday_imbalance_weight_periodicity)
+        objective_terms.append(total_excess_free_sundays * sunday_imbalance_weight_periodicity)
        
 
     # 9. Balancing LQ's across the year
 
     parts = np.array_split(days_of_year_real, 6) 
 
-    for w in workers_not_complete:
-        list_of_free_LQs_per_semester=[]
-        for part in parts:   
-            LQs_semester = sum(shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift)
-            list_of_free_LQs_per_semester.append(LQs_semester)    
-             
-        max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
-        min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}") 
-            
-        model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
-        model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
-            
-        semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-        model.Add(semester_diff == max_free_LQs - min_free_LQs)
-        
-        objective_terms.append(semester_diff*LQ_imbalance_weight_average)  
+    if workers_not_complete_exist:
+        for w in workers_not_complete:
+            list_of_free_LQs_per_semester=[]
+            for part in parts:   
+                LQs_semester = sum(shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift)
+                list_of_free_LQs_per_semester.append(LQs_semester)    
+
+            max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
+            min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}") 
+
+            model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
+            model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
+
+            semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
+            model.Add(semester_diff == max_free_LQs - min_free_LQs)
+
+            objective_terms.append(semester_diff*LQ_imbalance_weight_average)  
 
 
    # 9.1 Control the worst-case outcome LQs 
 
     diff_per_worker_LQ = []
 
-    for w in workers_not_complete:
-        list_of_free_LQs_per_semester = []
+    if workers_not_complete_exist:
+        for w in workers_not_complete:
+            list_of_free_LQs_per_semester = []
 
-        for part_index, part in enumerate(parts):
-            LQs_vars = [shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift]
+            for part_index, part in enumerate(parts):
+                LQs_vars = [shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift]
 
-            if LQs_vars:
-                LQs_semester = sum(LQs_vars)
+                if LQs_vars:
+                    LQs_semester = sum(LQs_vars)
+                else:
+                    LQs_semester = model.NewIntVar(0, 0, f"LQs_empty_{w}_{part_index}")
+
+                list_of_free_LQs_per_semester.append(LQs_semester)
+
+            max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
+            min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}")
+
+            if list_of_free_LQs_per_semester:
+                model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
+                model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
             else:
-                LQs_semester = model.NewIntVar(0, 0, f"LQs_empty_{w}_{part_index}")
+                model.Add(max_free_LQs == 0)
+                model.Add(min_free_LQs == 0)
 
-            list_of_free_LQs_per_semester.append(LQs_semester)
+            semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
+            model.Add(semester_diff == max_free_LQs - min_free_LQs)
 
-        max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
-        min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}")
+            diff_per_worker_LQ.append(semester_diff)
 
-        if list_of_free_LQs_per_semester:
-            model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
-            model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
-        else:
-            model.Add(max_free_LQs == 0)
-            model.Add(min_free_LQs == 0)
-
-        semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-        model.Add(semester_diff == max_free_LQs - min_free_LQs)
-
-        diff_per_worker_LQ.append(semester_diff)
-    
-    max_diff_LQ = model.NewIntVar(0, len(sundays), "max_diff_LQ")
-    model.AddMaxEquality(max_diff_LQ, diff_per_worker_LQ)
-    objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
+        max_diff_LQ = model.NewIntVar(0, len(sundays), "max_diff_LQ")
+        model.AddMaxEquality(max_diff_LQ, diff_per_worker_LQ)
+        objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
             
         
     # 10. Weeks of inconsistent shifts error
