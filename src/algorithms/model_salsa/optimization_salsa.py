@@ -214,6 +214,16 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         free_days_per_day_worst_case_scenario= 2 
     total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_exceeded_worst_case_scenario)
     
+    number_free_sundays_exceeded_worst_case_scenario= 2 
+    if len(workers) >= 6:
+        free_days_per_sunday_worst_case_scenario= len(workers)//3
+        percentage_of_total_exceeded_sundays_weight=2  
+    if len(workers) <6:
+        percentage_of_total_exceeded_sundays_weight=2
+        free_days_per_sunday_worst_case_scenario= 2 
+    total_exceeded_sundays_weight=int(scale*percentage_of_total_exceeded_sundays_weight/ number_free_sundays_exceeded_worst_case_scenario)
+    
+
     day_deficit_hours_worst_case_scenario=8 #in a shift
     percentage_of_importance_day_deficit=2 
     max_deficit_weight=int(scale*percentage_of_importance_day_deficit/day_deficit_hours_worst_case_scenario) 
@@ -707,6 +717,68 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     
     if total_exceeded_days_weight > 0:
         objective_terms.append(total_exceeded_days * total_exceeded_days_weight)
+
+    # 7.2  Try not to assign too many free days on Sundays with deficit
+    limit = free_days_per_sunday_worst_case_scenario    
+
+
+    total_exceeded_sundays = model.NewIntVar(
+        0, len(sundays), "total_exceeded_sundays"
+    )
+
+    exceeded = {}
+
+    for d in sundays:
+
+        # Número de trabalhadores livres no domingo d
+        free_count = model.NewIntVar(
+            0, len(workers), f"free_count_sunday_{d}"
+        )
+
+        free_vars_today = [
+            is_free_dict[(w, d)]
+            for w in workers
+            if (w, d) in is_free_dict
+        ]
+
+        model.Add(free_count == sum(free_vars_today))
+
+        # Excesso de free days
+        free_exceeded = model.NewBoolVar(
+            f"free_exceeded_sunday_{d}"
+        )
+        model.Add(free_count >= limit + 1).OnlyEnforceIf(free_exceeded)
+        model.Add(free_count <= limit).OnlyEnforceIf(free_exceeded.Not())
+
+        # Défice positivo
+        deficit_positive = model.NewBoolVar(
+            f"deficit_positive_sunday_{d}"
+        )
+        model.Add(daily_deficit[d] >= 1).OnlyEnforceIf(deficit_positive)
+        model.Add(daily_deficit[d] <= 0).OnlyEnforceIf(deficit_positive.Not())
+
+        # Domingo com problema: défice AND excesso de free days
+        exceeded[d] = model.NewBoolVar(
+            f"exceeded_sunday_{d}"
+        )
+        model.AddBoolAnd(
+            [free_exceeded, deficit_positive]
+        ).OnlyEnforceIf(exceeded[d])
+        model.AddBoolOr(
+            [free_exceeded.Not(), deficit_positive.Not()]
+        ).OnlyEnforceIf(exceeded[d].Not())
+    # Contagem total de domingos problemáticos
+
+    total_exceeded_sundays = model.NewIntVar(0, len(sundays), "total_exceeded_sundays")
+
+    model.Add(total_exceeded_sundays == sum(exceeded[d] for d in sundays))
+
+    # Penalização no objetivo
+    if total_exceeded_sundays_weight > 0:
+        objective_terms.append(
+            total_exceeded_sundays * total_exceeded_sundays_weight
+        )
+
 
 
     # 8. Balancing sundays across the year (average)
