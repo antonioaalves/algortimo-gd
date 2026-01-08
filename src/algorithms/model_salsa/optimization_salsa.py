@@ -809,11 +809,11 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             model.AddMaxEquality(max_free_sundays, list_of_free_sundays_per_semester)
             model.AddMinEquality(min_free_sundays, list_of_free_sundays_per_semester)
 
-        semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-        model.Add(semester_diff == max_free_sundays - min_free_sundays)
+            semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
+            model.Add(semester_diff == max_free_sundays - min_free_sundays)
         
-        if percentage_of_importance_sunday_balance>0:
-            objective_terms.append(semester_diff*sunday_imbalance_weight_average)  
+            if percentage_of_importance_sunday_balance>0:
+                objective_terms.append(semester_diff*sunday_imbalance_weight_average)  
 
 
     #8.1 Control the worst-case outcome sundays
@@ -848,8 +848,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         max_diff_worker = model.NewIntVar(0, len(sundays), "max_diff_worker")
         model.AddMaxEquality(max_diff_worker, diff_per_worker)
 
-    if percentage_of_importance_sunday_balance>0:
-        objective_terms.append(max_diff_worker * sunday_imbalance_weight)  
+        if percentage_of_importance_sunday_balance>0:
+            objective_terms.append(max_diff_worker * sunday_imbalance_weight)  
 
     
     # 8.2 Balancing Sundays across the year (global)

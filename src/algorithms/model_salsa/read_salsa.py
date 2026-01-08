@@ -64,8 +64,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         else:
             sunday_half_day = False
             ld_sunday = int(ld_sunday)
-        ld_sunday = int(1) #testttiiinngggg, nao pode ir assim
-        ld_holiday = int(1) #testttiiinngggg, nao pode ir assim
+
         logger.info("Required Compensation Days loaded:")
         logger.info(f"  - Holiday Compensation Days: {ld_holiday} and half day: {holiday_half_day}")
         logger.info(f"  - Sunday Compensation Days: {ld_sunday} and half day: {sunday_half_day}")
