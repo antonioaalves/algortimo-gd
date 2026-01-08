@@ -12,18 +12,18 @@ def consecutive_days(vacations_in_week, nbr_vacations, cut_off, days):
         return False
     if cut_off == 5:
         if not all(day in vacations_in_week for day in days[2:5]):
-            print(f"holidays not in a row {vacations_in_week}")
+            logger.info(f"holidays not in a row {vacations_in_week}")
             return False
         if vacations_in_week[-1] != days[4]:
-            print(f"holidays dont end on friday {vacations_in_week[-1]} {days[4]}")
-            return False
+            logger.info(f"holidays dont end on friday {vacations_in_week[-1]} {days[4]} but still changing to weekends days off")
+            #return False
     elif cut_off == 6:
         if not all(day in vacations_in_week for day in days[3:6]):
-            print(f"holidays not in a row {vacations_in_week}")
+            logger.info(f"holidays not in a row {vacations_in_week}")
             return False
         if vacations_in_week[-1] != days[5]:
-            print(f"holidays dont end on saturday {vacations_in_week[-1]} {days[5]}")
-            return False
+            logger.info(f"holidays dont end on saturday {vacations_in_week[-1]} {days[5]} but still changing to weekends days off")
+            #return False
     return True
 
 def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences, vacations_in_week, fixed_days_off, fixed_LQs, year_range, days_off, total, flag):
@@ -55,8 +55,6 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
                     vacations -= {last}
                     fixed_days_off |= {last}
         else:
-            if 13 in absences and 14 not in absences:
-                print("3")
             if nbr_absences > 1:
                 was_vacation_used = False
                 l1 = absences_in_week[-1]
@@ -119,20 +117,20 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
 
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
 
-            if len(days_off) >= 2:
+            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2) :
                 #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
             
             if nbr_absences < 5 and nbr_vacations < 6:
                 if total > 5:
-                    return mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total ,5)
-                
+                    absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total ,5)
+
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
                     continue
 
             atributing_days = sorted(days_set - closed_holidays)
             if len(days_off) == 1:
-                logger.warning(f"For week with absences {week}, {w} already has {days_off} day off")
+                logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]
                 if only_day_off == atributing_days[-1] and only_day_off == days[6] and atributing_days[-2] == days[5]:
                     l2 = atributing_days[-2]
