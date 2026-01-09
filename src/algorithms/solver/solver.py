@@ -122,14 +122,14 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 80  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
         logger.info(f"  - Special days: {len(special_days)} days")
         logger.info(f"  - Available shifts: {shifts}")
         logger.info(f"  - Decision variables: {len(shift)} variables")
-        logger.info(f"  - Max solving time: {max_time_seconds} seconds")
+        logger.info(f"  - Max solving time: {solver.parameters.max_time_in_seconds} seconds")
 
         solver.parameters.log_search_progress = log_search_progress
         solver.parameters.use_phase_saving = use_phase_saving

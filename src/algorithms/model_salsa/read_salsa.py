@@ -596,9 +596,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-            if total_l[w] < 0:
-                logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
-                workers.pop(workers.index(w))  # Remove worker with contract error
+            #if total_l[w] < 0:
+            #    logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
+            #    workers.pop(workers.index(w))  # Remove worker with contract error
         logger.info(f"Contract information extracted for {len(workers)} workers")
 
         # =================================================================
@@ -613,12 +613,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Escolher a coluna onde vêm os códigos 1/2 (ou texto), por ordem de preferência
         role_col_data = ["prioridade_folgas"]
         role_col = next((c for c in role_col_data if c in matriz_colaborador_gd.columns), None)
-        #if not role_col:
-        #    logger.warning("Nenhuma coluna de nível encontrada entre %s. " "Todos tratados como 'normal'.", possible_role_cols)
-        #    
-        #    for w in workers_complete:
-        #        role_by_worker[w] = "normal"
-        #else:
         logger.info("Usando coluna de nível: %s", role_col)
 
         for w in workers_past:

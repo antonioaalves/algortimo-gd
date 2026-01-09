@@ -449,7 +449,6 @@ class SalsaAlgorithm(BaseAlgorithm):
                     self.logger.info("Skipping constraint: sunday_compensation_days (not applicable for non-Spain)")
                 else:
                     self.logger.warning("Skipping constraint: sunday_compensation_days (disabled in config)")
-                    self.logger.warning("Skipping constraint: compensation_days (disabled in config)")
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")
