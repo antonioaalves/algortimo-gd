@@ -383,6 +383,6 @@ def validate_all_core_dataframes(
     if not valid:
         return False, f"df_colaborador validation failed: {error}"
     
-    logger.info("All core dataframes validation passed ")
+    logger.info("All core dataframes validation passed")
     return True, ""
 

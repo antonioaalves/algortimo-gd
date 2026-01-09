@@ -641,6 +641,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if param_name == 'NUM_DIAS_CONS':
                     algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
 
+                if param_name == 'ld_sunday_param':
+                    algorithm_treatment_params['ld_sunday_param'] = float(param_value)
+
+                if param_name == 'ld_holiday_param':
+                    algorithm_treatment_params['ld_holiday_param'] = float(param_value)
+                    
+
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
             self.logger.info(f"Treating parameters completed successfully")
@@ -1303,6 +1310,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # External call data
                 start_date_str = self.external_call_data['start_date']
                 end_date_str = self.external_call_data['end_date']
+
+                ld_sunday_param = self.auxiliary_data['ld_sunday_param']
+                ld_holiday_param = self.auxiliary_data['ld_holiday_param']
             except KeyError as e:
                 self.logger.error(f"Missing required parameter in colaborador_transformations: {e}", exc_info=True)
                 return False, "", ""
@@ -1373,7 +1383,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_colaborador, error_msg = add_l_d_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     convenio_bd=convenio_bd,
-                    use_case=0
+                    use_case=0,
+                    ld_sunday_param=ld_sunday_param,
+                    ld_holiday_param=ld_holiday_param,
                 )
                 if not success:
                     self.logger.error(f"Adding l_d failed: {error_msg}")

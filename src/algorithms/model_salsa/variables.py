@@ -80,8 +80,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences,
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
         logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
-        logger.info(f"\tDEBUG M shift {sorted(shift_M_set)}")
-        logger.info(f"\tDEBUG T shift {sorted(shift_T_set)}\n")
+        #logger.info(f"\tDEBUG M shift {sorted(shift_M_set)}")
+        #logger.info(f"\tDEBUG T shift {sorted(shift_T_set)}\n")
         logger.info(f"\tDEBUG fixed lds {sorted(fixed_LD_set)}")
  
         blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set

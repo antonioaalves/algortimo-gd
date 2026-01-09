@@ -1640,7 +1640,9 @@ def contract_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame,
 def add_l_d_to_df_colaborador(
     df_colaborador: pd.DataFrame,
     convenio_bd: str,
-    use_case: int = 0,  
+    use_case: int = 0,
+    ld_sunday_param: float = 0,
+    ld_holiday_param: float = 0,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Calculate and assign daily rest quota (l_d/ld) for employees.
@@ -1681,6 +1683,8 @@ def add_l_d_to_df_colaborador(
 
         if use_case == 0:
             df_result['ld'] = 0
+            df_result['ld_sunday_param'] = ld_sunday_param
+            df_result['ld_holiday_param'] = ld_holiday_param
 
         elif use_case == 1:
             # First mask
