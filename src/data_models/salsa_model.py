@@ -1413,7 +1413,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     convenio_bd=convenio_bd,
                     num_sundays=num_sundays_year,
                     num_fer_dom=num_sundays_year,
-                    use_case=1
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Adding l_total failed: {error_msg}")

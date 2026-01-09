@@ -10,6 +10,7 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
     worked_holidays = {}
 
     for w in workers:
+
         worked_holidays[w] = {}
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
@@ -38,7 +39,8 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
     # Dictionary to store all compensation day variables
     all_comp_day_vars = {}
     comp_day_usage = {}
-    for w in workers:        
+    for w in workers:
+
         # Initialize the compensation day usage tracking for this worker
         comp_day_usage[w] = {}
         all_possible_comp_days = set()
@@ -115,6 +117,7 @@ def compensation_days(model, shift, workers, working_days, holidays, week_to_day
          
         # Enforce equality: number of LDs == number of worked holidays
         model.Add(total_comp_days_used == total_worked_holidays)
+        model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
