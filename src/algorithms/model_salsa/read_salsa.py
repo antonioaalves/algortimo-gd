@@ -37,18 +37,38 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
+        matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
-
         start_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
-        end_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
+        end_date = pd.to_datetime(algorithm_treatment_params['end_date']).dayofyear
         period = [start_date, end_date]
 
-        logger.info(f"Start and end Time:")
+        logger.info(f"Period Start and end Time:")
         logger.info(f"Start: {start_date}")
         logger.info(f"End: {end_date}")
 
+        ld_holiday = float(algorithm_treatment_params['ld_holiday_param'])
+        if ld_holiday - (math.floor(ld_holiday)) != 0:
+            ld_holiday = int(math.floor(ld_holiday))
+            holiday_half_day = True
+        else:
+            holiday_half_day = False
+            ld_holiday = int(ld_holiday)
+
+        ld_sunday = float(algorithm_treatment_params['ld_sunday_param'])
+        if ld_sunday - (math.floor(ld_sunday)) != 0:
+            ld_sunday = int(math.floor(ld_sunday))
+            sunday_half_day = True
+        else:
+            sunday_half_day = False
+            ld_sunday = int(ld_sunday)
+
+        logger.info("Required Compensation Days loaded:")
+        logger.info(f"  - Holiday Compensation Days: {ld_holiday} and half day: {holiday_half_day}")
+        logger.info(f"  - Sunday Compensation Days: {ld_sunday} and half day: {sunday_half_day}")
+        
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
             partial_generation = True 
@@ -186,24 +206,21 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['index'].unique().tolist())
 
-        holidays = sorted(matriz_calendario_gd[
-            (matriz_calendario_gd['wd'] != 'Sun') & 
-            (matriz_calendario_gd["dia_tipo"] == "domYf")
+        holidays = sorted(matriz_feriados_gd[
+            (matriz_feriados_gd['tipo_feriado'] == 'A')
         ]['index'].unique().tolist())
         
-        closed_holidays = set(matriz_calendario_gd[
-            matriz_calendario_gd['horario'] == "F"
+        closed_holidays = set(matriz_feriados_gd[
+            (matriz_feriados_gd['tipo_feriado'] == 'F')
         ]['index'].unique().tolist())
-        
         special_days = sorted(set(holidays))
-
         logger.info(f"Special days identified:")
         logger.info(f"  - Sundays: {len(sundays)} days")
         logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
+        logger.info(f"  - Holidays: {holidays} days")
         logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
         logger.info(f"  - Total special days: {len(special_days)} days")
 
-        
         # =================================================================
         # 8. CALCULATE ADDITIONAL PARAMETERS
         # =================================================================
@@ -315,6 +332,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
+        period = [start_date + min_day_year - 1, end_date + min_day_year - 1]
+        logger.info(f"Adapted and Final Period Start and end Time:")
+        logger.info(f"Start: {period[0]}")
+        logger.info(f"End: {period[1]}")
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}
@@ -380,7 +401,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             empty_days[w] = worker_calendar[(worker_calendar['horario'] == '-') | (worker_calendar['horario'] == 'A-') | (worker_calendar['horario'] == 'V-') | (worker_calendar['horario'] == '0')]['index'].tolist()
             vacation_days[w] = worker_calendar[(worker_calendar['horario'] == 'V') | (worker_calendar['horario'] == 'V-')]['index'].tolist()
             worker_absences[w] = worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP') | (worker_calendar['horario'] == 'A-')]['index'].tolist()
-            fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L') | (worker_calendar['horario'] == 'C')]['index'].tolist()
+            fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L') | (worker_calendar['horario'] == 'C') | (worker_calendar['horario'] == 'L_DOM')]['index'].tolist()
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
@@ -574,9 +595,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-            if total_l[w] < 0:
-                logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
-                workers.pop(workers.index(w))  # Remove worker with contract error
+            #if total_l[w] < 0:
+            #    logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
+            #    workers.pop(workers.index(w))  # Remove worker with contract error
         logger.info(f"Contract information extracted for {len(workers)} workers")
 
         # =================================================================
@@ -591,13 +612,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Escolher a coluna onde vêm os códigos 1/2 (ou texto), por ordem de preferência
         role_col_data = ["prioridade_folgas"]
         role_col = next((c for c in role_col_data if c in matriz_colaborador_gd.columns), None)
-
-        #if not role_col:
-        #    logger.warning("Nenhuma coluna de nível encontrada entre %s. " "Todos tratados como 'normal'.", possible_role_cols)
-        #    
-        #    for w in workers_complete:
-        #        role_by_worker[w] = "normal"
-        #else:
         logger.info("Usando coluna de nível: %s", role_col)
 
         for w in workers_past:
@@ -607,7 +621,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 role = "normal"
             else:
                 raw = row.iloc[0].get(role_col)
-
                 # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
                 # 1 → manager ; 2 → keyholder ; vazio/outros → normal
                 if pd.isna(raw):
@@ -630,7 +643,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 keyholders.append(w)
 
         for w in workers_complete:
-            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["matricula"] == w]
+            row = matriz_colaborador_gd.loc[matriz_colaborador_gd["employee_id"] == w]
 
             if row.empty:
                 role = "normal"
@@ -792,6 +805,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "year_range": year_range,
             "unique_dates": unique_dates,
             "period": period,
+            "holiday_half_day": holiday_half_day,
+            "sunday_half_day": sunday_half_day,
+            "ld_holiday": ld_holiday,
+            "ld_sunday": ld_sunday,
+            "managers": managers,
+            "keyholders": keyholders,
             }
         
     except Exception as e:

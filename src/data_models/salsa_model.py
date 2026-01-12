@@ -434,6 +434,24 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Feriados treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
 
+            try:
+                self.logger.info("Adding date-related columns to df_feriados (WDAY, WW, WD)")
+                success, df_feriados, error_msg = add_date_related_columns(
+                    df=df_feriados,
+                    date_col='schedule_day',
+                    add_id_col=False,
+                    use_case=1,
+                    main_year=main_year,
+                    first_date=first_day_passado,
+                    last_date=last_day_passado
+                )
+                if not success:
+                    self.logger.error(f"Failed to add date-related columns: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error adding date-related columns: {e}", exc_info=True)
+                return False            
+
             if not validate_df_feriados(df_feriados):
                 self.logger.error(f"df_feriados is invalid: {df_feriados}")
                 return False, "errSubproc", "df_feriados is invalid"
@@ -622,6 +640,13 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 if param_name == 'NUM_DIAS_CONS':
                     algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
+
+                if param_name == 'ld_sunday_param':
+                    algorithm_treatment_params['ld_sunday_param'] = float(param_value)
+
+                if param_name == 'ld_holiday_param':
+                    algorithm_treatment_params['ld_holiday_param'] = float(param_value)
+                    
 
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
@@ -1105,6 +1130,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Strings
                 start_date = self.external_call_data['start_date']
                 end_date = self.external_call_data['end_date']
+                first_date_passado = self.auxiliary_data['first_date_passado']
+                last_date_passado = self.auxiliary_data['last_date_passado']
                 main_year = self.auxiliary_data['main_year']
                 # Dataframe
                 df_calendario_passado = self.auxiliary_data['df_calendario_passado'].copy()
@@ -1142,7 +1169,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                     date_col='schedule_day',
                     add_id_col=True,
                     use_case=0,
-                    main_year=main_year
+                    main_year=main_year,
+                    first_date=first_date_passado,
+                    last_date=last_date_passado
                 )
                 if not success:
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
@@ -1281,6 +1310,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # External call data
                 start_date_str = self.external_call_data['start_date']
                 end_date_str = self.external_call_data['end_date']
+
+                ld_sunday_param = self.auxiliary_data['ld_sunday_param']
+                ld_holiday_param = self.auxiliary_data['ld_holiday_param']
             except KeyError as e:
                 self.logger.error(f"Missing required parameter in colaborador_transformations: {e}", exc_info=True)
                 return False, "", ""
@@ -1351,7 +1383,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_colaborador, error_msg = add_l_d_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     convenio_bd=convenio_bd,
-                    use_case=0
+                    use_case=0,
+                    ld_sunday_param=ld_sunday_param,
+                    ld_holiday_param=ld_holiday_param,
                 )
                 if not success:
                     self.logger.error(f"Adding l_d failed: {error_msg}")
@@ -1391,7 +1425,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     convenio_bd=convenio_bd,
                     num_sundays=num_sundays_year,
                     num_fer_dom=num_sundays_year,
-                    use_case=1
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Adding l_total failed: {error_msg}")
@@ -1477,7 +1511,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Core dataframes validation failed: {error_msg}")
                     return False, "errValidation", error_msg
                     
-                self.logger.info("Core dataframes validation passed ✓")
+                self.logger.info("Core dataframes validation passed ")
             except Exception as e:
                 self.logger.error(f"Error validating core dataframes: {e}", exc_info=True)
                 return False, "errValidation", str(e)

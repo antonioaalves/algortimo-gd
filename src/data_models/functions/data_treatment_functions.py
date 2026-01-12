@@ -1641,7 +1641,9 @@ def contract_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame,
 def add_l_d_to_df_colaborador(
     df_colaborador: pd.DataFrame,
     convenio_bd: str,
-    use_case: int = 0,  
+    use_case: int = 0,
+    ld_sunday_param: float = 0,
+    ld_holiday_param: float = 0,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Calculate and assign daily rest quota (l_d/ld) for employees.
@@ -1682,6 +1684,8 @@ def add_l_d_to_df_colaborador(
 
         if use_case == 0:
             df_result['ld'] = 0
+            df_result['ld_sunday_param'] = ld_sunday_param
+            df_result['ld_holiday_param'] = ld_holiday_param
 
         elif use_case == 1:
             # First mask
@@ -3519,11 +3523,11 @@ def process_special_shift_types(df_calendario: pd.DataFrame, shift_type: str, em
         return False, pd.DataFrame(), error_msg
 
 
-def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None) -> Tuple[bool, pd.DataFrame, str]:
+def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None, first_date: str = None, last_date: str = None) -> Tuple[bool, pd.DataFrame, str]:
     """
     Add date-related columns to dataframe (index, WDAY, WW, WD).
     
-    Agnostic function that works for both df_calendario and df_estimativas.
+    Agnostic function that works for df_calendario, df_estimativas and df_feriados.
     
     Args:
         df: Input dataframe with date column
@@ -3531,6 +3535,8 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         add_id_col: Whether to add index column (row index) - usually only for calendario
         use_case: Processing mode (0=dynamic indexing, 1=fixed indexing for calendario)
         main_year: Main year for fixed indexing (required when use_case=1)
+        first_date: Reference start date for consistent indexing (use_case=0)
+        last_date: Reference end date for consistent indexing (use_case=0)
         
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, dataframe with new columns, error message)
@@ -3538,6 +3544,8 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
     Note:
         The 'index' column assigns sequential IDs (1, 2, 3, ...) to each unique date
         in chronological order, identifying the position of each day in the calendar range.
+        When first_date and last_date are provided, ensures consistent indexing across
+        multiple dataframes (df_calendario, df_estimativas, df_feriados).
     """
     try:
         # INPUT VALIDATION
@@ -3556,9 +3564,24 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         
         # Add index column: sequential ID for each unique date (1, 2, 3, ...)
         if use_case == 0:
-            unique_dates = sorted(df_result[date_col].unique())
-            date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
-            df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
+            if first_date is not None and last_date is not None:
+                # Create mapping from reference date range (for consistent indexing across dataframes)
+                reference_range = pd.date_range(start=first_date, end=last_date, freq='D')
+                date_to_index = {date: idx + 1 for idx, date in enumerate(reference_range)}
+                df_result['index'] = df_result[date_col].map(date_to_index)
+                
+                # Handle dates outside the reference range
+                if df_result['index'].isna().any():
+                    max_index = df_result['index'].max()
+                    if pd.isna(max_index):
+                        max_index = 0
+                    df_result['index'] = df_result['index'].fillna(max_index + 1)
+                df_result['index'] = df_result['index'].astype(int)
+            else:
+                # Original behavior: dynamic indexing from dataframe's own dates
+                unique_dates = sorted(df_result[date_col].unique())
+                date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
+                df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
         elif use_case == 1:
             # Fixed indexing: 22-12-[year-1] to 04-01-[year+1]
             # This ensures index matches between df_estimativas (01-01 to 31-12) and df_calendario (23-12 to 04-01)

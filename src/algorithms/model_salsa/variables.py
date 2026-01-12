@@ -61,6 +61,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences,
     shifts2.remove('-')
     shifts2.remove('M')
     shifts2.remove('T')
+    shifts2.remove('LQ')
 
     for w in workers:
  
@@ -79,8 +80,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences,
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
         logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
-        logger.info(f"\tDEBUG M shift {sorted(shift_M_set)}")
-        logger.info(f"\tDEBUG T shift {sorted(shift_T_set)}\n")
+        #logger.info(f"\tDEBUG M shift {sorted(shift_M_set)}")
+        #logger.info(f"\tDEBUG T shift {sorted(shift_T_set)}\n")
         logger.info(f"\tDEBUG fixed lds {sorted(fixed_LD_set)}")
  
         blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set
@@ -93,6 +94,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences,
                     shift[(w, d, 'M')] = model.NewBoolVar(f"{w}_Day{d}_M")
                 if d in shift_T_set:
                     shift[(w, d, 'T')] = model.NewBoolVar(f"{w}_Day{d}_T")
+                if d % 7 == 6:
+                    shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_LQ")
 
         add_var(model, shift, w, absence_set, 'A')
         add_var(model, shift, w, vacation - fixed_days_set - fixed_LQs_set, 'V')

@@ -12,18 +12,18 @@ def consecutive_days(vacations_in_week, nbr_vacations, cut_off, days):
         return False
     if cut_off == 5:
         if not all(day in vacations_in_week for day in days[2:5]):
-            print(f"holidays not in a row {vacations_in_week}")
+            logger.info(f"holidays not in a row {vacations_in_week}")
             return False
         if vacations_in_week[-1] != days[4]:
-            print(f"holidays dont end on friday {vacations_in_week[-1]} {days[4]}")
-            return False
+            logger.info(f"holidays dont end on friday {vacations_in_week[-1]} {days[4]} but still changing to weekends days off")
+            #return False
     elif cut_off == 6:
         if not all(day in vacations_in_week for day in days[3:6]):
-            print(f"holidays not in a row {vacations_in_week}")
+            logger.info(f"holidays not in a row {vacations_in_week}")
             return False
         if vacations_in_week[-1] != days[5]:
-            print(f"holidays dont end on saturday {vacations_in_week[-1]} {days[5]}")
-            return False
+            logger.info(f"holidays dont end on saturday {vacations_in_week[-1]} {days[5]} but still changing to weekends days off")
+            #return False
     return True
 
 def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences, vacations_in_week, fixed_days_off, fixed_LQs, year_range, days_off, total, flag):
@@ -55,8 +55,6 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
                     vacations -= {last}
                     fixed_days_off |= {last}
         else:
-            if 13 in absences and 14 not in absences:
-                print("3")
             if nbr_absences > 1:
                 was_vacation_used = False
                 l1 = absences_in_week[-1]
@@ -119,20 +117,20 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
 
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
 
-            if len(days_off) >= 2:
+            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2) :
                 #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
             
             if nbr_absences < 5 and nbr_vacations < 6:
                 if total > 5:
-                    return mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total ,5)
-                
+                    absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total ,5)
+
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
                     continue
 
             atributing_days = sorted(days_set - closed_holidays)
             if len(days_off) == 1:
-                logger.warning(f"For week with absences {week}, {w} already has {days_off} day off")
+                logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]
                 if only_day_off == atributing_days[-1] and only_day_off == days[6] and atributing_days[-2] == days[5]:
                     l2 = atributing_days[-2]
@@ -232,22 +230,42 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
             
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days):
+def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days, period):
     compensation_days = []
     weeks_added = 0
     current_week = special_day_week
 
-    while weeks_added < week_compensation_limit and current_week < 53:
+    while weeks_added < week_compensation_limit and current_week < len(week_to_days):
         current_week += 1
 
         week_days = set(week_to_days.get(current_week, []))
 
-        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off).union(fixed_LQs))
+        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
 
-        available_days = working_days.intersection(week_days - all_days_off)
+        available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1]}
+        if sorted(week_days)[0] >= period[1]:
+            if compensation_days:
+                break
+            else:
+                available_days = {d for d in working_days.intersection(week_days - all_days_off)}
 
         if len(available_days) > 0:
             weeks_added += 1
             compensation_days.extend(available_days)
 
     return compensation_days
+
+def ld_counter(shift_T, shift_M, fixed_ld, period, holidays):
+    holidays_worked_before = []
+    lds = 0
+    for day in range(1, period[0] + 1):
+        if day in holidays:
+            if day in shift_T and day not in shift_M:
+                holidays_worked_before.append(day)
+            elif day in shift_M and day not in shift_T:
+                holidays_worked_before.append(day)
+        if day in fixed_ld:
+            lds += 1
+    del holidays_worked_before[:lds]
+    
+    return holidays_worked_before

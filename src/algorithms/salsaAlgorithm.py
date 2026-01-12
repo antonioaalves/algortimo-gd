@@ -18,8 +18,9 @@ from src.configuration_manager.instance import get_config as get_config_manager
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
-    LQ_attribution, compensation_days, working_day_shifts, salsa_2_consecutive_free_days, salsa_2_day_quality_weekend,
-    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days, one_colab_min_constraint
+    LQ_attribution, holiday_compensation_days, working_day_shifts, salsa_2_consecutive_free_days, salsa_2_day_quality_weekend,
+    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days, sunday_compensation_days, one_colab_min_constraint,
+    ld_restriction
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -140,7 +141,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             if not isinstance(medium_dataframes, dict):
                 raise TypeError(f"Expected medium_dataframes to be dictionary, got {type(medium_dataframes)}")
-            
             # =================================================================
             # 2. VALIDATE REQUIRED DATAFRAMES
             # =================================================================
@@ -279,6 +279,12 @@ class SalsaAlgorithm(BaseAlgorithm):
             year_range = adapted_data["year_range"]
             unique_dates = adapted_data["unique_dates"]
             period = adapted_data["period"]
+            holiday_half_day = adapted_data["holiday_half_day"]
+            ld_holiday = adapted_data["ld_holiday"]
+            ld_sunday = adapted_data["ld_sunday"]
+            sunday_half_day = adapted_data["sunday_half_day"]
+            managers = adapted_data["managers"]
+            keyholders = adapted_data["keyholders"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -421,20 +427,40 @@ class SalsaAlgorithm(BaseAlgorithm):
                     free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range)
                 else:
                     self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
-    
-                if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
-                    self.logger.info("Applying constraint: compensation_days (Spain-specific)")
-                    compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, period)
+                # Compensation days - check both country and config flag
+                contingente_f = []
+                total_worked_holidays_everyone = []
+                if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain" and ld_holiday > 0:
+                    self.logger.info("Applying constraint: holiday_compensation_days (Spain-specific)")
+                    contingente_f, total_worked_holidays_everyone = holiday_compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit,
+                                                                                              fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, period, shift_T, shift_M, fixed_compensation_days)
                 elif country != "spain":
-                    self.logger.info("Skipping constraint: compensation_days (not applicable for non-Spain)")
+                    self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Spain)")
                 else:
-                    self.logger.warning("Skipping constraint: compensation_days (disabled in config)")
+                    self.logger.warning("Skipping constraint: holiday_compensation_days (disabled in config)")
+
+                contingente_d = []
+                total_worked_sundays_everyone = []
+                if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain" and ld_sunday > 0:
+                    self.logger.info("Applying constraint: sunday_compensation_days (Spain-specific)")
+                    contingente_d, total_worked_sundays_everyone = sunday_compensation_days(model, shift, workers_complete, working_days, sundays, week_to_days, real_working_shift, week_compensation_limit, 
+                                                                                            fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_sunday, holidays, period, shift_T, shift_M, fixed_compensation_days)
+                elif country != "spain":
+                    self.logger.info("Skipping constraint: sunday_compensation_days (not applicable for non-Spain)")
+                else:
+                    self.logger.warning("Skipping constraint: sunday_compensation_days (disabled in config)")
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")
                     one_colab_min_constraint(model, shift, workers, real_working_shift, days_of_year, shift_M, shift_T)
                 else:
                     self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
+
+                if constraint_selections.get("compensation_days", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: ld_restriction")
+                    ld_restriction(model, shift, workers, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone)
+                else:
+                    self.logger.warning("Skipping constraint: ld_restriction (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")
             
             # =================================================================
@@ -443,20 +469,19 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Setting up SALSA optimization objective")
 
             optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj,
-                                             working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
+                                                      working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, first_day,
+                                                      last_day, role_by_worker, work_day_hours, workers_past, year_range, managers, keyholders)
 
             # =================================================================
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, pessObj, workers_past,
+            schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj, workers_past, contingente_f, contingente_d, holiday_half_day, sunday_half_day,
                               pd.Series(['Worker'] + (unique_dates)),
                               output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                               optimization_details=optimization_details )
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
-
             # =================================================================
             # FILTER BY PARTIAL WORKERS IF REQUESTED
             # =================================================================

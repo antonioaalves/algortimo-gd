@@ -24,12 +24,17 @@ def solve(
     model: cp_model.CpModel, 
     days_of_year: List[int], 
     workers: List[int], 
-    special_days: List[int],    
+    sundays: List[int],    
+    special_days: List[int],
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
-    work_day_hours: Dict[int, List[int]],
+    work_day_hours: Dict[int, Dict[int, int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
+    contingente_feriados: Dict[int, List[bool]],
+    contingente_domingos: Dict[int, List[bool]],
+    holiday_half_day: bool,
+    sunday_half_day: bool,
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -124,7 +129,7 @@ def solve(
         logger.info(f"  - Special days: {len(special_days)} days")
         logger.info(f"  - Available shifts: {shifts}")
         logger.info(f"  - Decision variables: {len(shift)} variables")
-        logger.info(f"  - Max solving time: {max_time_seconds} seconds")
+        logger.info(f"  - Max solving time: {solver.parameters.max_time_in_seconds} seconds")
 
         solver.parameters.log_search_progress = log_search_progress
         solver.parameters.use_phase_saving = use_phase_saving
@@ -246,6 +251,7 @@ def solve(
         time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) for d in days_of_year_sorted]
         time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
         special_days_worked = {}
+        sun = {}
         compensation_days_off = {}
 
         table_data_past = []  # List to store each worker's data as a row
@@ -261,7 +267,7 @@ def solve(
                 compensation_days_off[w] = []
 
 
-                logger.debug(f"Processing worker {w}")
+                logger.info(f"Processing worker {w}")
 
                 for d in days_of_year_sorted:
                     day_assignment = None
@@ -331,11 +337,11 @@ def solve(
                 special_days_count = 0
                 unassigned_days = 0
                 special_days_worked[w] = []
+                sun[w] = []
                 compensation_days_off[w] = []
 
 
-                logger.debug(f"Processing worker {w}")
-
+                logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
                     day_assignment = None
                     
@@ -364,23 +370,43 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
+                        elif d in sundays:
+                            sun[w].append(d)
                         time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if d in special_days:
-                            special_days_count += 1
                             special_days_worked[w].append(d)
+                            special_days_count += 1
+                        elif d in sundays:
+                            sun[w].append(d)
                         time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
-
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
+                
+                if contingente_feriados:
+                    if contingente_feriados[w] is not None and len(contingente_feriados[w]) > 0:
+                        feriados_compensaçao = [v.Name() for v in contingente_feriados[w] if solver.Value(v) == 1]
+                        if holiday_half_day == True:
+                            for i in special_days_worked[w]:
+                                feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{i}")
+                        logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao)}")
+
+                if contingente_domingos:
+                    if contingente_domingos[w] is not None and len(contingente_domingos[w]) > 0:
+                        domingos_compensaçao = [v.Name() for v in contingente_domingos[w] if solver.Value(v) == 1]
+                        if sunday_half_day == True:
+                            for i in sun[w]:
+                                domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")
+                        logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao)}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {
                     'L_count': l_count,
                     'LQ_count': lq_count,
                     'LD_count': ld_count,
-                    'special_days_work': special_days_count,
-                    'unassigned_days': unassigned_days
+                    'special_days_worked': special_days_count,
+                    'sundays_worked': len(sun[w]),
+                    'unassigned_days': unassigned_days,
                 }
                 
                 table_data.append(worker_row)
@@ -390,9 +416,8 @@ def solve(
                 #    f"TC={tc_count}, Special={special_days_count}, Unassigned={unassigned_days}")
                                     
             except Exception as e:
-                logger.error(f"Error processing worker {w}: {str(e)}")
+                logger.error(f"Error processing worker {w}: {e}")
                 continue                  
-        
         logger.info(f"Successfully processed {processed_workers} workers")
         
         # =================================================================

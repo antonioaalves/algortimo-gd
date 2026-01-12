@@ -773,7 +773,7 @@ onde d ∈ days_of_week
 ```
 Colaborador com contrato tipo 4, Semana 15:
 Σ(turnos M e T nos dias 99-105) ≤ 4
-Se trabalha seg, ter, qua, qui: 4 ≤ 4 ✓
+Se trabalha seg, ter, qua, qui: 4 ≤ 4 
 Se trabalha seg, ter, qua, qui, sex: 5 ≤ 4 ✗
 ```
 
@@ -808,7 +808,7 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
 Dias 100-107 (janela de 8 dias):
 Se trabalha 100,101,102,103,104,105,106: 7 ≤ 6 ✗ (violação)
 Se trabalha 100,101,102,103,104,105,107: 7 ≤ 6 ✗ (violação) 
-Se trabalha 100,101,102,103,104,107: 6 ≤ 6 ✓
+Se trabalha 100,101,102,103,104,107: 6 ≤ 6 
 ```
 
 **Benefícios para bem-estar**:
