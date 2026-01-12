@@ -14,7 +14,8 @@
             "GD_convenioBD",
             "NUM_DIAS_CONS",
             "codigos_motivo_ausencia",
-            "l_dom_days"
+            "l_dom_days",
+            "eci_units_list"
         ],
 
         "parameters_defaults": {
@@ -34,7 +35,8 @@
                 8999,
                 3028
             ],
-            "l_dom_days": [1]
+            "l_dom_days": [1],
+            "eci_units_list": [2418, 2420, 2416]
         }
     }, 
     
