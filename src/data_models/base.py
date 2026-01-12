@@ -32,7 +32,8 @@ from src.data_models.functions.helper_functions import (
 from src.data_models.functions.data_treatment_functions import (
     adjust_estimativas_special_days,
     filter_df_dates,
-    add_date_related_columns
+    add_date_related_columns,
+    load_granularidade_from_csv
 )
 from src.data_models.validations.load_process_data_validations import (
     validate_posto_id,
@@ -237,21 +238,57 @@ class BaseDescansosDataModel(ABC):
                 return False, "errSubproc", str(e)
 
             try:
-                self.logger.info("Loading df_granularidade from data manager")
-                # granularidade information
-                query_path = _config.paths.sql_auxiliary_paths.get('df_granularidade', '')
-                if query_path == '':
-                    self.logger.warning("df_granularidade query path not found in config")
-                # Use extended date range (first_date_passado to last_date_passado) like df_calendario
-                start_date_quoted = "'" + first_date_passado + "'"
-                end_date_quoted = "'" + last_date_passado + "'"
-                df_granularidade = data_manager.load_data(
-                    'df_granularidade', 
-                    query_file=query_path, 
-                    start_date=start_date_quoted, 
-                    end_date=end_date_quoted, 
-                    posto_id=posto_id
-                )
+                self.logger.info("Loading df_granularidade")
+                # Get unit_id to check if we should load from CSV
+                unit_id = self.auxiliary_data.get('unit_id', '')
+                if not unit_id:
+                    self.logger.warning("unit_id not found in auxiliary_data, will load from database")
+                
+                # Get ECI units list from config_manager process_parameters
+                eci_units_list = []
+                if hasattr(self, 'config_manager') and self.config_manager and hasattr(self.config_manager, 'parameters'):
+                    process_params = self.config_manager.parameters.process_parameters
+                    if process_params:
+                        eci_units_list = process_params.get('parameters_defaults', {}).get('eci_units_list', [])
+                elif hasattr(self, '_config') and _config and hasattr(_config, 'parameters'):
+                    process_params = _config.parameters.process_parameters
+                    if process_params:
+                        eci_units_list = process_params.get('parameters_defaults', {}).get('eci_units_list', [])
+                
+                # Check if unit_id is in ECI list - if so, load from CSV
+                # Ensure unit_id is comparable (convert to int if needed, since ECI list has integers)
+                unit_id_for_comparison = int(unit_id) if unit_id and str(unit_id).isdigit() else unit_id
+                if unit_id and eci_units_list and unit_id_for_comparison in eci_units_list:
+                    self.logger.info(f"unit_id {unit_id} is in ECI list, loading df_granularidade from CSV")
+                    # CSV path
+                    csv_path = os.path.join(root_dir, 'data', 'csvs', 'esc_tmp_estimativas.csv')
+                    success, df_granularidade, error_msg = load_granularidade_from_csv(
+                        csv_path=csv_path,
+                        fk_unidade=str(unit_id_for_comparison),
+                        posto_id=posto_id,
+                        start_date=first_date_passado,
+                        end_date=last_date_passado,
+                        df_estrutura_wfm=df_estrutura_wfm
+                    )
+                    if not success:
+                        self.logger.error(f"Failed to load df_granularidade from CSV: {error_msg}")
+                        return False, "errSubproc", error_msg
+                else:
+                    # Load from database as usual
+                    self.logger.info(f"Loading df_granularidade from database (unit_id={unit_id}, in_eci_list={unit_id in eci_units_list if unit_id and eci_units_list else False})")
+                    query_path = _config.paths.sql_auxiliary_paths.get('df_granularidade', '')
+                    if query_path == '':
+                        self.logger.warning("df_granularidade query path not found in config")
+                    # Use extended date range (first_date_passado to last_date_passado) like df_calendario
+                    start_date_quoted = "'" + first_date_passado + "'"
+                    end_date_quoted = "'" + last_date_passado + "'"
+                    df_granularidade = data_manager.load_data(
+                        'df_granularidade', 
+                        query_file=query_path, 
+                        start_date=start_date_quoted, 
+                        end_date=end_date_quoted, 
+                        posto_id=posto_id
+                    )
                 self.logger.info(f"df_granularidade shape (rows {df_granularidade.shape[0]}, columns {df_granularidade.shape[1]}): {df_granularidade.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_granularidade: {e}", exc_info=True)

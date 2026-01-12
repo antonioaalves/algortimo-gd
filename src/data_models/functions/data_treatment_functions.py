@@ -31,6 +31,7 @@ Dataframe manipulation functions:
 # Dependencies
 import pandas as pd
 import numpy as np
+import os
 from typing import List, Tuple, Dict
 from base_data_project.log_config import get_logger
 
@@ -4298,5 +4299,146 @@ def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_cal
         
     except Exception as e:
         error_msg = f"Error calculating and merging +H: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def load_granularidade_from_csv(csv_path: str, fk_unidade: str, posto_id: int, start_date: str, end_date: str, df_estrutura_wfm: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Load granularidade data from CSV file and transform it to match database structure.
+    
+    CSV columns: fk_unidade, fk_secao, fk_tipo_posto, data, hora_ini, pessoas_estimado, pessoas_min, pessoas_final
+    Database structure: fk_unidade, unidade, fk_secao, secao, fk_tipo_posto, tipo_posto, data, HORA_INI, PESSOAS_ESTIMADO, PESSOAS_MIN, PESSOAS_FINAL
+    
+    Args:
+        csv_path: Path to the CSV file
+        fk_unidade: Unit identifier to filter by
+        posto_id: Position type identifier to filter by
+        start_date: Start date for filtering (format: 'YYYY-MM-DD')
+        end_date: End date for filtering (format: 'YYYY-MM-DD')
+        df_estrutura_wfm: DataFrame with structure mapping (fk_unidade, unidade, fk_secao, secao, fk_tipo_posto, tipo_posto)
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, transformed dataframe, error message)
+    """
+    try:
+        logger.info(f"Loading granularidade from CSV: {csv_path}")
+        
+        # Load CSV
+        if not os.path.exists(csv_path):
+            error_msg = f"CSV file not found: {csv_path}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        df_csv = pd.read_csv(csv_path)
+        logger.info(f"CSV loaded with shape: {df_csv.shape}, columns: {df_csv.columns.tolist()}")
+        
+        # Normalize column names to lowercase (CSV may have uppercase)
+        df_csv.columns = df_csv.columns.str.lower()
+        logger.info(f"Column names normalized to lowercase: {df_csv.columns.tolist()}")
+        
+        # Validate required columns
+        required_cols = ['fk_unidade', 'fk_secao', 'fk_tipo_posto', 'data', 'hora_ini', 'pessoas_estimado', 'pessoas_min', 'pessoas_final']
+        missing_cols = [col for col in required_cols if col not in df_csv.columns]
+        if missing_cols:
+            error_msg = f"Missing required columns in CSV: {missing_cols}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        # Convert fk_unidade to int for comparison (CSV has integers, fk_unidade param is string)
+        df_csv['fk_unidade'] = pd.to_numeric(df_csv['fk_unidade'], errors='coerce').astype('Int64')
+        fk_unidade_int = int(fk_unidade) if fk_unidade and str(fk_unidade).strip() else None
+        if fk_unidade_int is None:
+            error_msg = f"Invalid fk_unidade parameter: {fk_unidade}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        # Filter by fk_unidade
+        df_csv_before_unidade = df_csv.copy()
+        df_csv = df_csv[df_csv['fk_unidade'] == fk_unidade_int].copy()
+        if df_csv.empty:
+            available_units = df_csv_before_unidade['fk_unidade'].unique().tolist()
+            error_msg = f"No data found for fk_unidade: {fk_unidade} in CSV. Available fk_unidade values: {available_units}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        # Filter by posto_id
+        df_csv_before_posto = df_csv.copy()
+        df_csv = df_csv[df_csv['fk_tipo_posto'] == posto_id].copy()
+        if df_csv.empty:
+            # Provide more helpful error message with available posto_ids
+            available_postos = df_csv_before_posto['fk_tipo_posto'].unique().tolist()
+            error_msg = f"No data found for posto_id: {posto_id} in CSV for fk_unidade {fk_unidade}. Available posto_ids: {available_postos}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        # Convert data to datetime and filter by date range
+        df_csv['data'] = pd.to_datetime(df_csv['data'], format='%Y-%m-%d', errors='coerce')
+        df_csv = df_csv[df_csv['data'].notna()].copy()
+        
+        start_date_dt = pd.to_datetime(start_date, format='%Y-%m-%d')
+        end_date_dt = pd.to_datetime(end_date, format='%Y-%m-%d')
+        df_csv = df_csv[(df_csv['data'] >= start_date_dt) & (df_csv['data'] <= end_date_dt)].copy()
+        
+        if df_csv.empty:
+            error_msg = f"No data found in date range: {start_date} to {end_date}"
+            logger.warning(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        # CSV already has unidade, secao, tipo_posto columns, so use them directly
+        # No need to merge with df_estrutura_wfm since CSV has all required columns
+        if 'unidade' in df_csv.columns and 'secao' in df_csv.columns and 'tipo_posto' in df_csv.columns:
+            logger.info("CSV already contains unidade, secao, tipo_posto columns - using them directly")
+            df_result = df_csv.copy()
+        else:
+            # Fallback: merge with df_estrutura_wfm if CSV is missing name columns
+            if df_estrutura_wfm.empty:
+                error_msg = "df_estrutura_wfm is empty and CSV missing name columns, cannot get names"
+                logger.error(error_msg)
+                return False, pd.DataFrame(), error_msg
+            
+            # Ensure fk_unidade is string type for consistent merge
+            df_csv['fk_unidade'] = df_csv['fk_unidade'].astype(str)
+            df_estrutura_wfm['fk_unidade'] = df_estrutura_wfm['fk_unidade'].astype(str)
+            df_csv['fk_secao'] = df_csv['fk_secao'].astype(int)
+            df_estrutura_wfm['fk_secao'] = df_estrutura_wfm['fk_secao'].astype(int)
+            df_csv['fk_tipo_posto'] = df_csv['fk_tipo_posto'].astype(int)
+            df_estrutura_wfm['fk_tipo_posto'] = df_estrutura_wfm['fk_tipo_posto'].astype(int)
+            
+            # Drop name columns from CSV if they exist (to avoid duplicates in merge)
+            df_csv_for_merge = df_csv.drop(columns=['unidade', 'secao', 'tipo_posto'], errors='ignore')
+            
+            df_result = pd.merge(
+                df_csv_for_merge,
+                df_estrutura_wfm[['fk_unidade', 'unidade', 'fk_secao', 'secao', 'fk_tipo_posto', 'tipo_posto']],
+                on=['fk_unidade', 'fk_secao', 'fk_tipo_posto'],
+                how='left'
+            )
+            
+            # Check for unmatched rows
+            unmatched = df_result['unidade'].isna().sum()
+            if unmatched > 0:
+                logger.warning(f"{unmatched} rows could not be matched with df_estrutura_wfm")
+        
+        # Ensure column names are lowercase to match what load_estimativas_transformations expects
+        # (Database may return uppercase, but code expects lowercase)
+        column_mapping = {}
+        for col in df_result.columns:
+            if col.upper() in ['HORA_INI', 'PESSOAS_ESTIMADO', 'PESSOAS_MIN', 'PESSOAS_FINAL']:
+                column_mapping[col] = col.lower()
+        if column_mapping:
+            df_result = df_result.rename(columns=column_mapping)
+        
+        # Select and reorder columns to match database query output (lowercase)
+        df_result = df_result[[
+            'fk_unidade', 'unidade', 'fk_secao', 'secao', 'fk_tipo_posto', 'tipo_posto',
+            'data', 'hora_ini', 'pessoas_estimado', 'pessoas_min', 'pessoas_final'
+        ]].copy()
+        
+        logger.info(f"CSV granularidade transformed successfully. Shape: {df_result.shape}")
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error loading granularidade from CSV: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
