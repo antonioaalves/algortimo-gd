@@ -70,6 +70,8 @@ from src.data_models.functions.data_treatment_functions import (
     handle_employee_edge_cases,
     adjust_horario_for_admission_date,
     calculate_and_merge_allocated_employees,
+    treat_df_disponibilidade,
+    restrict_turnos_by_disponibilidade,
 )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.validations.load_process_data_validations import (
@@ -714,6 +716,50 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_contratos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            # Load df_disponibilidade (employee availability restrictions)
+            try:
+                self.logger.info("Loading df_disponibilidade from data manager")
+                df_disponibilidade = data_manager.load_data(
+                    entity='df_disponibilidade',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_disponibilidade'),
+                    process_id="'" + str(process_id) + "'",
+                    start_date=first_date_passado,
+                    end_date=last_date_passado,
+                    colabs_id=create_employee_query_string(past_employees_id_list)
+                )
+                if df_disponibilidade.empty:
+                    self.logger.info("df_disponibilidade is empty - no availability restrictions found")
+                else:
+                    self.logger.info(f"df_disponibilidade shape (rows {df_disponibilidade.shape[0]}, columns {df_disponibilidade.shape[1]}): {df_disponibilidade.columns.tolist()}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_disponibilidade: {e} - proceeding without availability restrictions")
+                df_disponibilidade = pd.DataFrame()
+
+            # Treat df_disponibilidade if not empty
+            if not df_disponibilidade.empty:
+                try:
+                    # Extract employee limits from df_colaborador for availability treatment
+                    limit_columns = ['employee_id', 'matricula', 'limite_superior_manha', 'limite_inferior_tarde']
+                    available_limit_columns = [col for col in limit_columns if col in df_colaborador.columns]
+                    
+                    if 'employee_id' in available_limit_columns:
+                        df_colaborador_limits = df_colaborador[available_limit_columns].copy()
+                        self.logger.info(f"Extracted employee limits for df_disponibilidade treatment: {len(df_colaborador_limits)} employees")
+                        
+                        success, df_disponibilidade, error_msg = treat_df_disponibilidade(
+                            df_disponibilidade=df_disponibilidade,
+                            df_colaborador_limits=df_colaborador_limits
+                        )
+                        if not success:
+                            self.logger.warning(f"df_disponibilidade treatment failed: {error_msg} - proceeding without availability restrictions")
+                            df_disponibilidade = pd.DataFrame()
+                    else:
+                        self.logger.warning("employee_id column not found in df_colaborador - skipping df_disponibilidade treatment")
+                        df_disponibilidade = pd.DataFrame()
+                except Exception as e:
+                    self.logger.warning(f"Error treating df_disponibilidade: {e} - proceeding without availability restrictions")
+                    df_disponibilidade = pd.DataFrame()
+
             success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador=df_colaborador, employees_id_list=past_employees_id_list)
             if not success:
                 self.logger.error(f"Colaborador treatment failed: {error_msg}")
@@ -744,6 +790,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
                 self.auxiliary_data['df_contratos'] = df_contratos.copy()
+                self.auxiliary_data['df_disponibilidade'] = df_disponibilidade.copy() if not df_disponibilidade.empty else pd.DataFrame()
                 # TODO: Remove this, not used
                 self.auxiliary_data['num_fer_doms'] = 0
                 # Note: employee_id_matriculas_map and matriculas_list already in auxiliary_data from load_process_data

@@ -29,6 +29,7 @@ Dataframe manipulation functions:
 """
 
 # Dependencies
+import datetime as dt
 import pandas as pd
 import numpy as np
 from typing import List, Tuple, Dict
@@ -4298,5 +4299,410 @@ def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_cal
         
     except Exception as e:
         error_msg = f"Error calculating and merging +H: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def _time_to_minutes(time_value) -> float:
+    """
+    Convert a time value to minutes from midnight for comparison.
+    
+    Handles multiple input formats:
+    - String "HH:MM" or "HH:MM:SS"
+    - datetime.time objects
+    - datetime.datetime objects (extracts time component)
+    - pd.Timestamp objects
+    
+    Args:
+        time_value: Time in various formats
+        
+    Returns:
+        float: Minutes from midnight, or np.nan if conversion fails
+    """
+    if pd.isna(time_value):
+        return np.nan
+    
+    try:
+        # Handle string format "HH:MM" or "HH:MM:SS"
+        if isinstance(time_value, str):
+            parts = time_value.split(':')
+            hours = int(parts[0])
+            minutes = int(parts[1]) if len(parts) > 1 else 0
+            return hours * 60 + minutes
+        
+        # Handle datetime.time objects
+        if hasattr(time_value, 'hour') and hasattr(time_value, 'minute'):
+            return time_value.hour * 60 + time_value.minute
+        
+        # Handle pd.Timestamp or datetime objects
+        if isinstance(time_value, (pd.Timestamp, dt.datetime)):
+            return time_value.hour * 60 + time_value.minute
+        
+        # Try to parse as datetime
+        parsed = pd.to_datetime(time_value)
+        return parsed.hour * 60 + parsed.minute
+        
+    except Exception:
+        return np.nan
+
+
+def _compute_restricao_turno(
+    hora_ini: pd.Series,
+    hora_fim: pd.Series,
+    limite_superior_manha: pd.Series,
+    limite_inferior_tarde: pd.Series
+) -> pd.Series:
+    """
+    Compute shift restriction based on availability times and employee shift limits.
+    
+    This function determines what shift an employee can work based on their availability
+    window (hora_ini, hora_fim) compared to their configured shift boundaries
+    (limite_superior_manha, limite_inferior_tarde).
+    
+    Timeline (typical case where M1 > T1, shifts overlap):
+        |----Morning shift window----|
+                      |----Afternoon shift window----|
+                      T1              M1
+                      └── Overlap ────┘
+    
+    Where:
+        - T1 = limite_inferior_tarde (earliest afternoon can start)
+        - M1 = limite_superior_manha (latest morning can end)
+        - dini = hora_ini (employee availability start)
+        - dfim = hora_fim (employee availability end)
+    
+    Logic:
+        - S1: dini < T1 AND dfim < M1 → Morning only ('M')
+        - S3: dini > T1 AND dfim > M1 → Afternoon only ('T')
+        - S2: Otherwise, compare margins:
+            - margin_morning = T1 - dini (time available before afternoon starts)
+            - margin_afternoon = dfim - M1 (time available after morning ends)
+            - If margin_morning > margin_afternoon → 'M'
+            - If margin_morning < margin_afternoon → 'T'
+            - If equal → '' (no restriction, will be filtered out)
+    
+    Args:
+        hora_ini: Series with availability start times (Oracle datetime)
+        hora_fim: Series with availability end times (Oracle datetime)
+        limite_superior_manha: Series with upper limit for morning shift (string "HH:MM")
+        limite_inferior_tarde: Series with lower limit for afternoon shift (string "HH:MM")
+        
+    Returns:
+        pd.Series: Series with shift restriction values ('M', 'T', or '' for no restriction)
+    """
+    # Convert all time values to minutes from midnight for easy comparison
+    dini = hora_ini.apply(_time_to_minutes)
+    dfim = hora_fim.apply(_time_to_minutes)
+    M1 = limite_superior_manha.apply(_time_to_minutes)
+    T1 = limite_inferior_tarde.apply(_time_to_minutes)
+    
+    # Log warning if M1 == T1 (unusual but valid)
+    equal_limits_count = (M1 == T1).sum()
+    if equal_limits_count > 0:
+        logger.warning(f"Found {equal_limits_count} rows where limite_superior_manha == limite_inferior_tarde")
+    
+    # Initialize result with empty strings
+    result = pd.Series([''] * len(hora_ini), index=hora_ini.index)
+    
+    # S1: dini < T1 AND dfim < M1 → Morning only
+    s1_mask = (dini < T1) & (dfim < M1)
+    result.loc[s1_mask] = 'M'
+    
+    # S3: dini > T1 AND dfim > M1 → Afternoon only
+    s3_mask = (dini > T1) & (dfim > M1)
+    result.loc[s3_mask] = 'T'
+    
+    # S2: Everything else - calculate based on margins
+    s2_mask = ~s1_mask & ~s3_mask
+    
+    if s2_mask.any():
+        # Calculate margins
+        margin_morning = T1 - dini  # Time available before afternoon starts
+        margin_afternoon = dfim - M1  # Time available after morning ends
+        
+        # S2 sub-conditions
+        s2_morning_mask = s2_mask & (margin_morning > margin_afternoon)
+        s2_afternoon_mask = s2_mask & (margin_morning < margin_afternoon)
+        # s2_equal_mask = s2_mask & (margin_morning == margin_afternoon) → stays as '' (no restriction)
+        
+        result.loc[s2_morning_mask] = 'M'
+        result.loc[s2_afternoon_mask] = 'T'
+    
+    # Log distribution
+    logger.info(f"Shift restriction computation: S1 (Morning)={s1_mask.sum()}, S3 (Afternoon)={s3_mask.sum()}, S2 (Calculated)={s2_mask.sum()}")
+    
+    return result
+
+
+def treat_df_disponibilidade(
+    df_disponibilidade: pd.DataFrame,
+    df_colaborador_limits: pd.DataFrame
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Treat df_disponibilidade dataframe by validating, converting types, and computing shift restrictions.
+    
+    This function processes employee availability data by:
+    1. Validating required columns exist
+    2. Converting data types (dates, times)
+    3. Merging employee limit information (limite_superior_manha, limite_inferior_tarde)
+    4. Computing the restricao_turno column using the helper function
+    
+    Business Context:
+        Employees may have availability restrictions that limit which shifts they can work
+        on specific days. This function processes those restrictions and determines the
+        appropriate shift assignment based on their available time windows.
+    
+    Args:
+        df_disponibilidade: DataFrame with availability data containing columns:
+            - employee_id: Employee identifier
+            - schedule_day: Date of availability restriction
+            - hora_ini: Start time of availability window
+            - hora_fim: End time of availability window
+        df_colaborador_limits: DataFrame with employee shift limits containing columns:
+            - employee_id: Employee identifier
+            - matricula: Employee matricula (optional)
+            - limite_superior_manha: Upper limit for morning shift
+            - limite_inferior_tarde: Lower limit for afternoon shift
+            
+    Returns:
+        Tuple containing:
+            - success (bool): True if treatment succeeded, False otherwise
+            - df_disponibilidade (pd.DataFrame): Treated DataFrame with restricao_turno column
+            - error_message (str): Error description if operation failed
+    """
+    try:
+        # INPUT VALIDATION
+        if df_disponibilidade is None or df_disponibilidade.empty:
+            logger.info("df_disponibilidade is empty - returning empty DataFrame")
+            return True, pd.DataFrame(), ""
+        
+        required_columns = ['employee_id', 'schedule_day', 'hora_ini', 'hora_fim']
+        missing_columns = [col for col in required_columns if col not in df_disponibilidade.columns]
+        if missing_columns:
+            error_msg = f"Missing required columns in df_disponibilidade: {missing_columns}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        if df_colaborador_limits is None or df_colaborador_limits.empty:
+            error_msg = "df_colaborador_limits is empty - cannot compute shift restrictions"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        required_limit_columns = ['employee_id', 'limite_superior_manha', 'limite_inferior_tarde']
+        missing_limit_columns = [col for col in required_limit_columns if col not in df_colaborador_limits.columns]
+        if missing_limit_columns:
+            error_msg = f"Missing required columns in df_colaborador_limits: {missing_limit_columns}"
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+        
+        logger.info(f"Treating df_disponibilidade with {len(df_disponibilidade)} rows")
+        
+        # TREATMENT LOGIC
+        df_result = df_disponibilidade.copy()
+        
+        # Step 1: Normalize column names
+        df_result.columns = df_result.columns.str.lower()
+        df_colaborador_limits_temp = df_colaborador_limits.copy()
+        df_colaborador_limits_temp.columns = df_colaborador_limits_temp.columns.str.lower()
+        
+        # Step 2: Convert employee_id to string for consistent matching
+        df_result['employee_id'] = df_result['employee_id'].astype(str)
+        df_colaborador_limits_temp['employee_id'] = df_colaborador_limits_temp['employee_id'].astype(str)
+        
+        # Step 3: Convert schedule_day to string date format
+        if df_result['schedule_day'].dtype != 'object':
+            df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day']).dt.strftime('%Y-%m-%d')
+        
+        # Step 4: Merge employee limits
+        df_result = df_result.merge(
+            df_colaborador_limits_temp[['employee_id', 'limite_superior_manha', 'limite_inferior_tarde']],
+            on='employee_id',
+            how='left'
+        )
+        logger.info(f"Merged employee limits - resulting shape: {df_result.shape}")
+        
+        # Step 5: Apply helper function to compute restricao_turno
+        df_result['restricao_turno'] = _compute_restricao_turno(
+            hora_ini=df_result['hora_ini'],
+            hora_fim=df_result['hora_fim'],
+            limite_superior_manha=df_result['limite_superior_manha'],
+            limite_inferior_tarde=df_result['limite_inferior_tarde']
+        )
+        
+        # Step 6: Filter out records with no restriction (empty string means no clear shift preference)
+        rows_before_filter = len(df_result)
+        no_restriction_mask = df_result['restricao_turno'] == ''
+        no_restriction_count = no_restriction_mask.sum()
+        
+        if no_restriction_count > 0:
+            logger.info(f"Filtering out {no_restriction_count} records with no shift restriction (equal margins)")
+            df_result = df_result[~no_restriction_mask].copy()
+        
+        logger.info(f"Rows after filtering: {len(df_result)} (removed {rows_before_filter - len(df_result)})")
+        
+        # OUTPUT VALIDATION
+        if 'restricao_turno' not in df_result.columns:
+            return False, pd.DataFrame(), "Failed to create restricao_turno column"
+        
+        restricao_counts = df_result['restricao_turno'].value_counts()
+        logger.info(f"Successfully treated df_disponibilidade. restricao_turno counts: {restricao_counts.to_dict()}")
+        
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error in treat_df_disponibilidade: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def restrict_turnos_by_disponibilidade(
+    df_calendario: pd.DataFrame,
+    df_disponibilidade: pd.DataFrame
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Restrict shift assignments in df_calendario based on employee availability restrictions.
+    
+    This function applies availability-based shift restrictions to the calendar by:
+    - Finding matching (employee_id, schedule_day) combinations
+    - Only modifying rows where current horario is a working shift ('M', 'T', or 'MoT')
+    - Setting appropriate horario values based on restricao_turno
+    
+    Restriction Logic:
+        - If restricao_turno == 'M' (morning only):
+            - tipo_turno == 'M' → horario = 'M'
+            - tipo_turno == 'T' → horario = '0'
+        - If restricao_turno == 'T' (afternoon only):
+            - tipo_turno == 'M' → horario = '0'
+            - tipo_turno == 'T' → horario = 'T'
+    
+    Preservation Rules:
+        - Only modifies horario values that are 'M', 'T', or 'MoT' (working shifts)
+        - Preserves other values like 'F' (holidays), 'V' (vacations), 'L' (day-off), etc.
+    
+    Args:
+        df_calendario: Calendar DataFrame with columns:
+            - employee_id: Employee identifier
+            - schedule_day: Date
+            - tipo_turno: Shift type ('M' or 'T')
+            - horario: Current schedule assignment
+        df_disponibilidade: Availability restrictions DataFrame with columns:
+            - employee_id: Employee identifier
+            - schedule_day: Date of restriction
+            - restricao_turno: Shift restriction ('M' or 'T')
+            
+    Returns:
+        Tuple containing:
+            - success (bool): True if operation succeeded
+            - df_calendario (pd.DataFrame): Calendar with applied restrictions
+            - error_message (str): Success message with count or error details
+    """
+    try:
+        # INPUT VALIDATION
+        if df_calendario is None or df_calendario.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_calendario"
+        
+        if df_disponibilidade is None or df_disponibilidade.empty:
+            logger.info("df_disponibilidade is empty - returning df_calendario unchanged")
+            return True, df_calendario, "No availability restrictions to apply"
+        
+        required_cal_columns = ['employee_id', 'schedule_day', 'tipo_turno', 'horario']
+        missing_cal_columns = [col for col in required_cal_columns if col not in df_calendario.columns]
+        if missing_cal_columns:
+            return False, pd.DataFrame(), f"Missing required columns in df_calendario: {missing_cal_columns}"
+        
+        required_disp_columns = ['employee_id', 'schedule_day', 'restricao_turno']
+        missing_disp_columns = [col for col in required_disp_columns if col not in df_disponibilidade.columns]
+        if missing_disp_columns:
+            return False, pd.DataFrame(), f"Missing required columns in df_disponibilidade: {missing_disp_columns}"
+        
+        logger.info(f"Applying availability restrictions: {len(df_disponibilidade)} restrictions to {len(df_calendario)} calendar rows")
+        
+        # TREATMENT LOGIC
+        df_result = df_calendario.copy()
+        
+        # Ensure consistent types for matching
+        df_result['employee_id'] = df_result['employee_id'].astype(str)
+        df_disponibilidade_temp = df_disponibilidade.copy()
+        df_disponibilidade_temp['employee_id'] = df_disponibilidade_temp['employee_id'].astype(str)
+        
+        # Ensure schedule_day is string format in both
+        if df_result['schedule_day'].dtype != 'object':
+            df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day']).dt.strftime('%Y-%m-%d')
+        if df_disponibilidade_temp['schedule_day'].dtype != 'object':
+            df_disponibilidade_temp['schedule_day'] = pd.to_datetime(df_disponibilidade_temp['schedule_day']).dt.strftime('%Y-%m-%d')
+        
+        # Create lookup Series from df_disponibilidade using MultiIndex
+        restricao_lookup = df_disponibilidade_temp.set_index(['employee_id', 'schedule_day'])['restricao_turno']
+        
+        # Create MultiIndex for df_result to enable vectorized lookup
+        result_index = pd.MultiIndex.from_arrays([
+            df_result['employee_id'],
+            df_result['schedule_day']
+        ])
+        
+        # Vectorized lookup: map restricao_turno values to result positions
+        mapped_restricao = result_index.map(restricao_lookup)
+        
+        # Define working shifts that can be modified
+        working_shifts = ['M', 'T', 'MoT']
+        
+        # Create mask for rows that have a restriction and current horario is a working shift
+        has_restricao = mapped_restricao.notna() & (mapped_restricao != '')
+        is_working_shift = df_result['horario'].isin(working_shifts)
+        can_modify_mask = has_restricao & is_working_shift
+        
+        # Count matches before applying
+        matches_found = has_restricao.sum()
+        modifiable_matches = can_modify_mask.sum()
+        logger.info(f"Found {matches_found} matching restrictions, {modifiable_matches} on working shifts")
+        
+        # Apply restrictions
+        modified_count = 0
+        
+        # Case 1: restricao_turno == 'M' (morning only)
+        restricao_m_mask = can_modify_mask & (mapped_restricao == 'M')
+        # For tipo_turno == 'M' → horario = 'M'
+        morning_m_mask = restricao_m_mask & (df_result['tipo_turno'] == 'M')
+        df_result.loc[morning_m_mask, 'horario'] = 'M'
+        modified_count += morning_m_mask.sum()
+        # For tipo_turno == 'T' → horario = '0'
+        afternoon_m_mask = restricao_m_mask & (df_result['tipo_turno'] == 'T')
+        df_result.loc[afternoon_m_mask, 'horario'] = '0'
+        modified_count += afternoon_m_mask.sum()
+        
+        # Case 2: restricao_turno == 'T' (afternoon only)
+        restricao_t_mask = can_modify_mask & (mapped_restricao == 'T')
+        # For tipo_turno == 'M' → horario = '0'
+        morning_t_mask = restricao_t_mask & (df_result['tipo_turno'] == 'M')
+        df_result.loc[morning_t_mask, 'horario'] = '0'
+        modified_count += morning_t_mask.sum()
+        # For tipo_turno == 'T' → horario = 'T'
+        afternoon_t_mask = restricao_t_mask & (df_result['tipo_turno'] == 'T')
+        df_result.loc[afternoon_t_mask, 'horario'] = 'T'
+        modified_count += afternoon_t_mask.sum()
+        
+        # Log detailed changes per employee-day combination
+        all_modified_mask = restricao_m_mask | restricao_t_mask
+        if all_modified_mask.any():
+            # Get unique employee-day combinations that were modified
+            modified_rows = df_result.loc[all_modified_mask, ['employee_id', 'schedule_day', 'tipo_turno', 'horario']].copy()
+            modified_rows['restricao'] = mapped_restricao[all_modified_mask]
+            
+            # Group by employee_id and schedule_day to show the restriction applied
+            unique_modifications = modified_rows.groupby(['employee_id', 'schedule_day', 'restricao']).size().reset_index(name='rows_changed')
+            
+            logger.info("=== Availability Restrictions Applied ===")
+            for _, row in unique_modifications.iterrows():
+                logger.info(f"  Employee {row['employee_id']} | Day {row['schedule_day']} | Restricted to: {row['restricao']}")
+            logger.info(f"=== Total: {len(unique_modifications)} employee-day combinations modified ===")
+        
+        # OUTPUT VALIDATION
+        horario_counts = df_result['horario'].value_counts()
+        logger.info(f"Applied {modified_count} availability restrictions. Horario counts: {horario_counts.to_dict()}")
+        
+        return True, df_result, f"Successfully applied {modified_count} availability restrictions"
+        
+    except Exception as e:
+        error_msg = f"Error in restrict_turnos_by_disponibilidade: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
