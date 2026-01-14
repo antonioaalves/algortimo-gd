@@ -314,7 +314,7 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
                 max_days = work_days_per_week[w][week - 1]
             model.Add(total_shifts <= max_days)
 
-def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days):
+def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days, dummy_workers):
     #limits maximum continuous working days
     for w in workers:
         for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
@@ -327,7 +327,27 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
             )
             # If all 11 days have a working shift, that would exceed our limit of 10 consecutive days
             model.Add(consecutive_days <= max_days)
+    if dummy_workers:
+        for dummy in dummy_workers:
+            original = dummy_workers[dummy]['original']
+            change_date = dummy_workers[dummy]['change_date']
 
+            # We check windows that cross the change boundary:
+            # some days before change_date (original)
+            # and some days after (dummy)
+            for k in range(1, max_days + 1):
+                consecutive_days = sum(
+                    shift[(original, change_date - i, s)]
+                    for i in range(k)
+                    for s in working_shift
+                    if (original, change_date - i, s) in shift
+                ) + sum(
+                    shift[(dummy, change_date + j, s)]
+                    for j in range(max_days + 1 - k)
+                    for s in working_shift
+                    if (dummy, change_date + j, s) in shift)
+
+                model.Add(consecutive_days <= max_days)
 
 def LQ_attribution(model, shift, workers, working_days, c2d, year_range):
     # #constraint for maximum of LD days in a year
@@ -557,6 +577,8 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days):
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week):
     for w in workers:
+        #if w in [125]:
+        #    continue
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
         #logger.info(f"Worker {w}, Admissao: {worker_admissao}, Demissao: {worker_demissao}, Working Days: {working_days[w]}, Week Days: {week_to_days_salsa}")
@@ -689,7 +711,7 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
         # Only consider special days that are in this worker's working days
         worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
         logger.info(f"Worker {w}, Sundays {worker_sundays}")
-        model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
+        model.Add(sum(shift[(w, d, "L")] for d in worker_sundays if (w, d, "L") in shift) >= total_l_dom.get(w, 0))
         print('Dom', w, total_l_dom.get(w, 0))
 
 def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T):

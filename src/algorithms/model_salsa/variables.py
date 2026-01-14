@@ -16,9 +16,8 @@ def add_var(model, shift, w, days, code):
             model.Add(shift[(w, d, code)] == 1)
 
 
-def decision_variables(model, workers, shifts, first_day, last_day, absences, 
-                       vacation_days, empty_days, closed_holidays, fixed_days_off, 
-                       fixed_LQs, shift_M, shift_T, past_workers, fixed_compensation_days):
+def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, empty_days,
+                       closed_holidays, fixed_days_off, fixed_LQs, shift_M, shift_T, past_workers, fixed_compensation_days):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 

@@ -35,6 +35,7 @@ def solve(
     contingente_domingos: Dict[int, List[bool]],
     holiday_half_day: bool,
     sunday_half_day: bool,
+    dummy_workers: dict[int, dict[str, int]],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -330,6 +331,14 @@ def solve(
         time_worked_day_T_after = time_worked_day_T.copy()
         for w in workers:
             try:
+                temp_worker = None
+                if dummy_workers:
+                    if w in dummy_workers:
+                        logger.info(f"{w} is a dummy worker, skiping")
+                        continue
+                    if w * -1 in dummy_workers:
+                        temp_worker = -w
+                        logger.info(f"{w} changes contract on date {dummy_workers[temp_worker]["change_date"]}")
                 worker_row = [w]  # Start with the worker's name
                 l_count = 0
                 lq_count = 0
@@ -344,12 +353,22 @@ def solve(
                 logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
                     day_assignment = None
-                    
                     # Check each shift type for this day
                     for s in shifts:
-                        if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
-                            day_assignment = shift_mapping.get(s, s)
-                            break
+                        if temp_worker is not None:
+                            if dummy_workers[temp_worker]["change_date"] < d: 
+                                if (temp_worker, d, s) in shift and solver.Value(shift[(temp_worker, d, s)]) == 1:
+                                    day_assignment = shift_mapping.get(s, s)
+                                    print((temp_worker, d, s))
+                                    break
+                            else:
+                                if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
+                                    day_assignment = shift_mapping.get(s, s)
+                                    break
+                        else:
+                            if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
+                                day_assignment = shift_mapping.get(s, s)
+                                break
                     
                     # If no specific assignment found, mark as unassigned
                     if day_assignment is None:
@@ -419,7 +438,7 @@ def solve(
                 logger.error(f"Error processing worker {w}: {e}")
                 continue                  
         logger.info(f"Successfully processed {processed_workers} workers")
-        
+
         # =================================================================
         # 6. CREATE DATAFRAME AND SAVE TO EXCEL
         # =================================================================

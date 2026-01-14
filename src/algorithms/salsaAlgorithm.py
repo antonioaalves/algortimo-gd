@@ -285,6 +285,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             sunday_half_day = adapted_data["sunday_half_day"]
             managers = adapted_data["managers"]
             keyholders = adapted_data["keyholders"]
+            dummy_workers = adapted_data["dummy_workers"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -381,7 +382,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Maximum continuous working days constraint
                 if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: maximum_continuous_working_days")
-                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
+                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, dummy_workers)
                 else:
                     self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
                 
@@ -476,10 +477,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj, workers_past, contingente_f, contingente_d, holiday_half_day, sunday_half_day,
+            schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj, workers_past, contingente_f, contingente_d, holiday_half_day, sunday_half_day, dummy_workers,
                               pd.Series(['Worker'] + (unique_dates)),
                               output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
-                              optimization_details=optimization_details )
+                              optimization_details=optimization_details)
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
             # =================================================================
