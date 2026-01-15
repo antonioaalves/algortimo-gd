@@ -577,8 +577,6 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days):
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week):
     for w in workers:
-        #if w in [125]:
-        #    continue
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
         #logger.info(f"Worker {w}, Admissao: {worker_admissao}, Demissao: {worker_demissao}, Working Days: {working_days[w]}, Week Days: {week_to_days_salsa}")
@@ -666,8 +664,6 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             if required_free_days < (len(fixed_days_week) + len(fixed_lqs_week)):
                 required_free_days = len(fixed_days_week) + len(fixed_lqs_week)
                 logger.info(f" Worker {w} - Adjusted Required Free Days to {required_free_days} due to fixed days off: {fixed_days_week}")
-
-            # Only add constraint if we require at least 1 free day
 
             # Only add constraint if we require at least 1 free day
             if required_free_days >= 0:

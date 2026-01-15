@@ -359,7 +359,6 @@ def solve(
                             if dummy_workers[temp_worker]["change_date"] < d: 
                                 if (temp_worker, d, s) in shift and solver.Value(shift[(temp_worker, d, s)]) == 1:
                                     day_assignment = shift_mapping.get(s, s)
-                                    print((temp_worker, d, s))
                                     break
                             else:
                                 if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:

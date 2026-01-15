@@ -500,8 +500,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             # Mark all remaining days after last_registered_day as 'A' (absent)
             if first_registered_day[w] > 0 or last_registered_day[w] > 0:  # Ensure worker was registered at some point
                 empty_days[w].extend([d for d in range(1, first_registered_day[w]) if d not in empty_days[w]])
-                empty_days[w].extend([d for d in range(last_registered_day[w] + 1, max_day) if d not in empty_days[w]])
-            
+                empty_days[w].extend([d for d in range(last_registered_day[w] + 1, max_day + 1) if d not in empty_days[w]])
 
             empty_days[w] = set(empty_days[w]) - closed_holidays
             worker_absences[w] = set(worker_absences[w]) - closed_holidays
@@ -588,14 +587,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
                     working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - fixed_compensation_days[w]
                 else:
-                    work_days_per_week[w] = [5] * 52
+                    work_days_per_week[w] = [5] * 54
                 if not working_days[w]:
                     logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
 
                 #assumir aqui uma especie de trigger em q passo a saber o contrato atual, o próximo contrato 'new_contract' e em que data trocam 'change_date'
                 if w == 125: #random, so para escolher 1 colab
                     new_contract = 5
-                    change_date = "2026-04-29" #inicialmente assumir que só serão feitas trocas de contrato em domingos
+                    change_date = "2026-03-29" #inicialmente assumir que só serão feitas trocas de contrato em domingos
                     result = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == change_date, "index"]
                     change_date = result.iloc[0]
                     new_w = w * -1
@@ -617,7 +616,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     fixed_days_off[w] = {d for d in fixed_days_off[w] if d <= change_date}
                     worker_absences[w] = {d for d in worker_absences[w] if d <= change_date}
                     fixed_compensation_days[w] = {d for d in fixed_compensation_days[w] if d <= change_date}
-                    working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - fixed_compensation_days[w]
 
                     work_day_hours[new_w] = work_day_hours[w]
                     #work_day_hours[w] = {d for d in work_day_hours[w] if d <= change_date} #acho que aqui nao preciso de alterar nada
@@ -627,14 +625,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     first_registered_day[new_w] = data_admissao[new_w]
                     last_registered_day[new_w] = data_demissao[new_w]
                     empty_days[new_w].extend([d for d in range(1, data_admissao[new_w]) if d not in empty_days[new_w]])
-                    empty_days[new_w].extend([d for d in range(data_demissao[new_w] + 1, max_day) if d not in empty_days[new_w]])
+                    empty_days[new_w].extend([d for d in range(data_demissao[new_w] + 1, max_day + 1) if d not in empty_days[new_w]])
                     empty_days[new_w] = set(empty_days[new_w])
                     
                     data_demissao[w] = change_date
                     last_registered_day[w] = data_demissao[w]
                     empty_days[w] = list(empty_days[w])
-                    empty_days[w].extend([d for d in range(change_date + 1, max_day) if d not in empty_days[w]])
+                    empty_days[w].extend([d for d in range(change_date + 1, max_day + 1) if d not in empty_days[w]])
                     empty_days[w] = set(empty_days[w])
+                    working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - fixed_compensation_days[w]
 
                     # IMPORTANTE : como recebo os contadores que agora sao diferentes?
                     c2d[new_w] = 3
@@ -645,6 +644,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     l_d[w] = 0
                     # aqui em cima é tudo inventado
                     contract_type[new_w] = new_contract
+                    first_week_5_6[new_w] = int(worker_row.get('seed_5_6', 0))
+                    week_compensation_limit[new_w] = int(worker_row.get('n_sem_a_folga', 0))
 
                     if contract_type[new_w] == 8:
                         if (first_week_5_6[new_w] != 0):
@@ -654,11 +655,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         check_5_6_pattern_consistency(w, fixed_days_off[new_w], fixed_LQs[new_w], week_to_days_salsa, work_days_per_week[new_w])
                         worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w] = days_off_atributtion(w, worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w], week_to_days_salsa, closed_holidays, work_days_per_week[new_w], year_range)
                     else:
-                        work_days_per_week[new_w] = [5] * 52
+                        work_days_per_week[new_w] = [5] * 54
+                        worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w] = days_off_atributtion(w, worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w], week_to_days_salsa, closed_holidays, None, year_range)
+
 
                     working_days[new_w] = set(days_of_year) - empty_days[new_w] - worker_absences[new_w] - vacation_days[new_w] - closed_holidays - fixed_compensation_days[new_w]
-                    first_week_5_6[new_w] = int(worker_row.get('seed_5_6', 0))
-                    week_compensation_limit[new_w] = int(worker_row.get('n_sem_a_folga', 0))
                     dummy_workers[new_w] = {'original': w, 'change_date': change_date}
 
         if dummy_workers:
