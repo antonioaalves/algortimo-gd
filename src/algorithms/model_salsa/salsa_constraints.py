@@ -346,15 +346,15 @@ def working_day_shifts(model, shift, workers, working_days, check_shift, workers
                         total_shifts.append(shift[(w, d, s)])
                 if total_shifts:
                     model.add_exactly_one(total_shifts)
-    for w in workers_complete_cycle:
-        for d in working_days[w]:
-            # Ensure that the worker can only have M, T, L, LQ, LD and F in working days
-            total_shifts = []
-            for s in working_shift:
-                if (w, d, s) in shift:
-                    total_shifts.append(shift[(w, d, s)])
-            if total_shifts:
-                model.add_exactly_one(total_shifts)
+    if workers_complete_cycle:
+        for w in workers_complete_cycle:
+            for d in working_days[w]:
+                total_shifts = []
+                for s in working_shift:
+                    if (w, d, s) in shift:
+                        total_shifts.append(shift[(w, d, s)])
+                if total_shifts:
+                    model.add_exactly_one(total_shifts)
 
 def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days, fixed_LQs):
     for w in workers:
