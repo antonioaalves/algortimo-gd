@@ -593,6 +593,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
                 #assumir aqui uma especie de trigger em q passo a saber o contrato atual, o próximo contrato 'new_contract' e em que data trocam 'change_date'
                 if w == 125: #random, so para escolher 1 colab
+                    #como sei se no novo contrato será ciclo completo ou se antes do contrato era e para de ser
+                    #se em vez do colaborador vier com troca de contrato, e vier com todas as novas informaçoes associadas,
+                    #faz sentido receber o colab com novo contrato como um colab distinto do original,
+                    #desde q o employee_id e a matricula seja o inverso do original (negativo) e que a data de contratação seja a data de troca do colab original 
                     new_contract = 5
                     change_date = "2026-03-29" #inicialmente assumir que só serão feitas trocas de contrato em domingos
                     result = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == change_date, "index"]
