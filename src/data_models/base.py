@@ -1011,7 +1011,7 @@ class BaseDescansosDataModel(ABC):
             except Exception as e:
                 self.logger.error(f"Error validating allocation cycle input parameters: {e}", exc_info=True)
                 return False
-
+            
             try:
                 self.logger.info(f"Creating algorithm instance for: {algorithm_name}")
                 algorithm = AlgorithmFactory.create_algorithm(

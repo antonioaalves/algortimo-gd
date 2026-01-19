@@ -19,7 +19,7 @@
             "ld_holiday_param"
         ],
         "parameters_defaults": {
-            "algorithm_name": "salsa_algorithm",
+            "algorithm_name": "adeo_algorithm",
             "GD_gloablMaxThreads": 4,
             "GD_maxThreads": 2,
             "gloablMaxThreads": 4,
@@ -27,21 +27,23 @@
             "maxRetries": 3,
             "sleepTime": 1000,
             "test_param_scheduling_threshold": 0.75,
-            "GD_algorithmName": "alcampo_algorithm",
+            "GD_algorithmName": "adeo_algorithm",
             "GD_consideraFestivos": 1,
-            "GD_convenioBD": "ALCAMPO",
+            "GD_convenioBD": "CCGA",
             "codigos_motivo_ausencia": [
                 2101,
                 8999,
                 3028
             ],
-            "l_dom_days": [1]
+            "l_dom_days": [1],
+            "ld_sunday_param": 0,
+            "ld_holiday_param": 0
         }
     }, 
     "external_call_data": {
-        "current_process_id": 17466,
+        "current_process_id": 12421,
         "api_proc_id": 999,
-        "wfm_proc_id": 17466,
+        "wfm_proc_id": 12421,
         "wfm_user": "WFM",
         "start_date": "2026-01-01",
         "end_date": "2026-12-31",

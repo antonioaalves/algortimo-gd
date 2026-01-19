@@ -31,10 +31,10 @@ project_structure = {
                     "fill_missing": True,       # Whether to fill missing values
                     "fill_method": "mean"       # Method for filling missing values
                 },
-                #'algorithm': {
-                #    'name': 'salsa_algorithm',  # Default algorithm to use - should come from the parameters_defaults in the future
-                #    'parameters': {}
-                #},
+                'algorithm': {
+                    'name': 'adeo_algorithm',  # Default algorithm to use - should come from the parameters_defaults in the future
+                    'parameters': {}
+                },
                 "insertions": {
                     "insert_results": True
                 }
@@ -63,7 +63,7 @@ project_structure = {
                     "description": "Allocation cycle for all the required days.",
                     "required": True,
                     "decisions": {
-                        "algorithms": ["salsa_algorithm"]
+                        "algorithms": ["adeo_algorithm"]
                     }                     
                 },
                 "format_results": {

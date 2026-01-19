@@ -10,6 +10,7 @@ from base_data_project.storage.models import BaseDataModel
 # Local stuff
 from src.algorithms.alcampoAlgorithm import AlcampoAlgorithm
 from src.algorithms.salsaAlgorithm import SalsaAlgorithm
+from src.algorithms.adeoAlgorithm import AdeoAlgorithm
 from src.algorithms.soverOne import SolverOne
 from src.algorithms.example_algorithm import ExampleAlgorithm
 from src.configuration_manager import ConfigurationManager
@@ -100,6 +101,16 @@ class AlgorithmFactory:
                 start_date=start_date,
                 end_date=end_date
             )
+        elif decision.lower() == 'adeo_algorithm':
+            logger.info(f"Creating AdeoAlgorithm instance")
+            return AdeoAlgorithm(
+                parameters=parameters,
+                algo_name=decision.lower(),
+                project_name=project_name,
+                process_id=process_id,
+                start_date=start_date,
+                end_date=end_date
+        )
         else:
             error_msg = f"Unsupported algorithm type: {decision}. Available algorithms: {available_algorithms}"
             logger.error(error_msg)
