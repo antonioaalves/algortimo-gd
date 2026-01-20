@@ -372,6 +372,8 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             contingente_d = []
             contingente_f = []
+            total_worked_sundays_everyone = []
+            total_worked_holidays_everyone = []
             if workers:
                 # Week working days constraint based on contract type
                 if constraint_selections.get("week_working_days_constraint", {}).get("enabled", True):

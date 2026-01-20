@@ -503,7 +503,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 empty_days[w].extend([d for d in range(last_registered_day[w] + 1, max_day) if d not in empty_days[w]])
             
 
-            empty_days[w] = set(empty_days[w]) - closed_holidays
+            empty_days[w] = set(empty_days[w]) - closed_holidays - set(shift_M[w]) - set(shift_T[w])
             worker_absences[w] = set(worker_absences[w]) - closed_holidays
             fixed_days_off[w] = set(fixed_days_off[w]) - closed_holidays
             vacation_days[w] = set(vacation_days[w]) - closed_holidays
