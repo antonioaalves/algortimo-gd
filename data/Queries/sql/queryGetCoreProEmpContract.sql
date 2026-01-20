@@ -1,4 +1,4 @@
-SELECT 
+SELECT
     cpec.employee_id,
     cpec.schedule_day,
     cpec.contract_id,

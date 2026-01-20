@@ -1588,7 +1588,7 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
     """
     try:
         logger.info(f"Getting unit_id, secao_id, posto_id_list, employees_by_posto_dict, employees_id_total_list")
-        unit_id = int(df_valid_emp['fk_unidade'].unique()[0])  # Get first (and only) unique value
+        unit_id = df_valid_emp['fk_unidade'].unique()[0]  # Get first (and only) unique value
         secao_id = int(df_valid_emp['fk_secao'].unique()[0])   # Get first (and only) unique value
         posto_id_list = df_valid_emp['fk_tipo_posto'].unique().astype(int).tolist()  # Get list of unique values
 

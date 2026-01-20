@@ -730,7 +730,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     colabs_id=create_employee_query_string(past_employees_id_list), 
                     start_date=first_date_passado, 
                     end_date=last_date_passado, 
-                    process_id=process_id
+                    process_id="'" + str(process_id) + "'"
                 )
                 self.logger.info(f"df_contratos shape (rows {df_contratos.shape[0]}, columns {df_contratos.shape[1]}): {df_contratos.columns.tolist()}")
                 

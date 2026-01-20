@@ -238,7 +238,7 @@ class AlgoritmoGDService(BaseService):
                     "Starting data loading raw"
                 )
             
-            data_model_name =  'salsa_data_model' #'default_data_model'
+            data_model_name =  'adeo_data_model' #'default_data_model'
             #data_model_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
 
             # Create data model instance

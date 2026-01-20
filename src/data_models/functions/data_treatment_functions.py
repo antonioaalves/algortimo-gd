@@ -815,7 +815,8 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
             df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce')
             df_colaborador['seq_turno'] = df_colaborador['seq_turno'].fillna('').astype(str)
             df_colaborador['ciclo'] = df_colaborador['ciclo'].fillna('').astype(str)
-            
+            df_colaborador['fk_tipo_posto'] = df_colaborador['fk_tipo_posto'].astype(int)
+
             # Convert matricula to string for consistency (already did employee_id before validation)
             df_colaborador['matricula'] = df_colaborador['matricula'].astype(str)
         except Exception as e:
@@ -993,7 +994,7 @@ def add_lqs_to_df_colaborador(df_colaborador: pd.DataFrame, df_params_lq: pd.Dat
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
 
-def set_tipo_contrato_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
+def set_tipo_contrato_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
     """
     Calculate and assign contract type based on minimum/maximum working days.
     
@@ -1043,19 +1044,24 @@ def set_tipo_contrato_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: 
             df_colaborador['tipo_contrato']
         if use_case == 1:
             # TODO: this shouldnt be defined here, it should be in database or csv
-            params_contrato = pd.DataFrame({
-                'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
-                'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
-                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
-            })
+            try:
+                logger.warning("ENTREI AQUI!!!!!!!!!!!!")
+                params_contrato = pd.DataFrame({
+                    'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
+                    'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
+                    'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
+                })
 
-            df_colaborador = pd.merge(
-                df_colaborador, 
-                params_contrato, 
-                left_on=['min_dia_trab', 'max_dia_trab'], 
-                right_on=['min', 'max'], 
-                how='left'
-            )
+                df_colaborador = pd.merge(
+                    df_colaborador, 
+                    params_contrato, 
+                    left_on=['min_dia_trab', 'max_dia_trab'], 
+                    right_on=['min', 'max'], 
+                    how='left'
+                )
+            except Exception as e:
+                logger.error(f"Error merging contract types: {str(e)}", exc_info=True)
+                return False, pd.DataFrame(), f"Error merging contract types: {str(e)}"
         else:
             error_msg = f"use case {use_case} not supported, please ensure the correct values are defined."
             logger.error(error_msg)
