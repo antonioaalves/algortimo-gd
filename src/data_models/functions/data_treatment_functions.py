@@ -4323,3 +4323,311 @@ def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_cal
         error_msg = f"Error calculating and merging +H: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
+
+
+def get_limite_values(df_turnos: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
+    """
+    Extract shift boundary times from df_turnos for the whole section.
+    
+    Returns the most common (mode) values for limite_superior_manha and limite_inferior_tarde.
+    If no mode exists (all values different), uses the average time.
+    
+    Args:
+        df_turnos: DataFrame with columns 'limite_superior_manha' and 'limite_inferior_tarde'
+                   (time values as strings like "12:30" or "20:00")
+    
+    Returns:
+        Tuple[pd.Timestamp, pd.Timestamp]: (limite_superior_manha, limite_inferior_tarde)
+            - limite_superior_manha: upper bound for morning shift classification
+            - limite_inferior_tarde: lower bound for afternoon shift classification
+    
+    Raises:
+        ValueError: If required columns are missing or all values are null
+    """
+    required_cols = ['limite_superior_manha', 'limite_inferior_tarde']
+    missing_cols = [col for col in required_cols if col not in df_turnos.columns]
+    if missing_cols:
+        raise ValueError(f"df_turnos missing required columns: {missing_cols}")
+    
+    if df_turnos.empty:
+        raise ValueError("df_turnos is empty")
+    
+    results = {}
+    reference_date = pd.Timestamp('2000-01-01')
+    
+    for col in required_cols:
+        # Get non-null values
+        values = df_turnos[col].dropna()
+        if values.empty:
+            raise ValueError(f"All values in '{col}' are null")
+        
+        # Vectorized time parsing: convert to datetime then normalize to reference date
+        # Handle string format "HH:MM" or "HH:MM:SS"
+        parsed_times = pd.to_datetime(values.astype(str), format='%H:%M', errors='coerce')
+        # Try HH:MM:SS format for values that failed
+        mask_nat = parsed_times.isna()
+        if mask_nat.any():
+            parsed_times_hms = pd.to_datetime(values[mask_nat].astype(str), format='%H:%M:%S', errors='coerce')
+            parsed_times = parsed_times.fillna(parsed_times_hms)
+        
+        # For any remaining NaT, try general parsing
+        mask_nat = parsed_times.isna()
+        if mask_nat.any():
+            parsed_times_general = pd.to_datetime(values[mask_nat], errors='coerce')
+            parsed_times = parsed_times.fillna(parsed_times_general)
+        
+        # Normalize to reference date (vectorized)
+        timestamps = pd.to_datetime(
+            reference_date.strftime('%Y-%m-%d') + ' ' + 
+            parsed_times.dt.strftime('%H:%M:%S').fillna('00:00:00')
+        )
+        timestamps = timestamps.dropna()
+        
+        if timestamps.empty:
+            raise ValueError(f"Could not parse any time values from '{col}'")
+        
+        # Try to find mode (most common value)
+        mode_result = timestamps.mode()
+        if len(mode_result) >= 1:
+            results[col] = mode_result.iloc[0]
+            logger.info(f"get_limite_values: Using mode for {col}: {results[col].strftime('%H:%M')}")
+        else:
+            # No mode (all values different) - use average (vectorized)
+            seconds_since_midnight = timestamps.dt.hour * 3600 + timestamps.dt.minute * 60
+            avg_seconds = seconds_since_midnight.mean()
+            avg_hour = int(avg_seconds // 3600)
+            avg_minute = int((avg_seconds % 3600) // 60)
+            results[col] = pd.Timestamp(year=2000, month=1, day=1, hour=avg_hour, minute=avg_minute)
+            logger.info(f"get_limite_values: No mode for {col}, using average: {results[col].strftime('%H:%M')}")
+    
+    return results['limite_superior_manha'], results['limite_inferior_tarde']
+
+
+def create_df_estimativas(
+    df_orcamento: pd.DataFrame,
+    limite_superior_manha: pd.Timestamp,
+    limite_inferior_tarde: pd.Timestamp,
+    hora_inicio_faixa: pd.Timestamp = None,
+    hora_fim_faixa: pd.Timestamp = None,
+    divisor: int = 32
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Create df_estimativas from df_orcamento by aggregating staffing estimates per day and shift.
+    
+    Shift classification (with intentional overlap allowed):
+        - M (morning): hora_inicio_faixa <= hora_ini < limite_superior_manha
+        - T (afternoon): limite_inferior_tarde <= hora_ini < hora_fim_faixa
+    
+    Args:
+        df_orcamento: Budget/forecast data with columns:
+            - data: date
+            - hora_ini: time (with dummy date like 2000-01-01 HH:MM:SS)
+            - pessoas_final: staffing estimate per 15-min slot
+        limite_superior_manha: Upper bound for morning shift (timestamp)
+        limite_inferior_tarde: Lower bound for afternoon shift (timestamp)
+        hora_inicio_faixa: Start of day (default: 00:00:00)
+        hora_fim_faixa: End of day (default: next day 00:00:00, i.e., 24:00)
+        divisor: Value to divide sum by (default: 32 = 8h × 4 slots/h)
+    
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, df_estimativas, error_message)
+        
+        df_estimativas columns:
+            - data: date
+            - turno: 'M' or 'T'
+            - media_turno: sum(pessoas_final) / divisor
+            - max_turno: max(pessoas_final) within shift
+            - min_turno: min(pessoas_final) within shift
+            - sd_turno: std(pessoas_final) within shift
+            - pess_obj: rounded media_turno (ceil if cv>=0.5, else round)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_orcamento is None or df_orcamento.empty:
+            return False, pd.DataFrame(), "df_orcamento is empty or None"
+        
+        # Normalize column names to lowercase
+        df = df_orcamento.copy()
+        df.columns = df.columns.str.lower()
+        
+        required_cols = ['data', 'hora_ini', 'pessoas_final']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_orcamento missing required columns: {missing_cols}"
+        
+        # Set default time boundaries (vectorized-friendly format)
+        reference_date = pd.Timestamp('2000-01-01')
+        if hora_inicio_faixa is None:
+            hora_inicio_faixa = reference_date
+        if hora_fim_faixa is None:
+            hora_fim_faixa = pd.Timestamp('2000-01-02')
+        
+        # Normalize limite values to reference date
+        def normalize_to_ref(val):
+            if isinstance(val, pd.Timestamp):
+                return reference_date + pd.Timedelta(hours=val.hour, minutes=val.minute)
+            return val
+        
+        limite_superior_manha = normalize_to_ref(limite_superior_manha)
+        limite_inferior_tarde = normalize_to_ref(limite_inferior_tarde)
+        
+        logger.info(f"create_df_estimativas: hora_inicio_faixa={hora_inicio_faixa}, hora_fim_faixa={hora_fim_faixa}")
+        logger.info(f"create_df_estimativas: limite_superior_manha={limite_superior_manha}, limite_inferior_tarde={limite_inferior_tarde}")
+        
+        # VECTORIZED DATA PREPARATION
+        # Normalize date column
+        df['data'] = pd.to_datetime(df['data']).dt.normalize()
+        
+        # Extract time from hora_ini and normalize to reference date (fully vectorized)
+        hora_ini_dt = pd.to_datetime(df['hora_ini'])
+        df['hora_time'] = reference_date + pd.to_timedelta(
+            hora_ini_dt.dt.hour * 3600 + hora_ini_dt.dt.minute * 60 + hora_ini_dt.dt.second,
+            unit='s'
+        )
+        
+        # Ensure pessoas_final is numeric
+        df['pessoas_final'] = pd.to_numeric(df['pessoas_final'], errors='coerce').fillna(0)
+        
+        # VECTORIZED SHIFT CLASSIFICATION (overlap allowed)
+        df['is_M'] = (df['hora_time'] >= hora_inicio_faixa) & (df['hora_time'] < limite_superior_manha)
+        df['is_T'] = (df['hora_time'] >= limite_inferior_tarde) & (df['hora_time'] < hora_fim_faixa)
+        
+        logger.info(f"create_df_estimativas: M shift slots: {df['is_M'].sum()}, T shift slots: {df['is_T'].sum()}")
+        
+        # VECTORIZED AGGREGATION using melt + groupby (more efficient than loop)
+        # Create shift column for each row
+        df_m = df[df['is_M']][['data', 'pessoas_final']].copy()
+        df_m['turno'] = 'M'
+        
+        df_t = df[df['is_T']][['data', 'pessoas_final']].copy()
+        df_t['turno'] = 'T'
+        
+        df_shifts = pd.concat([df_m, df_t], ignore_index=True)
+        
+        if df_shifts.empty:
+            return False, pd.DataFrame(), "No data classified into any shift"
+        
+        # Single groupby for all statistics
+        df_estimativas = df_shifts.groupby(['data', 'turno'], as_index=False).agg(
+            sum_pessoas=('pessoas_final', 'sum'),
+            max_turno=('pessoas_final', 'max'),
+            min_turno=('pessoas_final', 'min'),
+            sd_turno=('pessoas_final', 'std')
+        )
+        
+        # Vectorized calculations
+        df_estimativas['media_turno'] = df_estimativas['sum_pessoas'] / divisor
+        df_estimativas['sd_turno'] = df_estimativas['sd_turno'].fillna(0)
+        
+        # Calculate pess_obj using volatility-based rounding (vectorized)
+        # Coefficient of variation: cv = sd_turno / media_turno
+        # If cv >= 0.5 (high volatility): round UP (ceil)
+        # If cv < 0.5 (low volatility): round normally
+        df_estimativas['pess_obj'] = np.where(
+            df_estimativas['media_turno'] != 0,
+            np.where(
+                df_estimativas['sd_turno'] / df_estimativas['media_turno'] >= 0.5,
+                np.ceil(df_estimativas['media_turno']),
+                np.round(df_estimativas['media_turno'])
+            ),
+            0  # If media_turno is 0, pess_obj is 0
+        )
+        
+        # Select and order final columns
+        df_estimativas = df_estimativas[['data', 'turno', 'media_turno', 'max_turno', 'min_turno', 'sd_turno', 'pess_obj']]
+        df_estimativas = df_estimativas.sort_values(['data', 'turno']).reset_index(drop=True)
+        
+        logger.info(f"create_df_estimativas: Created df_estimativas with {len(df_estimativas)} rows")
+        logger.info(f"create_df_estimativas: Date range: {df_estimativas['data'].min()} to {df_estimativas['data'].max()}")
+        
+        return True, df_estimativas, ""
+        
+    except Exception as e:
+        error_msg = f"Error creating df_estimativas: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def add_pessoa_obj_whole_day(
+    df_estimativas: pd.DataFrame,
+    df_orcamento: pd.DataFrame,
+    divisor: int = 32
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Add whole day statistics to df_estimativas.
+    
+    Calculates media_dia, max_dia, min_dia, sd_dia for each day using ALL time slots
+    (not filtered by shift boundaries).
+    
+    Args:
+        df_estimativas: DataFrame from create_df_estimativas with shift-level stats
+        df_orcamento: Original budget data to calculate whole day stats
+        divisor: Value to divide sum by (default: 32)
+    
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, updated_df_estimativas, error_message)
+        
+        Added columns:
+            - media_dia: sum(pessoas_final) / divisor for whole day
+            - max_dia: max(pessoas_final) for whole day
+            - min_dia: min(pessoas_final) for whole day
+            - sd_dia: std(pessoas_final) for whole day
+            - pess_obj_dia: rounded media_dia (ceil if cv>=0.5, else round)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_estimativas is None or df_estimativas.empty:
+            return False, pd.DataFrame(), "df_estimativas is empty or None"
+        
+        if df_orcamento is None or df_orcamento.empty:
+            return False, pd.DataFrame(), "df_orcamento is empty or None"
+        
+        # Normalize column names
+        df_orc = df_orcamento.copy()
+        df_orc.columns = df_orc.columns.str.lower()
+        
+        # VECTORIZED DATA PREPARATION
+        df_orc['data'] = pd.to_datetime(df_orc['data']).dt.normalize()
+        df_orc['pessoas_final'] = pd.to_numeric(df_orc['pessoas_final'], errors='coerce').fillna(0)
+        
+        # VECTORIZED AGGREGATION - single groupby for all whole day statistics
+        whole_day_stats = df_orc.groupby('data', as_index=False).agg(
+            sum_pessoas=('pessoas_final', 'sum'),
+            max_dia=('pessoas_final', 'max'),
+            min_dia=('pessoas_final', 'min'),
+            sd_dia=('pessoas_final', 'std')
+        )
+        
+        # Vectorized calculations
+        whole_day_stats['media_dia'] = whole_day_stats['sum_pessoas'] / divisor
+        whole_day_stats['sd_dia'] = whole_day_stats['sd_dia'].fillna(0)
+        
+        # Calculate pess_obj_dia using volatility-based rounding (vectorized)
+        # Same logic as shift-level: cv >= 0.5 -> ceil, else round
+        whole_day_stats['pess_obj_dia'] = np.where(
+            whole_day_stats['media_dia'] != 0,
+            np.where(
+                whole_day_stats['sd_dia'] / whole_day_stats['media_dia'] >= 0.5,
+                np.ceil(whole_day_stats['media_dia']),
+                np.round(whole_day_stats['media_dia'])
+            ),
+            0
+        )
+        
+        whole_day_stats = whole_day_stats[['data', 'media_dia', 'max_dia', 'min_dia', 'sd_dia', 'pess_obj_dia']]
+        
+        # Prepare result
+        df_result = df_estimativas.copy()
+        df_result['data'] = pd.to_datetime(df_result['data']).dt.normalize()
+        
+        # Merge whole day stats into estimativas
+        df_result = df_result.merge(whole_day_stats, on='data', how='left')
+        
+        logger.info(f"add_pessoa_obj_whole_day: Added whole day stats to {len(df_result)} rows")
+        
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error adding whole day stats: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
