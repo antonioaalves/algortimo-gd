@@ -285,6 +285,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             sunday_half_day = adapted_data["sunday_half_day"]
             managers = adapted_data["managers"]
             keyholders = adapted_data["keyholders"]
+            locked_days = adapted_data["locked_days"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -347,7 +348,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences,
                                        vacation_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       shift_M, shift_T, workers_past, fixed_compensation_days)
+                                       shift_M, shift_T, workers_past, fixed_compensation_days, locked_days)
             
             self.logger.info("Decision variables created for SALSA")
             
