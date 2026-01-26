@@ -328,6 +328,8 @@ def solve(
 
         time_worked_day_M_after = time_worked_day_M.copy()
         time_worked_day_T_after = time_worked_day_T.copy()
+        feriados_compensaçao = {}
+        domingos_compensaçao = {}
         for w in workers:
             try:
                 worker_row = [w]  # Start with the worker's name
@@ -385,19 +387,23 @@ def solve(
                 
                 if contingente_feriados:
                     if contingente_feriados[w] is not None and len(contingente_feriados[w]) > 0:
-                        feriados_compensaçao = [v.Name() for v in contingente_feriados[w] if solver.Value(v) == 1]
+                        feriados_compensaçao[w] = [v.Name() for v in contingente_feriados[w] if solver.Value(v) == 1]
                         if holiday_half_day == True:
                             for i in special_days_worked[w]:
-                                feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{i}")
-                        logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao)}")
+                                feriados_compensaçao[w].append(f"worker_{w}_half_day_for_holiday_{i}")
+                        logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao[w])}")
+                else:
+                    feriados_compensaçao[w] = []
 
                 if contingente_domingos:
                     if contingente_domingos[w] is not None and len(contingente_domingos[w]) > 0:
-                        domingos_compensaçao = [v.Name() for v in contingente_domingos[w] if solver.Value(v) == 1]
+                        domingos_compensaçao[w] = [v.Name() for v in contingente_domingos[w] if solver.Value(v) == 1]
                         if sunday_half_day == True:
                             for i in sun[w]:
-                                domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")
-                        logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao)}")
+                                domingos_compensaçao[w].append(f"worker_{w}_half_day_for_sunday_{i}")
+                        logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao[w])}")
+                else:
+                    domingos_compensaçao[w] = []
                 
                 # Store statistics for this worker
                 worker_stats[w] = {
@@ -468,7 +474,7 @@ def solve(
         
         logger.info("[OK] Solver completed successfully")
         df.columns = unique_dates_row
-        return df , results
+        return df , results, feriados_compensaçao, domingos_compensaçao
         
     except Exception as e:
         logger.error(f"Error in solver: {str(e)}", exc_info=True)
