@@ -411,7 +411,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
-            locked_days[w] = set(worker_calendar[worker_calendar['dias_fixos'] == 'locked']['index'].tolist()) #assumindo nome da coluna "dias_fixos" e que a entrada dos dias fixos é "locked"
+            locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == 'True']['index'].tolist())
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
