@@ -18,7 +18,7 @@ def add_var(model, shift, w, days, code):
 
 def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days,
                        empty_days, closed_holidays, fixed_days_off, fixed_LQs, shift_M, 
-                       shift_T, past_workers, fixed_compensation_days, locked_days):
+                       shift_T, past_workers, fixed_compensation_days, locked_days, closed_holidays_past):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 
@@ -73,6 +73,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set
         shift_T_set = set(shift_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set
         fixed_LD_set = set(fixed_compensation_days[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set
+        closed_past_set = closed_holidays_past[w]
 
         SET_CODE_PRIORITY = [
             ("-", empty_set),
@@ -97,7 +98,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         if len(locked_days[w]) > 0:
             logger.info(f"\tDEBUG locked days {sorted(locked_days[w])}\n")
  
-        blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set
+        blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set | closed_past_set
 
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
@@ -122,6 +123,6 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         add_var(model, shift, w, fixed_days_set - empty_set, 'L')
         add_var(model, shift, w, fixed_LQs_set - empty_set, 'LQ')
         add_var(model, shift, w, fixed_LD_set - empty_set, 'LD')
-        add_var(model, shift, w, closed_holidays - empty_set, 'F')
+        add_var(model, shift, w, closed_holidays | closed_past_set - empty_set, 'F')
         add_var(model, shift, w, empty_set, '-')
     return shift

@@ -286,6 +286,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             managers = adapted_data["managers"]
             keyholders = adapted_data["keyholders"]
             locked_days = adapted_data["locked_days"]
+            closed_holidays_past = adapted_data["closed_holidays_past"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -348,7 +349,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences,
                                        vacation_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       shift_M, shift_T, workers_past, fixed_compensation_days, locked_days)
+                                       shift_M, shift_T, workers_past, fixed_compensation_days, locked_days, closed_holidays_past)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -459,7 +460,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("compensation_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: ld_restriction")
-                    ld_restriction(model, shift, workers, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone)
+                    ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone)
                 else:
                     self.logger.warning("Skipping constraint: ld_restriction (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")
