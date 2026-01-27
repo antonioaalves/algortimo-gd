@@ -1690,6 +1690,12 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
         logger.error(error_msg, exc_info=True)
         return False, {}, error_msg
 
+def get_df_estrutura_wfm_info(df_estrutura_wfm: pd.DataFrame) -> str:
+    """
+    """
+    nome_pais = str(df_estrutura_wfm['fk_pais'].unique()[0])
+
+    return nome_pais
 
 def filter_insert_results(df: pd.DataFrame, start_date: str, end_date: str, wfm_proc_colab: str = '') -> pd.DataFrame:
     """

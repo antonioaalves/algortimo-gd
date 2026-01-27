@@ -299,3 +299,19 @@ def validate_num_sundays_year(num_sundays_year: int) -> bool:
     if not isinstance(num_sundays_year, int) or num_sundays_year < 0:
         return False
     return True
+
+def validate_df_estrutura_wfm(df_estrutura_wfm: pd.DataFrame) -> bool:
+    """
+    Validate df_estrutura_wfm.
+    """
+    if df_estrutura_wfm.empty:
+        return False
+    if 'nome_pais' not in df_estrutura_wfm.columns:
+        return False
+    if 'fk_pais' not in df_estrutura_wfm.columns:
+        return False
+    if df_estrutura_wfm['fk_pais'].nunique() != 1:
+        return False
+    
+    return True
+
