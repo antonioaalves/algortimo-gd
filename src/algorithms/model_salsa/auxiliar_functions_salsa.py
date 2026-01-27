@@ -269,3 +269,29 @@ def ld_counter(shift_T, shift_M, fixed_ld, period, holidays):
     del holidays_worked_before[:lds]
     
     return holidays_worked_before
+
+import re
+
+var_name = "worker_w_ld_24_for_sunday_14"
+
+numbers = list(map(int, re.findall(r'\d+', var_name)))
+
+# convert only last two
+numbers[-2] = numbers[-2] + 1
+numbers[-1] = numbers[-1] * 2
+
+nums = iter(map(str, numbers))
+
+new_var_name = re.sub(r'\d+', lambda _: next(nums), var_name)
+
+print(new_var_name)
+
+def change_date_format(workers, feriados_compensaçao, domingos_compensaçao, df_estimativas):
+    final_feriados = feriados_compensaçao.copy()
+    final_domingos = domingos_compensaçao.copy()
+    for w in workers:
+        for day in range(len(feriados_compensaçao[w])):
+            worker_132_ld_24_for_sunday_14
+            worker_132_ld_24_for_holiday_20
+            worker_132_half_day_for_sunday_14
+            worker_132_half_day_for_holiday_14

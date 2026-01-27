@@ -29,7 +29,7 @@ from src.algorithms.helpers_algorithm import (_convert_free_days, _create_empty_
                         _validate_constraints, _calculate_quality_metrics, 
                         _format_schedules, _create_metadata, _validate_solution, 
                         _create_export_info)
-
+from src.algorithms.model_salsa.auxiliar_functions_salsa import change_date_format
 
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
@@ -285,6 +285,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             sunday_half_day = adapted_data["sunday_half_day"]
             managers = adapted_data["managers"]
             keyholders = adapted_data["keyholders"]
+            df_estimativas = adapted_data["df_estimativas"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -478,11 +479,12 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.logger.info("Solving SALSA model")
             schedule_df, results, feriados_compensaçao, domingos_compensaçao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours,
                                                                                      pessObj, workers_past, contingente_f, contingente_d, holiday_half_day, sunday_half_day,
-                                                                                    pd.Series(['Worker'] + (unique_dates)),
-                                                                                    output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
-                                                                                    optimization_details=optimization_details )
+                                                                                     pd.Series(['Worker'] + (unique_dates)),
+                                                                                     output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
+                                                                                     optimization_details=optimization_details)
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
+            feriados_compensaçao, domingos_compensaçao = change_date_format(workers, feriados_compensaçao, domingos_compensaçao, df_estimativas)
             # =================================================================
             # FILTER BY PARTIAL WORKERS IF REQUESTED
             # =================================================================

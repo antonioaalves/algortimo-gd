@@ -811,6 +811,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "ld_sunday": ld_sunday,
             "managers": managers,
             "keyholders": keyholders,
+            "df_estimativas": matriz_estimativas_gd,
             }
         
     except Exception as e:
