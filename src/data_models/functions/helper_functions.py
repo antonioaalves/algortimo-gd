@@ -1693,7 +1693,7 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
 def get_df_estrutura_wfm_info(df_estrutura_wfm: pd.DataFrame) -> str:
     """
     """
-    nome_pais = str(df_estrutura_wfm['fk_pais'].unique()[0])
+    nome_pais = str(df_estrutura_wfm['nome_pais'].unique()[0])
 
     return nome_pais
 
