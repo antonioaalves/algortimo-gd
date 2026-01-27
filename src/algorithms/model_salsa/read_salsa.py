@@ -353,6 +353,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         shift_M = {}
         shift_T = {}
         fixed_compensation_days = {}
+        closed_holidays_past = {}
        
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -394,6 +395,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 shift_M[w] = []
                 shift_T[w] = []
                 fixed_compensation_days[w] = []
+                closed_holidays_past[w] = []
 
                 continue
             
@@ -409,6 +411,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
+            closed_holidays_past[w] = set(worker_calendar[worker_calendar['horario'] == 'F']['index'].tolist())
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
@@ -517,7 +520,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 tipo_contrato = 'Contract Error'
             if tipo_contrato != 8:
                 worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, None, year_range)
-                working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays 
+                working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - closed_holidays_past[w]
                 #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
 
                 if not working_days[w]:
@@ -585,7 +588,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa)
                     check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
                     worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
-                    working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - fixed_compensation_days[w]
+                    working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - fixed_compensation_days[w] - closed_holidays_past[w]
                 else:
                     work_days_per_week[w] = [5] * 52
                 if not working_days[w]:
@@ -811,6 +814,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "ld_sunday": ld_sunday,
             "managers": managers,
             "keyholders": keyholders,
+            "closed_holidays_past": closed_holidays_past,
             }
         
     except Exception as e:
