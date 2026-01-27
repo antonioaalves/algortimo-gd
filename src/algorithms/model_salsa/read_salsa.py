@@ -353,6 +353,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         shift_M = {}
         shift_T = {}
         fixed_compensation_days = {}
+        locked_days = {}
        
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -394,6 +395,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 shift_M[w] = []
                 shift_T[w] = []
                 fixed_compensation_days[w] = []
+                locked_days[w] = []
 
                 continue
             
@@ -409,6 +411,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
+            locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
@@ -811,6 +814,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "ld_sunday": ld_sunday,
             "managers": managers,
             "keyholders": keyholders,
+            "locked_days": locked_days,
             }
         
     except Exception as e:
