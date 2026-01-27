@@ -62,7 +62,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
     shifts2.remove('M')
     shifts2.remove('T')
     shifts2.remove('LQ')
-
+    print(f"locked days {locked_days}")
     for w in workers:
 
         empty_set = empty_days[w]
@@ -93,17 +93,17 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
         #logger.info(f"\tDEBUG M shift {sorted(shift_M_set)}")
         #logger.info(f"\tDEBUG T shift {sorted(shift_T_set)}\n")
-        logger.info(f"\tDEBUG fixed lds {sorted(fixed_LD_set)}")
+        logger.info(f"\tDEBUG fixed lds {sorted(fixed_LD_set)}\n")
         if len(locked_days[w]) > 0:
-            logger.info(f"\tDEBUG locked days {sorted(locked_days[w])}")
+            logger.info(f"\tDEBUG locked days {sorted(locked_days[w])}\n")
  
         blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set
 
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
                 if d in locked_days[w]:
-                    for code, shift in SET_CODE_PRIORITY:
-                        if d in shift:
+                    for code, shift_set in SET_CODE_PRIORITY:
+                        if d in shift_set:
                             shift[(w, d, code)] = model.NewBoolVar(f"{w}_Day{d}_{code}")
                             model.Add(shift[(w, d, code)] == 1)
                             break
