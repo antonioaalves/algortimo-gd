@@ -353,8 +353,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         first_week_5_6 = {}
         work_days_per_week = {}
         week_compensation_limit = {}
-        has_week_compensation_limit = False
-        has_max_work_days_7 = False if (num_dias_cons != 7 and num_dias_cons != 8) else True
 
         for w in workers:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
@@ -385,8 +383,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
                 first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
                 week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
-                if (has_week_compensation_limit == False and week_compensation_limit[w] != 0):
-                    has_week_compensation_limit = True
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}
@@ -405,7 +401,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         shift_T = {}
         fixed_compensation_days = {}
         locked_days = {}
-        closed_holidays_past = {}
        
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -416,21 +411,21 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 continue
             else:
                 logger.info(f"PAST WORKERS: Calendar data found for worker {w}")
-            shift_M[w] = set(worker_calendar[worker_calendar['horario'] == 'M']['index'].tolist())
-            shift_T[w] = set(worker_calendar[worker_calendar['horario'] == 'T']['index'].tolist())
+            shift_M[w] = set(worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist())
+            shift_T[w] = set(worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist())
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_days_off[w] = set(worker_calendar[(worker_calendar['horario'] == 'L') | (worker_calendar['horario'] == 'C')]['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             empty_days[w] = set(worker_calendar[worker_calendar['horario'] == '-']['index'].tolist())
             vacation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'V']['index'].tolist())
             worker_absences[w] = set(worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP')]['index'].tolist())
-            work_day_hours[w] = worker_calendar['carga_diaria'].fillna(8).to_numpy()[::2].astype(int)
+            work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
 
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
 
             first_registered_day[w] = worker_calendar['index'].min()
             last_registered_day[w] = worker_calendar['index'].max()
-            working_days[w] = set(shift_T[w]) | set(fixed_days_off[w]) | set(shift_M[w]) | set(fixed_LQs[w]) | set(fixed_compensation_days)
+            working_days[w] = shift_T[w] | fixed_days_off[w] | shift_M[w] | fixed_LQs[w] | fixed_compensation_days[w]
 
 
         for w in workers_complete:
@@ -448,7 +443,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 shift_T[w] = []
                 fixed_compensation_days[w] = []
                 locked_days[w] = []
-                closed_holidays_past[w] = []
 
                 continue
             
@@ -465,7 +459,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
-            closed_holidays_past[w] = set(worker_calendar[worker_calendar['horario'] == 'F']['index'].tolist())
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
@@ -582,7 +575,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             else:
                 work_days_per_week[w] = [5] * 54
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
-            working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - closed_holidays_past[w]
+            working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
@@ -730,20 +723,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # =================================================================
         # 12. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
+        country = algorithm_treatment_params['nome_pais']
+        logger.info(f"Country is {country}")
 
-        if (has_max_work_days_7 == True and has_week_compensation_limit == True):
-            country = "spain"
-            logger.info("Detected country to be spain")
-        elif (has_max_work_days_7 == False and has_week_compensation_limit == False):
-            country = "portugal"
-            logger.info("Detected country to be portugal")
-
-        else:
-            country = "undefined"
-            logger.error(f"Some variables are true and others false, something is not being correctly received:"
-                         f"\n\t\t\t7 work days in a row  -> {has_max_work_days_7},"
-                         f"\n\t\t\tweek compensation limit -> {has_week_compensation_limit}."
-                         )
         logger.info("[OK] Data processing completed successfully")
         
         # =================================================================
@@ -809,7 +791,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "managers": managers,
             "keyholders": keyholders,
             "locked_days": locked_days,
-            "closed_holidays_past": closed_holidays_past,
             }
         
     except Exception as e:
