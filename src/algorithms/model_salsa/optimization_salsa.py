@@ -161,7 +161,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     LQs_diff_weight=int(scale*percentage_of_importance_LQs_equal/LQs_diff_min_worst_scenario)
 
     no_consec_free_days_min_worst_scenario=52*len(workers)
-    percentage_of_importance_consec_free_days=0.5
+    percentage_of_importance_consec_free_days=1
     no_consec_free_days_weight=int(scale*percentage_of_importance_consec_free_days/no_consec_free_days_min_worst_scenario)
 
     sunday_imbalance_per_semeste_min_worst_scenario=2
@@ -221,7 +221,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         free_days_per_day_worst_case_scenario= 2 
     total_exceeded_days_weight=int(scale*percentage_of_total_exceeded_days_weight/ number_free_days_exceeded_worst_case_scenario)
     
-    number_free_sundays_exceeded_worst_case_scenario= 2 
+    number_free_sundays_exceeded_worst_case_scenario= 1 
     if len(workers) >= 6:
         free_days_per_sunday_worst_case_scenario= len(workers)//3
         percentage_of_total_exceeded_sundays_weight=2  
@@ -685,16 +685,28 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             if free_terms:
                 model.AddMaxEquality(is_free, free_terms)
                 is_free_dict[(w, d)] = is_free
+                free_day_vars.append(is_free)
 
             #if (w,d,'L') in shift or (w,d,'LQ') in shift:
             #    model.Add(is_free == shift[(w, d, 'L')] + shift[(w, d, 'LQ')])
             #    free_day_vars.append(is_free)
             #    is_free_dict[(w, d)] = is_free 
 
-            if d+1 in working_days[w] and (w,d + 1,'L') in shift and (w,d + 1,'LQ') in shift:
+            if d+1 in working_days[w] and ((w,d + 1,'L') in shift  or (w,d + 1,'LQ') in shift):
                 next_d = d+1
                 next_is_free = model.NewBoolVar(f"next_is_free_{w}_{next_d}")
-                model.Add(next_is_free == shift[(w, next_d, 'L')] + shift[(w, next_d, 'LQ')])
+
+                next_free_terms = []
+
+                if (w, next_d, 'L') in shift:
+                    next_free_terms.append(shift[(w, next_d, 'L')])
+
+                if (w, next_d, 'LQ') in shift:
+                    next_free_terms.append(shift[(w, next_d, 'LQ')])
+
+                if next_free_terms:
+                    model.AddMaxEquality(next_is_free, next_free_terms)
+
 
                 consecutive_free = model.NewBoolVar(f"consecutive_free_{w}_{d}")
                 model.AddBoolAnd([is_free, next_is_free]).OnlyEnforceIf(consecutive_free)
