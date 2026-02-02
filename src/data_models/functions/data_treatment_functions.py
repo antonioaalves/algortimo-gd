@@ -3895,7 +3895,7 @@ def adjust_counters_for_contract_types(df_colaborador: pd.DataFrame, tipo_contra
             return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}. These should be initialized in treat_df_colaborador."
         
         if use_case == 0:
-            logger.info("use_case == 0: returning df_estimativas as is")
+            logger.info("use_case == 0: returning df_colaborador as is")
             return True, df_colaborador, "No processing applied (use_case=0)"
 
         elif use_case == 1: 
