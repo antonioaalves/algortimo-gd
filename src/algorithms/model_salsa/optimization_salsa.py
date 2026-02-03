@@ -356,16 +356,16 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     excess_diff_vars = []
     deficit_diff_vars = []
-
+    all_workers = workers + workers_past
     for d in days_of_year:
         for s in real_working_shift:
             target = pessObj.get((d, s), 0)
             assigned_workers = sum(
                 shift[(w, d, s)] * work_day_hours[w].get(d, 8)
-                for w in workers if (w, d, s) in shift
+                for w in all_workers if (w, d, s) in shift
             )
 
-            excess  = model.NewIntVar(0, len(workers)*8, f'excess_{d}_{s}')
+            excess  = model.NewIntVar(0, len(all_workers)*8, f'excess_{d}_{s}')
             deficit = model.NewIntVar(0, target*8, f'deficit_{d}_{s}')
 
             model.Add(excess >= assigned_workers - target)
@@ -386,8 +386,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     daily_excess  = {}
 
     max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 8
-    max_daily_excess_possible  = len(real_working_shift)*len(workers) * 8
-    
+    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 8    
 
     max_deficit = model.NewIntVar(0, max_daily_deficit_possible, 'max_deficit')
     for (d, _, deficit) in deficit_diff_vars:
@@ -480,7 +479,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     weekly_diff_vars = []
     sorted_weeks = sorted(week_to_days.keys())
-    safe_limit = len(workers) * 8 * len(real_working_shift)  # same as before
+    safe_limit = len(all_workers) * 8 * len(real_working_shift)  # same as before
 
     for w in sorted_weeks:
         days = set(week_to_days[w])
@@ -578,7 +577,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     for d in days_of_year_working:
         for s in real_working_shift:  
             target = pessObj.get((d,s), 0)
-            assigned_workers = sum(shift[(w,d,s)] for w in workers if (w,d,s) in shift)
+            assigned_workers = sum(shift[(w,d,s)] for w in all_workers if (w,d,s) in shift)
 
             if target > 0:
                 zero_assigned = model.NewBoolVar(f'zero_assigned_{d}_{s}')
@@ -736,8 +735,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     for d in days_of_year_working:
 
-        free_count = model.NewIntVar(0, len(workers), f"free_count_day_{d}")
-        free_vars_today = [is_free_dict[(w, d)] for w in workers if (w, d) in is_free_dict]
+        free_count = model.NewIntVar(0, len(all_workers), f"free_count_day_{d}")
+        free_vars_today = [is_free_dict[(w, d)] for w in all_workers if (w, d) in is_free_dict]
         model.Add(free_count == sum(free_vars_today))
 
         
@@ -775,12 +774,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     for d in sundays:
 
         free_count = model.NewIntVar(
-            0, len(workers), f"free_count_sunday_{d}"
+            0, len(all_workers), f"free_count_sunday_{d}"
         )
 
         free_vars_today = [
             is_free_dict[(w, d)]
-            for w in workers
+            for w in all_workers
             if (w, d) in is_free_dict
         ]
 
@@ -821,14 +820,14 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
 
     # 10. Balancing sundays across the year (average)
-    
     #parts = np.array_split(days_of_year_real, 12) 
     #sunday_parts=[]
     #for part in parts:
     #    sunday_part=[d for d in part if d in sundays]
     #    sunday_parts.append(sunday_part)
     #if workers_not_complete_exist:
-    #    for w in workers_not_complete :
+        #all_workers_not_complete = workers_not_complete + workers_past
+    #    for w in all_workers_not_complete:
     #        list_of_free_sundays_per_semester=[]
     #        for part in sunday_parts:
     #            free_sundays_semester=sum(shift[(w, d, 'L')] for d in part if (w,d,'L') in shift)
@@ -953,6 +952,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     ]
 
     if workers_not_complete_exist:
+        all_workers_not_complete = workers_not_complete + workers_past
         for w in workers_not_complete:
             window_violations = []
 
@@ -996,7 +996,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     parts = np.array_split(days_of_year_real, 6) 
 
     if workers_not_complete_exist:
-        for w in workers_not_complete:
+        for w in all_workers_not_complete:
             list_of_free_LQs_per_semester=[]
             for part in parts:   
                 LQs_semester = sum(shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift)
@@ -1019,7 +1019,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     diff_per_worker_LQ = []
 
     if workers_not_complete_exist:
-        for w in workers_not_complete:
+        for w in all_workers_not_complete:
             list_of_free_LQs_per_semester = []
 
             for part_index, part in enumerate(parts):

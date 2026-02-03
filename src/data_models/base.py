@@ -108,6 +108,7 @@ class BaseDescansosDataModel(ABC):
             # Get current_posto_id from auxiliary_data
             try:
                 posto_id = self.auxiliary_data['current_posto_id']
+                df_estrutura_wfm = self.auxiliary_data['df_estrutura_wfm'].copy()
                 self.logger.info(f"Loaded information from auxiliary_data into posto_id: {posto_id}")
             except Exception as e:
                 self.logger.error(f"Error getting posto_id from auxiliary_data: {e}", exc_info=True)
@@ -169,21 +170,6 @@ class BaseDescansosDataModel(ABC):
                 self.logger.info(f"df_turnos shape (rows {df_turnos.shape[0]}, columns {df_turnos.shape[1]}): {df_turnos.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error processing df_turnos from colaborador data: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
-
-            try:
-                self.logger.info("Loading df_estrutura_wfm from data manager")
-                # Estrutura wfm information
-                query_path = _config.paths.sql_auxiliary_paths.get('df_estrutura_wfm', '')
-                if query_path == '':
-                    self.logger.warning("df_estrutura_wfm query path not found in config")
-                df_estrutura_wfm = data_manager.load_data(
-                    'df_estrutura_wfm', 
-                    query_file=query_path
-                )
-                self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_estrutura_wfm: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
             try:
@@ -262,7 +248,6 @@ class BaseDescansosDataModel(ABC):
                 # TODO: save the dataframes if they are needed elsewhere, if not let them die here
                 self.raw_data['df_estimativas'] = df_estimativas.copy()
                 self.auxiliary_data['df_turnos'] = df_turnos.copy()
-                self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_faixa_horario'] = df_faixa_horario.copy()
                 self.auxiliary_data['df_orcamento'] = df_orcamento.copy()
                 self.auxiliary_data['df_granularidade'] = df_granularidade.copy()
@@ -685,7 +670,7 @@ class BaseDescansosDataModel(ABC):
             df_turnos['middle_time'] = pd.to_datetime('2000-01-01 ' + df_turnos['hour'].astype(str) + ':00:00')
             
             # Select final columns and rename
-            df_turnos = df_turnos[['fk_unidade', 'unidade', 'fk_secao', 'secao', 'fk_tipo_posto', 'tipo_posto',
+            df_turnos = df_turnos[['fk_unidade', 'nome_unidade', 'fk_secao', 'nome_secao', 'fk_tipo_posto', 'nome_tipo_posto',
                                 'min_in1', 'med1', 'med3', 'max_out2', 'middle_time', 'aber', 'fech', 'data']].copy()
             
             # Update med1 and med3 with middle_time
