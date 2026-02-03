@@ -128,7 +128,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     # Weights:
         
-    excess_min_worst_scenario=(3/50) * sum(
+    excess_min_worst_scenario=(3/5) * sum(
         pessObj.get((d, s), 0)
         for d in days_of_year_working
         for s in real_working_shift)
@@ -138,7 +138,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_no_excess=0 
     excess_weight=int(scale*percentage_of_importance_no_excess/excess_min_worst_scenario)
 
-    deficit_min_worst_scenario=  (1/80)* sum(
+    deficit_min_worst_scenario=  (1/8)* sum(
         pessObj.get((d, s), 0)
         for d in days_of_year_working
         for s in real_working_shift)
@@ -359,12 +359,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         for s in real_working_shift:
             target = pessObj.get((d, s), 0)
             assigned_workers = sum(
-                shift[(w, d, s)] * work_day_hours[w].get(d, 8)
+                shift[(w, d, s)] * work_day_hours[w].get(d, 8) * 10
                 for w in all_workers if (w, d, s) in shift
             )
 
-            excess  = model.NewIntVar(0, len(all_workers)*8, f'excess_{d}_{s}')
-            deficit = model.NewIntVar(0, target*8, f'deficit_{d}_{s}')
+            excess  = model.NewIntVar(0, len(all_workers)*80, f'excess_{d}_{s}')
+            deficit = model.NewIntVar(0, target*80, f'deficit_{d}_{s}')
 
             model.Add(excess >= assigned_workers - target)
             model.Add(deficit >= target - assigned_workers)
@@ -380,8 +380,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     daily_deficit = {}
     daily_excess  = {}
 
-    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 8
-    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 8
+    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 80
+    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 80
 
     for d in days_of_year_working:
         daily_deficit[d] = model.NewIntVar(0, max_daily_deficit_possible, f'daily_deficit_{d}')
