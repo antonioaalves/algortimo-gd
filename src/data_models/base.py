@@ -27,12 +27,16 @@ from src.data_models.functions.helper_functions import (
     count_dates_per_year,
     convert_types_out,
     bulk_insert_with_query,
-    filter_insert_results
+    filter_insert_results,
+    get_df_faixa_horario,
 )
 from src.data_models.functions.data_treatment_functions import (
     adjust_estimativas_special_days,
     filter_df_dates,
-    add_date_related_columns
+    add_date_related_columns,
+    create_df_estimativas,
+    add_pessoa_obj_whole_day,
+    treat_df_orcamento,
 )
 from src.data_models.validations.load_process_data_validations import (
     validate_posto_id,
@@ -145,7 +149,7 @@ class BaseDescansosDataModel(ABC):
                 # df_estimativas borns as an empty dataframe
                 df_estimativas = pd.DataFrame()
 
-                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto', 'loja', 'secao', 'h_tm_in', 'h_tm_out', 'h_tt_in', 'h_tt_out', 'h_seg_in', 'h_seg_out', 'h_ter_in', 'h_ter_out', 'h_qua_in', 'h_qua_out', 'h_qui_in', 'h_qui_out', 'h_sex_in', 'h_sex_out', 'h_sab_in', 'h_sab_out', 'h_dom_in', 'h_dom_out', 'h_fer_in', 'h_fer_out'] # TODO: define what columns to select
+                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto', 'loja', 'secao', 'limite_superior_manha', 'limite_inferior_tarde']
                 self.logger.info(f"Columns to select: {columns_select}")
             except Exception as e:
                 self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
@@ -221,6 +225,11 @@ class BaseDescansosDataModel(ABC):
             except Exception as e:
                 self.logger.error(f"Error loading df_orcamento: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
+
+            success, df_orcamento, error_msg = treat_df_orcamento(df_orcamento)
+            if not success:
+                self.logger.error(f"Closed days treatment failed: {error_msg}")
+                return False, "errSubproc", error_msg
 
             try:
                 self.logger.info("Loading df_granularidade from data manager")
@@ -343,7 +352,7 @@ class BaseDescansosDataModel(ABC):
             self.logger.error(f"Error in validate_estimativas_info method: {e}", exc_info=True)
             return False, []
 
-    def load_estimativas_transformations(self) -> bool:
+    def load_estimativas_transformations(self) -> Tuple[bool, str, str]:
         """
         Convert R output_turnos function to Python.
         Process shift/schedule data and calculate shift statistics.
@@ -386,518 +395,76 @@ class BaseDescansosDataModel(ABC):
                 self.logger.info("Loading DataFrames from existing data")
                 # Get DataFrames from existing data
                 df_turnos = self.auxiliary_data['df_turnos'].copy()
-                df_estrutura_wfm = self.auxiliary_data['df_estrutura_wfm'].copy()
-                df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
                 df_feriados = self.auxiliary_data['df_feriados'].copy()
                 df_orcamento = self.auxiliary_data['df_orcamento'].copy()  # This is dfGranularidade equivalent - TODO: check if this is needed
-                df_valid_emp = self.auxiliary_data['df_valid_emp'].copy()
                 
-                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_estrutura_wfm: {df_estrutura_wfm.shape}, df_faixa_horario: {df_faixa_horario.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}")
+                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}")
             except KeyError as e:
                 self.logger.error(f"Missing required DataFrame: {e}", exc_info=True)
-                return False
+                return False, "", ""
             except Exception as e:
                 self.logger.error(f"Error loading DataFrames: {e}", exc_info=True)
-                return False
+                return False, "", ""
             
+            # Get shift boundary times from df_turnos (mode or average across section)
             try:
-                self.logger.info(f"Processing df_turnos data - Initial shape: {df_turnos.shape}")
-                # Filter df_turnos by fk_tipo_posto using vectorized isin() operation
-                # Note: If df_turnos was already pre-filtered in load_estimativas_info, this may be redundant
-                # but we keep it for safety to ensure exact behavior
-                if 'employee_id' in df_turnos.columns and 'fk_tipo_posto' in df_valid_emp.columns:
-                    employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == fk_tipo_posto]['employee_id']
-                    df_turnos = df_turnos[df_turnos['employee_id'].isin(employees_id_list_from_posto)].copy()
-                    self.logger.info(f"After filtering by fk_tipo_posto={fk_tipo_posto}, df_turnos shape: {df_turnos.shape}")
-                elif 'fk_tipo_posto' in df_turnos.columns:
-                    # Fallback: filter directly by fk_tipo_posto if employee_id filtering not possible
-                    df_turnos = df_turnos[df_turnos['fk_tipo_posto'] == fk_tipo_posto].copy()
-                    self.logger.info(f"After filtering by fk_tipo_posto={fk_tipo_posto} (direct), df_turnos shape: {df_turnos.shape}")
-                
-                # Define time columns for min/max calculations
-                columns_in = ["h_tm_in", "h_seg_in", "h_ter_in", "h_qua_in", "h_qui_in", "h_sex_in", "h_sab_in", "h_dom_in", "h_fer_in"]
-                columns_out = ["h_tt_out", "h_seg_out", "h_ter_out", "h_qua_out", "h_qui_out", "h_sex_out", "h_sab_out", "h_dom_out", "h_fer_out"]
-                self.logger.info(f"Time columns defined - in: {len(columns_in)}, out: {len(columns_out)}")
-                
-                # Convert time string columns to datetime (using base date 2000-01-01)
-                # Vectorized conversion: process all columns at once instead of loop
-                # This handles 'HH:MM' strings properly and ignores None/NaN values
-                self.logger.info("Converting time columns to datetime format (vectorized)")
-                time_cols_to_convert = [col for col in columns_in + columns_out if col in df_turnos.columns]
-                if time_cols_to_convert:
-                    # Vectorized conversion: concatenate date prefix and convert all columns at once
-                    for col in time_cols_to_convert:
-                        df_turnos[col] = pd.to_datetime('2000-01-01 ' + df_turnos[col].astype(str), 
-                                                        format='%Y-%m-%d %H:%M', 
-                                                        errors='coerce')
-                
-                # Calculate MinIN1 and MaxOUT2 (skipna handles NaT values automatically)
-                df_turnos['min_in1'] = df_turnos[columns_in].min(axis=1, skipna=True)
-                df_turnos['max_out2'] = df_turnos[columns_out].max(axis=1, skipna=True)
-                
-                # Fill missing values for h_tm_out and h_tt_in
-                df_turnos['h_tm_out'] = df_turnos['h_tm_out'].fillna(df_turnos['h_tt_out'])
-                df_turnos['h_tt_in'] = df_turnos['h_tt_in'].fillna(df_turnos[columns_in].min(axis=1, skipna=True))
-                
-                # Select relevant columns
-                df_turnos = df_turnos[['matricula', 'fk_tipo_posto', 'min_in1', 'h_tm_out', 'h_tt_in', 'max_out2']].copy()
-                
-                # Fill remaining missing values
-                df_turnos['min_in1'] = df_turnos['min_in1'].fillna(df_turnos['h_tt_in'])
-                df_turnos['max_out2'] = df_turnos['max_out2'].fillna(df_turnos['h_tm_out'])
-                
-                self.logger.info(f"Time calculations completed, df_turnos shape: {df_turnos.shape}")
+                # TODO: add helper function to get the df with faixa start and end time, ponto_medio and limite_superior_manha, limite_inferior_tarde
+                success, df_faixa_horario, error_msg = get_df_faixa_horario(
+                    df_orcamento=df_orcamento, 
+                    df_turnos=df_turnos, 
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Failed to get df_faixa_horario: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
             except Exception as e:
-                self.logger.error(f"Error processing df_turnos data: {e}", exc_info=True)
-                return False
-            
+                self.logger.error(f"Error getting df_faixa_horario: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            # Create df_estimativas from df_orcamento by aggregating per day/shift
+            # M shift: hora_inicio_faixa <= hora_ini < limite_superior_manha
+            # T shift: limite_inferior_tarde <= hora_ini < hora_fim_faixa
+            # Overlap between shifts is intentional - whole day stats reconcile this
             try:
-                # Handle overnight shifts (add 24 hours if end time is before start time)
-                # Note: Time columns are already datetime objects from earlier conversion
-                self.logger.info("Checking for overnight shifts")
-                mask_tm = df_turnos['h_tm_out'] < df_turnos['min_in1']
-                df_turnos.loc[mask_tm, 'h_tm_out'] += timedelta(days=1)
-                
-                mask_max = df_turnos['max_out2'] < df_turnos['h_tt_in']
-                df_turnos.loc[mask_max, 'max_out2'] += timedelta(days=1)
-                
-                self.logger.info("Time conversion and overnight shift handling completed")
+                success, df_estimativas, error_msg = create_df_estimativas(
+                    df_orcamento=df_orcamento,
+                    df_faixa_horario=df_faixa_horario,
+                    use_case=0
+                )
+                if not success:
+                    self.logger.error(f"Failed to create df_estimativas: {error_msg}")
+                    return False, "", ""
             except Exception as e:
-                self.logger.error(f"Error converting time columns: {e}", exc_info=True)
-                return False
+                self.logger.error(f"Error creating df_estimativas: {e}", exc_info=True)
+                return False, "", ""
             
-            # Group by fk_tipo_posto and calculate aggregated times
-            self.logger.info(f"DEBUG: Before groupby, df_turnos shape: {df_turnos.shape}")
-            df_turnos_grouped = df_turnos.groupby('fk_tipo_posto').agg({
-                'min_in1': 'min',
-                'h_tm_out': 'max', 
-                'h_tt_in': 'min',
-                'max_out2': 'max'
-            }).reset_index()
-            self.logger.info(f"DEBUG: After groupby, df_turnos_grouped shape: {df_turnos_grouped.shape}")
-            
-            # Calculate MED1 and MED2
-            df_turnos_grouped['med1'] = np.where(
-                df_turnos_grouped['h_tm_out'] < df_turnos_grouped['h_tt_in'],
-                df_turnos_grouped['h_tm_out'],
-                df_turnos_grouped[['h_tm_out', 'h_tt_in']].min(axis=1)
-            )
-            
-            df_turnos_grouped['med2'] = np.where(
-                df_turnos_grouped['h_tm_out'] < df_turnos_grouped['h_tt_in'],
-                df_turnos_grouped['h_tt_in'], 
-                df_turnos_grouped[['h_tm_out', 'h_tt_in']].min(axis=1)
-            )
-            
-            # Select and rename columns
-            df_turnos = df_turnos_grouped[['fk_tipo_posto', 'min_in1', 'med1', 'med2', 'max_out2']].copy()
-            
-            # Calculate MED3
-            df_turnos['med3'] = df_turnos['med1'].copy()
-            df_turnos['med3'] = np.where(df_turnos['med3'] < df_turnos['med2'], df_turnos['med2'], df_turnos['med3'])
-            df_turnos = df_turnos.drop('med2', axis=1)
-            
-            # Fill missing values
-            df_turnos['med3'] = df_turnos['med3'].fillna(df_turnos['med1'])
-            df_turnos['max_out2'] = df_turnos['max_out2'].fillna(df_turnos['med3'])
-            df_turnos['med1'] = df_turnos['med1'].fillna(df_turnos['min_in1'])
-            df_turnos['med3'] = df_turnos['med3'].fillna(df_turnos['max_out2'])
-            
-            # Merge with estrutura_wfm
-            df_estrutura_wfm_filtered = df_estrutura_wfm[df_estrutura_wfm['fk_tipo_posto'] == fk_tipo_posto].copy()
-            
-            # Ensure fk_unidade is string for consistent merge operations (it's an identifier like 'U0038', not a number)
-            if 'fk_unidade' in df_estrutura_wfm_filtered.columns:
-                df_estrutura_wfm_filtered['fk_unidade'] = df_estrutura_wfm_filtered['fk_unidade'].astype(str)
-            
-            df_turnos = pd.merge(df_estrutura_wfm_filtered, df_turnos, on='fk_tipo_posto', how='left')
-            self.logger.info(f"After merge with estrutura_wfm, df_turnos shape: {df_turnos.shape}")
-            
-            # Create date sequence using extended date range (same as df_calendario)
-            date_range = pd.date_range(start=first_date_passado, end=last_date_passado, freq='D')
-            df_data = pd.DataFrame({'data': date_range})
-            df_data['wd'] = df_data['data'].dt.day_name().str.lower()
-            
-            # Add unit information
-            df_unidade = pd.DataFrame({'fk_unidade': [fk_unidade]})
-            df_data = df_data.assign(key=1).merge(df_unidade.assign(key=1), on='key').drop('key', axis=1)
-            
-            # Ensure fk_unidade is string to match df_turnos (it's an identifier like 'U0038', not a number)
-            # This prevents type mismatch errors during merge
-            df_data['fk_unidade'] = df_data['fk_unidade'].astype(str)
-            
-            # Process holidays
-            # df_feriados from auxiliary_data is already treated and filtered for the date range
-            # Just filter by fk_unidade and rename column for merge
-            #if 'fk_unidade' in df_feriados.columns:
-            #    df_feriados['fk_unidade'] = df_feriados['fk_unidade'].astype(str)
-            df_feriados_filtered = df_feriados.copy()
-            
-            if len(df_feriados_filtered) > 0:
-                self.logger.info(f"df_feriados_filtered columns: {df_feriados_filtered.columns.tolist()}")
-                df_feriados_filtered['tipo_dia'] = 'feriado'
-                
-                # Rename 'schedule_day' to 'data' for merge with df_data
-                df_feriados_filtered = df_feriados_filtered.rename(columns={'schedule_day': 'data'})
-                
-                # Merge with data
-                df_data = pd.merge(df_data, pd.DataFrame(df_feriados_filtered[['fk_unidade', 'data', 'tipo_dia']]), 
-                                on=['fk_unidade', 'data'], how='left')
-                df_data['wd'] = df_data['tipo_dia'].fillna(df_data['wd'])
-                df_data = df_data.drop('tipo_dia', axis=1)
-            
-            # Process faixa_horario
-            self.logger.info(f"DEBUG: df_faixa_horario before filter:\n {df_faixa_horario}")
-            df_faixa_horario_filtered = df_faixa_horario[df_faixa_horario['fk_secao'] == fk_secao].copy()
-            
-            # Expand date ranges in faixa_horario - VECTORIZED VERSION
-            # Instead of iterrows(), use apply() which is faster and more memory-efficient
-            if not df_faixa_horario_filtered.empty:
-                # Ensure date columns are datetime
-                df_faixa_horario_filtered['data_ini'] = pd.to_datetime(df_faixa_horario_filtered['data_ini'])
-                df_faixa_horario_filtered['data_fim'] = pd.to_datetime(df_faixa_horario_filtered['data_fim'])
-                
-                # Vectorized date range expansion using apply() - much faster than iterrows()
-                def expand_date_range(row):
-                    """Helper function to expand a single row's date range"""
-                    date_range_fh = pd.date_range(start=row['data_ini'], end=row['data_fim'], freq='D')
-                    # Create DataFrame with one row per date, preserving all other columns
-                    expanded = pd.DataFrame({
-                        'data': date_range_fh,
-                        'fk_secao': [row['fk_secao']] * len(date_range_fh),
-                        'data_ini': [row['data_ini']] * len(date_range_fh),
-                        'data_fim': [row['data_fim']] * len(date_range_fh)
-                    })
-                    # Add all time columns (aber_seg, fech_seg, etc.) - preserve them for each date
-                    time_columns = ["aber_seg", "fech_seg", "aber_ter", "fech_ter", "aber_qua", "fech_qua", 
-                                   "aber_qui", "fech_qui", "aber_sex", "fech_sex", "aber_sab", "fech_sab", 
-                                   "aber_dom", "fech_dom", "aber_fer", "fech_fer"]
-                    for col in time_columns:
-                        if col in row.index:
-                            expanded[col] = row[col]
-                    return expanded
-                
-                # Apply expansion to each row and concatenate results - more efficient than iterrows()
-                expanded_dfs = df_faixa_horario_filtered.apply(expand_date_range, axis=1)
-                if len(expanded_dfs) > 0:
-                    df_faixa_horario_expanded = pd.concat(expanded_dfs.tolist(), ignore_index=True)
-                else:
-                    df_faixa_horario_expanded = pd.DataFrame()
-            else:
-                df_faixa_horario_expanded = pd.DataFrame()
-            
-            if not df_faixa_horario_expanded.empty:
-                # Reshape from wide to long format for time columns
-                time_columns = ["aber_seg", "fech_seg", "aber_ter", "fech_ter", "aber_qua", "fech_qua", 
-                            "aber_qui", "fech_qui", "aber_sex", "fech_sex", "aber_sab", "fech_sab", 
-                            "aber_dom", "fech_dom", "aber_fer", "fech_fer"]
+            # Add whole day statistics (media_dia, max_dia, min_dia, sd_dia)
+            try:
+                success, df_estimativas, error_msg = add_pessoa_obj_whole_day(
+                    df_estimativas=df_estimativas,
+                    df_orcamento=df_orcamento
+                )
+                if not success:
+                    self.logger.error(f"Failed to add pessoa_obj_whole_day: {error_msg}")
+                    return False, "", ""
+            except Exception as e:
+                self.logger.error(f"Error adding pessoa_obj_whole_day: {e}", exc_info=True)
+                return False, "", ""
 
-                self.logger.info(f"DEBUG: df_faixa_horario_expanded before melt:\n {df_faixa_horario_expanded}")
-                
-                df_faixa_long = pd.melt(df_faixa_horario_expanded, 
-                                    id_vars=['fk_secao', 'data', 'data_ini', 'data_fim'],
-                                    value_vars=time_columns,
-                                    var_name='wd_ab', value_name='value')
-
-                self.logger.info(f"DEBUG: df_faixa_long after melt:\n {df_faixa_long}")
-                
-                # Split wd_ab into action (aber/fech) and weekday
-                df_faixa_long[['a_f', 'wd']] = df_faixa_long['wd_ab'].str.split('_', expand=True)
-
-                self.logger.info(f"DEBUG: df_faixa_long after split:\n {df_faixa_long}")
-                
-                # Pivot back to get aber and fech columns
-                df_faixa_wide = df_faixa_long.pivot_table(
-                    index=['fk_secao', 'data', 'wd'], 
-                    columns='a_f', 
-                    values='value', 
-                    aggfunc='first'
-                ).reset_index()
-
-                self.logger.info(f"DEBUG: df_faixa_wide after pivot:\n {df_faixa_wide}")
-                
-                # Clean column names
-                df_faixa_wide.columns.name = None
-                
-                # Convert weekday names and match with actual dates - VECTORIZED with single replace dict
-                df_faixa_wide['wd'] = df_faixa_wide['wd'].str.replace('sab', 'sáb')
-                df_faixa_wide['wd_date'] = df_faixa_wide['data'].dt.day_name().str.lower()
-                # Use single replace() with dictionary for better performance
-                weekday_mapping = {
-                    'saturday': 'sáb',
-                    'sunday': 'dom',
-                    'monday': 'seg',
-                    'tuesday': 'ter',
-                    'wednesday': 'qua',
-                    'thursday': 'qui',
-                    'friday': 'sex'
-                }
-                df_faixa_wide['wd_date'] = df_faixa_wide['wd_date'].replace(weekday_mapping)
-
-                self.logger.info(f"DEBUG: df_faixa_wide after weekday replacement:\n {df_faixa_wide}")
-                
-                # Filter matching weekdays
-                df_faixa_horario_final = df_faixa_wide[df_faixa_wide['wd'] == df_faixa_wide['wd_date']].copy()
-
-                self.logger.info(f"DEBUG: df_faixa_horario_final after filter:\n {df_faixa_horario_final}")
-                
-                # Convert time columns to datetime
-                df_faixa_horario_final['aber'] = pd.to_datetime(df_faixa_horario_final['aber'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-                df_faixa_horario_final['fech'] = pd.to_datetime(df_faixa_horario_final['fech'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
-                
-                df_faixa_horario_final = df_faixa_horario_final[['fk_secao', 'data', 'aber', 'fech']]
-            else:
-                df_faixa_horario_final = pd.DataFrame({col: [] for col in ['fk_secao', 'data', 'aber', 'fech']})
-
-            self.logger.info(f"DEBUG: df_faixa_horario_final:\n {df_faixa_horario_final}")
-            
-            # Merge all data together
-            df_turnos = pd.merge(df_turnos, df_data, on=['fk_unidade'], how='left')
-            df_turnos = pd.merge(df_turnos, pd.DataFrame(df_faixa_horario_final), on=['fk_secao', 'data'], how='left')
-            
-            # Fill missing times with faixa_horario values
-            df_turnos['max_out2'] = df_turnos['max_out2'].fillna(df_turnos['fech'])
-            df_turnos['min_in1'] = df_turnos['min_in1'].fillna(df_turnos['aber'])
-            
-            # Calculate middle time
-            df_turnos['middle_time'] = pd.to_datetime(
-                (df_turnos['min_in1'].astype('int64') + df_turnos['max_out2'].astype('int64')) / 2,
-                unit='ns'
-            )
-            
-            # Round to nearest hour
-            df_turnos['hour'] = df_turnos['middle_time'].dt.hour
-            df_turnos['middle_time'] = pd.to_datetime('2000-01-01 ' + df_turnos['hour'].astype(str) + ':00:00')
-            
-            # Select final columns and rename
-            df_turnos = df_turnos[['fk_unidade', 'nome_unidade', 'fk_secao', 'nome_secao', 'fk_tipo_posto', 'nome_tipo_posto',
-                                'min_in1', 'med1', 'med3', 'max_out2', 'middle_time', 'aber', 'fech', 'data']].copy()
-            
-            # Update med1 and med3 with middle_time
-            df_turnos['med1'] = df_turnos['middle_time']
-            df_turnos['med3'] = df_turnos['middle_time']
-            df_turnos = df_turnos.drop('middle_time', axis=1)
-            
-            # Rename columns to match R output
-            df_turnos.columns = ["fk_unidade", "unidade", "fk_secao", "secao", "fk_tipo_posto", "tipo_posto", 
-                                "m_ini", "m_out", "t_ini", "t_out", "aber", "fech", "data"]
-            
-            # Reshape to long format for turnos
-            df_turnos_long1 = pd.melt(pd.DataFrame(df_turnos), 
-                                    id_vars=[col for col in df_turnos.columns if col not in ["m_ini", "t_ini"]], 
-                                    value_vars=["m_ini", "t_ini"],
-                                    var_name='turno', value_name='h_ini_1')
-            
-            df_turnos_long2 = pd.melt(pd.DataFrame(df_turnos),
-                                    id_vars=[col for col in df_turnos.columns if col not in ["m_out", "t_out"]],
-                                    value_vars=["m_out", "t_out"], 
-                                    var_name='turno2', value_name='h_out_1')
-            
-            # Map turno names
-            df_turnos_long1['turno'] = df_turnos_long1['turno'].replace({"m_ini": "m", "t_ini": "t"})
-            df_turnos_long2['turno2'] = df_turnos_long2['turno2'].replace({"m_out": "m", "t_out": "t"})
-            
-            # Merge the two long formats
-            common_cols = [col for col in df_turnos_long1.columns 
-                        if col in df_turnos_long2.columns 
-                        and col not in ['turno', 'h_ini_1', 'turno2', 'h_out_1']]
-
-            df_turnos_final = pd.merge(df_turnos_long1, df_turnos_long2, on=common_cols, how='inner')
-            
-            # Filter matching turnos
-            df_turnos_final = df_turnos_final[df_turnos_final['turno'] == df_turnos_final['turno2']].copy()
-            df_turnos_final = df_turnos_final.drop('turno2', axis=1)
-            
-            # Filter out where start and end times are equal
-            df_turnos_final = df_turnos_final[df_turnos_final['h_ini_1'] != df_turnos_final['h_out_1']].copy()
-            
-            # Handle overnight shifts
-            df_turnos_final = pd.DataFrame(df_turnos_final)
-            mask_overnight = df_turnos_final['h_ini_1'] > df_turnos_final['h_out_1']
-            df_turnos_final.loc[mask_overnight, 'h_out_1'] += timedelta(days=1)
-            
-            # Update fech and aber based on turno
-            df_turnos_final.loc[df_turnos_final['turno'] == 'M', 'fech'] = df_turnos_final.loc[df_turnos_final['turno'] == 'M', 'h_out_1']
-            df_turnos_final.loc[df_turnos_final['turno'] == 'T', 'aber'] = df_turnos_final.loc[df_turnos_final['turno'] == 'T', 'h_ini_1']
-            
-            # Adjust times based on aber/fech constraints
-            mask_m = df_turnos_final['turno'] == 'M'
-            df_turnos_final.loc[mask_m, 'h_ini_1'] = df_turnos_final.loc[mask_m, ['h_ini_1', 'aber']].min(axis=1)
-            
-            mask_t = df_turnos_final['turno'] == 'T'
-            df_turnos_final.loc[mask_t, 'h_out_1'] = df_turnos_final.loc[mask_t, ['h_out_1', 'fech']].max(axis=1)
-            
-            # Process granularity data (df_orcamento equivalent)
-            # TODO: shouldnt it be from a query
-            df_granularidade = self.auxiliary_data.get('df_granularidade', pd.DataFrame())
-            #df_granularidade = df_orcamento[['fk_unidade', 'unidade', 'fk_secao', 'secao', 'fk_tipo_posto', 'tipo_posto', 
-            #                                'data', 'hora_ini', 'pessoas_min', 'pessoas_estimado', 'pessoas_final']].copy()
-            
-            # Select relevant columns from df_turnos_final
-            df_turnos_processing = df_turnos_final[['fk_tipo_posto', 'h_ini_1', 'h_out_1', 'turno', 'data']].copy()
-            df_turnos_processing['fk_posto_turno'] = df_turnos_processing['fk_tipo_posto'].astype(str) + '_' + df_turnos_processing['turno']
-            
-            # Convert dates to proper format
-            df_granularidade['data'] = pd.to_datetime(df_granularidade['data'])
-            df_turnos_processing['data'] = pd.to_datetime(df_turnos_processing['data'])
-            df_granularidade['hora_ini'] = pd.to_datetime(df_granularidade['hora_ini'])
-            df_turnos_processing['h_ini_1'] = pd.to_datetime(df_turnos_processing['h_ini_1'])
-            df_turnos_processing['h_out_1'] = pd.to_datetime(df_turnos_processing['h_out_1'])
-            
-            # Filter by fk_tipo_posto
-            df_turnos_processing = df_turnos_processing[df_turnos_processing['fk_tipo_posto'] == fk_tipo_posto].copy()
-            
-            # Handle case where no turnos exist
-            if len(df_turnos_processing) == 0:
-                min_time = df_granularidade['hora_ini'].min()
-                max_time = df_granularidade['hora_ini'].max()
-                
-                # Calculate middle time
-                middle_seconds = (min_time.hour * 3600 + min_time.minute * 60 + 
-                                max_time.hour * 3600 + max_time.minute * 60) / 2
-                middle_hour = int(middle_seconds // 3600)
-                middle_time = pd.to_datetime(f'2000-01-01 {middle_hour:02d}:00:00')
-                
-                # Create default turnos
-                new_rows = [
-                    {
-                        'fk_tipo_posto': fk_tipo_posto,
-                        'h_ini_1': min_time,
-                        'h_out_1': middle_time,
-                        'turno': 'M',
-                        'data': None,
-                        'fk_posto_turno': f'{fk_tipo_posto}_M'
-                    },
-                    {
-                        'fk_tipo_posto': fk_tipo_posto,
-                        'h_ini_1': middle_time,
-                        'h_out_1': max_time,
-                        'turno': 'T', 
-                        'data': None,
-                        'fk_posto_turno': f'{fk_tipo_posto}_T'
-                    }
-                ]
-                df_turnos_processing = pd.DataFrame(new_rows)
-            
-            # Filter granularity data
-            df_granularidade = df_granularidade[df_granularidade['fk_tipo_posto'] == fk_tipo_posto].copy()
-            self.logger.info(f"DEBUG: df_granularidade filtered shape: {df_granularidade.shape}")
-            
-            # Process each unique turno - VECTORIZED VERSION using groupby().apply()
-            # This processes all turnos in one operation instead of loop with concat
-            self.logger.info(f"DEBUG: df_turnos_processing shape before processing: {df_turnos_processing.shape}")
-            self.logger.info(f"DEBUG: Unique fk_posto_turno values: {df_turnos_processing['fk_posto_turno'].unique()}")
-            
-            df_turnos_processing = pd.DataFrame(df_turnos_processing)
-            
-            # Define function to process a single turno group
-            def process_turno_group(group):
-                """Process a single turno group - maintains exact same logic as original loop"""
-                # pandas removes the grouping column from each group; use group.name for the key
-                fk_posto_turno = group.name
-                fk_posto = group['fk_tipo_posto'].iloc[0]
-                turno = group['turno'].iloc[0]
-                self.logger.info(f"DEBUG: Processing turno: {fk_posto_turno}")
-                
-                # Filter granularity data for this posto
-                df_granularidade_f = df_granularidade[df_granularidade['fk_tipo_posto'] == fk_posto].copy()
-                self.logger.info(f"DEBUG:   df_granularidade_f shape before merge: {df_granularidade_f.shape}")
-                
-                # Merge with turno data
-                df_granularidade_f = pd.merge(df_granularidade_f, group, 
-                                            on=['fk_tipo_posto', 'data'], how='inner')
-                self.logger.info(f"DEBUG:   df_granularidade_f shape after merge: {df_granularidade_f.shape}")
-                
-                # Filter by time range
-                time_mask = (df_granularidade_f['hora_ini'] >= df_granularidade_f['h_ini_1']) & \
-                        (df_granularidade_f['hora_ini'] < df_granularidade_f['h_out_1'])
-                df_granularidade_f = df_granularidade_f[time_mask].copy()
-                self.logger.info(f"DEBUG:   After time filter, df_granularidade_f shape: {df_granularidade_f.shape}")
-                
-                df_granularidade_f = df_granularidade_f.sort_values(['data', 'hora_ini'], ascending=[True, True]).drop_duplicates()
-                df_granularidade_f['pessoas_final'] = pd.to_numeric(df_granularidade_f['pessoas_final'], errors='coerce')
-                self.logger.info(f"DEBUG:   After sort and numeric conversion, df_granularidade_f shape: {df_granularidade_f.shape}")
-                
-                # Calculate statistics
-                if len(df_granularidade_f) == 0:
-                    output = pd.DataFrame({
-                        'data': [],
-                        'media_turno': [],
-                        'max_turno': [],
-                        'min_turno': [],
-                        'sd_turno': []
-                    })
-                else:
-                    output = df_granularidade_f.groupby('data').agg({
-                        'pessoas_final': [
-                            ('media_turno', 'mean'),
-                            ('max_turno', lambda x: calcular_max(x.tolist())),
-                            ('min_turno', 'min'),
-                            ('sd_turno', 'std')
-                        ]
-                    }).reset_index()
-                    
-                    # Flatten column names
-                    output.columns = ['data', 'media_turno', 'max_turno', 'min_turno', 'sd_turno']
-                
-                # Create complete date range using extended date range (same as df_calendario)
-                date_range_complete = pd.date_range(start=first_date_passado, end=last_date_passado, freq='D')
-                df_data_complete = pd.DataFrame({'data': date_range_complete})
-                
-                # Merge with output
-                output = pd.merge(df_data_complete, output, on='data', how='left')
-                output = output.fillna(0)
-                
-                output['turno'] = turno
-                output['fk_tipo_posto'] = fk_posto
-                self.logger.info(f"DEBUG:   Output shape for this turno: {output.shape}")
-                
-                return output
-            
-            # Process all turnos using groupby().apply() - vectorized approach
-            # This processes all groups and returns a list of DataFrames
-            if not df_turnos_processing.empty and 'fk_posto_turno' in df_turnos_processing.columns:
-                output_list = df_turnos_processing.groupby('fk_posto_turno').apply(process_turno_group, include_groups=False)
-                # Convert Series of DataFrames to list and concatenate once
-                if isinstance(output_list, pd.Series):
-                    output_final = pd.concat(output_list.tolist(), ignore_index=True)
-                else:
-                    output_final = output_list if isinstance(output_list, pd.DataFrame) else pd.DataFrame()
-                self.logger.info(f"DEBUG: Final output_final shape after vectorized processing: {output_final.shape}")
-            else:
-                output_final = pd.DataFrame()
-                self.logger.warning("df_turnos_processing is empty or missing fk_posto_turno column")
-            
-            # Final processing
-            if len(output_final) > 0:
-                output_final['data_turno'] = output_final['data'].astype(str) + '_' + output_final['turno']
-            
-            output_final = output_final.fillna(0)
-            output_final = output_final.drop_duplicates()
-            output_final['fk_tipo_posto'] = fk_tipo_posto
-            
-            # Remove duplicates based on key columns
-            output_final = output_final.drop_duplicates(['fk_tipo_posto', 'data', 'data_turno', 'turno'])
-            
-            # Convert numeric columns
-            numeric_cols = ['max_turno', 'min_turno', 'media_turno', 'sd_turno']
-            for col in numeric_cols:
-                output_final[col] = pd.to_numeric(output_final[col], errors='coerce')
 
             # Filter by date range (Step 3B from func_inicializa guide)
             # Use extended date range (first_date_passado to last_date_passado) to match df_calendario
             # This ensures the algorithm component has the whole period for both dataframes
             try:
-                self.logger.info(f"DEBUG: About to filter df_estimativas by extended date range. output_final shape: {output_final.shape}")
-                self.logger.info(f"DEBUG: output_final empty? {output_final.empty}")
-                if not output_final.empty:
-                    self.logger.info(f"DEBUG: output_final columns: {output_final.columns.tolist()}")
-                    self.logger.info(f"DEBUG: output_final head:\n{output_final.head()}")
-                success, output_final, error_msg = filter_df_dates(
-                    df=output_final,
+                if not df_estimativas.empty:
+                    self.logger.info(f"DEBUG: df_estimativas columns: {df_estimativas.columns.tolist()}")
+                    self.logger.info(f"DEBUG: df_estimativas head:\n{df_estimativas.head()}")
+                success, df_estimativas, error_msg = filter_df_dates(
+                    df=df_estimativas,
                     first_date_str=first_date_passado,
                     last_date_str=last_date_passado,
-                    date_col_name='data',
+                    date_col_name='schedule_day',
                     use_case=1  # Filter by extended date range (same as df_calendario should have)
                 )
                 if not success:
@@ -911,7 +478,11 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Adjusting estimativas for special dates (Christmas/New Year)")
                 special_days_list = []  # Empty list = auto-generate from data year
-                success, output_final, error_msg = adjust_estimativas_special_days(df_estimativas=output_final, special_days_list=special_days_list)
+                success, df_estimativas, error_msg = adjust_estimativas_special_days(
+                    df_estimativas=df_estimativas, 
+                    special_days_list=special_days_list,
+                    use_case=0
+                )
                 if not success:
                     self.logger.error(f"Failed to adjust special dates: {error_msg}")
                     return False
@@ -923,9 +494,9 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Adding date-related columns to estimativas (WDAY, WW, WD)")
                 main_year = self.auxiliary_data.get('main_year')
-                success, output_final, error_msg = add_date_related_columns(
-                    df=output_final,
-                    date_col='data',
+                success, df_estimativas, error_msg = add_date_related_columns(
+                    df=df_estimativas,
+                    date_col='schedule_day',
                     add_id_col=False,
                     use_case=1,
                     main_year=main_year,
@@ -942,19 +513,18 @@ class BaseDescansosDataModel(ABC):
             try:
                 self.logger.info("Storing results in appropriate class attributes")
                 # Store processed turnos data in auxiliary_data
-                self.auxiliary_data['df_turnos'] = df_turnos_processing.copy()
-                self.auxiliary_data['df_feriados_filtered'] = df_feriados_filtered.copy()
+                #self.auxiliary_data['df_turnos'] = df_turnos_processing.copy()
+                #self.auxiliary_data['df_feriados_filtered'] = df_feriados_filtered.copy()
                 
                 # Store final output matrix (matrizB_og equivalent) in raw_data
-                self.raw_data['df_estimativas'] = output_final.copy()
+                self.raw_data['df_estimativas'] = df_estimativas.copy()
                 
                 if not self.auxiliary_data or not self.raw_data:
                     self.logger.warning("Data storage verification failed")
                     return False
                     
                 self.logger.info("load_estimativas_transformations completed successfully")
-                self.logger.info(f"Stored df_turnos with shape: {df_turnos_processing.shape}")
-                self.logger.info(f"Stored df_estimativas (matrizB_og) with shape: {output_final.shape}")
+                self.logger.info(f"Stored df_estimativas (matrizB_og) with shape: {df_estimativas.shape}")
                 
                 return True
             except KeyError as e:

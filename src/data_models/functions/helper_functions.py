@@ -1690,6 +1690,122 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
         logger.error(error_msg, exc_info=True)
         return False, {}, error_msg
 
+def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Function that gets the df_faixa_horario from the df_orcamento and df_turnos
+    
+    Args:
+        df_orcamento: DataFrame with the orcamento data
+        df_turnos: DataFrame with the turnos data
+        use_case: int with the use case
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, df_faixa_horario, error_message)
+    """
+    try:
+        if use_case == 0:
+            # Get limite_superior_manha and limite_inferior_tarde from df_turnos
+            # Then create a DataFrame with one row per schedule_day
+            # hora_inicio_faixa = 00:00, hora_fim_faixa = 24:00 (next day 00:00)
+            
+            required_cols = ['limite_superior_manha', 'limite_inferior_tarde']
+            missing_cols = [col for col in required_cols if col not in df_turnos.columns]
+            if missing_cols:
+                raise ValueError(f"df_turnos missing required columns: {missing_cols}")
+            
+            if df_turnos.empty:
+                raise ValueError("df_turnos is empty")
+            
+            # Parse limite times from df_turnos (get mode or average)
+            limite_times = {}
+            for col in required_cols:
+                values = df_turnos[col].dropna()
+                if values.empty:
+                    raise ValueError(f"All values in '{col}' are null")
+                
+                # Vectorized time parsing: handle "HH:MM" or "HH:MM:SS" formats
+                parsed_times = pd.to_datetime(values.astype(str), format='%H:%M', errors='coerce')
+                mask_nat = parsed_times.isna()
+                if mask_nat.any():
+                    parsed_times_hms = pd.to_datetime(values[mask_nat].astype(str), format='%H:%M:%S', errors='coerce')
+                    parsed_times = parsed_times.fillna(parsed_times_hms)
+                
+                mask_nat = parsed_times.isna()
+                if mask_nat.any():
+                    parsed_times_general = pd.to_datetime(values[mask_nat], errors='coerce')
+                    parsed_times = parsed_times.fillna(parsed_times_general)
+                
+                parsed_times = parsed_times.dropna()
+                if parsed_times.empty:
+                    raise ValueError(f"Could not parse any time values from '{col}'")
+                
+                # Extract time as timedelta (hours + minutes + seconds)
+                time_deltas = pd.to_timedelta(
+                    parsed_times.dt.hour * 3600 + parsed_times.dt.minute * 60 + parsed_times.dt.second,
+                    unit='s'
+                )
+                
+                # Try to find mode (most common value)
+                mode_result = time_deltas.mode()
+                if len(mode_result) >= 1:
+                    limite_times[col] = mode_result.iloc[0]
+                    logger.info(f"get_df_faixa_horario: Using mode for {col}: {limite_times[col]}")
+                else:
+                    # No mode - use average
+                    avg_seconds = time_deltas.dt.total_seconds().mean()
+                    limite_times[col] = pd.Timedelta(seconds=avg_seconds)
+                    logger.info(f"get_df_faixa_horario: No mode for {col}, using average: {limite_times[col]}")
+            
+            # Get unique schedule_day values from df_orcamento
+            if df_orcamento is None or df_orcamento.empty:
+                raise ValueError("df_orcamento is empty or None")
+            
+            df_orc = df_orcamento.copy()
+            df_orc['schedule_day'] = pd.to_datetime(df_orc['schedule_day']).dt.normalize()
+            unique_days = df_orc['schedule_day'].unique()
+            
+            # Create DataFrame with one row per schedule_day
+            df_faixa = pd.DataFrame({'schedule_day': unique_days})
+            df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+            
+            # hora_inicio_faixa = schedule_day at 00:00 (same as schedule_day normalized)
+            df_faixa['hora_inicio_faixa'] = df_faixa['schedule_day']
+            
+            # hora_fim_faixa = schedule_day + 1 day at 00:00 (represents 24:00)
+            df_faixa['hora_fim_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(days=1)
+            
+            # limite_superior_manha = schedule_day + limite time
+            df_faixa['limite_superior_manha'] = df_faixa['schedule_day'] + limite_times['limite_superior_manha']
+            
+            # limite_inferior_tarde = schedule_day + limite time
+            df_faixa['limite_inferior_tarde'] = df_faixa['schedule_day'] + limite_times['limite_inferior_tarde']
+            
+            # Sort by schedule_day
+            df_faixa = df_faixa.sort_values('schedule_day').reset_index(drop=True)
+            
+            logger.info(f"get_df_faixa_horario: Created df_faixa with {len(df_faixa)} rows")
+            return True, df_faixa, ""
+        
+        elif use_case == 1:
+            df_orcamento = df_orcamento.copy()
+            mask_pessoas_min = df_orcamento['pessoas_min'] > 0
+            df_orcamento = df_orcamento[mask_pessoas_min]
+            df_faixa = df_orcamento.groupby('schedule_day', as_index=False).agg(
+                hora_inicio_faixa=('hora_ini', 'min'),
+                hora_fim_faixa=('hora_ini', 'max')
+            )
+            # Calculate ponto_medio as the midpoint between hora_inicio_faixa and hora_fim_faixa
+            df_faixa['ponto_medio'] = df_faixa['hora_inicio_faixa'] + (df_faixa['hora_fim_faixa'] - df_faixa['hora_inicio_faixa']) / 2
+            # For this use_case, the objective is to consider both limite_superior_manha and limite_inferior_tarde as the middle point
+            df_faixa['limite_superior_manha'] = df_faixa['ponto_medio']
+            df_faixa['limite_inferior_tarde'] = df_faixa['ponto_medio']
+            return True, df_faixa, ""
+
+        else:
+            return False, pd.DataFrame(), "Invalid use case"
+    except Exception as e:
+        return False, pd.DataFrame(), f"Error getting df_faixa_horario: {e}"
+
 def get_df_estrutura_wfm_info(df_estrutura_wfm: pd.DataFrame) -> str:
     """
     """
