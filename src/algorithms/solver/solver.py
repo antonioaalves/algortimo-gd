@@ -248,8 +248,8 @@ def solve(
         # Loop through each worker
         processed_workers = 0
         days_of_year_sorted = sorted(days_of_year)
-        time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) for d in days_of_year_sorted]
-        time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
+        time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) / 10 for d in days_of_year_sorted]
+        time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) / 10 for d in days_of_year_sorted]
         special_days_worked = {}
         sun = {}
         compensation_days_off = {}

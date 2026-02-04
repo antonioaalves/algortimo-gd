@@ -708,7 +708,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['index'] == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
-                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
+                        pess_obj[(d, s)] = int(round(day_shift_data['media_turno'].values[0], 1) * 80)
                         min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
                         max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
                     else:
