@@ -4350,7 +4350,8 @@ def _compute_restricao_turno(
     hora_ini: pd.Series,
     hora_fim: pd.Series,
     limite_superior_manha: pd.Series,
-    limite_inferior_tarde: pd.Series
+    limite_inferior_tarde: pd.Series,
+    use_case: int = 0,
 ) -> pd.Series:
     """
     Compute shift restriction based on availability times and employee shift limits.
@@ -4374,18 +4375,28 @@ def _compute_restricao_turno(
     Logic:
         - S1: dini < T1 AND dfim < M1 → Morning only ('M')
         - S3: dini > T1 AND dfim > M1 → Afternoon only ('T')
-        - S2: Otherwise, compare margins:
-            - margin_morning = T1 - dini (time available before afternoon starts)
-            - margin_afternoon = dfim - M1 (time available after morning ends)
-            - If margin_morning > margin_afternoon → 'M'
-            - If margin_morning < margin_afternoon → 'T'
-            - If equal → '' (no restriction, will be filtered out)
+        - S2: Otherwise (overlapping cases):
+            - If use_case = 0: No restriction ('' - can be M or T)
+            - If use_case = 1: Compare margins:
+                - margin_morning = T1 - dini (time available before afternoon starts)
+                - margin_afternoon = dfim - M1 (time available after morning ends)
+                - If margin_morning > margin_afternoon → 'M'
+                - If margin_morning < margin_afternoon → 'T'
+                - If equal → '' (no restriction, will be filtered out)
+    
+    Note:
+        Handles midnight crossing: when hora_fim date > hora_ini date (e.g., availability
+        from 2000-01-01 10:00 to 2000-01-02 00:00), the function adds 24 hours to dfim
+        to ensure correct time comparisons.
     
     Args:
         hora_ini: Series with availability start times (Oracle datetime)
         hora_fim: Series with availability end times (Oracle datetime)
         limite_superior_manha: Series with upper limit for morning shift (string "HH:MM")
         limite_inferior_tarde: Series with lower limit for afternoon shift (string "HH:MM")
+        use_case: Defines behavior for S2 cases (employees with overlapping availability):
+            - 0 (default): S2 employees have no restrictions (can be M or T)
+            - 1: S2 employees get restrictions based on margin comparison
         
     Returns:
         pd.Series: Series with shift restriction values ('M', 'T', or '' for no restriction)
@@ -4395,6 +4406,19 @@ def _compute_restricao_turno(
     dfim = hora_fim.apply(_time_to_minutes)
     M1 = limite_superior_manha.apply(_time_to_minutes)
     T1 = limite_inferior_tarde.apply(_time_to_minutes)
+    
+    # Handle midnight crossing: if hora_fim date > hora_ini date, add 24 hours to dfim
+    # This handles cases like hora_ini=2000-01-01 10:00 and hora_fim=2000-01-02 00:00
+    try:
+        hora_ini_dt = pd.to_datetime(hora_ini)
+        hora_fim_dt = pd.to_datetime(hora_fim)
+        crosses_midnight = hora_fim_dt.dt.date > hora_ini_dt.dt.date
+        midnight_count = crosses_midnight.sum()
+        if midnight_count > 0:
+            logger.info(f"Detected {midnight_count} availability windows crossing midnight - adjusting dfim")
+            dfim = dfim.where(~crosses_midnight, dfim + 1440)  # Add 24 hours (1440 minutes)
+    except Exception as e:
+        logger.warning(f"Could not check for midnight crossing (date comparison failed): {e}")
     
     # Log warning if M1 == T1 (unusual but valid)
     equal_limits_count = (M1 == T1).sum()
@@ -4416,17 +4440,20 @@ def _compute_restricao_turno(
     s2_mask = ~s1_mask & ~s3_mask
     
     if s2_mask.any():
-        # Calculate margins
-        margin_morning = T1 - dini  # Time available before afternoon starts
-        margin_afternoon = dfim - M1  # Time available after morning ends
-        
-        # S2 sub-conditions
-        s2_morning_mask = s2_mask & (margin_morning > margin_afternoon)
-        s2_afternoon_mask = s2_mask & (margin_morning < margin_afternoon)
-        # s2_equal_mask = s2_mask & (margin_morning == margin_afternoon) → stays as '' (no restriction)
-        
-        result.loc[s2_morning_mask] = 'M'
-        result.loc[s2_afternoon_mask] = 'T'
+        if use_case == 1:
+            # use_case = 1: Apply restrictions based on margin comparison
+            # Calculate margins
+            margin_morning = T1 - dini  # Time available before afternoon starts
+            margin_afternoon = dfim - M1  # Time available after morning ends
+            
+            # S2 sub-conditions
+            s2_morning_mask = s2_mask & (margin_morning > margin_afternoon)
+            s2_afternoon_mask = s2_mask & (margin_morning < margin_afternoon)
+            # s2_equal_mask = s2_mask & (margin_morning == margin_afternoon) → stays as '' (no restriction)
+            
+            result.loc[s2_morning_mask] = 'M'
+            result.loc[s2_afternoon_mask] = 'T'
+        # else use_case == 0: S2 employees have no restrictions (stays as '')
     
     # Log distribution
     logger.info(f"Shift restriction computation: S1 (Morning)={s1_mask.sum()}, S3 (Afternoon)={s3_mask.sum()}, S2 (Calculated)={s2_mask.sum()}")
@@ -4436,7 +4463,8 @@ def _compute_restricao_turno(
 
 def treat_df_disponibilidade(
     df_disponibilidade: pd.DataFrame,
-    df_colaborador_limits: pd.DataFrame
+    df_colaborador_limits: pd.DataFrame,
+    use_case: int = 0
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Treat df_disponibilidade dataframe by validating, converting types, and computing shift restrictions.
@@ -4463,6 +4491,9 @@ def treat_df_disponibilidade(
             - matricula: Employee matricula (optional)
             - limite_superior_manha: Upper limit for morning shift
             - limite_inferior_tarde: Lower limit for afternoon shift
+        use_case: Defines behavior for S2 cases (employees with overlapping availability):
+            - 0 (default): S2 employees have no restrictions (can be M or T)
+            - 1: S2 employees get restrictions based on margin comparison
             
     Returns:
         Tuple containing:
@@ -4526,7 +4557,8 @@ def treat_df_disponibilidade(
             hora_ini=df_result['hora_ini'],
             hora_fim=df_result['hora_fim'],
             limite_superior_manha=df_result['limite_superior_manha'],
-            limite_inferior_tarde=df_result['limite_inferior_tarde']
+            limite_inferior_tarde=df_result['limite_inferior_tarde'],
+            use_case=0
         )
         
         # Step 6: Filter out records with no restriction (empty string means no clear shift preference)
@@ -4695,6 +4727,9 @@ def restrict_turnos_by_disponibilidade(
             for _, row in unique_modifications.iterrows():
                 logger.info(f"  Employee {row['employee_id']} | Day {row['schedule_day']} | Restricted to: {row['restricao']}")
             logger.info(f"=== Total: {len(unique_modifications)} employee-day combinations modified ===")
+        
+        # Restore schedule_day to datetime type (was converted to string for matching)
+        df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day'])
         
         # OUTPUT VALIDATION
         horario_counts = df_result['horario'].value_counts()
