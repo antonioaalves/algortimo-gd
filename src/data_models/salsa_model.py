@@ -1270,6 +1270,17 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Note: Admission date adjustment (Step 6A) moved to func_inicializa
                 # as it requires df_colaborador (cross-dataframe operation)
                 
+                # Apply availability restrictions (df_disponibilidade) to df_calendario
+                df_disponibilidade = self.auxiliary_data.get('df_disponibilidade', pd.DataFrame())
+                success, df_calendario_restricted, msg = restrict_turnos_by_disponibilidade(
+                    df_calendario=df_calendario,
+                    df_disponibilidade=df_disponibilidade
+                )
+                if success:
+                    df_calendario = df_calendario_restricted
+                else:
+                    self.logger.warning(f"Failed to apply availability restrictions: {msg} - proceeding without restrictions")
+                
                 # TODO: Save df_calendario to appropriate location and return success
                 self.logger.info("Calendar transformations completed successfully")
 
