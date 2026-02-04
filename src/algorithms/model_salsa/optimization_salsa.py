@@ -363,8 +363,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                 for w in all_workers if (w, d, s) in shift
             )
 
-            excess  = model.NewIntVar(0, len(all_workers)*80, f'excess_{d}_{s}')
-            deficit = model.NewIntVar(0, target*80, f'deficit_{d}_{s}')
+            excess  = model.NewIntVar(0, len(all_workers)*8000, f'excess_{d}_{s}')
+            deficit = model.NewIntVar(0, target*8000, f'deficit_{d}_{s}')
 
             model.Add(excess >= assigned_workers - target)
             model.Add(deficit >= target - assigned_workers)
@@ -380,8 +380,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     daily_deficit = {}
     daily_excess  = {}
 
-    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 80
-    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 80
+    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 8000
+    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 8000
 
     for d in days_of_year_working:
         daily_deficit[d] = model.NewIntVar(0, max_daily_deficit_possible, f'daily_deficit_{d}')
