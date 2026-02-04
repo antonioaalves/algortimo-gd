@@ -27,15 +27,16 @@ from src.data_models.functions.helper_functions import (
     count_dates_per_year,
     convert_types_out,
     bulk_insert_with_query,
-    filter_insert_results
+    filter_insert_results,
+    get_df_faixa_horario,
 )
 from src.data_models.functions.data_treatment_functions import (
     adjust_estimativas_special_days,
     filter_df_dates,
     add_date_related_columns,
-    get_limite_values,
     create_df_estimativas,
     add_pessoa_obj_whole_day,
+    treat_df_orcamento,
 )
 from src.data_models.validations.load_process_data_validations import (
     validate_posto_id,
@@ -239,6 +240,11 @@ class BaseDescansosDataModel(ABC):
                 self.logger.error(f"Error loading df_orcamento: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            success, df_orcamento, error_msg = treat_df_orcamento(df_orcamento)
+            if not success:
+                self.logger.error(f"Closed days treatment failed: {error_msg}")
+                return False, "errSubproc", error_msg
+
             try:
                 self.logger.info("Loading df_granularidade from data manager")
                 # granularidade information
@@ -404,13 +410,10 @@ class BaseDescansosDataModel(ABC):
                 self.logger.info("Loading DataFrames from existing data")
                 # Get DataFrames from existing data
                 df_turnos = self.auxiliary_data['df_turnos'].copy()
-                df_estrutura_wfm = self.auxiliary_data['df_estrutura_wfm'].copy()
-                df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
                 df_feriados = self.auxiliary_data['df_feriados'].copy()
                 df_orcamento = self.auxiliary_data['df_orcamento'].copy()  # This is dfGranularidade equivalent - TODO: check if this is needed
-                df_valid_emp = self.auxiliary_data['df_valid_emp'].copy()
                 
-                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_estrutura_wfm: {df_estrutura_wfm.shape}, df_faixa_horario: {df_faixa_horario.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}")
+                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}")
             except KeyError as e:
                 self.logger.error(f"Missing required DataFrame: {e}", exc_info=True)
                 return False, "", ""
@@ -420,11 +423,19 @@ class BaseDescansosDataModel(ABC):
             
             # Get shift boundary times from df_turnos (mode or average across section)
             try:
-                limite_superior_manha, limite_inferior_tarde = get_limite_values(df_turnos)
-                self.logger.info(f"Limite values - superior_manha: {limite_superior_manha}, inferior_tarde: {limite_inferior_tarde}")
+                # TODO: add helper function to get the df with faixa start and end time, ponto_medio and limite_superior_manha, limite_inferior_tarde
+                success, df_faixa_horario, error_msg = get_df_faixa_horario(
+                    df_orcamento=df_orcamento, 
+                    df_turnos=df_turnos, 
+                    use_case=1
+                )
+                if not success:
+                    self.logger.error(f"Failed to get df_faixa_horario: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
             except Exception as e:
-                self.logger.error(f"Error getting limite values: {e}", exc_info=True)
-                return False, "", ""
+                self.logger.error(f"Error getting df_faixa_horario: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
 
             # Create df_estimativas from df_orcamento by aggregating per day/shift
             # M shift: hora_inicio_faixa <= hora_ini < limite_superior_manha
@@ -433,8 +444,8 @@ class BaseDescansosDataModel(ABC):
             try:
                 success, df_estimativas, error_msg = create_df_estimativas(
                     df_orcamento=df_orcamento,
-                    limite_superior_manha=limite_superior_manha,
-                    limite_inferior_tarde=limite_inferior_tarde
+                    df_faixa_horario=df_faixa_horario,
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Failed to create df_estimativas: {error_msg}")
@@ -461,8 +472,6 @@ class BaseDescansosDataModel(ABC):
             # Use extended date range (first_date_passado to last_date_passado) to match df_calendario
             # This ensures the algorithm component has the whole period for both dataframes
             try:
-                self.logger.info(f"DEBUG: About to filter df_estimativas by extended date range. df_estimativas shape: {df_estimativas.shape}")
-                self.logger.info(f"DEBUG: output_final empty? {df_estimativas.empty}")
                 if not df_estimativas.empty:
                     self.logger.info(f"DEBUG: df_estimativas columns: {df_estimativas.columns.tolist()}")
                     self.logger.info(f"DEBUG: df_estimativas head:\n{df_estimativas.head()}")
@@ -470,7 +479,7 @@ class BaseDescansosDataModel(ABC):
                     df=df_estimativas,
                     first_date_str=first_date_passado,
                     last_date_str=last_date_passado,
-                    date_col_name='data',
+                    date_col_name='schedule_day',
                     use_case=1  # Filter by extended date range (same as df_calendario should have)
                 )
                 if not success:
@@ -486,7 +495,8 @@ class BaseDescansosDataModel(ABC):
                 special_days_list = []  # Empty list = auto-generate from data year
                 success, df_estimativas, error_msg = adjust_estimativas_special_days(
                     df_estimativas=df_estimativas, 
-                    special_days_list=special_days_list
+                    special_days_list=special_days_list,
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Failed to adjust special dates: {error_msg}")
@@ -501,7 +511,7 @@ class BaseDescansosDataModel(ABC):
                 main_year = self.auxiliary_data.get('main_year')
                 success, df_estimativas, error_msg = add_date_related_columns(
                     df=df_estimativas,
-                    date_col='data',
+                    date_col='schedule_day',
                     add_id_col=False,
                     use_case=1,
                     main_year=main_year,

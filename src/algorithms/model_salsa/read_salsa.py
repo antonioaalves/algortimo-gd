@@ -110,7 +110,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Convert data column to datetime
         try:
             matriz_calendario_gd['schedule_day'] = pd.to_datetime(matriz_calendario_gd['schedule_day'])
-            matriz_estimativas_gd['data'] = pd.to_datetime(matriz_estimativas_gd['data'])
+            matriz_estimativas_gd['schedule_day'] = pd.to_datetime(matriz_estimativas_gd['schedule_day'])
         except Exception as e:
             raise ValueError(f"Error converting data column to datetime: {e}")
         
@@ -241,9 +241,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             # Get the year from the first date and create January 1st of that year
             year = matriz_estimativas_gd.loc[
-                (matriz_estimativas_gd['data'].dt.month == 6) &
-                (matriz_estimativas_gd['data'].dt.day == 25),
-                'data'].dt.year.iloc[0]
+                (matriz_estimativas_gd['schedule_day'].dt.month == 6) &
+                (matriz_estimativas_gd['schedule_day'].dt.day == 25),
+                'schedule_day'].dt.year.iloc[0]
             january_1st = pd.Timestamp(year=year, month=1, day=1)
 
             # If your system uses 1=Monday, 7=Sunday, add 1:
@@ -315,15 +315,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         max_calendar_date = matriz_calendario_gd['schedule_day'].max()
 
         jan1 = matriz_estimativas_gd.loc[
-        (matriz_estimativas_gd['data'].dt.month == 1) &
-        (matriz_estimativas_gd['data'].dt.day == 1) &
-        (matriz_estimativas_gd['data'].dt.year == year)
+        (matriz_estimativas_gd['schedule_day'].dt.month == 1) &
+        (matriz_estimativas_gd['schedule_day'].dt.day == 1) &
+        (matriz_estimativas_gd['schedule_day'].dt.year == year)
         ]
 
         dec31 = matriz_estimativas_gd.loc[
-        (matriz_estimativas_gd['data'].dt.month == 12) &
-        (matriz_estimativas_gd['data'].dt.day == 31) &
-        (matriz_estimativas_gd['data'].dt.year == year)
+        (matriz_estimativas_gd['schedule_day'].dt.month == 12) &
+        (matriz_estimativas_gd['schedule_day'].dt.day == 31) &
+        (matriz_estimativas_gd['schedule_day'].dt.year == year)
         ]
   
         min_day_year = jan1['index'].iloc[0] if not jan1.empty else 1
