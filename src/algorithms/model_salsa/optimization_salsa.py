@@ -174,7 +174,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     total_sunday_imbalance_weight=int(scale*percentage_of_importance_sunday_balance/sunday_imbalance_per_semeste_min_worst_scenario)
 
     sunday_imbalance_weight_periodicity_min_worst_scenario=1
-    percentage_of_importance_sunday_imbalance_weight_periodicity=2 
+    percentage_of_importance_sunday_imbalance_weight_periodicity=3 
     sunday_imbalance_weight_periodicity=int(scale*percentage_of_importance_sunday_imbalance_weight_periodicity/sunday_imbalance_weight_periodicity_min_worst_scenario)
 
     LQ_imbalance_per_semeste_min_worst_scenario=1
