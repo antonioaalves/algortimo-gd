@@ -344,15 +344,15 @@ def convert_types_in(df: pd.DataFrame) -> pd.DataFrame:
     type_map = {
         ('T', 'M'): 'M',      # Trabajo Mañana -> M
         ('T', 'T'): 'T',      # Trabajo Tarde -> T
-        ('T', 'H'): 'MoT',    # Trabajo Horas -> MoT (Mañana or Tarde)
+        ('T', 'H'): 'MoT',    # Trabajo Manhã ou tarde -> MoT (Mañana or Tarde)
         ('T', 'P'): 'P',      # Trabajo Partido -> P
-        ('F', None): 'L',     # Libre -> L
-        ('F', 'D'): 'LD',     # Libre Domingo -> LD
-        ('F', 'Q'): 'LQ',     # Libre Quincenal -> LQ
-        ('F', 'C'): 'C',      # Libre Compensatorio -> C
-        ('R', None): 'F',     # Rotativo -> F
-        ('N', None): '-',     # No definido -> -
-        ('T', 'A'): 'V',      # Trabajo Ausencia -> V (Vacaciones)
+        ('F', None): 'L',     # Folga -> L
+        ('F', 'D'): 'LD',     # Folga por trabalhar no domingo/feriado -> LD
+        ('F', 'Q'): 'LQ',     # Folga Quincenal -> LQ
+        ('F', 'C'): 'C',      # Folga Compensatorio -> C
+        ('R', None): 'F',     # Feriado fechado -> F
+        ('N', None): '-',     # Dia vazio -> -
+        ('T', 'A'): 'V',      # Férias -> V (Férias)
     }
     
     # Create a copy to avoid modifying the original DataFrame
@@ -1313,6 +1313,59 @@ def adjusted_isoweek(date) -> int:
         return 53
     
     return week
+
+
+def get_section_employees_id_list(df_mpd_valid_employees: pd.DataFrame) -> Tuple[bool, List[int], str]:
+    """
+    Get all employee IDs from the entire section for matricula mapping.
+    
+    This function extracts ALL employees from df_mpd_valid_employees regardless of
+    posto or execution mode. Used to build employee_id_matriculas_map which needs
+    the complete section context even when executing for a single employee.
+    
+    Why this exists:
+        - In single-employee mode (wfm_proc_colab set), df_valid_emp only contains 1 employee
+        - But employee_id_matriculas_map needs ALL employees to create df_calendario
+        - df_mpd_valid_employees always contains all employees in the section
+        - This function provides section-level data needed before the posto loop begins
+    
+    Note: 
+        This is different from get_past_employees_id_list which filters by posto
+        and is called per-posto. This function is called ONCE before the posto loop.
+        
+    TODO: This logic will be abandoned after STRSOL-1180 is implemented.
+          After STRSOL-1180, df_valid_emp will contain all employees in the section
+          with a field indicating if the employee should be executed or not.
+          At that point, we can use employees_id_total_list directly.
+    
+    Args:
+        df_mpd_valid_employees: DataFrame containing all employees in the section
+        
+    Returns:
+        Tuple of (success: bool, section_employees_id_list: List[int], message: str)
+    """
+    try:
+        # Validate input DataFrame
+        if df_mpd_valid_employees is None or df_mpd_valid_employees.empty:
+            return False, [], "df_mpd_valid_employees is None or empty"
+        
+        if 'employee_id' not in df_mpd_valid_employees.columns:
+            return False, [], "employee_id column not found in df_mpd_valid_employees"
+        
+        # Extract all unique employee IDs from the section
+        section_employees_id_list = [int(x) for x in df_mpd_valid_employees['employee_id'].unique()]
+        
+        if len(section_employees_id_list) == 0:
+            return False, [], "No employees found in df_mpd_valid_employees"
+        
+        logger.info(f"Extracted {len(section_employees_id_list)} employees from section (df_mpd_valid_employees)")
+        
+        return True, section_employees_id_list, "Success"
+        
+    except Exception as e:
+        logger.error(f"Error extracting section employees list: {e}", exc_info=True)
+        return False, [], f"Error extracting section employees list: {str(e)}"
+
 
 def get_past_employees_id_list(wfm_proc_colab: str, df_valid_emp: pd.DataFrame, fk_tipo_posto: str, employees_id_list_for_posto: List[str]) -> Tuple[bool, List[int], str]:
     """

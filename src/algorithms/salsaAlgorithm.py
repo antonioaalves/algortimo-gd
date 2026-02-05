@@ -19,7 +19,7 @@ from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
     LQ_attribution, compensation_days, working_day_shifts, salsa_2_consecutive_free_days, salsa_2_day_quality_weekend,
-    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days
+    salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days, one_colab_min_constraint
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -278,6 +278,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             fixed_compensation_days = adapted_data['fixed_compensation_days']
             year_range = adapted_data["year_range"]
             unique_dates = adapted_data["unique_dates"]
+            period = adapted_data["period"]
+            locked_days = adapted_data["locked_days"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -340,7 +342,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences,
                                        vacation_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       shift_M, shift_T, workers_past, fixed_compensation_days)
+                                       shift_M, shift_T, workers_past, fixed_compensation_days, locked_days)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -359,21 +361,22 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Working day shifts constraint
             if constraint_selections.get("working_day_shifts", {}).get("enabled", True):
                 self.logger.info("Applying constraint: working_day_shifts")
-                working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift)
+                working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift, period)
             else:
                 self.logger.warning("Skipping constraint: working_day_shifts (disabled in config)")
+
             if workers:
                 # Week working days constraint based on contract type
                 if constraint_selections.get("week_working_days_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: week_working_days_constraint")
-                    week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week)
+                    week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week, period)
                 else:
                     self.logger.warning("Skipping constraint: week_working_days_constraint (disabled in config)")
                 
                 # Maximum continuous working days constraint
                 if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: maximum_continuous_working_days")
-                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
+                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period)
                 else:
                     self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
                 
@@ -384,34 +387,33 @@ class SalsaAlgorithm(BaseAlgorithm):
                 else:
                     self.logger.warning("Skipping constraint: LQ_attribution (disabled in config)")
                             
-                # SALSA specific constraints
                 if constraint_selections.get("salsa_2_consecutive_free_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: salsa_2_consecutive_free_days")
-                    salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs)
+                    salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days_off, fixed_LQs, period)
                 else:
                     self.logger.warning("Skipping constraint: salsa_2_consecutive_free_days (disabled in config)")
                 
                 if constraint_selections.get("salsa_2_day_quality_weekend", {}).get("enabled", True):
                     self.logger.info(f"Applying constraint: salsa_2_day_quality_weekend (workers: {len(workers)}, c2d configured)")
-                    salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays, year_range)
+                    salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, year_range, period)
                 else:
                     self.logger.warning("Skipping constraint: salsa_2_day_quality_weekend (disabled in config)")
                 
                 if constraint_selections.get("salsa_saturday_L_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: salsa_saturday_L_constraint")
-                    salsa_saturday_L_constraint(model, shift, workers, working_days)
+                    salsa_saturday_L_constraint(model, shift, workers, working_days, period)
                 else:
                     self.logger.warning("Skipping constraint: salsa_saturday_L_constraint (disabled in config)")
     
                 if constraint_selections.get("salsa_2_free_days_week", {}).get("enabled", True):
                     self.logger.info("Applying constraint: salsa_2_free_days_week")
-                    salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week)
+                    salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period)
                 else:
                     self.logger.warning("Skipping constraint: salsa_2_free_days_week (disabled in config)")
     
                 if constraint_selections.get("first_day_not_free", {}).get("enabled", True):
                     self.logger.info("Applying constraint: first_day_not_free")
-                    first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off)
+                    first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off, period)
                 else:
                     self.logger.warning("Skipping constraint: first_day_not_free (disabled in config)")
     
@@ -421,15 +423,19 @@ class SalsaAlgorithm(BaseAlgorithm):
                 else:
                     self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
     
-                # Compensation days - check both country and config flag
                 if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "spain":
                     self.logger.info("Applying constraint: compensation_days (Spain-specific)")
-                    compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days)
+                    compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit, fixed_days_off, fixed_LQs, worker_absences, vacation_days, period)
                 elif country != "spain":
                     self.logger.info("Skipping constraint: compensation_days (not applicable for non-Spain)")
                 else:
                     self.logger.warning("Skipping constraint: compensation_days (disabled in config)")
-                            
+
+                if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: one_colab_min_constraint")
+                    one_colab_min_constraint(model, shift, workers, real_working_shift, days_of_year, shift_M, shift_T, period)
+                else:
+                    self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")
             
             # =================================================================
@@ -437,15 +443,15 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
 
-            debug_vars, optimization_details = salsa_optimization(model, days_of_year, workers_complete, real_working_shift, shift, pessObj,
-                                             working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d,
-                                             first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
+            optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj,
+                                                      working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d,
+                                                      first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range)
 
             # =================================================================
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, pessObj, workers_past,
+            schedule_df, results = solve(model, days_of_year, workers_complete, holidays, shift, shifts, work_day_hours, pessObj, workers_past,
                               pd.Series(['Worker'] + (unique_dates)),
                               output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                               optimization_details=optimization_details )

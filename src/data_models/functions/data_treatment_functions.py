@@ -399,6 +399,17 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, case_type: 
             logger.warning(f"Type conversion failed: {e}")
             return False, pd.DataFrame(), f"Type conversion failed: {e}"
 
+        # Transform all LQ to L
+        try:
+            if 'horario' in df_calendario_passado.columns:
+                lq_count = (df_calendario_passado['horario'] == 'LQ').sum()
+                if lq_count > 0:
+                    df_calendario_passado.loc[df_calendario_passado['horario'] == 'LQ', 'horario'] = 'L'
+                    logger.info(f"Converted {lq_count} LQ entries to L")
+        except Exception as e:
+            logger.warning(f"LQ to L transformation failed: {e}")
+            # Don't fail the whole function, just log the warning
+
         # Clean up columns
         try:
             columns_to_drop = ['schedule_day_dt']
@@ -1035,7 +1046,7 @@ def set_tipo_contrato_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: 
             params_contrato = pd.DataFrame({
                 'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
                 'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
-                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 6, 6]
+                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
             })
 
             df_colaborador = pd.merge(
@@ -1782,8 +1793,8 @@ def add_l_dom_to_df_colaborador(
         # Used by Salsa
         elif use_case == 1:
             # Calculate full-year l_dom values (no date adjustments here - those are done in date_adjustments_to_df_colaborador)
-            # First mask
-            mask_6_bd = (df_result['tipo_contrato'] == 6) & (df_result['convenio'] == convenio_bd)
+            # First mask - handle contract types 6 and 8
+            mask_6_bd = (df_result['tipo_contrato'].isin([6, 8])) & (df_result['convenio'] == convenio_bd)
             if mask_6_bd.any():
                 df_result.loc[mask_6_bd, 'l_dom'] = num_sundays - df_result.loc[mask_6_bd, 'dyf_max_t']
 
@@ -2304,6 +2315,7 @@ def create_df_calendario(
         # Add empty columns
         df_calendario['horario'] = ''
         df_calendario['dia_tipo'] = ''
+        df_calendario['fixed'] = False
 
         # Flag closed holidays (tipo_feriado == 'F') upfront so later steps preserve them
         try:
@@ -2324,7 +2336,7 @@ def create_df_calendario(
             logger.warning(f"Failed to pre-fill closed holidays in df_calendario: {e}")
         
         # Reorder columns
-        column_order = ['employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo', 'matricula']
+        column_order = ['employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo', 'matricula', 'fixed']
         df_calendario = df_calendario[column_order]
         
         # Sort by employee_id, date, and shift type for consistent ordering
@@ -2595,6 +2607,7 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
             
             # Vectorized assignment
             df_result.loc[fill_mask, 'horario'] = mapped_values[fill_mask]
+            df_result.loc[fill_mask, 'fixed'] = True
             
             filled_count = fill_mask.sum()
             
@@ -2832,7 +2845,13 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
                 logger.info("No day-off or no-work records found, returning original df_calendario")
                 return True, df_result, ""
             
+            # Ensure employee_id types match (convert to string for consistent matching)
+            df_result['employee_id'] = df_result['employee_id'].astype(str)
+            df_dayoffs['employee_id'] = df_dayoffs['employee_id'].astype(str)
+            
             # Ensure schedule_day is in string format for matching
+            if df_result['schedule_day'].dtype != 'object':
+                df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day']).dt.strftime('%Y-%m-%d')
             if df_dayoffs['schedule_day'].dtype != 'object':
                 df_dayoffs['schedule_day'] = pd.to_datetime(df_dayoffs['schedule_day']).dt.strftime('%Y-%m-%d')
             
@@ -3501,11 +3520,11 @@ def process_special_shift_types(df_calendario: pd.DataFrame, shift_type: str, em
         return False, pd.DataFrame(), error_msg
 
 
-def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None) -> Tuple[bool, pd.DataFrame, str]:
+def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None, first_date: str = None, last_date: str = None) -> Tuple[bool, pd.DataFrame, str]:
     """
     Add date-related columns to dataframe (index, WDAY, WW, WD).
     
-    Agnostic function that works for both df_calendario and df_estimativas.
+    Agnostic function that works for df_calendario, df_estimativas and df_feriados.
     
     Args:
         df: Input dataframe with date column
@@ -3513,6 +3532,8 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         add_id_col: Whether to add index column (row index) - usually only for calendario
         use_case: Processing mode (0=dynamic indexing, 1=fixed indexing for calendario)
         main_year: Main year for fixed indexing (required when use_case=1)
+        first_date: Reference start date for consistent indexing (use_case=0)
+        last_date: Reference end date for consistent indexing (use_case=0)
         
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, dataframe with new columns, error message)
@@ -3520,6 +3541,8 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
     Note:
         The 'index' column assigns sequential IDs (1, 2, 3, ...) to each unique date
         in chronological order, identifying the position of each day in the calendar range.
+        When first_date and last_date are provided, ensures consistent indexing across
+        multiple dataframes (df_calendario, df_estimativas, df_feriados).
     """
     try:
         # INPUT VALIDATION
@@ -3538,9 +3561,24 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         
         # Add index column: sequential ID for each unique date (1, 2, 3, ...)
         if use_case == 0:
-            unique_dates = sorted(df_result[date_col].unique())
-            date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
-            df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
+            if first_date is not None and last_date is not None:
+                # Create mapping from reference date range (for consistent indexing across dataframes)
+                reference_range = pd.date_range(start=first_date, end=last_date, freq='D')
+                date_to_index = {date: idx + 1 for idx, date in enumerate(reference_range)}
+                df_result['index'] = df_result[date_col].map(date_to_index)
+                
+                # Handle dates outside the reference range
+                if df_result['index'].isna().any():
+                    max_index = df_result['index'].max()
+                    if pd.isna(max_index):
+                        max_index = 0
+                    df_result['index'] = df_result['index'].fillna(max_index + 1)
+                df_result['index'] = df_result['index'].astype(int)
+            else:
+                # Original behavior: dynamic indexing from dataframe's own dates
+                unique_dates = sorted(df_result[date_col].unique())
+                date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
+                df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
         elif use_case == 1:
             # Fixed indexing: 22-12-[year-1] to 04-01-[year+1]
             # This ensures index matches between df_estimativas (01-01 to 31-12) and df_calendario (23-12 to 04-01)
