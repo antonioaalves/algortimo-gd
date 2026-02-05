@@ -53,7 +53,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
             partial_generation = True 
-            partial_workers = algorithm_treatment_params['employees_id_list_for_posto']
+            partial_workers = algorithm_treatment_params['wfm_proc_colab']
             logger.debug(f"wfm_proc {wfm_proc}, {type(wfm_proc)}")
         else:
             partial_generation = False
