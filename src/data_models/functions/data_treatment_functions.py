@@ -2315,6 +2315,7 @@ def create_df_calendario(
         # Add empty columns
         df_calendario['horario'] = ''
         df_calendario['dia_tipo'] = ''
+        df_calendario['fixed'] = False
 
         # Flag closed holidays (tipo_feriado == 'F') upfront so later steps preserve them
         try:
@@ -2335,7 +2336,7 @@ def create_df_calendario(
             logger.warning(f"Failed to pre-fill closed holidays in df_calendario: {e}")
         
         # Reorder columns
-        column_order = ['employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo', 'matricula']
+        column_order = ['employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo', 'matricula', 'fixed']
         df_calendario = df_calendario[column_order]
         
         # Sort by employee_id, date, and shift type for consistent ordering
@@ -2606,6 +2607,7 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
             
             # Vectorized assignment
             df_result.loc[fill_mask, 'horario'] = mapped_values[fill_mask]
+            df_result.loc[fill_mask, 'fixed'] = True
             
             filled_count = fill_mask.sum()
             
