@@ -124,7 +124,7 @@ def run_process(use_db, no_tracking):
                     success = service.execute_stage(stage)
 
                     if success:
-                        click.echo(click.style(f" {stage} completed successfully", fg="green"))
+                        click.echo(click.style(f"✓ {stage} completed successfully", fg="green"))
                     else:
                         click.echo(click.style(f"✘ {stage} failed", fg="red", bold=True))
                         if not click.confirm("Continue despite failure?", default=False):

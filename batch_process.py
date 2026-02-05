@@ -3,13 +3,10 @@
 
 import time
 import os
-import cx_Oracle
 import click
 import sys
 from typing import Dict, Any
 from datetime import datetime
-
-
 
 # Import base_data_project components
 from base_data_project.log_config import setup_logger, get_logger
@@ -88,7 +85,7 @@ def run_batch_process(data_manager, process_manager, algorithm="example_algorith
                 click.echo(click.style(f"✘ {stage} failed", fg="red", bold=True))
                 return False
             else:
-                click.echo(click.style(f" {stage} completed successfully", fg="green"))
+                click.echo(click.style(f"✓ {stage} completed successfully", fg="green"))
                 click.echo()
         
         # Finalize the process
@@ -239,7 +236,7 @@ def batch_process(use_db, no_tracking, algorithm, current_process_id, api_proc_i
             # Log final status
             if success:
                 logger.info("Process completed successfully")
-                click.echo(click.style(" Process completed successfully", fg="green", bold=True))
+                click.echo(click.style("✓ Process completed successfully", fg="green", bold=True))
             else:
                 logger.warning("Process completed with errors")
                 click.echo(click.style("⚠ Process completed with errors", fg="yellow", bold=True))
