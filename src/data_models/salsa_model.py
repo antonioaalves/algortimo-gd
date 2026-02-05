@@ -1545,7 +1545,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             success, df_estimativas, error_msg = calculate_and_merge_allocated_employees(
                 df_estimativas=df_estimativas,
                 df_calendario=df_calendario,
-                date_col_est='data',
+                date_col_est='schedule_day',
                 date_col_cal='schedule_day',
                 shift_col_est='turno',
                 shift_col_cal='tipo_turno',
