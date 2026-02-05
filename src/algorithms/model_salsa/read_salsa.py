@@ -696,6 +696,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         # Extract optimization parameters from estimativas
         pess_obj = {}
+        h_plus = {}
         min_workers = {}
         max_workers = {}
         working_shift = ["M", "T"]
@@ -711,15 +712,19 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
                         min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
                         max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
+                        h_plus[(d, s)] = int(round(day_shift_data['+h'].values[0]))
                     else:
                         pess_obj[(d, s)] = 0
                         min_workers[(d, s)] = 0
                         max_workers[(d, s)] = 0
+                        h_plus[(d, s)] = -1
                     #print(f"day {d} and shift {s}: pessobj {pess_obj[(d, s)]/8}, min_workers {min_workers[(d, s)]/8}, max_workers {max_workers[(d, s)]/8}")
             logger.info(f"Processing estimativas data with {len(matriz_estimativas_gd)} records")
             logger.info(f"  - pess_obj: {len(pess_obj)/2} entries")
             logger.info(f"  - min_workers: {len(min_workers)/2} entries")
             logger.info(f"  - max_workers: {len(max_workers)/2} entries")
+
+            logger.info(f"+H Column: {h_plus}")
         # =================================================================
         # 12. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
@@ -791,6 +796,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "managers": managers,
             "keyholders": keyholders,
             "locked_days": locked_days,
+            "h_plus": h_plus,
+            "is_eci": True,
             }
         
     except Exception as e:

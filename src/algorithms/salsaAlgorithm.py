@@ -286,6 +286,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             managers = adapted_data["managers"]
             keyholders = adapted_data["keyholders"]
             locked_days = adapted_data["locked_days"]
+            h_plus = adapted_data["h_plus"]
+            is_eci = adapted_data["is_eci"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -471,7 +473,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj,
                                                       working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, first_day,
-                                                      last_day, role_by_worker, work_day_hours, workers_past, year_range, managers, keyholders)
+                                                      last_day, role_by_worker, work_day_hours, workers_past, year_range, managers, keyholders, h_plus, is_eci)
 
             # =================================================================
             # SOLVE THE MODEL
