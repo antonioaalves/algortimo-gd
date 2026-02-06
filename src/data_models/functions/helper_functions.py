@@ -20,6 +20,35 @@ PROJECT_NAME = _config.project_name
 logger = get_logger(PROJECT_NAME)
 
 
+def get_granularity_minutes() -> int:
+    """
+    Get the configured time-slot granularity in minutes.
+    
+    Uses the system configuration (src/settings/system_settings.py) and enforces that
+    the value is a positive integer.
+    
+    Returns:
+        int: Granularity in minutes.
+    
+    Raises:
+        ValueError: If the configured granularity is missing, non-integer or <= 0.
+    """
+    granularity = getattr(_config.system, "granularity", None)
+    try:
+        granularity_int = int(granularity)
+    except (TypeError, ValueError):
+        error_msg = "granularity must be an integer number of minutes"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    if granularity_int <= 0:
+        error_msg = "granularity must be a positive integer number of minutes"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    return granularity_int
+
+
 def count_dates_per_year(start_date_str: str, end_date_str: str) -> tuple[str, str, int]:
     """
     Convert R count_dates_per_year function to Python.
