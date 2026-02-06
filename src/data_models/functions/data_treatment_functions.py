@@ -801,6 +801,13 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
         except Exception as e:
             logger.warning(f"Column renaming failed: {e}")
             # Continue with original column names
+
+        try: 
+            if ['data_demissao', 'data_admissao'] not in df_colaborador.columns:
+                df_colaborador['data_admissao'] = '2000-01-01'
+                df_colaborador['data_demissao'] = '2049-12-31'
+        except Exception as e:
+            logger.error("Error creating empty data_admissao e data_demissao")
         
         # Convert data types logic
         try:
@@ -812,8 +819,8 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
             df_colaborador['c3d'] = pd.to_numeric(df_colaborador['c3d'], errors='coerce')
             df_colaborador['cxx'] = pd.to_numeric(df_colaborador['cxx'], errors='coerce')
             df_colaborador['lqs'] = pd.to_numeric(df_colaborador['lqs'], errors='coerce')
-            df_colaborador['data_admissao'] = pd.to_datetime(df_colaborador['data_admissao'], errors='coerce')
-            df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce')
+            df_colaborador['data_admissao'] = pd.to_datetime(df_colaborador['data_admissao'], errors='coerce', format="%Y-%m-%d")
+            df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce', format="%Y-%m-%d")
             df_colaborador['seq_turno'] = df_colaborador['seq_turno'].fillna('').astype(str)
             df_colaborador['ciclo'] = df_colaborador['ciclo'].fillna('').astype(str)
             

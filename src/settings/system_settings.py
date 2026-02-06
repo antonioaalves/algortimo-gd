@@ -10,6 +10,7 @@ system_configs = {
     "environment": "salsa_tst", # Options: development, production
     "use_db": True, # Options: True, False
     "override_parameter_defaults": False, # Options: True, False
+    "granularity": 15,
     
     "project_name": log_parameters.get("project_name", 'algoritmo_GD'), # Important for environment management
     "project_version": "1.1-dev", # Important for environment management
