@@ -798,6 +798,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "year_range": year_range,
             "unique_dates": unique_dates,
             "period": period,
+            "managers": managers,
+            "keyholders": keyholders,
             "locked_days": locked_days,
             }
         
