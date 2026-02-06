@@ -1816,18 +1816,34 @@ def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, us
             return True, df_faixa, ""
         
         elif use_case == 1:
-            df_orcamento = df_orcamento.copy()
-            mask_pessoas_min = df_orcamento['pessoas_min'] > 0
-            df_orcamento = df_orcamento[mask_pessoas_min]
-            df_faixa = df_orcamento.groupby('schedule_day', as_index=False).agg(
-                hora_inicio_faixa=('hora_ini', 'min'),
-                hora_fim_faixa=('hora_ini', 'max')
-            )
+            df_orc_full = df_orcamento.copy()
+            mask_pessoas_min = df_orc_full['pessoas_min'] > 0
+            df_orc_filtered = df_orc_full[mask_pessoas_min]
+
+            if df_orc_filtered.empty:
+                # Fallback: no rows with pessoas_min > 0 – use default faixa 06:40 / 22:40
+                logger.warning(
+                    "get_df_faixa_horario (use_case=1): no rows with pessoas_min > 0 "
+                    "(total rows: %d). Using fallback hora_inicio_faixa=06:40, hora_fim_faixa=22:40 for all days.",
+                    len(df_orc_full),
+                )
+                unique_days = pd.to_datetime(df_orc_full['schedule_day']).dt.normalize().unique()
+                df_faixa = pd.DataFrame({'schedule_day': unique_days})
+                df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+                df_faixa['hora_inicio_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(hours=6, minutes=40)
+                df_faixa['hora_fim_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(hours=22, minutes=40)
+            else:
+                df_faixa = df_orc_filtered.groupby('schedule_day', as_index=False).agg(
+                    hora_inicio_faixa=('hora_ini', 'min'),
+                    hora_fim_faixa=('hora_ini', 'max')
+                )
+
             # Calculate ponto_medio as the midpoint between hora_inicio_faixa and hora_fim_faixa
             df_faixa['ponto_medio'] = df_faixa['hora_inicio_faixa'] + (df_faixa['hora_fim_faixa'] - df_faixa['hora_inicio_faixa']) / 2
             # For this use_case, the objective is to consider both limite_superior_manha and limite_inferior_tarde as the middle point
             df_faixa['limite_superior_manha'] = df_faixa['ponto_medio']
             df_faixa['limite_inferior_tarde'] = df_faixa['ponto_medio']
+            df_faixa = df_faixa.sort_values('schedule_day').reset_index(drop=True)
             return True, df_faixa, ""
 
         else:

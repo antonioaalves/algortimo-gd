@@ -802,12 +802,13 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
             logger.warning(f"Column renaming failed: {e}")
             # Continue with original column names
 
-        try: 
-            if ['data_demissao', 'data_admissao'] not in df_colaborador.columns:
+        try:
+            # Check each column separately (a list is never "in" df.columns)
+            if 'data_admissao' not in df_colaborador.columns or 'data_demissao' not in df_colaborador.columns:
                 df_colaborador['data_admissao'] = '2000-01-01'
                 df_colaborador['data_demissao'] = '2049-12-31'
         except Exception as e:
-            logger.error("Error creating empty data_admissao e data_demissao")
+            logger.error("Error creating empty data_admissao e data_demissao: %s", e)
         
         # Convert data types logic
         try:

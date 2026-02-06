@@ -107,7 +107,7 @@ else:
 
 
 # GET PROCESSES -----------------------------------
-sec_to_proc = get_process_by_status(path_ficheiros_global, 'WFM', 'MPD', '2', 'N', connection)
+sec_to_proc = get_process_by_status(path_ficheiros_global, 'WFM', 'MPD', '2', 'N', connection, use_case=0)
 logger.info(f"Nr of process {len(sec_to_proc)}")
 
 local_processes = 0
