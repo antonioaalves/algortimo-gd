@@ -146,7 +146,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             workers = sorted(valid_workers)
             workers_complete = workers
-            complete = complete = matriz_colaborador_gd[(matriz_colaborador_gd['ciclo'] == 'Completo') & (matriz_colaborador_gd['employee_id'] == w)]
+            complete = matriz_colaborador_gd[(matriz_colaborador_gd['ciclo'] == 'Completo') & (matriz_colaborador_gd['employee_id'] == w)]
             workers_complete_cycle = [] if complete.empty else workers
             if not complete.empty:
                 workers = []
@@ -605,7 +605,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Usando coluna de nível: %s", role_col)
 
         for w in workers_past:
-            row = matriz_colaborador_nao_alterada.loc[matriz_colaborador_nao_alterada['matricula'] == w]
+            row = matriz_colaborador_nao_alterada.loc[matriz_colaborador_nao_alterada['employee_id'] == w]
             if row.empty:
                 logger.info(f"calendario vazio {w}")
                 role = "normal"
