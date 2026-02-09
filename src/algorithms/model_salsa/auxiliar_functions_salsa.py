@@ -131,10 +131,9 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
             elif nbr_vacations > 2:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
                     continue
-            if nbr_absences < 5 and nbr_vacations < 6:
-                if w == 2641 and 222 in days:
-                    print("entrei e DEVIA")
-
+            elif nbr_absences < 5:
+                continue
+            print(f"casos em que entrei: w {w}\nabsences: {absences_in_week}\nvacations: {vacations_in_week}\ntotal: {total}")
             atributing_days = sorted(days_set - closed_holidays)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
