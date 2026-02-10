@@ -113,21 +113,27 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
         nbr_absences = len(absences_in_week)
         vacations_in_week = days_set.intersection(vacations.union(closed_holidays))
         nbr_vacations = len(vacations_in_week)
-        total = nbr_vacations + nbr_absences - len(days_set.intersection(closed_holidays))
-
+        if nbr_absences > 0 and nbr_vacations > 0:
+            total = nbr_vacations + nbr_absences - len(days_set.intersection(closed_holidays))
+        else:
+            total = 0
+        if w == 2641 and 222 in days:
+            print("worker 2641")
+            print(f"absences: {absences_in_week}\nvacations: {vacations_in_week}\n total: {total}")
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
-
-            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2) :
+            #fiquei a meio da logica, comparar com o branch no git para ver o que adicionei, possivel problema nos ifs, ia perguntar ao francisco como sera para casos de Mot MoT V V V A A
+            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2):
                 #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
-            
-            if nbr_absences < 5 and nbr_vacations < 6:
-                if total > 5:
-                    absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total ,5)
-
+            if total > 5:
+                absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total, 5)
+                continue
+            elif nbr_vacations > 2:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
                     continue
-
+            elif nbr_absences < 5:
+                continue
+            print(f"casos em que entrei: w {w}\nabsences: {absences_in_week}\nvacations: {vacations_in_week}\ntotal: {total}")
             atributing_days = sorted(days_set - closed_holidays)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
