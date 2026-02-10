@@ -437,7 +437,7 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
             return 'NL'
         
         # Working days
-        if tipo_dia == 'A':
+        if tipo_dia in ['A', 'H']:
             if intervalo >= 1:
                 return 'P'
             return 'MoT'
