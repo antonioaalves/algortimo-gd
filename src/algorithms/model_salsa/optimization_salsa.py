@@ -540,7 +540,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     biweekly_diff_vars = []
     sorted_weeks = sorted(week_to_days.keys())
-    safe_limit = len(workers) * 8 * len(real_working_shift)
+    safe_limit = len(all_workers) * 8 * len(real_working_shift)
 
     for i in range(len(sorted_weeks) - 1):
         w1, w2 = sorted_weeks[i], sorted_weeks[i + 1]
