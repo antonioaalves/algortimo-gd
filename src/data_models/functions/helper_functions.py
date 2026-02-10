@@ -1787,18 +1787,48 @@ def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, us
             return True, df_faixa, ""
         
         elif use_case == 1:
-            df_orcamento = df_orcamento.copy()
-            mask_pessoas_min = df_orcamento['pessoas_min'] > 0
-            df_orcamento = df_orcamento[mask_pessoas_min]
-            df_faixa = df_orcamento.groupby('schedule_day', as_index=False).agg(
+            df_orc = df_orcamento.copy()
+            
+            # Primary: use pessoas_min > 0 to determine store opening/closing hours
+            df_orc_min = df_orc[df_orc['pessoas_min'] > 0]
+            df_faixa_primary = df_orc_min.groupby('schedule_day', as_index=False).agg(
                 hora_inicio_faixa=('hora_ini', 'min'),
                 hora_fim_faixa=('hora_ini', 'max')
             )
+            
+            # Fallback: for days where pessoas_min is 0 everywhere, use pessoas_estimado > 0
+            primary_days = set(df_faixa_primary['schedule_day'].unique())
+            all_days = set(df_orc['schedule_day'].unique())
+            missing_days = all_days - primary_days
+            
+            if missing_days:
+                logger.info(f"get_df_faixa_horario: {len(missing_days)} days have no pessoas_min > 0, falling back to pessoas_estimado > 0")
+                df_orc_missing = df_orc[df_orc['schedule_day'].isin(missing_days)]
+                df_orc_estimado = df_orc_missing[df_orc_missing['pessoas_estimado'] > 0]
+                
+                if not df_orc_estimado.empty:
+                    df_faixa_fallback = df_orc_estimado.groupby('schedule_day', as_index=False).agg(
+                        hora_inicio_faixa=('hora_ini', 'min'),
+                        hora_fim_faixa=('hora_ini', 'max')
+                    )
+                    df_faixa_primary = pd.concat([df_faixa_primary, df_faixa_fallback], ignore_index=True)
+                    logger.info(f"get_df_faixa_horario: Recovered {len(df_faixa_fallback)} days using pessoas_estimado fallback")
+                
+                # Log any days still missing after both attempts
+                recovered_days = set(df_faixa_primary['schedule_day'].unique())
+                still_missing = all_days - recovered_days
+                if still_missing:
+                    logger.warning(f"get_df_faixa_horario: {len(still_missing)} days have no pessoas_min or pessoas_estimado > 0, they will be excluded")
+            
+            df_faixa = df_faixa_primary.sort_values('schedule_day').reset_index(drop=True)
+            
             # Calculate ponto_medio as the midpoint between hora_inicio_faixa and hora_fim_faixa
             df_faixa['ponto_medio'] = df_faixa['hora_inicio_faixa'] + (df_faixa['hora_fim_faixa'] - df_faixa['hora_inicio_faixa']) / 2
             # For this use_case, the objective is to consider both limite_superior_manha and limite_inferior_tarde as the middle point
             df_faixa['limite_superior_manha'] = df_faixa['ponto_medio']
             df_faixa['limite_inferior_tarde'] = df_faixa['ponto_medio']
+            
+            logger.info(f"get_df_faixa_horario: Final df_faixa has {len(df_faixa)} days (from {len(all_days)} total in df_orcamento)")
             return True, df_faixa, ""
 
         else:
