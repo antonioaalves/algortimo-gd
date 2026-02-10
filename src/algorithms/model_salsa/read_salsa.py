@@ -576,8 +576,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 work_days_per_week[w] = [5] * 54
 
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
-            if w == 2641:
-                print("saí")
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
             if not working_days[w]:
