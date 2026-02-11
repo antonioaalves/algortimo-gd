@@ -39,10 +39,11 @@ from src.configuration_manager.instance import get_config
 from src.data_models.functions.helper_functions import (
     convert_types_in,
     convert_ciclos_to_horario,
-    adjusted_isoweek, 
-    get_monday_of_previous_week, 
+    adjusted_isoweek,
+    get_monday_of_previous_week,
     get_sunday_of_next_week,
     get_week_pattern,
+    get_granularity_minutes,
 )
 
 # Get configuration singleton
@@ -800,6 +801,14 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
         except Exception as e:
             logger.warning(f"Column renaming failed: {e}")
             # Continue with original column names
+
+        try:
+            # Check each column separately (a list is never "in" df.columns)
+            if 'data_admissao' not in df_colaborador.columns or 'data_demissao' not in df_colaborador.columns:
+                df_colaborador['data_admissao'] = '2000-01-01'
+                df_colaborador['data_demissao'] = '2049-12-31'
+        except Exception as e:
+            logger.error("Error creating empty data_admissao e data_demissao: %s", e)
         
         # Convert data types logic
         try:
@@ -811,8 +820,8 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
             df_colaborador['c3d'] = pd.to_numeric(df_colaborador['c3d'], errors='coerce')
             df_colaborador['cxx'] = pd.to_numeric(df_colaborador['cxx'], errors='coerce')
             df_colaborador['lqs'] = pd.to_numeric(df_colaborador['lqs'], errors='coerce')
-            df_colaborador['data_admissao'] = pd.to_datetime(df_colaborador['data_admissao'], errors='coerce')
-            df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce')
+            df_colaborador['data_admissao'] = pd.to_datetime(df_colaborador['data_admissao'], errors='coerce', format="%Y-%m-%d")
+            df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce', format="%Y-%m-%d")
             df_colaborador['seq_turno'] = df_colaborador['seq_turno'].fillna('').astype(str)
             df_colaborador['ciclo'] = df_colaborador['ciclo'].fillna('').astype(str)
             
@@ -4487,7 +4496,8 @@ def create_df_estimativas(
         df_orcamento: Budget/forecast data with columns:
             - schedule_day: date
             - hora_ini: datetime (already treated with actual date from treat_df_orcamento)
-            - pessoas_final: staffing estimate per 15-min slot
+            - pessoas_final: staffing estimate per time slot, where slot length is
+              defined by the configured granularity (e.g., 10 or 15 minutes)
         df_faixa_horario: Time window data per day with columns:
             - schedule_day: date (merge key)
             - hora_inicio_faixa: start of time window
@@ -4495,7 +4505,9 @@ def create_df_estimativas(
             - limite_superior_manha: upper bound for M shift
             - limite_inferior_tarde: lower bound for T shift
         use_case: Calculation method for media_turno:
-            - 0: media_turno = sum_pessoas / 32 (fixed divisor, 8h x 4 slots/h)
+            - 0: media_turno = sum_pessoas / N, where N is the number of slots in
+              an 8-hour shift at the configured granularity (e.g., 32 for 15 min,
+              48 for 10 min)
             - 1: media_turno = sum_pessoas / num_periods (dynamic, based on shift duration)
     
     Returns:
@@ -4528,6 +4540,11 @@ def create_df_estimativas(
         missing_cols = [col for col in required_cols_faixa if col not in df_faixa_horario.columns]
         if missing_cols:
             return False, pd.DataFrame(), f"df_faixa_horario missing required columns: {missing_cols}"
+
+        try:
+            granularity = get_granularity_minutes()
+        except ValueError as e:
+            return False, pd.DataFrame(), str(e)
         
         # PREPARE DATA
         df = df_orcamento.copy()
@@ -4565,11 +4582,11 @@ def create_df_estimativas(
         
         logger.info(f"create_df_estimativas: M shift slots: {df['is_M'].sum()}, T shift slots: {df['is_T'].sum()}")
         
-        # CALCULATE NUMBER OF 15-MIN PERIODS PER SHIFT PER DAY
-        # M: (limite_superior_manha - hora_inicio_faixa) / 15 minutes
-        # T: (hora_fim_faixa - limite_inferior_tarde) / 15 minutes
-        df_faixa['num_periods_M'] = (df_faixa['limite_superior_manha'] - df_faixa['hora_inicio_faixa']).dt.total_seconds() / 900  # 900 seconds = 15 min
-        df_faixa['num_periods_T'] = (df_faixa['hora_fim_faixa'] - df_faixa['limite_inferior_tarde']).dt.total_seconds() / 900
+        # CALCULATE NUMBER OF GRANULARITY-BASED PERIODS PER SHIFT PER DAY
+        # M: (limite_superior_manha - hora_inicio_faixa) / granularity minutes
+        # T: (hora_fim_faixa - limite_inferior_tarde) / granularity minutes
+        df_faixa['num_periods_M'] = (df_faixa['limite_superior_manha'] - df_faixa['hora_inicio_faixa']).dt.total_seconds() / (granularity * 60)
+        df_faixa['num_periods_T'] = (df_faixa['hora_fim_faixa'] - df_faixa['limite_inferior_tarde']).dt.total_seconds() / (granularity * 60)
         
         # AGGREGATE BY SHIFT
         # Create shift dataframes
@@ -4605,8 +4622,8 @@ def create_df_estimativas(
         
         # Calculate media_turno based on use_case
         if use_case == 0:
-            # Fixed divisor: 32 (8 hours x 4 slots per hour)
-            df_estimativas['media_turno'] = df_estimativas['sum_pessoas'] / 32
+            # Fixed divisor: number of slots in an 8-hour shift at the configured granularity
+            df_estimativas['media_turno'] = df_estimativas['sum_pessoas'] / (8 * (60 / granularity))
         else:
             # Dynamic divisor: num_periods based on actual shift duration
             df_estimativas['media_turno'] = np.where(
@@ -4648,7 +4665,6 @@ def create_df_estimativas(
 def add_pessoa_obj_whole_day(
     df_estimativas: pd.DataFrame,
     df_orcamento: pd.DataFrame,
-    divisor: int = 32
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Add whole day statistics to df_estimativas.
@@ -4658,14 +4674,15 @@ def add_pessoa_obj_whole_day(
     
     Args:
         df_estimativas: DataFrame from create_df_estimativas with shift-level stats
-        df_orcamento: Original budget data to calculate whole day stats
-        divisor: Value to divide sum by (default: 32)
+        df_orcamento: Original budget data to calculate whole day stats. Each
+            row represents one time slot at the configured granularity.
     
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, updated_df_estimativas, error_message)
         
         Added columns:
-            - media_dia: sum(pessoas_final) / divisor for whole day
+            - media_dia: sum(pessoas_final) / N for whole day, where N is the
+              number of slots in an 8-hour day at the configured granularity
             - max_dia: max(pessoas_final) for whole day
             - min_dia: min(pessoas_final) for whole day
             - sd_dia: std(pessoas_final) for whole day
@@ -4678,6 +4695,13 @@ def add_pessoa_obj_whole_day(
         
         if df_orcamento is None or df_orcamento.empty:
             return False, pd.DataFrame(), "df_orcamento is empty or None"
+        
+        try:
+            granularity = get_granularity_minutes()
+        except ValueError as e:
+            return False, pd.DataFrame(), str(e)
+
+        divisor = 8 * (60 / granularity)
         
         df_orc = df_orcamento.copy()
         

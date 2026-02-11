@@ -1228,7 +1228,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # Add df_core_pro_emp_horario_det to df_calendario
+                # Add df_folgas_ciclos to df_calendario
                 success, df_calendario, error_msg = add_folgas_ciclos(df_calendario, df_folgas_ciclos)
                 if not success:
                     self.logger.error(f"Adding folgas ciclos failed: {error_msg}")

@@ -410,8 +410,8 @@ class BaseDescansosDataModel(ABC):
             try:
                 # TODO: add helper function to get the df with faixa start and end time, ponto_medio and limite_superior_manha, limite_inferior_tarde
                 success, df_faixa_horario, error_msg = get_df_faixa_horario(
-                    df_orcamento=df_orcamento, 
-                    df_turnos=df_turnos, 
+                    df_orcamento=df_orcamento,
+                    df_turnos=df_turnos,
                     use_case=1
                 )
                 if not success:
