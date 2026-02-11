@@ -4240,119 +4240,63 @@ def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborado
         return False, pd.DataFrame(), error_msg
 
 
-def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_calendario: pd.DataFrame, date_col_est: str = 'data', date_col_cal: str = 'DATA', shift_col_est: str = 'turno', shift_col_cal: str = 'TIPO_TURNO', employee_col: str = 'COLABORADOR', horario_col: str = 'HORARIO', param_pess_obj: float = 0.5) -> Tuple[bool, pd.DataFrame, str]:
+def calculate_and_merge_allocated_employees(
+    df_estimativas: pd.DataFrame, 
+    df_eci_section_results: pd.DataFrame,
+    date_col_est: str = 'schedule_day', 
+    shift_col_est: str = 'turno', 
+    param_pess_obj: float = 0.5
+) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Calculate actual employee headcount (+H) for each shift and merge with demand estimates.
+    Calculate staffing objective and merge with ECI sibling section allocated employees.
     
-    Cross-dataframe operation that:
-    1. Counts how many employees work M/T shifts from calendario
-    2. Handles split shifts (0.5 weighting for M+T same day)
-    3. Merges +H with estimativas
-    4. Calculates staffing objective (pess_obj) and diff
+    This function:
+    1. Calculates pess_obj (staffing objective) based on volatility threshold
+    2. Counts allocated employees from the ECI sibling section results (if available)
+    3. Merges allocated_employees_count into df_estimativas (0 when no ECI data)
+    4. Calculates diff = pess_obj - allocated_employees_count
+    
+    For non-ECI units, df_eci_section_results is empty, so allocated_employees_count
+    is 0 everywhere and diff = pess_obj, meaning the algorithm schedules normally.
+    
+    For ECI units, allocated_employees_count reflects the sibling section's headcount,
+    so diff tells the algorithm how many more people this section needs to schedule.
     
     Args:
         df_estimativas: Demand estimates with min/max/mean/sd per shift
-        df_calendario: Calendar with employee schedules
-        date_col_est: Date column in estimativas (default: 'data')
-        date_col_cal: Date column in calendario (default: 'DATA')
+        df_eci_section_results: Schedule results from sibling ECI section (empty df if not ECI).
+            Expected columns: employee_id, schedule_day, type
+        date_col_est: Date column in estimativas (default: 'schedule_day')
         shift_col_est: Shift column in estimativas (default: 'turno')
-        shift_col_cal: Shift column in calendario (default: 'TIPO_TURNO')
-        employee_col: Employee identifier (default: 'COLABORADOR')
-        horario_col: Schedule column (default: 'HORARIO')
         param_pess_obj: Volatility threshold for staffing objective (default: 0.5)
         
     Returns:
-        Tuple[bool, pd.DataFrame, str]: (success, estimativas with +H/pess_obj/diff, error)
+        Tuple[bool, pd.DataFrame, str]: (success, estimativas with pess_obj/allocated_employees_count/diff, error)
     """
     try:
         # INPUT VALIDATION
         if df_estimativas is None or df_estimativas.empty:
             return False, pd.DataFrame(), "Input validation failed: empty df_estimativas"
         
-        if df_calendario is None or df_calendario.empty:
-            return False, pd.DataFrame(), "Input validation failed: empty df_calendario"
-        
         required_cols_est = [date_col_est, shift_col_est, 'max_turno', 'min_turno', 'media_turno', 'sd_turno']
         missing_cols = [col for col in required_cols_est if col not in df_estimativas.columns]
         if missing_cols:
             return False, pd.DataFrame(), f"df_estimativas missing columns: {missing_cols}"
         
-        required_cols_cal = [date_col_cal, shift_col_cal, employee_col, horario_col]
-        missing_cols = [col for col in required_cols_cal if col not in df_calendario.columns]
-        if missing_cols:
-            return False, pd.DataFrame(), f"df_calendario missing columns: {missing_cols}"
-        
         # TREATMENT LOGIC
         df_est_result = df_estimativas.copy()
-        df_cal_work = df_calendario.copy()
         
-        # Step 6B-1: Data type conversions
+        # Data type conversions
         df_est_result['max_turno'] = pd.to_numeric(df_est_result['max_turno'], errors='coerce')
         df_est_result['min_turno'] = pd.to_numeric(df_est_result['min_turno'], errors='coerce')
         df_est_result['sd_turno'] = pd.to_numeric(df_est_result['sd_turno'], errors='coerce')
         df_est_result['media_turno'] = pd.to_numeric(df_est_result['media_turno'], errors='coerce')
         df_est_result[shift_col_est] = df_est_result[shift_col_est].str.upper()
         
-        # Filter out TIPO_DIA metadata rows
-        df_cal_work = df_cal_work[df_cal_work[employee_col] != 'TIPO_DIA'].copy()
-        
-        # Convert dates to datetime for consistency
+        # Convert dates to datetime.date for consistency
         df_est_result[date_col_est] = pd.to_datetime(df_est_result[date_col_est]).dt.date
-        df_cal_work[date_col_cal] = pd.to_datetime(df_cal_work[date_col_cal]).dt.date
         
-        # Step 6B-2 & 6B-3: Calculate +H for M and T shifts (vectorized)
-        # Identify working employees (H or NL in HORARIO)
-        df_cal_work['is_working'] = df_cal_work[horario_col].str.contains('H|NL', case=False, na=False)
-        
-        # Create pivot: for each employee-date, which shifts they work
-        employee_shifts = df_cal_work[df_cal_work['is_working']].groupby(
-            [employee_col, date_col_cal, shift_col_cal]
-        ).size().reset_index(name='count')
-        
-        # Count shifts per employee-date
-        shifts_per_emp_date = employee_shifts.groupby([employee_col, date_col_cal])[shift_col_cal].agg(set).reset_index()
-        shifts_per_emp_date.columns = [employee_col, date_col_cal, 'shifts_worked']
-        
-        # Apply 0.5 weighting for employees working both M and T
-        def calc_shift_weight(shifts, target_shift):
-            if target_shift in shifts:
-                return 0.5 if ('M' in shifts and 'T' in shifts) else 1.0
-            return 0.0
-        
-        # Calculate +H for Morning
-        shifts_per_emp_date['M_weight'] = shifts_per_emp_date['shifts_worked'].apply(
-            lambda shifts: calc_shift_weight(shifts, 'M')
-        )
-        plus_h_m = shifts_per_emp_date.groupby(date_col_cal)['M_weight'].sum().reset_index()
-        plus_h_m.columns = [date_col_cal, '+H']
-        plus_h_m[shift_col_est] = 'M'
-        
-        # Calculate +H for Afternoon
-        shifts_per_emp_date['T_weight'] = shifts_per_emp_date['shifts_worked'].apply(
-            lambda shifts: calc_shift_weight(shifts, 'T')
-        )
-        plus_h_t = shifts_per_emp_date.groupby(date_col_cal)['T_weight'].sum().reset_index()
-        plus_h_t.columns = [date_col_cal, '+H']
-        plus_h_t[shift_col_est] = 'T'
-        
-        # Combine M and T
-        plus_h_combined = pd.concat([plus_h_m, plus_h_t], ignore_index=True)
-        
-        # Step 6C: Merge +H with estimativas
-        df_est_result = df_est_result.merge(
-            plus_h_combined,
-            left_on=[date_col_est, shift_col_est],
-            right_on=[date_col_cal, shift_col_est],
-            how='left'
-        )
-        
-        # Drop duplicate date column if it exists
-        if date_col_cal in df_est_result.columns and date_col_cal != date_col_est:
-            df_est_result = df_est_result.drop(columns=[date_col_cal])
-        
-        df_est_result['+H'] = pd.to_numeric(df_est_result['+H'], errors='coerce').fillna(0)
-        
-        # Step 6D: Calculate staffing objective
+        # Calculate staffing objective (pess_obj)
         # aux = coefficient of variation (sd/mean)
         df_est_result['aux'] = np.where(
             df_est_result['media_turno'] != 0,
@@ -4367,8 +4311,52 @@ def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_cal
             np.round(df_est_result['media_turno'])
         )
         
-        # diff: gap between current staffing and objective
-        df_est_result['diff'] = df_est_result['+H'] - df_est_result['pess_obj']
+        # Drop temporary aux column
+        df_est_result = df_est_result.drop(columns=['aux'], errors='ignore')
+        
+        # Count allocated employees from ECI sibling section
+        if df_eci_section_results is not None and not df_eci_section_results.empty:
+            logger.info(f"Processing ECI sibling section results: {df_eci_section_results.shape[0]} rows")
+            
+            df_eci_work = df_eci_section_results.copy()
+            
+            # Filter out day-off entries: F (Folga/rest) and N (not scheduled)
+            # Remaining entries are working days (T=Trabajo, R=closed holiday worked, etc.)
+            df_eci_work = df_eci_work[
+                ~df_eci_work['type'].str.upper().isin(['F', 'N'])
+            ].copy()
+            
+            # Convert schedule_day to date for consistent merge
+            df_eci_work['schedule_day'] = pd.to_datetime(df_eci_work['schedule_day']).dt.date
+            
+            # Group by schedule_day and count distinct working employees
+            eci_counts = df_eci_work.groupby('schedule_day')['employee_id'].nunique().reset_index()
+            eci_counts.columns = ['schedule_day', 'allocated_employees_count']
+            
+            logger.info(f"ECI sibling section: found working employees on {len(eci_counts)} distinct days")
+            
+            # Merge with estimativas on date
+            df_est_result = df_est_result.merge(
+                eci_counts,
+                left_on=date_col_est,
+                right_on='schedule_day',
+                how='left'
+            )
+            
+            # Drop duplicate schedule_day column from merge if needed
+            if 'schedule_day' in df_est_result.columns and date_col_est != 'schedule_day':
+                df_est_result = df_est_result.drop(columns=['schedule_day'])
+        else:
+            logger.info("No ECI sibling section results (non-ECI unit or empty results) - allocated_employees_count will be 0")
+            df_est_result['allocated_employees_count'] = 0
+        
+        # Fill NaN with 0 (days where sibling section has no one working)
+        df_est_result['allocated_employees_count'] = pd.to_numeric(
+            df_est_result['allocated_employees_count'], errors='coerce'
+        ).fillna(0).astype(int)
+        
+        # diff: how many more people this section needs to schedule
+        df_est_result['diff'] = df_est_result['pess_obj'] - df_est_result['allocated_employees_count']
         
         # Ensure min_turno is at least 1
         df_est_result['min_turno'] = np.where(
@@ -4377,18 +4365,19 @@ def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_cal
             df_est_result['min_turno']
         )
         
-        # Drop temporary aux column
-        df_est_result = df_est_result.drop(columns=['aux'], errors='ignore')
-        
         # OUTPUT VALIDATION
-        plus_h_count = (~df_est_result['+H'].isna()).sum()
-        logger.info(f"Calculated +H for {plus_h_count} shift-date combinations")
         logger.info(f"Staffing objective (pess_obj) calculated using param_pess_obj={param_pess_obj}")
+        logger.info(f"allocated_employees_count stats: min={df_est_result['allocated_employees_count'].min()}, "
+                     f"max={df_est_result['allocated_employees_count'].max()}, "
+                     f"mean={df_est_result['allocated_employees_count'].mean():.2f}")
+        logger.info(f"diff stats: min={df_est_result['diff'].min()}, "
+                     f"max={df_est_result['diff'].max()}, "
+                     f"mean={df_est_result['diff'].mean():.2f}")
         
         return True, df_est_result, ""
         
     except Exception as e:
-        error_msg = f"Error calculating and merging +H: {str(e)}"
+        error_msg = f"Error in calculate_and_merge_allocated_employees: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
 
