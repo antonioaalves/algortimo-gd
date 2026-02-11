@@ -1150,6 +1150,8 @@ def bulk_insert_with_query(data_manager: DBDataManager,
         'closed', 'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
     
     Performance Features:
+        - Batch execution using executemany (via SQLAlchemy) for dramatically faster inserts
+        - Fallback to row-by-row execution if batch mode fails
         - Progress logging every 1000 records
         - Single transaction for all records
         - Parameter binding for efficient execution
@@ -1198,6 +1200,8 @@ def bulk_insert_with_query(data_manager: DBDataManager,
         - Removes 'pathOS' from kwargs if present (connection metadata)
         - Creates completely new session on retry (not just reconnect)
         - Commits only after all records inserted successfully
+        - Uses batch executemany for performance, with automatic fallback to row-by-row
+        - NaN/None in string columns replaced with '' before batch (Oracle treats '' as NULL)
     """
     logger = get_logger(PROJECT_NAME)
    
@@ -1213,9 +1217,10 @@ def bulk_insert_with_query(data_manager: DBDataManager,
     if data.empty:
         logger.warning("Empty DataFrame provided, no records to insert")
         return True
- 
+
     # Simple retry loop for connection issues
     max_retries = 2
+    batch_size = 1000
    
     for attempt in range(max_retries + 1):
         try:
@@ -1253,32 +1258,82 @@ def bulk_insert_with_query(data_manager: DBDataManager,
            
             logger.info(f"Executing bulk insert of {len(data)} rows (attempt {attempt + 1})")
            
-            # Convert DataFrame to list of dictionaries for parameter binding
-            records = data.to_dict('records')
-           
-            # Execute the insert for each record
-            for i, record in enumerate(records):
+            # Prepare records for insertion
+            # Fill NaN/None with '' ONLY in string/object columns for cx_Oracle executemany compatibility.
+            # cx_Oracle infers column types from the first row; if the first row has None for a string
+            # column, it cannot determine the type and fails on subsequent rows with actual values.
+            # Oracle treats '' and NULL as identical, so this has zero effect on stored data.
+            data_copy = data.copy()
+            string_cols = data_copy.select_dtypes(include=['object']).columns
+            if len(string_cols) > 0:
+                data_copy[string_cols] = data_copy[string_cols].fillna('')
+            
+            records = data_copy.to_dict('records')
+            
+            # Merge kwargs into records if provided
+            clean_kwargs = {k: v for k, v in kwargs.items() if k != 'pathOS'} if kwargs else {}
+            if clean_kwargs:
+                records = [{**clean_kwargs, **record} for record in records]
+            
+            # --- Batch execution (executemany) with full fallback to row-by-row ---
+            # Strategy: try ALL batches first. If executemany fails on any batch,
+            # rollback EVERYTHING and re-insert ALL records row-by-row from scratch.
+            # This avoids partial state where some batches succeed and others don't.
+            total_records = len(records)
+            inserted_count = 0
+            use_row_by_row = False
+            
+            try:
+                for batch_start in range(0, total_records, batch_size):
+                    batch_end = min(batch_start + batch_size, total_records)
+                    batch = records[batch_start:batch_end]
+                    
+                    # Fast path: batch executemany
+                    # SQLAlchemy 2.0 uses cursor.executemany() when given a list of dicts
+                    data_manager.session.execute(text(insert_query), batch)
+                    inserted_count += len(batch)
+                    logger.info(f"Batch inserted {inserted_count}/{total_records} records")
+                    
+            except Exception as batch_error:
+                # Check if this is a connection error — let the outer retry handler deal with it
+                batch_error_str = str(batch_error).lower()
+                connection_error_keywords = [
+                    'not connected', 'dpi-1010', 'connection', 'timeout', 'closed',
+                    'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
+                ]
+                if any(kw in batch_error_str for kw in connection_error_keywords):
+                    raise  # Propagate to outer retry loop
+                
+                # Non-connection error: executemany is not compatible with this data.
+                # Rollback everything and switch to row-by-row for ALL records.
+                logger.warning(f"Batch executemany failed, rolling back and retrying "
+                               f"all {total_records} records row-by-row: {batch_error}")
                 try:
-                    # Merge additional kwargs with record data
-                    params = {**kwargs, **record}
-                    # Remove pathOS from params if it exists (it's for connection handling only)
-                    params.pop('pathOS', None)
-                   
-                    data_manager.session.execute(text(insert_query), params)
-                   
-                    # Log progress for large datasets
-                    if (i + 1) % 1000 == 0:
-                        logger.info(f"Processed {i + 1}/{len(records)} records")
-                       
-                except Exception as record_error:
-                    logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
-                    logger.debug(f"Failed record data: {record}")
-                    raise
-           
+                    data_manager.session.rollback()
+                except Exception:
+                    pass
+                use_row_by_row = True
+                inserted_count = 0
+            
+            # Fallback: row-by-row for ALL records (only runs if batch mode failed)
+            if use_row_by_row:
+                for i, record in enumerate(records):
+                    try:
+                        data_manager.session.execute(text(insert_query), record)
+                        inserted_count += 1
+                        
+                        if inserted_count % 1000 == 0:
+                            logger.info(f"Row-by-row: processed {inserted_count}/{total_records} records")
+                            
+                    except Exception as record_error:
+                        logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
+                        logger.debug(f"Failed record data: {record}")
+                        raise
+            
             # Commit all inserts
             data_manager.session.commit()
            
-            logger.info(f"Successfully inserted {len(records)} records")
+            logger.info(f"Successfully inserted {inserted_count} records")
             return True
            
         except Exception as e:
