@@ -92,6 +92,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     objective_terms = []
     days_of_year_real= [d for d in days_of_year if year_range[0] <= d <= year_range[1] and d not in closed_holidays]
     days_of_year_working= [d for d in days_of_year if d not in closed_holidays]
+    sundays = [d for d in sundays if d not in closed_holidays]
     workers_not_complete = [w for w in workers if w not in workers_complete_cycle]
     if len(workers_not_complete) < 1:
         workers_not_complete_exist = False
@@ -387,7 +388,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 80000
     max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 80000
-
     for d in days_of_year_working:
         daily_deficit[d] = model.NewIntVar(0, max_daily_deficit_possible, f'daily_deficit_{d}')
         daily_excess[d]  = model.NewIntVar(0, max_daily_excess_possible,  f'daily_excess_{d}')
