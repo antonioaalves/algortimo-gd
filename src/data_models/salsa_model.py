@@ -25,6 +25,7 @@ from src.data_models.functions.helper_functions import (
     get_employees_id_90_list,
     get_matriculas_for_employee_id,
     get_employee_id_matriculas_map_dict,
+    get_df_estrutura_wfm_info,
     create_employee_query_string,
     count_holidays_in_period,
     count_sundays_in_period,
@@ -86,6 +87,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_df_folgas_ciclos,
     validate_valid_emp_info,
     validate_num_sundays_year,
+    validate_df_estrutura_wfm,
 )
 from src.data_models.validations.func_inicializa_validations import (
     validate_df_calendario_structure,
@@ -292,6 +294,24 @@ class SalsaDataModel(BaseDescansosDataModel):
             if not validate_valid_emp_info(unit_id, secao_id, posto_id_list, employees_id_total_list):
                 self.logger.error("Invalid valid_emp info")
                 return False, "errSubproc", "Invalid valid_emp info"
+
+            # df_estrutura_wfm query and get info to store it in 
+            try:
+                df_estrutura_wfm = data_manager.load_data(
+                    entity='df_estrutura_wfm',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_estrutura_wfm'],
+                    secao_id=secao_id
+                )
+                self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
+            except Exception as e:
+                self.logger.error("")
+                return False, "", ""
+
+            if not validate_df_estrutura_wfm(df_estrutura_wfm):
+                self.logger.error("")
+                return False, "", ""
+
+            nome_pais = get_df_estrutura_wfm_info(df_estrutura_wfm)
 
             # Get start and end date
             start_date = self.external_call_data.get('start_date', '')
@@ -540,6 +560,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
+                self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
                 self.auxiliary_data['df_params'] = df_params.copy()
                 self.auxiliary_data['df_feriados'] = df_feriados.copy()
@@ -567,6 +588,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
                 self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
                 self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
+                self.algorithm_treatment_params['nome_pais'] = nome_pais
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
@@ -1206,7 +1228,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # Add df_core_pro_emp_horario_det to df_calendario
+                # Add df_folgas_ciclos to df_calendario
                 success, df_calendario, error_msg = add_folgas_ciclos(df_calendario, df_folgas_ciclos)
                 if not success:
                     self.logger.error(f"Adding folgas ciclos failed: {error_msg}")
@@ -1557,7 +1579,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             success, df_estimativas, error_msg = calculate_and_merge_allocated_employees(
                 df_estimativas=df_estimativas,
                 df_calendario=df_calendario,
-                date_col_est='data',
+                date_col_est='schedule_day',
                 date_col_cal='schedule_day',
                 shift_col_est='turno',
                 shift_col_cal='tipo_turno',

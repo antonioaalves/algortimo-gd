@@ -288,7 +288,9 @@ def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, tota
         for w in workers:
             if w in total_worked_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
-
+    else:
+        for w in workers:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
@@ -301,12 +303,14 @@ def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
             if (total_shifts):
                 model.add_exactly_one(total_shifts)
 
-def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type, work_days_per_week):
+def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type, work_days_per_week, period):
     # Define working shifts
     # Add constraint to limit working days in a week to contract type
     for w in workers:
         for week in week_to_days.keys():
             days_in_week = week_to_days[week]
+            if days_in_week[-1] < period[0] or days_in_week[0] > period[1]:
+                continue
             # Sum shifts across days and shift types
             total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift if (w, d, s) in shift)
             max_days = contract_type.get(w, 0)
@@ -314,11 +318,13 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
                 max_days = work_days_per_week[w][week - 1]
             model.Add(total_shifts <= max_days)
 
-def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days):
+def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days, period):
     #limits maximum continuous working days
     for w in workers:
         for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
+            if d < period[0] or d > period[1]:
+                continue
             consecutive_days = sum(
                 shift[(w, d + i, s)] 
                 for i in range(max_days + 1)  # Check contract_maximum + 1 consecutive days
@@ -334,33 +340,37 @@ def LQ_attribution(model, shift, workers, working_days, c2d, year_range):
     for w in workers:
         model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if year_range[0] <= d < year_range[1] and (w, d, "LQ") in shift) >= c2d.get(w, 0))
 
-def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift):
+def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift, period):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
     #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
     if workers:
         for w in workers:
             for d in working_days[w]:
+                if not (period[0] < d < period[1]):
+                    continue
                 total_shifts = []
                 for s in check_shift:
                     if (w, d, s) in shift:
                         total_shifts.append(shift[(w, d, s)])
                 if total_shifts:
                     model.add_exactly_one(total_shifts)
-    for w in workers_complete_cycle:
-        for d in working_days[w]:
-            # Ensure that the worker can only have M, T, L, LQ, LD and F in working days
-            total_shifts = []
-            for s in working_shift:
-                if (w, d, s) in shift:
-                    total_shifts.append(shift[(w, d, s)])
-            if total_shifts:
-                model.add_exactly_one(total_shifts)
+    if workers_complete_cycle:
+        for w in workers_complete_cycle:
+            for d in working_days[w]:
+                if not (period[0] < d < period[1]):
+                    continue
+                total_shifts = []
+                for s in working_shift:
+                    if (w, d, s) in shift:
+                        total_shifts.append(shift[(w, d, s)])
+                if total_shifts:
+                    model.add_exactly_one(total_shifts)
 
-def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days, fixed_LQs):
+def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days, fixed_LQs, period):
     for w in workers:
         
         all_days_off = fixed_days[w].union(fixed_LQs[w])
-        all_work_days = sorted(working_days[w])
+        all_work_days = [d for d in working_days[w] if period[0] < d < period[1]]
         if contract_type.get(w, 0) == 8:
             max_continuous_free_days = 2
         else:
@@ -407,7 +417,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
                 ])
 
 
-def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, closed_holidays, year_range):
+def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, year_range, period):
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
     debug_vars = {}  # Store debug variables to return    
     for w in workers:
@@ -545,17 +555,20 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
     return debug_vars
 
-def salsa_saturday_L_constraint(model, shift, workers, working_days):
+def salsa_saturday_L_constraint(model, shift, workers, working_days, period):
     # For each worker, constrain L on Saturday if L on Sunday
     for w in workers:
         for day in working_days[w]:
+            if not (period[0] < day < period[1]):
+                continue
             # Get day of week (6 = Saturday)
             if day % 7 == 6:
                 if day + 1 in working_days[w]:
                     if (w, day, "L") in shift and (w, day + 1, "L") in shift:
                         model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
 
-def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week):
+def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao,
+                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -575,7 +588,8 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             # Skip if no working days for this worker in this week
             if not week_work_days:
                 continue
-            
+            if week_work_days[-1] < period[0] or week_work_days[0] > period[1]:
+                continue
             week_work_days_set = set(week_work_days)
 
             fixed_days_week = week_work_days_set.intersection(set(fixed_days_off[w]))
@@ -666,7 +680,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                     model.Add(free_shift_sum == 0)
 
 #-----------------------------------------------------------------------------------------------
-def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift, fixed_days):
+def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift, fixed_days, period):
     """Ensures that workers contracted in the middle of the period have a working shift on their first registered day."""
     # Find the earliest first registered day across all workers
     earliest_first_day = min(first_registered_day.get(w, float('inf')) for w in workers if first_registered_day.get(w, 0) > 0)
@@ -674,7 +688,8 @@ def first_day_not_free(model, shift, workers, working_days, first_registered_day
     for w in workers:
         # Get the worker's first registered day
         first = first_registered_day.get(w, 0)
-        
+        if not (period[0] < first < period[1]):
+            continue 
         # Only apply constraint if:
         # 1. The worker has a valid first registered day
         # 2. That day is within their working days
@@ -688,13 +703,14 @@ def free_days_special_days(model, shift, sundays, workers, working_days, total_l
     for w in workers:
         # Only consider special days that are in this worker's working days
         worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
-        logger.info(f"Worker {w}, Sundays {worker_sundays}")
-        model.Add(sum(shift[(w, d, "L")] for d in worker_sundays) >= total_l_dom.get(w, 0))
-        print('Dom', w, total_l_dom.get(w, 0))
+        logger.info(f"Worker {w}, Sundays {worker_sundays}, total {total_l_dom.get(w, 0)}")
+        model.Add(sum(shift[(w, d, "L")] for d in worker_sundays if (w, d, 'L') in shift) >= total_l_dom.get(w, 0))
 
-def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T):
+def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T, period):
     if len(workers) > 1:
         for day in days_of_year:
+            if not (period[0] < day < period[1]):
+                continue
             available_workers = 0
             for w in workers:
                 if day in shift_M[w] or day in shift_T[w]:

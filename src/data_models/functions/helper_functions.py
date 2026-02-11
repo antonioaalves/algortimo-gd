@@ -20,6 +20,35 @@ PROJECT_NAME = _config.project_name
 logger = get_logger(PROJECT_NAME)
 
 
+def get_granularity_minutes() -> int:
+    """
+    Get the configured time-slot granularity in minutes.
+    
+    Uses the system configuration (src/settings/system_settings.py) and enforces that
+    the value is a positive integer.
+    
+    Returns:
+        int: Granularity in minutes.
+    
+    Raises:
+        ValueError: If the configured granularity is missing, non-integer or <= 0.
+    """
+    granularity = getattr(_config.system, "granularity", None)
+    try:
+        granularity_int = int(granularity)
+    except (TypeError, ValueError):
+        error_msg = "granularity must be an integer number of minutes"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    if granularity_int <= 0:
+        error_msg = "granularity must be a positive integer number of minutes"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    return granularity_int
+
+
 def count_dates_per_year(start_date_str: str, end_date_str: str) -> tuple[str, str, int]:
     """
     Convert R count_dates_per_year function to Python.
@@ -437,7 +466,7 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
             return 'NL'
         
         # Working days
-        if tipo_dia == 'A':
+        if tipo_dia in ['A', 'H']:
             if intervalo >= 1:
                 return 'P'
             return 'MoT'
@@ -1121,6 +1150,8 @@ def bulk_insert_with_query(data_manager: DBDataManager,
         'closed', 'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
     
     Performance Features:
+        - Batch execution using executemany (via SQLAlchemy) for dramatically faster inserts
+        - Fallback to row-by-row execution if batch mode fails
         - Progress logging every 1000 records
         - Single transaction for all records
         - Parameter binding for efficient execution
@@ -1169,6 +1200,8 @@ def bulk_insert_with_query(data_manager: DBDataManager,
         - Removes 'pathOS' from kwargs if present (connection metadata)
         - Creates completely new session on retry (not just reconnect)
         - Commits only after all records inserted successfully
+        - Uses batch executemany for performance, with automatic fallback to row-by-row
+        - NaN/None in string columns replaced with '' before batch (Oracle treats '' as NULL)
     """
     logger = get_logger(PROJECT_NAME)
    
@@ -1184,9 +1217,10 @@ def bulk_insert_with_query(data_manager: DBDataManager,
     if data.empty:
         logger.warning("Empty DataFrame provided, no records to insert")
         return True
- 
+
     # Simple retry loop for connection issues
     max_retries = 2
+    batch_size = 1000
    
     for attempt in range(max_retries + 1):
         try:
@@ -1224,32 +1258,82 @@ def bulk_insert_with_query(data_manager: DBDataManager,
            
             logger.info(f"Executing bulk insert of {len(data)} rows (attempt {attempt + 1})")
            
-            # Convert DataFrame to list of dictionaries for parameter binding
-            records = data.to_dict('records')
-           
-            # Execute the insert for each record
-            for i, record in enumerate(records):
+            # Prepare records for insertion
+            # Fill NaN/None with '' ONLY in string/object columns for cx_Oracle executemany compatibility.
+            # cx_Oracle infers column types from the first row; if the first row has None for a string
+            # column, it cannot determine the type and fails on subsequent rows with actual values.
+            # Oracle treats '' and NULL as identical, so this has zero effect on stored data.
+            data_copy = data.copy()
+            string_cols = data_copy.select_dtypes(include=['object']).columns
+            if len(string_cols) > 0:
+                data_copy[string_cols] = data_copy[string_cols].fillna('')
+            
+            records = data_copy.to_dict('records')
+            
+            # Merge kwargs into records if provided
+            clean_kwargs = {k: v for k, v in kwargs.items() if k != 'pathOS'} if kwargs else {}
+            if clean_kwargs:
+                records = [{**clean_kwargs, **record} for record in records]
+            
+            # --- Batch execution (executemany) with full fallback to row-by-row ---
+            # Strategy: try ALL batches first. If executemany fails on any batch,
+            # rollback EVERYTHING and re-insert ALL records row-by-row from scratch.
+            # This avoids partial state where some batches succeed and others don't.
+            total_records = len(records)
+            inserted_count = 0
+            use_row_by_row = False
+            
+            try:
+                for batch_start in range(0, total_records, batch_size):
+                    batch_end = min(batch_start + batch_size, total_records)
+                    batch = records[batch_start:batch_end]
+                    
+                    # Fast path: batch executemany
+                    # SQLAlchemy 2.0 uses cursor.executemany() when given a list of dicts
+                    data_manager.session.execute(text(insert_query), batch)
+                    inserted_count += len(batch)
+                    logger.info(f"Batch inserted {inserted_count}/{total_records} records")
+                    
+            except Exception as batch_error:
+                # Check if this is a connection error — let the outer retry handler deal with it
+                batch_error_str = str(batch_error).lower()
+                connection_error_keywords = [
+                    'not connected', 'dpi-1010', 'connection', 'timeout', 'closed',
+                    'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
+                ]
+                if any(kw in batch_error_str for kw in connection_error_keywords):
+                    raise  # Propagate to outer retry loop
+                
+                # Non-connection error: executemany is not compatible with this data.
+                # Rollback everything and switch to row-by-row for ALL records.
+                logger.warning(f"Batch executemany failed, rolling back and retrying "
+                               f"all {total_records} records row-by-row: {batch_error}")
                 try:
-                    # Merge additional kwargs with record data
-                    params = {**kwargs, **record}
-                    # Remove pathOS from params if it exists (it's for connection handling only)
-                    params.pop('pathOS', None)
-                   
-                    data_manager.session.execute(text(insert_query), params)
-                   
-                    # Log progress for large datasets
-                    if (i + 1) % 1000 == 0:
-                        logger.info(f"Processed {i + 1}/{len(records)} records")
-                       
-                except Exception as record_error:
-                    logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
-                    logger.debug(f"Failed record data: {record}")
-                    raise
-           
+                    data_manager.session.rollback()
+                except Exception:
+                    pass
+                use_row_by_row = True
+                inserted_count = 0
+            
+            # Fallback: row-by-row for ALL records (only runs if batch mode failed)
+            if use_row_by_row:
+                for i, record in enumerate(records):
+                    try:
+                        data_manager.session.execute(text(insert_query), record)
+                        inserted_count += 1
+                        
+                        if inserted_count % 1000 == 0:
+                            logger.info(f"Row-by-row: processed {inserted_count}/{total_records} records")
+                            
+                    except Exception as record_error:
+                        logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
+                        logger.debug(f"Failed record data: {record}")
+                        raise
+            
             # Commit all inserts
             data_manager.session.commit()
            
-            logger.info(f"Successfully inserted {len(records)} records")
+            logger.info(f"Successfully inserted {inserted_count} records")
             return True
            
         except Exception as e:
@@ -1690,6 +1774,144 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
         logger.error(error_msg, exc_info=True)
         return False, {}, error_msg
 
+def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Function that gets the df_faixa_horario from the df_orcamento and df_turnos
+    
+    Args:
+        df_orcamento: DataFrame with the orcamento data
+        df_turnos: DataFrame with the turnos data
+        use_case: int with the use case
+        
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, df_faixa_horario, error_message)
+    """
+    try:
+        if use_case == 0:
+            # Get limite_superior_manha and limite_inferior_tarde from df_turnos
+            # Then create a DataFrame with one row per schedule_day
+            # hora_inicio_faixa = 00:00, hora_fim_faixa = 24:00 (next day 00:00)
+            
+            required_cols = ['limite_superior_manha', 'limite_inferior_tarde']
+            missing_cols = [col for col in required_cols if col not in df_turnos.columns]
+            if missing_cols:
+                raise ValueError(f"df_turnos missing required columns: {missing_cols}")
+            
+            if df_turnos.empty:
+                raise ValueError("df_turnos is empty")
+            
+            # Parse limite times from df_turnos (get mode or average)
+            limite_times = {}
+            for col in required_cols:
+                values = df_turnos[col].dropna()
+                if values.empty:
+                    raise ValueError(f"All values in '{col}' are null")
+                
+                # Vectorized time parsing: handle "HH:MM" or "HH:MM:SS" formats
+                parsed_times = pd.to_datetime(values.astype(str), format='%H:%M', errors='coerce')
+                mask_nat = parsed_times.isna()
+                if mask_nat.any():
+                    parsed_times_hms = pd.to_datetime(values[mask_nat].astype(str), format='%H:%M:%S', errors='coerce')
+                    parsed_times = parsed_times.fillna(parsed_times_hms)
+                
+                mask_nat = parsed_times.isna()
+                if mask_nat.any():
+                    parsed_times_general = pd.to_datetime(values[mask_nat], errors='coerce')
+                    parsed_times = parsed_times.fillna(parsed_times_general)
+                
+                parsed_times = parsed_times.dropna()
+                if parsed_times.empty:
+                    raise ValueError(f"Could not parse any time values from '{col}'")
+                
+                # Extract time as timedelta (hours + minutes + seconds)
+                time_deltas = pd.to_timedelta(
+                    parsed_times.dt.hour * 3600 + parsed_times.dt.minute * 60 + parsed_times.dt.second,
+                    unit='s'
+                )
+                
+                # Try to find mode (most common value)
+                mode_result = time_deltas.mode()
+                if len(mode_result) >= 1:
+                    limite_times[col] = mode_result.iloc[0]
+                    logger.info(f"get_df_faixa_horario: Using mode for {col}: {limite_times[col]}")
+                else:
+                    # No mode - use average
+                    avg_seconds = time_deltas.dt.total_seconds().mean()
+                    limite_times[col] = pd.Timedelta(seconds=avg_seconds)
+                    logger.info(f"get_df_faixa_horario: No mode for {col}, using average: {limite_times[col]}")
+            
+            # Get unique schedule_day values from df_orcamento
+            if df_orcamento is None or df_orcamento.empty:
+                raise ValueError("df_orcamento is empty or None")
+            
+            df_orc = df_orcamento.copy()
+            df_orc['schedule_day'] = pd.to_datetime(df_orc['schedule_day']).dt.normalize()
+            unique_days = df_orc['schedule_day'].unique()
+            
+            # Create DataFrame with one row per schedule_day
+            df_faixa = pd.DataFrame({'schedule_day': unique_days})
+            df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+            
+            # hora_inicio_faixa = schedule_day at 00:00 (same as schedule_day normalized)
+            df_faixa['hora_inicio_faixa'] = df_faixa['schedule_day']
+            
+            # hora_fim_faixa = schedule_day + 1 day at 00:00 (represents 24:00)
+            df_faixa['hora_fim_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(days=1)
+            
+            # limite_superior_manha = schedule_day + limite time
+            df_faixa['limite_superior_manha'] = df_faixa['schedule_day'] + limite_times['limite_superior_manha']
+            
+            # limite_inferior_tarde = schedule_day + limite time
+            df_faixa['limite_inferior_tarde'] = df_faixa['schedule_day'] + limite_times['limite_inferior_tarde']
+            
+            # Sort by schedule_day
+            df_faixa = df_faixa.sort_values('schedule_day').reset_index(drop=True)
+            
+            logger.info(f"get_df_faixa_horario: Created df_faixa with {len(df_faixa)} rows")
+            return True, df_faixa, ""
+        
+        elif use_case == 1:
+            df_orc_full = df_orcamento.copy()
+            mask_pessoas_min = df_orc_full['pessoas_min'] > 0
+            df_orc_filtered = df_orc_full[mask_pessoas_min]
+
+            if df_orc_filtered.empty:
+                # Fallback: no rows with pessoas_min > 0 – use default faixa 06:40 / 22:40
+                logger.warning(
+                    "get_df_faixa_horario (use_case=1): no rows with pessoas_min > 0 "
+                    "(total rows: %d). Using fallback hora_inicio_faixa=06:40, hora_fim_faixa=22:40 for all days.",
+                    len(df_orc_full),
+                )
+                unique_days = pd.to_datetime(df_orc_full['schedule_day']).dt.normalize().unique()
+                df_faixa = pd.DataFrame({'schedule_day': unique_days})
+                df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+                df_faixa['hora_inicio_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(hours=6, minutes=40)
+                df_faixa['hora_fim_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(hours=22, minutes=40)
+            else:
+                df_faixa = df_orc_filtered.groupby('schedule_day', as_index=False).agg(
+                    hora_inicio_faixa=('hora_ini', 'min'),
+                    hora_fim_faixa=('hora_ini', 'max')
+                )
+
+            # Calculate ponto_medio as the midpoint between hora_inicio_faixa and hora_fim_faixa
+            df_faixa['ponto_medio'] = df_faixa['hora_inicio_faixa'] + (df_faixa['hora_fim_faixa'] - df_faixa['hora_inicio_faixa']) / 2
+            # For this use_case, the objective is to consider both limite_superior_manha and limite_inferior_tarde as the middle point
+            df_faixa['limite_superior_manha'] = df_faixa['ponto_medio']
+            df_faixa['limite_inferior_tarde'] = df_faixa['ponto_medio']
+            df_faixa = df_faixa.sort_values('schedule_day').reset_index(drop=True)
+            return True, df_faixa, ""
+
+        else:
+            return False, pd.DataFrame(), "Invalid use case"
+    except Exception as e:
+        return False, pd.DataFrame(), f"Error getting df_faixa_horario: {e}"
+
+def get_df_estrutura_wfm_info(df_estrutura_wfm: pd.DataFrame) -> str:
+    """
+    """
+    nome_pais = str(df_estrutura_wfm['nome_pais'].unique()[0])
+
+    return nome_pais
 
 def filter_insert_results(df: pd.DataFrame, start_date: str, end_date: str, wfm_proc_colab: str = '') -> pd.DataFrame:
     """

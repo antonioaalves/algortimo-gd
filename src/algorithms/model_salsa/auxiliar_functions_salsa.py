@@ -113,21 +113,22 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
         nbr_absences = len(absences_in_week)
         vacations_in_week = days_set.intersection(vacations.union(closed_holidays))
         nbr_vacations = len(vacations_in_week)
-        total = nbr_vacations + nbr_absences - len(days_set.intersection(closed_holidays))
-
+        if len(days_set.intersection(vacations)) > 0 and len(days_set.intersection(absences)) > 0:
+            total = nbr_vacations + nbr_absences - len(days_set.intersection(closed_holidays))
+        else:
+            total = 0
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
-
-            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2) :
+            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2):
                 #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
-            
-            if nbr_absences < 5 and nbr_vacations < 6:
-                if total > 5:
-                    absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total ,5)
-
+            if total > 5:
+                absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total, 5)
+                continue
+            elif nbr_vacations > 2:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
                     continue
-
+            elif nbr_absences < 5:
+                continue
             atributing_days = sorted(days_set - closed_holidays)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
@@ -166,15 +167,16 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     fixed_days_off |= {l2,l1}
                 
         else:
-            if len(days_off) > 0:
+            if len(days_off) > 0 or (nbr_absences + nbr_vacations < 2):
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
                 continue
-            if nbr_absences <= 6 and nbr_vacations < 7:
-                if total > 6:
-                    return mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), None,6)
-
+            if total > 6:
+                absences, vacations, fixed_days_off, fixed_LQs =  mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), None,6)
+            elif nbr_vacations > 2:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 6, days) == False:
                     continue
+            elif nbr_absences < 6:
+                continue
             atributing_days = sorted(days_set - closed_holidays)
             l1 = atributing_days[-1]
             absences -= {l1}
