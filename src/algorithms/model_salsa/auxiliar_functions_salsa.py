@@ -113,7 +113,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
         nbr_absences = len(absences_in_week)
         vacations_in_week = days_set.intersection(vacations.union(closed_holidays))
         nbr_vacations = len(vacations_in_week)
-        if nbr_absences > 0 and nbr_vacations > 0:
+        if len(days_set.intersection(vacations)) > 0 and len(days_set.intersection(absences)) > 0:
             total = nbr_vacations + nbr_absences - len(days_set.intersection(closed_holidays))
         else:
             total = 0
