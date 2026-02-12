@@ -146,7 +146,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             workers = sorted(valid_workers)
             workers_complete = workers
-            complete = complete = matriz_colaborador_gd[(matriz_colaborador_gd['ciclo'] == 'Completo') & (matriz_colaborador_gd['employee_id'] == w)]
+            complete = matriz_colaborador_gd[(matriz_colaborador_gd['ciclo'] == 'Completo') & (matriz_colaborador_gd['employee_id'] == w)]
             workers_complete_cycle = [] if complete.empty else workers
             if not complete.empty:
                 workers = []
@@ -574,6 +574,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
             else:
                 work_days_per_week[w] = [5] * 54
+
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
@@ -605,7 +606,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Usando coluna de nível: %s", role_col)
 
         for w in workers_past:
-            row = matriz_colaborador_nao_alterada.loc[matriz_colaborador_nao_alterada['matricula'] == w]
+            row = matriz_colaborador_nao_alterada.loc[matriz_colaborador_nao_alterada['employee_id'] == w]
             if row.empty:
                 logger.info(f"calendario vazio {w}")
                 role = "normal"

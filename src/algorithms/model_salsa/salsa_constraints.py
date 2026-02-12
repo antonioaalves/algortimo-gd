@@ -323,7 +323,7 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
     for w in workers:
         for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
-            if d + max_days + 1 < period[0] or d > period[1]:
+            if d < period[0] or d > period[1]:
                 continue
             consecutive_days = sum(
                 shift[(w, d + i, s)] 
