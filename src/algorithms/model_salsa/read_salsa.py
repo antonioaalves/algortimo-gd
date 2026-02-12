@@ -40,6 +40,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
+        eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
         start_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
         end_date = pd.to_datetime(algorithm_treatment_params['end_date']).dayofyear
@@ -713,7 +714,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
                         min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
                         max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
-                        h_plus[(d, s)] = int(round(day_shift_data['+h'].values[0]))
+                        h_plus[(d, s)] = int(round(day_shift_data['allocated_employees_count'].values[0]))
                     else:
                         pess_obj[(d, s)] = 0
                         min_workers[(d, s)] = 0
@@ -725,7 +726,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             logger.info(f"  - min_workers: {len(min_workers)/2} entries")
             logger.info(f"  - max_workers: {len(max_workers)/2} entries")
 
-            logger.info(f"+H Column: {h_plus}")
+            logger.info(f"allocated_employees_count Column: {h_plus}")
         # =================================================================
         # 12. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
@@ -798,7 +799,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "keyholders": keyholders,
             "locked_days": locked_days,
             "h_plus": h_plus,
-            "is_eci": True,
+            "eci_sibling_results_flag": eci_sibling_results_flag,
             }
         
     except Exception as e:

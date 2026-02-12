@@ -287,7 +287,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             keyholders = adapted_data["keyholders"]
             locked_days = adapted_data["locked_days"]
             h_plus = adapted_data["h_plus"]
-            is_eci = adapted_data["is_eci"]
+            eci_sibling_results_flag = adapted_data["eci_sibling_results_flag"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -471,18 +471,19 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
 
-            optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj,
-                                                      working_days, closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, first_day,
-                                                      last_day, role_by_worker, work_day_hours, workers_past, year_range, managers, keyholders, h_plus, is_eci)
+            optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj, working_days,
+                                                      closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, 
+                                                      work_day_hours, workers_past, year_range, managers, keyholders, h_plus, eci_sibling_results_flag)
 
             # =================================================================
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj, workers_past, contingente_f, contingente_d, holiday_half_day, sunday_half_day,
-                              pd.Series(['Worker'] + (unique_dates)),
-                              output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
-                              optimization_details=optimization_details )
+            schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
+                                         workers_past, h_plus, contingente_f, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag,
+                                         pd.Series(['Worker'] + (unique_dates)),
+                                         output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
+                                         optimization_details=optimization_details )
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
             # =================================================================
