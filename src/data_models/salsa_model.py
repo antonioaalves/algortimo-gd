@@ -346,6 +346,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                                 secao_id="'" + str(sibling_secao_id) + "'"
                             )
                             self.logger.info(f"df_eci_employees shape (rows {df_eci_employees.shape[0]}, columns {df_eci_employees.shape[1]}): {df_eci_employees.columns.tolist()}")
+                            
+                            # Flag if we have results from the sibling section
+                            eci_sibling_results_flag = True if not df_eci_employees.empty or len(df_eci_employees) > 0 else False    
 
                             if not df_eci_employees.empty:
                                 # Step 3: Load sibling section schedule results using queryGetCoreSchedule
@@ -651,6 +654,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
                 self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
                 self.algorithm_treatment_params['nome_pais'] = nome_pais
+                self.algorithm_treatment_params['eci_flag'] = eci_flag
+                self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
