@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import datetime as dt
-from typing import List, Optional, Tuple, Dict
+from typing import Any, List, Optional, Tuple, Dict
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers import DBDataManager
 
@@ -1774,15 +1774,168 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
         logger.error(error_msg, exc_info=True)
         return False, {}, error_msg
 
-def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_faixa_secao_to_long(df_faixa_secao_wide: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Function that gets the df_faixa_horario from the df_orcamento and df_turnos
-    
+    Transform wide esc_faixa_horario (aber_seg, fech_seg, ... per weekday) to long format
+    with one row per schedule_day and hora_inicio_faixa / hora_fim_faixa.
+
+    Expects columns: fk_secao, aber_seg, fech_seg, aber_ter, fech_ter, ... aber_fer, fech_fer,
+    and DATA_INI/DATA_FIM or data_ini/data_fim (date range to expand).
+
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, df with schedule_day, hora_inicio_faixa, hora_fim_faixa [, fk_secao], error_message)
+    """
+    try:
+        if df_faixa_secao_wide is None or df_faixa_secao_wide.empty:
+            return False, pd.DataFrame(), "df_faixa_secao_wide is empty or None"
+
+        df = df_faixa_secao_wide.copy()
+        # Normalize column names (Oracle may return DATA_INI/DATA_FIM uppercase)
+        df.columns = [c.lower() if isinstance(c, str) else c for c in df.columns]
+        date_ini_col = 'data_ini' if 'data_ini' in df.columns else None
+        date_fim_col = 'data_fim' if 'data_fim' in df.columns else None
+        if date_ini_col is None or date_fim_col is None:
+            return False, pd.DataFrame(), "df_faixa_secao_wide missing data_ini and/or data_fim columns"
+
+        time_columns = [
+            "aber_seg", "fech_seg", "aber_ter", "fech_ter", "aber_qua", "fech_qua",
+            "aber_qui", "fech_qui", "aber_sex", "fech_sex", "aber_sab", "fech_sab",
+            "aber_dom", "fech_dom", "aber_fer", "fech_fer"
+        ]
+        missing = [c for c in time_columns if c not in df.columns]
+        if missing:
+            return False, pd.DataFrame(), f"df_faixa_secao_wide missing time columns: {missing}"
+
+        df[date_ini_col] = pd.to_datetime(df[date_ini_col])
+        df[date_fim_col] = pd.to_datetime(df[date_fim_col])
+
+        expanded_rows = []
+        for _, row in df.iterrows():
+            date_range = pd.date_range(start=row[date_ini_col], end=row[date_fim_col], freq='D')
+            for date in date_range:
+                new_row = row.copy()
+                new_row['data'] = date
+                expanded_rows.append(new_row)
+
+        if not expanded_rows:
+            return False, pd.DataFrame(), "No dates in data_ini..data_fim range"
+
+        df_exp = pd.DataFrame(expanded_rows)
+        id_vars = [c for c in ['fk_secao', 'data', date_ini_col, date_fim_col] if c in df_exp.columns]
+        df_long = pd.melt(
+            df_exp,
+            id_vars=id_vars,
+            value_vars=time_columns,
+            var_name='wd_ab',
+            value_name='value'
+        )
+        df_long[['a_f', 'wd']] = df_long['wd_ab'].str.split('_', expand=True)
+        pivot_index = [c for c in id_vars if c in df_long.columns] + ['wd']
+        df_wide = df_long.pivot_table(
+            index=pivot_index,
+            columns='a_f',
+            values='value',
+            aggfunc='first'
+        ).reset_index()
+        df_wide.columns.name = None
+
+        # Match weekday from date to column (seg, ter, ...)
+        df_wide['wd'] = df_wide['wd'].str.replace('sab', 'sáb')
+        df_wide['wd_date'] = df_wide['data'].dt.day_name().str.lower()
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('saturday', 'sáb')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('sunday', 'dom')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('monday', 'seg')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('tuesday', 'ter')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('wednesday', 'qua')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('thursday', 'qui')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('friday', 'sex')
+
+        out = df_wide[df_wide['wd'] == df_wide['wd_date']].copy()
+        out['schedule_day'] = pd.to_datetime(out['data']).dt.normalize()
+        # Keep start/end as timestamps with date (raw from DB); same structure as df_orc_filtered
+        out['hora_inicio_faixa'] = pd.to_datetime(out['aber'], errors='coerce')
+        out['hora_fim_faixa'] = pd.to_datetime(out['fech'], errors='coerce')
+        out = out.dropna(subset=['hora_inicio_faixa', 'hora_fim_faixa'])
+        result_cols = ['schedule_day', 'hora_inicio_faixa', 'hora_fim_faixa']
+        if 'fk_secao' in out.columns:
+            result_cols.insert(0, 'fk_secao')
+        result = out[result_cols].sort_values('schedule_day').reset_index(drop=True)
+        logger.info(f"treat_df_faixa_secao_to_long: produced {len(result)} rows (long format)")
+        return True, result, ""
+    except Exception as e:
+        logger.error(f"treat_df_faixa_secao_to_long failed: {e}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def _fill_faixa_fallback(
+    df_faixa: pd.DataFrame,
+    missing_mask: pd.Series,
+    unique_days: np.ndarray,
+    df_faixa_secao: Optional[pd.DataFrame],
+    log: Any,
+) -> None:
+    """Fill hora_inicio_faixa/hora_fim_faixa for rows where missing_mask is True. Use df_faixa_secao if provided and valid, else 06:40/22:40."""
+    if not missing_mask.any():
+        return
+    required = ['schedule_day', 'hora_inicio_faixa', 'hora_fim_faixa']
+    use_secao = (
+        df_faixa_secao is not None
+        and not df_faixa_secao.empty
+        and all(c in df_faixa_secao.columns for c in required)
+    )
+    if use_secao:
+        secao = df_faixa_secao.copy()
+        secao['schedule_day'] = pd.to_datetime(secao['schedule_day']).dt.normalize()
+        secao = secao.drop_duplicates(subset=['schedule_day'], keep='first')
+        # Normalize to same structure as df_orc_filtered: schedule_day + time part of start/end
+        t_ini = secao['hora_inicio_faixa']
+        t_fim = secao['hora_fim_faixa']
+        secao = secao.assign(
+            hora_inicio_faixa=secao['schedule_day'] + pd.to_timedelta(
+                t_ini.dt.hour * 3600 + t_ini.dt.minute * 60 + t_ini.dt.second, unit='s'
+            ),
+            hora_fim_faixa=secao['schedule_day'] + pd.to_timedelta(
+                t_fim.dt.hour * 3600 + t_fim.dt.minute * 60 + t_fim.dt.second, unit='s'
+            ),
+        )
+        df_faixa.loc[missing_mask, 'hora_inicio_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'].map(
+            secao.set_index('schedule_day')['hora_inicio_faixa']
+        )
+        df_faixa.loc[missing_mask, 'hora_fim_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'].map(
+            secao.set_index('schedule_day')['hora_fim_faixa']
+        )
+        still_missing = df_faixa['hora_inicio_faixa'].isna()
+        if still_missing.any():
+            log.info("get_df_faixa_horario: df_faixa_secao did not cover all days; filling remaining with 06:40/22:40")
+            missing_mask = still_missing
+        else:
+            log.info("get_df_faixa_horario: used df_faixa_secao for fallback faixa times")
+            return
+    default_start = pd.Timedelta(hours=6, minutes=40)
+    default_end = pd.Timedelta(hours=22, minutes=40)
+    df_faixa.loc[missing_mask, 'hora_inicio_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'] + default_start
+    df_faixa.loc[missing_mask, 'hora_fim_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'] + default_end
+
+
+def get_df_faixa_horario(
+    df_orcamento: pd.DataFrame,
+    df_turnos: pd.DataFrame,
+    use_case: int = 0,
+    df_faixa_secao: Optional[pd.DataFrame] = None,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Function that gets the df_faixa_horario from the df_orcamento and df_turnos.
+
+    For use_case 1, if there are no rows with pessoas_min > 0, fallback is used:
+    df_faixa_secao (long format with schedule_day, hora_inicio_faixa, hora_fim_faixa)
+    if provided and non-empty; otherwise hardcoded 06:40 / 22:40.
+
     Args:
         df_orcamento: DataFrame with the orcamento data
         df_turnos: DataFrame with the turnos data
         use_case: int with the use case
-        
+        df_faixa_secao: Optional long-format faixa per day (schedule_day, hora_inicio_faixa, hora_fim_faixa); used as fallback in use_case 1
+
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, df_faixa_horario, error_message)
     """
@@ -1872,30 +2025,36 @@ def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, us
         
         elif use_case == 1:
             df_orc_full = df_orcamento.copy()
+            df_orc_full['schedule_day'] = pd.to_datetime(df_orc_full['schedule_day']).dt.normalize()
+            unique_days = df_orc_full['schedule_day'].unique()
             mask_pessoas_min = df_orc_full['pessoas_min'] > 0
             df_orc_filtered = df_orc_full[mask_pessoas_min]
 
-            if df_orc_filtered.empty:
-                # Fallback: no rows with pessoas_min > 0 – use default faixa 06:40 / 22:40
-                logger.warning(
-                    "get_df_faixa_horario (use_case=1): no rows with pessoas_min > 0 "
-                    "(total rows: %d). Using fallback hora_inicio_faixa=06:40, hora_fim_faixa=22:40 for all days.",
-                    len(df_orc_full),
-                )
-                unique_days = pd.to_datetime(df_orc_full['schedule_day']).dt.normalize().unique()
-                df_faixa = pd.DataFrame({'schedule_day': unique_days})
-                df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
-                df_faixa['hora_inicio_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(hours=6, minutes=40)
-                df_faixa['hora_fim_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(hours=22, minutes=40)
-            else:
+            if not df_orc_filtered.empty:
                 df_faixa = df_orc_filtered.groupby('schedule_day', as_index=False).agg(
                     hora_inicio_faixa=('hora_ini', 'min'),
                     hora_fim_faixa=('hora_ini', 'max')
                 )
+                # Ensure all days from df_orcamento are present; fill missing from df_faixa_secao or default
+                df_days = pd.DataFrame({'schedule_day': unique_days})
+                df_days['schedule_day'] = pd.to_datetime(df_days['schedule_day']).dt.normalize()
+                df_faixa = df_days.merge(df_faixa, on='schedule_day', how='left')
+                missing = df_faixa['hora_inicio_faixa'].isna()
+                if missing.any():
+                    _fill_faixa_fallback(df_faixa, missing, unique_days, df_faixa_secao, logger)
+            else:
+                # No rows with pessoas_min > 0: use df_faixa_secao fallback or hardcoded 06:40 / 22:40
+                logger.warning(
+                    "get_df_faixa_horario (use_case=1): no rows with pessoas_min > 0 "
+                    "(total rows: %d). Using fallback (df_faixa_secao or 06:40/22:40).",
+                    len(df_orc_full),
+                )
+                df_faixa = pd.DataFrame({'schedule_day': unique_days})
+                df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+                _fill_faixa_fallback(df_faixa, pd.Series(True, index=df_faixa.index), unique_days, df_faixa_secao, logger)
 
-            # Calculate ponto_medio as the midpoint between hora_inicio_faixa and hora_fim_faixa
+            # Calculate ponto_medio and limites
             df_faixa['ponto_medio'] = df_faixa['hora_inicio_faixa'] + (df_faixa['hora_fim_faixa'] - df_faixa['hora_inicio_faixa']) / 2
-            # For this use_case, the objective is to consider both limite_superior_manha and limite_inferior_tarde as the middle point
             df_faixa['limite_superior_manha'] = df_faixa['ponto_medio']
             df_faixa['limite_inferior_tarde'] = df_faixa['ponto_medio']
             df_faixa = df_faixa.sort_values('schedule_day').reset_index(drop=True)

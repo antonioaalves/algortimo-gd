@@ -189,23 +189,6 @@ class BaseDescansosDataModel(ABC):
                 return False, "errSubproc", str(e)
 
             try:
-                self.logger.info("Loading df_faixa_horario from data manager")
-                # faixa horario information
-                # Note: Could filter by fk_secao in query if secao_id is available at this point
-                # Currently filtering after load for flexibility (secao_id comes from auxiliary_data)
-                query_path = _config.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
-                if query_path == '':
-                    self.logger.warning("df_faixa_horario query path not found in config")
-                df_faixa_horario = data_manager.load_data(
-                    'df_faixa_horario',
-                    query_file=query_path
-                )
-                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_faixa_horario: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
-
-            try:
                 self.logger.info("Loading df_orcamento from data manager")
                 # orcamento information
                 query_path = _config.paths.sql_auxiliary_paths.get('df_orcamento', '')
@@ -230,6 +213,25 @@ class BaseDescansosDataModel(ABC):
             if not success:
                 self.logger.error(f"Closed days treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
+
+            # df_faixa_horario from get_df_faixa_horario (df_orcamento + optional df_faixa_secao fallback from load_process_data)
+            try:
+                df_faixa_secao = self.auxiliary_data.get('df_faixa_secao', pd.DataFrame())
+                if df_faixa_secao.empty:
+                    self.logger.info("df_faixa_secao not in auxiliary_data or empty; get_df_faixa_horario will use internal fallback if needed")
+                success, df_faixa_horario, error_msg = get_df_faixa_horario(
+                    df_orcamento=df_orcamento,
+                    df_turnos=df_turnos,
+                    use_case=1,
+                    df_faixa_secao=df_faixa_secao if not df_faixa_secao.empty else None,
+                )
+                if not success:
+                    self.logger.error(f"Failed to get df_faixa_horario: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
+            except Exception as e:
+                self.logger.error(f"Error getting df_faixa_horario: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
 
             try:
                 self.logger.info("Loading df_granularidade from data manager")
@@ -393,12 +395,13 @@ class BaseDescansosDataModel(ABC):
             
             try:
                 self.logger.info("Loading DataFrames from existing data")
-                # Get DataFrames from existing data
+                # Get DataFrames from existing data (df_faixa_horario was computed in load_estimativas_info)
                 df_turnos = self.auxiliary_data['df_turnos'].copy()
                 df_feriados = self.auxiliary_data['df_feriados'].copy()
                 df_orcamento = self.auxiliary_data['df_orcamento'].copy()  # This is dfGranularidade equivalent - TODO: check if this is needed
+                df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
                 
-                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}")
+                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}, df_faixa_horario: {df_faixa_horario.shape}")
             except KeyError as e:
                 self.logger.error(f"Missing required DataFrame: {e}", exc_info=True)
                 return False, "", ""
@@ -406,21 +409,7 @@ class BaseDescansosDataModel(ABC):
                 self.logger.error(f"Error loading DataFrames: {e}", exc_info=True)
                 return False, "", ""
             
-            # Get shift boundary times from df_turnos (mode or average across section)
-            try:
-                # TODO: add helper function to get the df with faixa start and end time, ponto_medio and limite_superior_manha, limite_inferior_tarde
-                success, df_faixa_horario, error_msg = get_df_faixa_horario(
-                    df_orcamento=df_orcamento,
-                    df_turnos=df_turnos,
-                    use_case=1
-                )
-                if not success:
-                    self.logger.error(f"Failed to get df_faixa_horario: {error_msg}")
-                    return False, "errSubproc", error_msg
-                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error getting df_faixa_horario: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+            # df_faixa_horario already in auxiliary_data (computed in load_estimativas_info with df_faixa_secao fallback)
 
             # Create df_estimativas from df_orcamento by aggregating per day/shift
             # M shift: hora_inicio_faixa <= hora_ini < limite_superior_manha
