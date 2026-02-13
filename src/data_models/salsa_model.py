@@ -655,7 +655,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
                 self.algorithm_treatment_params['nome_pais'] = nome_pais
                 self.algorithm_treatment_params['eci_flag'] = eci_flag
-                self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag
+                self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag if eci_sibling_results_flag else False
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
