@@ -1990,3 +1990,62 @@ def filter_insert_results(df: pd.DataFrame, start_date: str, end_date: str, wfm_
     except Exception as e:
         logger.error(f"Error in filter_insert_results: {str(e)}", exc_info=True)
         return df
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ECI Unit Helper Functions
+# ──────────────────────────────────────────────────────────────────────────────
+
+def is_eci_unit(df_estrutura_wfm: pd.DataFrame) -> bool:
+    """
+    Check if the current unit is an ECI unit based on the unit name.
+    
+    ECI units are identified by their name starting with "ECI".
+    
+    Args:
+        df_estrutura_wfm: DataFrame with organizational structure (must contain 'nome_unidade')
+        
+    Returns:
+        bool: True if this is an ECI unit, False otherwise
+    """
+    try:
+        if df_estrutura_wfm is None or df_estrutura_wfm.empty:
+            return False
+        if 'nome_unidade' not in df_estrutura_wfm.columns:
+            logger.warning("is_eci_unit: 'nome_unidade' column not found in df_estrutura_wfm")
+            return False
+        nome_unidade = str(df_estrutura_wfm['nome_unidade'].iloc[0]).strip().upper()
+        return nome_unidade.startswith("ECI")
+    except Exception as e:
+        logger.error(f"Error in is_eci_unit: {str(e)}", exc_info=True)
+        return False
+
+
+def get_sibling_section_name(nome_secao: str) -> Optional[str]:
+    """
+    Get the sibling section name for ECI units.
+    
+    ECI units operate in pairs: if the current section contains "WOMAN", the sibling
+    is "MAN", and vice versa.
+    
+    Note: "WOMAN" must be checked before "MAN" because "WOMAN" contains "MAN".
+    
+    Args:
+        nome_secao: Current section name (e.g. "SHOP OPERATION MAN", "SHOP OPERATION WOMAN")
+        
+    Returns:
+        Optional[str]: The sibling section keyword ("MAN" or "WOMAN"), or None if not identifiable
+    """
+    try:
+        nome_upper = str(nome_secao).strip().upper()
+        # WOMAN must be checked first because "WOMAN" contains "MAN"
+        if "WOMAN" in nome_upper:
+            return "MAN"
+        elif "MAN" in nome_upper:
+            return "WOMAN"
+        else:
+            logger.warning(f"get_sibling_section_name: Could not identify sibling for section '{nome_secao}'")
+            return None
+    except Exception as e:
+        logger.error(f"Error in get_sibling_section_name: {str(e)}", exc_info=True)
+        return None
