@@ -318,6 +318,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             # ECI Unit Detection: check if this is an ECI unit and load sibling section data
             eci_flag = is_eci_unit(df_estrutura_wfm)
             df_eci_section_results = pd.DataFrame()  # Empty by default (non-ECI path)
+            eci_sibling_results_flag = False  # Set True only when ECI sibling section has results (see below)
 
             if eci_flag:
                 nome_secao = str(df_estrutura_wfm['nome_secao'].iloc[0])
@@ -655,7 +656,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
                 self.algorithm_treatment_params['nome_pais'] = nome_pais
                 self.algorithm_treatment_params['eci_flag'] = eci_flag
-                self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag if eci_sibling_results_flag else False
+                self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
