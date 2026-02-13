@@ -40,9 +40,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
+        eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
-        start_date = pd.to_datetime(algorithm_treatment_params['start_date']).dayofyear
-        end_date = pd.to_datetime(algorithm_treatment_params['end_date']).dayofyear
+        start_date = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == algorithm_treatment_params['start_date'], "index"].iloc[0]
+        end_date = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == algorithm_treatment_params['end_date'], "index"].iloc[0]
         period = [start_date, end_date]
 
         logger.info(f"Period Start and end Time:")
@@ -332,10 +333,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Calendar date range: {min_calendar_date} to {max_calendar_date}")
         logger.info(f"Calendar day of year range: {min_day_year} to {max_day_year}")
         year_range = [min_day_year, max_day_year]
-        period = [start_date + min_day_year - 1, end_date + min_day_year - 1]
-        logger.info(f"Adapted and Final Period Start and end Time:")
-        logger.info(f"Start: {period[0]}")
-        logger.info(f"End: {period[1]}")
 
         # =================================================================
         # 10.1. EXTRACT WORKER CONTRACT INFORMATION
@@ -697,6 +694,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         # Extract optimization parameters from estimativas
         pess_obj = {}
+        h_plus = {}
         min_workers = {}
         max_workers = {}
         working_shift = ["M", "T"]
@@ -712,15 +710,19 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
                         min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
                         max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
+                        h_plus[(d, s)] = int(round(day_shift_data['allocated_employees_count'].values[0]))
                     else:
                         pess_obj[(d, s)] = 0
                         min_workers[(d, s)] = 0
                         max_workers[(d, s)] = 0
+                        h_plus[(d, s)] = -1
                     #print(f"day {d} and shift {s}: pessobj {pess_obj[(d, s)]/8}, min_workers {min_workers[(d, s)]/8}, max_workers {max_workers[(d, s)]/8}")
             logger.info(f"Processing estimativas data with {len(matriz_estimativas_gd)} records")
             logger.info(f"  - pess_obj: {len(pess_obj)/2} entries")
             logger.info(f"  - min_workers: {len(min_workers)/2} entries")
             logger.info(f"  - max_workers: {len(max_workers)/2} entries")
+
+            logger.info(f"allocated_employees_count Column: {h_plus}")
         # =================================================================
         # 12. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
@@ -792,6 +794,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "managers": managers,
             "keyholders": keyholders,
             "locked_days": locked_days,
+            "h_plus": h_plus,
+            "eci_sibling_results_flag": eci_sibling_results_flag,
             }
         
     except Exception as e:

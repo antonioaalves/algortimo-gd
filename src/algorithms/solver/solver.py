@@ -31,10 +31,12 @@ def solve(
     work_day_hours: Dict[int, Dict[int, int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
+    h_plus: Dict[int, int],
     contingente_feriados: Dict[int, List[bool]],
     contingente_domingos: Dict[int, List[bool]],
     holiday_half_day: bool,
     sunday_half_day: bool,
+    eci_sibling_results_flag: bool,
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -451,9 +453,16 @@ def solve(
                 df2.loc[len(df2)] = time_worked_T_row
             else:
                 df2 = df.copy()
-
             df2.loc[len(df2)] = time_worked_M_row_after
             df2.loc[len(df2)] = time_worked_T_row_after
+
+            if eci_sibling_results_flag:
+                sister_eci_M = ["Sister_Section_M"] + [h_plus.get((i, 'M'), -1) for i in range(len(days_of_year_sorted))]
+                sister_eci_T = ["Sister_Section_T"] + [h_plus.get((i, 'T'), -1) for i in range(len(days_of_year_sorted))]
+
+                df2.loc[len(df2)] = sister_eci_M
+                df2.loc[len(df2)] = sister_eci_T
+
             df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:

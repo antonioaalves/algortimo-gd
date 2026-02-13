@@ -10,7 +10,9 @@ import numpy as np
 import math 
 
 
-def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, real_working_shift, shift, pessObj, working_days, closed_holidays, min_workers,max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, work_day_hours, workers_past, year_range, managers, keyholders):
+def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, real_working_shift, shift, pessObj, working_days, 
+                       closed_holidays, min_workers,max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker,
+                       work_day_hours, workers_past, year_range, managers, keyholders, h_plus, eci_sibling_results_flag):
 
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -600,7 +602,28 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     if percentage_of_importance_workers>0:
         objective_terms.append(objective_zero * no_workers_weight)
 
-   
+
+    ##################!!!ECI!!!###########################
+    # 4.2 No workers in sister section --> ECI
+    ######################################################
+
+    if eci_sibling_results_flag:
+        zero_assigned_in_other_eci_section_vars = []
+        for d in days_of_year_working:
+            h_plus_d = sum(h_plus.get((d, s), -1) for s in real_working_shift)
+            if -2 < h_plus_d <= 0:
+                target = sum(pessObj.get((d,s), 0) for s in real_working_shift)
+                if target > 0:
+                    assigned_workers = sum(shift[(w,d,s)] for w in all_workers for s in real_working_shift if (w,d,s) in shift)
+                    zero_assigned = model.NewBoolVar(f'zero_assigned_in_other_eci_section_{d}_{s}')
+                    model.Add(assigned_workers == 0).OnlyEnforceIf(zero_assigned)
+                    model.Add(assigned_workers >= 1).OnlyEnforceIf(zero_assigned.Not())
+                    zero_assigned_in_other_eci_section_vars.append(zero_assigned)
+
+        objective_zero_eci = sum(zero_assigned_in_other_eci_section_vars)
+        if percentage_of_importance_workers>0:
+            objective_terms.append(objective_zero_eci * no_workers_weight * 5)
+
     # 5. Balancing number of free sundays across the workers 
  
     for qi, workers_q in q_groups.items():
