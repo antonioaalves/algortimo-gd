@@ -32,7 +32,8 @@ from src.data_models.functions.helper_functions import (
     count_open_holidays,
     convert_fields_to_int,
     is_eci_unit,
-    get_sibling_section_name,
+    get_sibling_section_name,,
+    treat_df_faixa_secao_to_long,
 )
 from src.data_models.functions.data_treatment_functions import (
     separate_df_ciclos_completos_folgas_ciclos,
@@ -577,6 +578,34 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"No closed days found in the specified date range - proceeding with empty DataFrame")
                 # Empty df_closed_days is valid - it means no closed days in the period
 
+            # Load df_faixa_secao (wide from queryGetEscFaixaHorario), transform to long, for use as fallback in get_df_faixa_horario
+            try:
+                self.logger.info("Loading df_faixa_secao from data manager (queryGetEscFaixaHorario)")
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
+                if query_path:
+                    start_date_quoted = "'" + first_day_passado + "'"
+                    end_date_quoted = "'" + last_day_passado + "'"
+                    df_faixa_secao_wide = data_manager.load_data(
+                        'df_faixa_secao',
+                        query_file=query_path,
+                        secao_id=secao_id,
+                        start_date=start_date_quoted,
+                        end_date=end_date_quoted,
+                    )
+                    self.logger.info(f"df_faixa_secao (wide) shape: {df_faixa_secao_wide.shape[0]} rows, {df_faixa_secao_wide.shape[1]} cols")
+                    success, df_faixa_secao, error_msg = treat_df_faixa_secao_to_long(df_faixa_secao_wide)
+                    if success:
+                        self.logger.info(f"df_faixa_secao (long) shape: {df_faixa_secao.shape[0]} rows")
+                    else:
+                        self.logger.warning(f"treat_df_faixa_secao_to_long failed: {error_msg}; df_faixa_secao will be empty")
+                        df_faixa_secao = pd.DataFrame()
+                else:
+                    self.logger.warning("df_faixa_horario query path not found; df_faixa_secao will be empty")
+                    df_faixa_secao = pd.DataFrame()
+            except Exception as e:
+                self.logger.warning(f"Error loading or treating df_faixa_secao: {e}; proceeding with empty df_faixa_secao", exc_info=True)
+                df_faixa_secao = pd.DataFrame()
+
             # Load global parameters - Very important!! This could be done with params_lq query most probably
             try:
                 self.logger.info(f"Loading parameters from data manager")
@@ -629,6 +658,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['df_params'] = df_params.copy()
                 self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_closed_days'] = df_closed_days.copy()
+                self.auxiliary_data['df_faixa_secao'] = df_faixa_secao.copy()
                 self.auxiliary_data['df_mpd_valid_employees'] = df_mpd_valid_employees.copy()
                 self.auxiliary_data['df_fk_colaborador_matricula'] = df_fk_colaborador_matricula.copy()
                 self.auxiliary_data['unit_id'] = unit_id 

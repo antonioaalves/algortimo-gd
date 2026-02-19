@@ -4529,7 +4529,7 @@ def create_df_estimativas(
         missing_cols = [col for col in required_cols_faixa if col not in df_faixa_horario.columns]
         if missing_cols:
             return False, pd.DataFrame(), f"df_faixa_horario missing required columns: {missing_cols}"
-
+        
         try:
             granularity = get_granularity_minutes()
         except ValueError as e:
@@ -4538,10 +4538,20 @@ def create_df_estimativas(
         # PREPARE DATA
         df = df_orcamento.copy()
         df_faixa = df_faixa_horario.copy()
+        logger.info(
+            "create_df_estimativas: initial shapes - "
+            f"df_orcamento={df.shape}, unique_days_orc={df['schedule_day'].nunique()}, "
+            f"df_faixa_horario={df_faixa.shape}, unique_days_faixa={df_faixa['schedule_day'].nunique()}"
+        )
         
         # Normalize schedule_day in both dataframes
         df['schedule_day'] = pd.to_datetime(df['schedule_day']).dt.normalize()
         df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+        logger.info(
+            "create_df_estimativas: after normalize - "
+            f"unique_days_orc={df['schedule_day'].nunique()}, "
+            f"unique_days_faixa={df_faixa['schedule_day'].nunique()}"
+        )
         
         # Ensure hora_ini is datetime
         df['hora_ini'] = pd.to_datetime(df['hora_ini'])
@@ -4556,12 +4566,21 @@ def create_df_estimativas(
         unmatched = df['hora_inicio_faixa'].isna().sum()
         if unmatched > 0:
             logger.warning(f"create_df_estimativas: {unmatched} rows in df_orcamento have no matching faixa_horario")
+        logger.info(
+            "create_df_estimativas: after merge - "
+            f"rows={len(df)}, unique_days={df['schedule_day'].nunique()}, "
+            f"rows_with_faixa={len(df) - unmatched}"
+        )
         
         # Drop rows without shift boundaries
         df = df.dropna(subset=['hora_inicio_faixa', 'hora_fim_faixa', 'limite_superior_manha', 'limite_inferior_tarde'])
         
         if df.empty:
             return False, pd.DataFrame(), "No data after merging with df_faixa_horario"
+        logger.info(
+            "create_df_estimativas: after dropping rows without faixa - "
+            f"rows={len(df)}, unique_days={df['schedule_day'].nunique()}"
+        )
         
         # SHIFT CLASSIFICATION
         # M shift: hora_inicio_faixa <= hora_ini < limite_superior_manha
@@ -4569,7 +4588,14 @@ def create_df_estimativas(
         df['is_M'] = (df['hora_ini'] >= df['hora_inicio_faixa']) & (df['hora_ini'] < df['limite_superior_manha'])
         df['is_T'] = (df['hora_ini'] >= df['limite_inferior_tarde']) & (df['hora_ini'] < df['hora_fim_faixa'])
         
-        logger.info(f"create_df_estimativas: M shift slots: {df['is_M'].sum()}, T shift slots: {df['is_T'].sum()}")
+        m_slots = df['is_M'].sum()
+        t_slots = df['is_T'].sum()
+        logger.info(
+            "create_df_estimativas: shift classification - "
+            f"M_slots={m_slots}, T_slots={t_slots}, "
+            f"unique_days_with_M={df.loc[df['is_M'], 'schedule_day'].nunique()}, "
+            f"unique_days_with_T={df.loc[df['is_T'], 'schedule_day'].nunique()}"
+        )
         
         # CALCULATE NUMBER OF GRANULARITY-BASED PERIODS PER SHIFT PER DAY
         # M: (limite_superior_manha - hora_inicio_faixa) / granularity minutes
@@ -4589,6 +4615,11 @@ def create_df_estimativas(
         
         if df_shifts.empty:
             return False, pd.DataFrame(), "No data classified into any shift"
+        logger.info(
+            "create_df_estimativas: df_shifts summary - "
+            f"rows={len(df_shifts)}, unique_days={df_shifts['schedule_day'].nunique()}, "
+            f"days_M={df_m['schedule_day'].nunique()}, days_T={df_t['schedule_day'].nunique()}"
+        )
         
         # Groupby for statistics
         df_estimativas = df_shifts.groupby(['schedule_day', 'turno'], as_index=False).agg(
@@ -4640,8 +4671,11 @@ def create_df_estimativas(
         df_estimativas = df_estimativas[['schedule_day', 'turno', 'media_turno', 'max_turno', 'min_turno', 'sd_turno', 'pess_obj']]
         df_estimativas = df_estimativas.sort_values(['schedule_day', 'turno']).reset_index(drop=True)
         
-        logger.info(f"create_df_estimativas: Created df_estimativas with {len(df_estimativas)} rows")
-        logger.info(f"create_df_estimativas: Date range: {df_estimativas['schedule_day'].min()} to {df_estimativas['schedule_day'].max()}")
+        logger.info(
+            "create_df_estimativas: final df_estimativas - "
+            f"rows={len(df_estimativas)}, unique_days={df_estimativas['schedule_day'].nunique()}, "
+            f"date_range=({df_estimativas['schedule_day'].min()} to {df_estimativas['schedule_day'].max()})"
+        )
         
         return True, df_estimativas, ""
         
