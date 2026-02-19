@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import datetime as dt
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Union
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers import DBDataManager
 
@@ -109,7 +109,7 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
     Args:
         df: pd.DataFrame, dataframe with parameters
         posto_id: int, posto ID
-        unit_id: int, unit ID  
+        unit_id: int or str, unit ID  
         secao_id: int, section ID
         params_names_list: list, list of parameter names to retrieve
     Returns:
@@ -153,11 +153,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
         #logger.info(f"DEBUG: Rows matching section condition:\n {matching_section}")
     
     # 3. Unit-specific: fk_tipo_posto is null AND fk_secao is null AND fk_unidade = unit_id
-    if unit_id is not None:
+    if unit_id is not None and str(unit_id).strip():
         unit_condition = (
             (df_filtered['fk_tipo_posto'].isna()) & 
             (df_filtered['fk_secao'].isna()) & 
-            (df_filtered['fk_unidade'] == unit_id)
+            (df_filtered['fk_unidade'].astype(str) == str(unit_id).strip())
         )
         conditions.append(unit_condition)
         #logger.info(f"DEBUG: Added unit condition for unit_id={unit_id}")
@@ -214,11 +214,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
                     continue
         
         # Priority 3: Unit-specific (fk_tipo_posto and fk_secao are null, fk_unidade matches)
-        if unit_id is not None:
+        if unit_id is not None and str(unit_id).strip():
             unit_specific = param_rows[
                 (param_rows['fk_tipo_posto'].isna()) & 
                 (param_rows['fk_secao'].isna()) & 
-                (param_rows['fk_unidade'] == unit_id)
+                (param_rows['fk_unidade'].astype(str) == str(unit_id).strip())
             ]
             if not unit_specific.empty:
                 value = get_value_from_row(unit_specific.iloc[0])
@@ -1606,7 +1606,7 @@ def get_week_pattern(seq_turno: str, semana1: str, week_in_cycle: int) -> str:
     # Unknown pattern - return as-is
     return seq_turno
 
-def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int], Dict[int, List[str]], List[str]]:
+def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[Union[int, str], int, List[int], Dict[int, List[str]], List[str]]:
     """
     Extract organizational structure and employee groupings from validated employee data.
     
@@ -1615,7 +1615,7 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
     unit and section but may be distributed across multiple job positions (postos).
     
     Extracted Information:
-        1. unit_id: Organizational unit (assumes single unit)
+        1. unit_id: Organizational unit (assumes single unit); preserved as string or int from source
         2. secao_id: Section within unit (assumes single section)
         3. posto_id_list: All unique job position types in scope
         4. employees_by_posto_dict: Employees grouped by their job position
@@ -1636,14 +1636,14 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
     
     Args:
         df_valid_emp: Validated employee DataFrame with columns:
-            - fk_unidade: Unit identifier
+            - fk_unidade: Unit identifier (int or str)
             - fk_secao: Section identifier
             - fk_tipo_posto: Job position type
             - fk_colaborador: Employee identifier
         
     Returns:
         Tuple containing:
-            - unit_id (int): Unique unit ID (first value from unique set)
+            - unit_id (str): Unique unit ID as string (first value from unique set; supports numeric or string IDs)
             - secao_id (int): Unique section ID (first value from unique set)
             - posto_id_list (List[int]): List of all job position types
             - employees_by_posto_dict (Dict[int, List[str]]): Map of posto_id → employee_id_list
@@ -1652,27 +1652,25 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
     Example Output:
         >>> unit_id, secao_id, posto_ids, emp_by_posto, all_emps = get_valid_emp_info(df)
         >>> print(unit_id)
-        1
+        '1' or 'ABC'
         >>> print(secao_id)
         5
         >>> print(posto_ids)
         [10, 20, 30]
-        >>> print(emp_by_posto)
-        {10: ['101', '102'], 20: ['103'], 30: ['104', '105', '106']}
-        >>> print(all_emps)
-        ['101', '102', '103', '104', '105', '106']
         
     Error Handling:
-        Returns (0, 0, [], {}, []) on any exception, with error logged.
+        Returns ("", 0, [], {}, []) on any exception, with error logged.
         This signals to caller that organizational info extraction failed.
         
     Note:
+        unit_id is normalized to string to support both numeric and string unit identifiers.
         Converts posto_id keys to int and employee IDs to str for consistency
         with downstream processing requirements.
     """
     try:
         logger.info(f"Getting unit_id, secao_id, posto_id_list, employees_by_posto_dict, employees_id_total_list")
-        unit_id = int(df_valid_emp['fk_unidade'].unique()[0])  # Get first (and only) unique value
+        raw_unit = df_valid_emp['fk_unidade'].unique()[0]
+        unit_id = str(raw_unit).strip() if raw_unit is not None else ""
         secao_id = int(df_valid_emp['fk_secao'].unique()[0])   # Get first (and only) unique value
         posto_id_list = df_valid_emp['fk_tipo_posto'].unique().astype(int).tolist()  # Get list of unique values
 
@@ -1686,7 +1684,7 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
 
     except Exception as e:
         logger.error(f"Error getting valid_emp info: {e}", exc_info=True)
-        return 0, 0, [], {}, []
+        return "", 0, [], {}, []
 
 def get_matriculas_for_employee_id(employee_id_list: List[int], employee_id_matriculas_map: Dict[int, str]) -> Tuple[bool, List[str], str]:
     """

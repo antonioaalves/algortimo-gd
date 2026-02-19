@@ -43,9 +43,9 @@ def get_all_params(path_os, unit_id=None, secao=None, posto=None,  connection=No
         if p_name is not None:
             df_data = [row for row in df_data if row.get("SYS_P_NAME") == p_name]
 
-        # Filter by unit_id (scalar value)
+        # Filter by unit_id (scalar value; support int or string unit_id and DB column)
         if unit_id is not None:
-            df_data = [row for row in df_data if row.get("FK_UNIDADE") == unit_id or row.get("FK_UNIDADE") is None]
+            df_data = [row for row in df_data if str(row.get("FK_UNIDADE")) == str(unit_id) or row.get("FK_UNIDADE") is None]
 
         # Filter by secao (scalar value)
         if secao is not None:

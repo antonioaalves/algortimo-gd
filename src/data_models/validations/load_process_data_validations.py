@@ -2,7 +2,7 @@
 
 # Dependencies
 import pandas as pd
-from typing import List
+from typing import List, Union
 
 # Local stuff
 from base_data_project.log_config import setup_logger
@@ -253,13 +253,20 @@ def validate_treated_df_calendario(df_calendario: pd.DataFrame) -> bool:
         
     return True
 
-def validate_valid_emp_info(unit_id: int, secao_id: int, posto_id_list: List[int], employees_id_list: List[int]) -> bool:
+def validate_valid_emp_info(unit_id: Union[int, str], secao_id: int, posto_id_list: List[int], employees_id_list: List[int]) -> bool:
     """
     Validate valid_emp info.
+    unit_id can be int or str (e.g. numeric or string unit identifiers).
     """
     error_msgs = []
-    if unit_id == 0 or unit_id == None:
-        error_msgs.append("unit_id is 0 or None")
+    if unit_id is None:
+        error_msgs.append("unit_id is None")
+        return False
+    if unit_id == 0:
+        error_msgs.append("unit_id is 0")
+        return False
+    if isinstance(unit_id, str) and (not unit_id or not unit_id.strip()):
+        error_msgs.append("unit_id is empty or whitespace")
         return False
     if secao_id == 0 or secao_id == None:
         error_msgs.append("secao_id is 0 or None")
