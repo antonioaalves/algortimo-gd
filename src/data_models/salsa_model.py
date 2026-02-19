@@ -32,7 +32,7 @@ from src.data_models.functions.helper_functions import (
     count_open_holidays,
     convert_fields_to_int,
     is_eci_unit,
-    get_sibling_section_name,,
+    get_sibling_section_name,
     treat_df_faixa_secao_to_long,
 )
 from src.data_models.functions.data_treatment_functions import (
