@@ -1890,12 +1890,21 @@ def _fill_faixa_fallback(
         # Normalize to same structure as df_orc_filtered: schedule_day + time part of start/end
         t_ini = secao['hora_inicio_faixa']
         t_fim = secao['hora_fim_faixa']
+        time_ini = pd.to_timedelta(
+            t_ini.dt.hour * 3600 + t_ini.dt.minute * 60 + t_ini.dt.second, unit='s'
+        )
+        time_fim = pd.to_timedelta(
+            t_fim.dt.hour * 3600 + t_fim.dt.minute * 60 + t_fim.dt.second, unit='s'
+        )
+        # When faixa spans past midnight (e.g. 06:00–00:00 next day), t_fim date > t_ini date.
+        # Use schedule_day + 1 day as base for end so hora_fim_faixa is end-of-day (e.g. next day 00:00).
+        fim_next_day = t_fim.dt.normalize() > t_ini.dt.normalize()
         secao = secao.assign(
-            hora_inicio_faixa=secao['schedule_day'] + pd.to_timedelta(
-                t_ini.dt.hour * 3600 + t_ini.dt.minute * 60 + t_ini.dt.second, unit='s'
-            ),
-            hora_fim_faixa=secao['schedule_day'] + pd.to_timedelta(
-                t_fim.dt.hour * 3600 + t_fim.dt.minute * 60 + t_fim.dt.second, unit='s'
+            hora_inicio_faixa=secao['schedule_day'] + time_ini,
+            hora_fim_faixa=np.where(
+                fim_next_day,
+                secao['schedule_day'] + pd.Timedelta(days=1) + time_fim,
+                secao['schedule_day'] + time_fim,
             ),
         )
         df_faixa.loc[missing_mask, 'hora_inicio_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'].map(
