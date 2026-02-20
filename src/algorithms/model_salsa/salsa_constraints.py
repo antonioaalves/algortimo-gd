@@ -271,26 +271,42 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
         model.Add(total_comp_days_used == total_worked_sundays_everyone[w] * ammount)
     return contingent, total_worked_sundays_everyone
 
-def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, total_worked_holidays_everyone, total_worked_sundays_everyone):
+def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, total_worked_holidays_everyone, total_worked_sundays_everyone, enforce_zero_ld_when_no_compensation=True):
+    """
+    Enforce total LD count per worker. For España with params 0 we enforce LD==0 so the solver
+    does not use LD as a generic rest day. For non-España we do not (LD may exist only as fixed
+    from input calendar, and is not a decision variable).
+    """
+    def _add_ld_constraint(w, rhs):
+        model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == rhs)
+
     if total_worked_holidays_everyone is not None and total_worked_sundays_everyone is not None:
         for w in workers:
             if w in total_worked_holidays_everyone and w in total_worked_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol + total_worked_sundays_everyone[w] * ammount_sun)
+                _add_ld_constraint(w, total_worked_holidays_everyone[w] * ammount_hol + total_worked_sundays_everyone[w] * ammount_sun)
             elif w in total_worked_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol)
+                _add_ld_constraint(w, total_worked_holidays_everyone[w] * ammount_hol)
             elif w in total_worked_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
+                _add_ld_constraint(w, total_worked_sundays_everyone[w] * ammount_sun)
+            elif enforce_zero_ld_when_no_compensation:
+                # España with params 0: no LD allowed
+                _add_ld_constraint(w, 0)
     elif total_worked_holidays_everyone is not None:
         for w in workers:
             if w in total_worked_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol)
+                _add_ld_constraint(w, total_worked_holidays_everyone[w] * ammount_hol)
+            elif enforce_zero_ld_when_no_compensation:
+                _add_ld_constraint(w, 0)
     elif total_worked_sundays_everyone is not None:
         for w in workers:
             if w in total_worked_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
+                _add_ld_constraint(w, total_worked_sundays_everyone[w] * ammount_sun)
+            elif enforce_zero_ld_when_no_compensation:
+                _add_ld_constraint(w, 0)
     else:
-        for w in workers:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+        if enforce_zero_ld_when_no_compensation:
+            for w in workers:
+                _add_ld_constraint(w, 0)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift

@@ -461,7 +461,8 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("compensation_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: ld_restriction")
-                    ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone)
+                    # Only enforce LD==0 when no compensation for España (LD is a decision var there). Non-España: LD not in shifts, only fixed from input.
+                    ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone, enforce_zero_ld_when_no_compensation=(country == "Espanha"))
                 else:
                     self.logger.warning("Skipping constraint: ld_restriction (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")
