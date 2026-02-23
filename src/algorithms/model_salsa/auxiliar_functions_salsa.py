@@ -196,12 +196,22 @@ def populate_week_seed_5_6(first_week_5_6, data_admissao, week_to_days):
 
     return work_days_per_week.astype(int)
 
-def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days):
+def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period=None):
+    """
+    period: optional [start_index, end_index] of the optimization window.
+    When set, the first week with 2+ fixed days off is chosen only among weeks
+    that overlap period, so the 5/6 phase aligns with folgas in the optimization
+    window instead of the past calendar.
+    """
     nbr_weeks = len(week_to_days)
     work_days_per_week = np.full(nbr_weeks, 5)
     week_5_days = 0
+    period_start, period_end = (period[0], period[1]) if period and len(period) == 2 else (None, None)
     for week, days in week_to_days.items():
         days_set = set(days)
+        if period_start is not None and period_end is not None:
+            if not any(period_start <= d <= period_end for d in days_set):
+                continue
         days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
         if len(days_off_week) > 1:
             week_5_days = week - 1

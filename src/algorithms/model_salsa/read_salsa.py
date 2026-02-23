@@ -562,12 +562,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             else:
                 logger.warning(f"No collaborator data found for worker {w}")
                 tipo_contrato = 'Contract Error'
-                
             if tipo_contrato == 8:
                 if (first_week_5_6[w] != 0):
                     work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa)
                 else:
-                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa)
+                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period=period)
                 check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
             else:
                 work_days_per_week[w] = [5] * 54

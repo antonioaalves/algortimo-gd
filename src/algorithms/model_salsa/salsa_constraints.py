@@ -421,7 +421,6 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
     debug_vars = {}  # Store debug variables to return    
     for w in workers:
-
         if contract_type[w] in [4, 5, 6, 8]:
             quality_2weekend_vars = []
             
