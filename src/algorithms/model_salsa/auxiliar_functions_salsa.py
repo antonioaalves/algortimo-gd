@@ -125,7 +125,9 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                 absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total, 5)
                 continue
             elif nbr_vacations > 2:
-                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
+                # When the week is almost all vacation (6+ days V/absence), always allow placing
+                # the two required day-offs on the weekend so salsa_2_free_days_week can be satisfied.
+                if (nbr_vacations + nbr_absences) < 6 and consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
                     continue
             elif nbr_absences < 5:
                 continue
@@ -161,6 +163,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     vacations -= {l2, l1}
                     fixed_days_off |= {l1}
                     fixed_LQs |= {l2}
+                    logger.info(f"days_off_atributtion: worker {w} week {week} -> weekend ({l2}, {l1}) set as LQ+L (vacation-heavy week)")
                 else:
                     absences -= {l2,l1}
                     vacations -= {l2,l1}
@@ -173,7 +176,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
             if total > 6:
                 absences, vacations, fixed_days_off, fixed_LQs =  mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), None,6)
             elif nbr_vacations > 2:
-                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 6, days) == False:
+                if (nbr_vacations + nbr_absences) < 6 and consecutive_days(sorted(vacations_in_week), nbr_vacations, 6, days) == False:
                     continue
             elif nbr_absences < 6:
                 continue

@@ -219,7 +219,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"  - Sundays: {len(sundays)} days")
         logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
         logger.info(f"  - Holidays: {holidays} days")
-        logger.info(f"  - Closed holidays: {len(closed_holidays)} days")
+        logger.info(f"  - Closed holidays: {len(closed_holidays)} days (indices: {sorted(closed_holidays)})")
         logger.info(f"  - Total special days: {len(special_days)} days")
 
         # =================================================================
