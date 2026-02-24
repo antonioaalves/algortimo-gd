@@ -376,6 +376,21 @@ class SalsaAlgorithm(BaseAlgorithm):
             else:
                 self.logger.warning("Skipping constraint: working_day_shifts (disabled in config)")
 
+            # Fixed LD count in period: must match the days actually fixed to LD in the model (variables.py).
+            # Model uses fixed_LD_set - empty_set where fixed_LD_set = fixed_compensation_days - fixed_days - fixed_LQs - vacation - absence.
+            p0, p1 = period[0], period[1]
+            closed_set = set(closed_holidays)
+            fixed_ld_count_per_worker = {}
+            for w in workers_complete:
+                empty_set = empty_days.get(w, set())
+                vacation = set(vacation_days.get(w, set())) - empty_set
+                fixed_LQs_set = set(fixed_LQs.get(w, set())) - vacation - closed_set
+                fixed_days_set = set(fixed_days_off.get(w, set())) - vacation - fixed_LQs_set
+                absence_set = set(worker_absences.get(w, set())) - fixed_days_set - fixed_LQs_set - vacation - empty_set
+                fixed_LD_set = set(fixed_compensation_days.get(w, set())) - fixed_days_set - fixed_LQs_set - vacation - absence_set
+                actual_fixed_ld = fixed_LD_set - empty_set
+                fixed_ld_count_per_worker[w] = sum(1 for d in actual_fixed_ld if p0 <= d <= p1)
+
             if workers:
                 # Week working days constraint based on contract type
                 if constraint_selections.get("week_working_days_constraint", {}).get("enabled", True):
@@ -461,10 +476,15 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("compensation_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: ld_restriction")
-                    # Only enforce LD==0 when no compensation for España (LD is a decision var there). Non-España: LD not in shifts, only fixed from input.
-                    ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone, enforce_zero_ld_when_no_compensation=(country == "Espanha"))
+                    ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone, enforce_zero_ld_when_no_compensation=(country == "Espanha"), fixed_ld_count_per_worker=fixed_ld_count_per_worker)
                 else:
                     self.logger.warning("Skipping constraint: ld_restriction (disabled in config)")
+            elif workers_complete and constraint_selections.get("compensation_days", {}).get("enabled", True):
+                # All ciclo Completo (workers empty): still apply ld_restriction so "no LD when params 0" applies to them too.
+                self.logger.info("Applying constraint: ld_restriction (workers_complete only)")
+                ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, [], [],
+                               enforce_zero_ld_when_no_compensation=(country == "Espanha"),
+                               fixed_ld_count_per_worker=fixed_ld_count_per_worker)
             self.logger.info("All enabled SALSA constraints applied")
             
             # =================================================================
