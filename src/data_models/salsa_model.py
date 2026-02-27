@@ -629,7 +629,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_closed_days'] = df_closed_days.copy()
                 self.auxiliary_data['df_faixa_secao'] = df_faixa_secao.copy()
-                self.auxiliary_data['df_mpd_valid_employees'] = df_mpd_valid_employees.copy()
                 self.auxiliary_data['df_fk_colaborador_matricula'] = df_fk_colaborador_matricula.copy()
                 self.auxiliary_data['unit_id'] = unit_id 
                 self.auxiliary_data['secao_id'] = secao_id
