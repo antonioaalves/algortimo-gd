@@ -161,7 +161,7 @@ def validate_df_estimativas_structure(df_estimativas: pd.DataFrame, start_date: 
         
         # REQUIRED COLUMNS CHECK
         required_columns = [
-            'data',         # Date
+            'schedule_day', # Date
             'turno',        # Shift type (M/T)
             'min_turno',    # Minimum staffing
             'max_turno',    # Maximum staffing
@@ -174,13 +174,13 @@ def validate_df_estimativas_structure(df_estimativas: pd.DataFrame, start_date: 
             return False, f"df_estimativas missing required columns: {missing_columns}"
         
         # DATA TYPE VALIDATION
-        # Check data column is datetime
-        if not pd.api.types.is_datetime64_any_dtype(df_estimativas['data']):
+        # Check schedule_day column is datetime
+        if not pd.api.types.is_datetime64_any_dtype(df_estimativas['schedule_day']):
             # Try to convert
             try:
-                df_estimativas['data'] = pd.to_datetime(df_estimativas['data'])
+                df_estimativas['schedule_day'] = pd.to_datetime(df_estimativas['schedule_day'])
             except:
-                return False, "df_estimativas['data'] column is not datetime type and cannot be converted"
+                return False, "df_estimativas['schedule_day'] column is not datetime type and cannot be converted"
         
         # Check numeric columns
         numeric_columns = ['min_turno', 'max_turno', 'media_turno', 'sd_turno']
@@ -221,8 +221,8 @@ def validate_df_estimativas_structure(df_estimativas: pd.DataFrame, start_date: 
                 start_dt = pd.to_datetime(start_date)
                 end_dt = pd.to_datetime(end_date)
                 
-                min_date = df_estimativas['data'].min()
-                max_date = df_estimativas['data'].max()
+                min_date = df_estimativas['schedule_day'].min()
+                max_date = df_estimativas['schedule_day'].max()
                 
                 if min_date > start_dt:
                     logger.warning(f"df_estimativas min date ({min_date}) is after start_date ({start_dt})")
@@ -234,7 +234,7 @@ def validate_df_estimativas_structure(df_estimativas: pd.DataFrame, start_date: 
                 logger.warning(f"Could not validate date range: {e}")
         
         # SHIFT COVERAGE CHECK
-        unique_dates = df_estimativas['data'].nunique()
+        unique_dates = df_estimativas['schedule_day'].nunique()
         expected_rows = unique_dates * 2  # Should have M and T for each date
         actual_rows = len(df_estimativas)
         
@@ -383,6 +383,6 @@ def validate_all_core_dataframes(
     if not valid:
         return False, f"df_colaborador validation failed: {error}"
     
-    logger.info("All core dataframes validation passed ")
+    logger.info("All core dataframes validation passed")
     return True, ""
 

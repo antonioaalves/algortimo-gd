@@ -26,7 +26,9 @@
         "df_days_off": "queryGetDaysOff.sql",
         "df_contratos": "queryGetCoreProEmpContract.sql",
         "df_core_pro_emp_horario_det": "queryGetCoreProEmpHorarioDet.sql",
-        "df_ciclos_completos_folgas_ciclos": "queryGetCiclosCompletosFolgasCiclos.sql"
+        "df_ciclos_completos_folgas_ciclos": "queryGetCiclosCompletosFolgasCiclos.sql",
+        "df_eci_section_employees": "queryGetEciSectionEmployees.sql",
+        "df_eci_sibling_section": "queryGetEciSiblingSectionId.sql"
     },
     "available_entities_raw": {
         "df_calendario": "",

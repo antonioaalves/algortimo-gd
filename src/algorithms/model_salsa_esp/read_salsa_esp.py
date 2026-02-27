@@ -77,7 +77,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
         required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno', 'carga_diaria']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
-        required_estimativas_cols = ['data', 'turno', 'media_turno', 'max_turno', 'min_turno', 'pess_obj', 'sd_turno', 'fk_tipo_posto', 'wday' ]
+        required_estimativas_cols = ['schedule_day', 'turno', 'media_turno', 'max_turno', 'min_turno', 'pess_obj', 'sd_turno', 'fk_tipo_posto', 'wday' ]
         required_estimativas_cols = [s.lower() for s in required_estimativas_cols]
         
         missing_colab_cols = [col for col in required_colaborador_cols if col not in matriz_colaborador_gd.columns]
@@ -142,7 +142,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
         # Convert data column to datetime
         try:
             matriz_calendario_gd['data'] = pd.to_datetime(matriz_calendario_gd['data'])
-            matriz_estimativas_gd['data'] = pd.to_datetime(matriz_estimativas_gd['data'])
+            matriz_estimativas_gd['schedule_day'] = pd.to_datetime(matriz_estimativas_gd['schedule_day'])
         except Exception as e:
             raise ValueError(f"Error converting data column to datetime: {e}")
         
@@ -748,7 +748,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 # Process pess_obj for working_shift
                 for s in working_shift:
 
-                    day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == s)]
+                    day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['schedule_day'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
                         pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
@@ -757,7 +757,7 @@ def read_data_salsa_esp(medium_dataframes: Dict[str, pd.DataFrame], algorithm_tr
                 
                 # Process min/max workers for all shifts
                 for shift_type in shifts:
-                    day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['data'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == shift_type)]
+                    day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['schedule_day'].dt.dayofyear == d) & (matriz_estimativas_gd['turno'] == shift_type)]
                     if not day_shift_data.empty:
                                     # Convert floats to integers for OR-Tools compatibility
                                     min_workers[(d, shift_type)] = int(round(day_shift_data['min_turno'].values[0]) * 8)

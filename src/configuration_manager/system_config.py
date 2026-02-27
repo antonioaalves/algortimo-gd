@@ -129,6 +129,16 @@ class SystemConfig:
                 raise ValueError(f"{field} must be a non-empty string")
         
         self.logger.info("System configuration validation passed")
+
+    @property
+    def granularity(self) -> int:
+        """
+        Time-slot granularity in minutes (e.g., 10 or 15).
+        
+        Returns:
+            int: Granularity in minutes, falling back to 15 if unset.
+        """
+        return int(self._config_data.get("granularity", 15))
     
     def get_log_level(self) -> str:
         """
