@@ -280,17 +280,26 @@ def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, tota
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol)
             elif w in total_worked_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
+            else:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+
     elif total_worked_holidays_everyone is not None:
         for w in workers:
             if w in total_worked_holidays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol)
+            else:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+
     elif total_worked_sundays_everyone is not None:
         for w in workers:
             if w in total_worked_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
+            else:
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+
     else:
         for w in workers:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+            model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
