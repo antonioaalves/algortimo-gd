@@ -232,11 +232,10 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
             
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days, period):
+def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days, period, shift, w):
     compensation_days = []
     weeks_added = 0
     current_week = special_day_week
-
     while weeks_added < week_compensation_limit and current_week < len(week_to_days):
         current_week += 1
 
@@ -244,7 +243,7 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
 
         all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
 
-        available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1]}
+        available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1] and (w, d, 'LD') in shift}
         if sorted(week_days)[0] >= period[1]:
             if compensation_days:
                 break

@@ -351,7 +351,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         work_days_per_week = {}
         week_compensation_limit = {}
 
-        for w in workers:
+        for w in workers_complete:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             
             if worker_data.empty:
@@ -398,6 +398,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         shift_T = {}
         fixed_compensation_days = {}
         locked_days = {}
+        forced_work_days = {}
        
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -440,6 +441,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 shift_T[w] = []
                 fixed_compensation_days[w] = []
                 locked_days[w] = []
+                forced_work_days[w] = []
 
                 continue
             
@@ -453,8 +455,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
-            shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
-            shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist()
+            shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL')]['index'].tolist()
+            shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL')]['index'].tolist()
+            forced_work_days[w] = worker_calendar[(worker_calendar['horario'] == 'NL')]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
@@ -722,7 +725,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             logger.info(f"  - min_workers: {len(min_workers)/2} entries")
             logger.info(f"  - max_workers: {len(max_workers)/2} entries")
 
-            logger.info(f"allocated_employees_count Column: {h_plus}")
+            #logger.info(f"allocated_employees_count Column: {h_plus}")
         # =================================================================
         # 12. DEFINITION OF ALGORITHM COUNTRY 
         # =================================================================
@@ -796,6 +799,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "locked_days": locked_days,
             "h_plus": h_plus,
             "eci_sibling_results_flag": eci_sibling_results_flag,
+            "forced_work_days": forced_work_days,
             }
         
     except Exception as e:
