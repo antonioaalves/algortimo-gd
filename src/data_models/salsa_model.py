@@ -25,11 +25,15 @@ from src.data_models.functions.helper_functions import (
     get_employees_id_90_list,
     get_matriculas_for_employee_id,
     get_employee_id_matriculas_map_dict,
+    get_df_estrutura_wfm_info,
     create_employee_query_string,
     count_holidays_in_period,
     count_sundays_in_period,
     count_open_holidays,
-    convert_fields_to_int
+    convert_fields_to_int,
+    is_eci_unit,
+    get_sibling_section_name,
+    treat_df_faixa_secao_to_long,
 )
 from src.data_models.functions.data_treatment_functions import (
     separate_df_ciclos_completos_folgas_ciclos,
@@ -88,6 +92,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_df_folgas_ciclos,
     validate_valid_emp_info,
     validate_num_sundays_year,
+    validate_df_estrutura_wfm,
 )
 from src.data_models.validations.func_inicializa_validations import (
     validate_df_calendario_structure,
@@ -295,6 +300,86 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error("Invalid valid_emp info")
                 return False, "errSubproc", "Invalid valid_emp info"
 
+            # df_estrutura_wfm query and get info to store it in 
+            try:
+                df_estrutura_wfm = data_manager.load_data(
+                    entity='df_estrutura_wfm',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_estrutura_wfm'],
+                    secao_id=secao_id
+                )
+                self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
+            except Exception as e:
+                self.logger.error("")
+                return False, "", ""
+
+            if not validate_df_estrutura_wfm(df_estrutura_wfm):
+                self.logger.error("")
+                return False, "", ""
+
+            nome_pais = get_df_estrutura_wfm_info(df_estrutura_wfm)
+
+            # ECI Unit Detection: check if this is an ECI unit and load sibling section data
+            eci_flag = is_eci_unit(df_estrutura_wfm)
+            df_eci_section_results = pd.DataFrame()  # Empty by default (non-ECI path)
+            eci_sibling_results_flag = False  # Set True only when ECI sibling section has results (see below)
+
+            if eci_flag:
+                nome_secao = str(df_estrutura_wfm['nome_secao'].iloc[0])
+                sibling_section_name = get_sibling_section_name(nome_secao)
+                self.logger.info(f"ECI unit detected. Current section: '{nome_secao}', sibling section keyword: '{sibling_section_name}'")
+
+                if sibling_section_name:
+                    try:
+                        # Step 1: Resolve sibling section ID
+                        df_sibling_section = data_manager.load_data(
+                            entity='df_eci_sibling_section',
+                            query_file=self.config_manager.paths.sql_auxiliary_paths['df_eci_sibling_section'],
+                            unit_id="'" + str(unit_id) + "'",
+                            sibling_section_name="'" + sibling_section_name + "'"
+                        )
+                        self.logger.info(f"df_sibling_section shape (rows {df_sibling_section.shape[0]}, columns {df_sibling_section.shape[1]}): {df_sibling_section.columns.tolist()}")
+
+                        if not df_sibling_section.empty:
+                            sibling_secao_id = df_sibling_section['fk_secao'].iloc[0]
+                            self.logger.info(f"Sibling section resolved: secao_id={sibling_secao_id}, nome='{df_sibling_section['nome_secao'].iloc[0]}'")
+
+                            # Step 2: Load sibling section employees from view
+                            df_eci_employees = data_manager.load_data(
+                                entity='df_eci_section_employees',
+                                query_file=self.config_manager.paths.sql_auxiliary_paths['df_eci_section_employees'],
+                                secao_id="'" + str(sibling_secao_id) + "'"
+                            )
+                            self.logger.info(f"df_eci_employees shape (rows {df_eci_employees.shape[0]}, columns {df_eci_employees.shape[1]}): {df_eci_employees.columns.tolist()}")
+                            
+                            # Flag if we have results from the sibling section
+                            eci_sibling_results_flag = True if not df_eci_employees.empty or len(df_eci_employees) > 0 else False    
+
+                            if not df_eci_employees.empty:
+                                # Step 3: Load sibling section schedule results using queryGetCoreSchedule
+                                eci_employee_ids = df_eci_employees['employee_id'].tolist()
+                                start_date_temp = self.external_call_data.get('start_date', '')
+                                end_date_temp = self.external_call_data.get('end_date', '')
+                                
+                                df_eci_section_results = data_manager.load_data(
+                                    entity='df_eci_section_results',
+                                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_calendario_passado'],
+                                    start_date=start_date_temp,
+                                    end_date=end_date_temp,
+                                    colabs=create_employee_query_string(eci_employee_ids)
+                                )
+                                self.logger.info(f"df_eci_section_results shape (rows {df_eci_section_results.shape[0]}, columns {df_eci_section_results.shape[1]}): {df_eci_section_results.columns.tolist()}")
+                            else:
+                                self.logger.info("No employees found in sibling ECI section - proceeding with empty df_eci_section_results")
+                        else:
+                            self.logger.warning(f"Could not find sibling section for unit_id={unit_id} with name containing '{sibling_section_name}'")
+                    except Exception as e:
+                        self.logger.warning(f"Error loading ECI sibling section data: {e}. Proceeding with empty df_eci_section_results")
+                        df_eci_section_results = pd.DataFrame()
+                else:
+                    self.logger.warning(f"Could not determine sibling section for '{nome_secao}' - proceeding with empty df_eci_section_results")
+            else:
+                self.logger.info("Non-ECI unit detected - skipping sibling section data loading")
+
             # Get start and end date
             start_date = self.external_call_data.get('start_date', '')
             end_date = self.external_call_data.get('end_date', '')
@@ -436,6 +521,24 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Feriados treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
 
+            try:
+                self.logger.info("Adding date-related columns to df_feriados (WDAY, WW, WD)")
+                success, df_feriados, error_msg = add_date_related_columns(
+                    df=df_feriados,
+                    date_col='schedule_day',
+                    add_id_col=False,
+                    use_case=1,
+                    main_year=main_year,
+                    first_date=first_day_passado,
+                    last_date=last_day_passado
+                )
+                if not success:
+                    self.logger.error(f"Failed to add date-related columns: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error adding date-related columns: {e}", exc_info=True)
+                return False            
+
             if not validate_df_feriados(df_feriados):
                 self.logger.error(f"df_feriados is invalid: {df_feriados}")
                 return False, "errSubproc", "df_feriados is invalid"
@@ -476,6 +579,34 @@ class SalsaDataModel(BaseDescansosDataModel):
             if df_closed_days.empty:
                 self.logger.info(f"No closed days found in the specified date range - proceeding with empty DataFrame")
                 # Empty df_closed_days is valid - it means no closed days in the period
+
+            # Load df_faixa_secao (wide from queryGetEscFaixaHorario), transform to long, for use as fallback in get_df_faixa_horario
+            try:
+                self.logger.info("Loading df_faixa_secao from data manager (queryGetEscFaixaHorario)")
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
+                if query_path:
+                    start_date_quoted = "'" + first_day_passado + "'"
+                    end_date_quoted = "'" + last_day_passado + "'"
+                    df_faixa_secao_wide = data_manager.load_data(
+                        'df_faixa_secao',
+                        query_file=query_path,
+                        secao_id=secao_id,
+                        start_date=start_date_quoted,
+                        end_date=end_date_quoted,
+                    )
+                    self.logger.info(f"df_faixa_secao (wide) shape: {df_faixa_secao_wide.shape[0]} rows, {df_faixa_secao_wide.shape[1]} cols")
+                    success, df_faixa_secao, error_msg = treat_df_faixa_secao_to_long(df_faixa_secao_wide)
+                    if success:
+                        self.logger.info(f"df_faixa_secao (long) shape: {df_faixa_secao.shape[0]} rows")
+                    else:
+                        self.logger.warning(f"treat_df_faixa_secao_to_long failed: {error_msg}; df_faixa_secao will be empty")
+                        df_faixa_secao = pd.DataFrame()
+                else:
+                    self.logger.warning("df_faixa_horario query path not found; df_faixa_secao will be empty")
+                    df_faixa_secao = pd.DataFrame()
+            except Exception as e:
+                self.logger.warning(f"Error loading or treating df_faixa_secao: {e}; proceeding with empty df_faixa_secao", exc_info=True)
+                df_faixa_secao = pd.DataFrame()
 
             # Load global parameters - Very important!! This could be done with params_lq query most probably
             try:
@@ -524,10 +655,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
+                self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
                 self.auxiliary_data['df_params'] = df_params.copy()
                 self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_closed_days'] = df_closed_days.copy()
+                self.auxiliary_data['df_faixa_secao'] = df_faixa_secao.copy()
                 self.auxiliary_data['df_mpd_valid_employees'] = df_mpd_valid_employees.copy()
                 self.auxiliary_data['df_fk_colaborador_matricula'] = df_fk_colaborador_matricula.copy()
                 self.auxiliary_data['unit_id'] = unit_id 
@@ -543,6 +676,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['employees_id_by_posto_dict'] = employees_id_by_posto_dict
                 self.auxiliary_data['employee_id_matriculas_map'] = employee_id_matriculas_map.copy()
                 self.auxiliary_data['case_type'] = case_type
+                self.auxiliary_data['is_eci_unit'] = eci_flag
+                self.auxiliary_data['df_eci_section_results'] = df_eci_section_results.copy()
                 self.auxiliary_data['num_sundays_year'] = num_sundays_year
                 self.auxiliary_data['num_feriados_abertos'] = num_feriados_abertos
                 self.auxiliary_data['num_feriados_fechados'] = num_feriados_fechados
@@ -551,6 +686,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
                 self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
                 self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
+                self.algorithm_treatment_params['nome_pais'] = nome_pais
+                self.algorithm_treatment_params['eci_flag'] = eci_flag
+                self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
@@ -624,6 +762,13 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 if param_name == 'NUM_DIAS_CONS':
                     algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
+
+                if param_name == 'ld_sunday_param':
+                    algorithm_treatment_params['ld_sunday_param'] = float(param_value)
+
+                if param_name == 'ld_holiday_param':
+                    algorithm_treatment_params['ld_holiday_param'] = float(param_value)
+                    
 
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
@@ -1152,6 +1297,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Strings
                 start_date = self.external_call_data['start_date']
                 end_date = self.external_call_data['end_date']
+                first_date_passado = self.auxiliary_data['first_date_passado']
+                last_date_passado = self.auxiliary_data['last_date_passado']
                 main_year = self.auxiliary_data['main_year']
                 # Dataframe
                 df_calendario_passado = self.auxiliary_data['df_calendario_passado'].copy()
@@ -1189,7 +1336,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                     date_col='schedule_day',
                     add_id_col=True,
                     use_case=0,
-                    main_year=main_year
+                    main_year=main_year,
+                    first_date=first_date_passado,
+                    last_date=last_date_passado
                 )
                 if not success:
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
@@ -1224,7 +1373,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # Add df_core_pro_emp_horario_det to df_calendario
+                # Add df_folgas_ciclos to df_calendario
                 success, df_calendario, error_msg = add_folgas_ciclos(df_calendario, df_folgas_ciclos)
                 if not success:
                     self.logger.error(f"Adding folgas ciclos failed: {error_msg}")
@@ -1339,6 +1488,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # External call data
                 start_date_str = self.external_call_data['start_date']
                 end_date_str = self.external_call_data['end_date']
+
+                ld_sunday_param = self.auxiliary_data['ld_sunday_param']
+                ld_holiday_param = self.auxiliary_data['ld_holiday_param']
             except KeyError as e:
                 self.logger.error(f"Missing required parameter in colaborador_transformations: {e}", exc_info=True)
                 return False, "", ""
@@ -1409,7 +1561,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_colaborador, error_msg = add_l_d_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     convenio_bd=convenio_bd,
-                    use_case=0
+                    use_case=0,
+                    ld_sunday_param=ld_sunday_param,
+                    ld_holiday_param=ld_holiday_param,
                 )
                 if not success:
                     self.logger.error(f"Adding l_d failed: {error_msg}")
@@ -1449,7 +1603,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     convenio_bd=convenio_bd,
                     num_sundays=num_sundays_year,
                     num_fer_dom=num_sundays_year,
-                    use_case=1
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Adding l_total failed: {error_msg}")
@@ -1510,6 +1664,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Load df_contratos for merging (needed for Step 3I)
                 df_contratos = self.auxiliary_data['df_contratos'].copy()
 
+                # Load ECI sibling section results (empty df if non-ECI)
+                df_eci_section_results = self.auxiliary_data.get('df_eci_section_results', pd.DataFrame()).copy()
+
                 main_year = self.auxiliary_data['main_year']
                 start_date = self.external_call_data.get('start_date')
                 end_date = self.external_call_data.get('end_date')
@@ -1535,7 +1692,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Core dataframes validation failed: {error_msg}")
                     return False, "errValidation", error_msg
                     
-                self.logger.info("Core dataframes validation passed ✓")
+                self.logger.info("Core dataframes validation passed ")
             except Exception as e:
                 self.logger.error(f"Error validating core dataframes: {e}", exc_info=True)
                 return False, "errValidation", str(e)
@@ -1575,18 +1732,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to adjust HORARIO for admission dates: {error_msg}")
                 return False, "errSubproc", error_msg
 
-            # Calculate +H and merge with estimativas (Step 6B/C/D - cross-dataframe operation)
-            # TODO: Change this, param_pessoas_objetivo is not here!!!
+            # Calculate pess_obj, merge ECI allocated employees, and compute diff
             param_pess_obj = self.external_call_data.get('param_pessoas_objetivo', 0.5)
             success, df_estimativas, error_msg = calculate_and_merge_allocated_employees(
                 df_estimativas=df_estimativas,
-                df_calendario=df_calendario,
-                date_col_est='data',
-                date_col_cal='schedule_day',
+                df_eci_section_results=df_eci_section_results,
+                date_col_est='schedule_day',
                 shift_col_est='turno',
-                shift_col_cal='tipo_turno',
-                employee_col='employee_id',
-                horario_col='horario',
                 param_pess_obj=param_pess_obj
             )
             if not success:

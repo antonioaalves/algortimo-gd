@@ -78,7 +78,7 @@ def validate_employee_consistency(df_calendario: pd.DataFrame, df_colaborador: p
         print(f"  INFO: df_calendario has additional employees (expected in single-employee mode): {extra_in_cal}")
     
     if not errors:
-        print(f"  ✓ PASSED: All colaborador employees have calendario entries")
+        print(f"   PASSED: All colaborador employees have calendario entries")
     else:
         for e in errors:
             print(f"  ✗ FAILED: {e}")
@@ -106,7 +106,7 @@ def validate_rows_per_employee(df_calendario: pd.DataFrame) -> Tuple[bool, List[
         errors.append(f"Inconsistent row counts across employees: {rows_per_emp.to_dict()}")
         print(f"  ✗ FAILED: Different employees have different row counts")
     else:
-        print(f"  ✓ PASSED: All employees have {unique_counts[0]} rows")
+        print(f"   PASSED: All employees have {unique_counts[0]} rows")
     
     return len(errors) == 0, errors
 
@@ -149,7 +149,7 @@ def validate_horario_distribution(df_calendario: pd.DataFrame) -> Tuple[bool, Li
         errors.append(f"Warning: {unassigned_pct:.1f}% of rows are unassigned (-). Calendario layers may not be applied.")
         print(f"  ⚠ WARNING: Very high unassigned percentage ({unassigned_pct:.1f}%)")
     else:
-        print(f"  ✓ PASSED: Horario distribution looks reasonable")
+        print(f"   PASSED: Horario distribution looks reasonable")
     
     return len(errors) == 0, errors
 
@@ -179,12 +179,12 @@ def validate_dia_tipo_distribution(df_calendario: pd.DataFrame) -> Tuple[bool, L
     has_holidays = any('fer' in str(v).lower() for v in dia_tipo_counts.index)
     
     if has_sundays:
-        print(f"  ✓ Sunday markers present")
+        print(f"   Sunday markers present")
     else:
         print(f"  ⚠ No Sunday markers found (domYf/domNf)")
     
     if has_holidays:
-        print(f"  ✓ Holiday markers present")
+        print(f"   Holiday markers present")
     else:
         print(f"  INFO: No holiday markers found (ferYf/ferNf) - may be expected if no holidays in range")
     
@@ -228,11 +228,11 @@ def validate_calendario_layers_applied(df_calendario: pd.DataFrame, df_colaborad
                 emp_cal = df_calendario[df_calendario['employee_id'] == emp_id]
                 has_shifts = emp_cal['horario'].isin(['M', 'T', 'MoT']).any()
                 if has_shifts:
-                    print(f"    ✓ Employee {emp_id} has shift markers from ciclo")
+                    print(f"     Employee {emp_id} has shift markers from ciclo")
                 else:
                     print(f"    ⚠ Employee {emp_id} has ciclo='Completo' but no shift markers")
     
-    print(f"\n  ✓ Layer validation complete (review above for details)")
+    print(f"\n   Layer validation complete (review above for details)")
     return True, errors
 
 
@@ -250,7 +250,7 @@ def validate_date_range(df_calendario: pd.DataFrame) -> Tuple[bool, List[str]]:
     print(f"{'='*60}")
     print(f"  Date range: {min_date.date()} to {max_date.date()}")
     print(f"  Unique dates: {unique_dates}")
-    print(f"  ✓ Date range validation complete")
+    print(f"   Date range validation complete")
     
     return True, errors
 
@@ -298,11 +298,11 @@ def run_all_validations(process_id: int, posto_id: int) -> bool:
     print("VALIDATION SUMMARY")
     print(f"{'='*60}")
     for name, (passed, errors) in results.items():
-        status = "✓ PASSED" if passed else "✗ FAILED"
+        status = " PASSED" if passed else "✗ FAILED"
         print(f"  {status}: {name}")
     
     if all_passed:
-        print(f"\n✓ ALL VALIDATIONS PASSED")
+        print(f"\n ALL VALIDATIONS PASSED")
     else:
         print(f"\n✗ SOME VALIDATIONS FAILED - Review above for details")
     

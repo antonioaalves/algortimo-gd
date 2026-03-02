@@ -1619,7 +1619,7 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
     Args:
         df: pd.DataFrame, dataframe with parameters
         posto_id: int, posto ID
-        unit_id: int, unit ID  
+        unit_id: int or str, unit ID  
         secao_id: int, section ID
         params_names_list: list, list of parameter names to retrieve
     Returns:
@@ -1662,11 +1662,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
         logger.info(f"DEBUG: Rows matching section condition:\n {matching_section}")
     
     # 3. Unit-specific: fk_tipo_posto is null AND fk_secao is null AND fk_unidade = unit_id
-    if unit_id is not None:
+    if unit_id is not None and str(unit_id).strip():
         unit_condition = (
             (df_filtered['fk_tipo_posto'].isna()) & 
             (df_filtered['fk_secao'].isna()) & 
-            (df_filtered['fk_unidade'] == unit_id)
+            (df_filtered['fk_unidade'].astype(str) == str(unit_id).strip())
         )
         conditions.append(unit_condition)
         logger.info(f"DEBUG: Added unit condition for unit_id={unit_id}")
@@ -1723,11 +1723,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
                     continue
         
         # Priority 3: Unit-specific (fk_tipo_posto and fk_secao are null, fk_unidade matches)
-        if unit_id is not None:
+        if unit_id is not None and str(unit_id).strip():
             unit_specific = param_rows[
                 (param_rows['fk_tipo_posto'].isna()) & 
                 (param_rows['fk_secao'].isna()) & 
-                (param_rows['fk_unidade'] == unit_id)
+                (param_rows['fk_unidade'].astype(str) == str(unit_id).strip())
             ]
             if not unit_specific.empty:
                 value = get_value_from_row(unit_specific.iloc[0])

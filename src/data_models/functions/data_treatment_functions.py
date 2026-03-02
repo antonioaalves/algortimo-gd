@@ -40,10 +40,11 @@ from src.configuration_manager.instance import get_config
 from src.data_models.functions.helper_functions import (
     convert_types_in,
     convert_ciclos_to_horario,
-    adjusted_isoweek, 
-    get_monday_of_previous_week, 
+    adjusted_isoweek,
+    get_monday_of_previous_week,
     get_sunday_of_next_week,
     get_week_pattern,
+    get_granularity_minutes,
 )
 
 # Get configuration singleton
@@ -801,6 +802,14 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
         except Exception as e:
             logger.warning(f"Column renaming failed: {e}")
             # Continue with original column names
+
+        try:
+            # Check each column separately (a list is never "in" df.columns)
+            if 'data_admissao' not in df_colaborador.columns or 'data_demissao' not in df_colaborador.columns:
+                df_colaborador['data_admissao'] = '2000-01-01'
+                df_colaborador['data_demissao'] = '2049-12-31'
+        except Exception as e:
+            logger.error("Error creating empty data_admissao e data_demissao: %s", e)
         
         # Convert data types logic
         try:
@@ -812,8 +821,8 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
             df_colaborador['c3d'] = pd.to_numeric(df_colaborador['c3d'], errors='coerce')
             df_colaborador['cxx'] = pd.to_numeric(df_colaborador['cxx'], errors='coerce')
             df_colaborador['lqs'] = pd.to_numeric(df_colaborador['lqs'], errors='coerce')
-            df_colaborador['data_admissao'] = pd.to_datetime(df_colaborador['data_admissao'], errors='coerce')
-            df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce')
+            df_colaborador['data_admissao'] = pd.to_datetime(df_colaborador['data_admissao'], errors='coerce', format="%Y-%m-%d")
+            df_colaborador['data_demissao'] = pd.to_datetime(df_colaborador['data_demissao'], errors='coerce', format="%Y-%m-%d")
             df_colaborador['seq_turno'] = df_colaborador['seq_turno'].fillna('').astype(str)
             df_colaborador['ciclo'] = df_colaborador['ciclo'].fillna('').astype(str)
             
@@ -944,6 +953,72 @@ def treat_df_contratos(df_contratos: pd.DataFrame) -> Tuple[bool, pd.DataFrame, 
         
     except Exception as e:
         logger.error(f"Error in treat_df_contratos: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+def treat_df_orcamento(df_orcamento: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Treat df_orcamento dataframe by combining schedule_day date with hora_ini time.
+    
+    The hora_ini column comes with a dummy date (2000-01-01 HH:MM:SS). This function
+    replaces the dummy date with the actual date from schedule_day, applying the
+    day offset for times after midnight.
+    
+    Example:
+        - schedule_day=2025-07-28, hora_ini=2000-01-01 08:00:00 → 2025-07-28 08:00:00
+        - schedule_day=2025-07-28, hora_ini=2000-01-02 00:15:00 → 2025-07-29 00:15:00
+    
+    Args:
+        df_orcamento: Budget/forecast data with columns:
+            - schedule_day: the business date (e.g., 2025-07-28)
+            - hora_ini: time slot with dummy date (e.g., 2000-01-01 07:30:00)
+            - pessoas_final: staffing estimate per 15-min slot
+    
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, treated_df, error_message)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_orcamento is None or df_orcamento.empty:
+            return False, pd.DataFrame(), "df_orcamento is empty or None"
+        
+        required_cols = ['schedule_day', 'hora_ini', 'pessoas_final']
+        missing_cols = [col for col in required_cols if col not in df_orcamento.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_orcamento missing required columns: {missing_cols}"
+        
+        df = df_orcamento.copy()
+        
+        # TYPE CONVERSIONS
+        df['schedule_day'] = pd.to_datetime(df['schedule_day']).dt.normalize()
+        hora_ini_dt = pd.to_datetime(df['hora_ini'])
+        
+        # Calculate day offset from reference date (2000-01-01)
+        # If hora_ini is 2000-01-02, days_offset = 1 (crossed midnight)
+        reference_date = pd.Timestamp('2000-01-01')
+        days_offset = (hora_ini_dt.dt.normalize() - reference_date).dt.days
+        
+        # Combine schedule_day + days_offset + time component from hora_ini
+        df['hora_ini'] = (
+            df['schedule_day'] + 
+            pd.to_timedelta(days_offset, unit='D') +
+            pd.to_timedelta(
+                hora_ini_dt.dt.hour * 3600 + 
+                hora_ini_dt.dt.minute * 60 + 
+                hora_ini_dt.dt.second, 
+                unit='s'
+            )
+        )
+        
+        # ENSURE NUMERIC TYPES
+        df['pessoas_final'] = pd.to_numeric(df['pessoas_final'], errors='coerce').fillna(0)
+        
+        logger.info(f"treat_df_orcamento: Treated {len(df)} rows")
+        logger.info(f"treat_df_orcamento: Date range: {df['schedule_day'].min()} to {df['schedule_day'].max()}")
+        
+        return True, df, ""
+        
+    except Exception as e:
+        logger.error(f"Error treating df_orcamento: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), str(e)
 
 def add_lqs_to_df_colaborador(df_colaborador: pd.DataFrame, df_params_lq: pd.DataFrame, use_case: int) -> Tuple[bool, pd.DataFrame, str]:
@@ -1641,7 +1716,9 @@ def contract_adjustments_to_df_colaborador(df_colaborador: pd.DataFrame,
 def add_l_d_to_df_colaborador(
     df_colaborador: pd.DataFrame,
     convenio_bd: str,
-    use_case: int = 0,  
+    use_case: int = 0,
+    ld_sunday_param: float = 0,
+    ld_holiday_param: float = 0,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Calculate and assign daily rest quota (l_d/ld) for employees.
@@ -1682,6 +1759,8 @@ def add_l_d_to_df_colaborador(
 
         if use_case == 0:
             df_result['ld'] = 0
+            df_result['ld_sunday_param'] = ld_sunday_param
+            df_result['ld_holiday_param'] = ld_holiday_param
 
         elif use_case == 1:
             # First mask
@@ -2316,6 +2395,7 @@ def create_df_calendario(
         # Add empty columns
         df_calendario['horario'] = ''
         df_calendario['dia_tipo'] = ''
+        df_calendario['fixed'] = False
 
         # Flag closed holidays (tipo_feriado == 'F') upfront so later steps preserve them
         try:
@@ -2336,7 +2416,7 @@ def create_df_calendario(
             logger.warning(f"Failed to pre-fill closed holidays in df_calendario: {e}")
         
         # Reorder columns
-        column_order = ['employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo', 'matricula']
+        column_order = ['employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo', 'matricula', 'fixed']
         df_calendario = df_calendario[column_order]
         
         # Sort by employee_id, date, and shift type for consistent ordering
@@ -2607,6 +2687,7 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
             
             # Vectorized assignment
             df_result.loc[fill_mask, 'horario'] = mapped_values[fill_mask]
+            df_result.loc[fill_mask, 'fixed'] = True
             
             filled_count = fill_mask.sum()
             
@@ -3147,7 +3228,7 @@ def adjust_estimativas_special_days(df_estimativas: pd.DataFrame, special_days_l
         if df_estimativas.empty:
             return False, pd.DataFrame(), "Input validation failed: empty df_estimativas"
         
-        required_cols = ['data', 'turno', 'min_turno', 'max_turno']
+        required_cols = ['schedule_day', 'turno', 'min_turno', 'max_turno']
         missing_cols = [col for col in required_cols if col not in df_estimativas.columns]
         if missing_cols:
             return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
@@ -3161,12 +3242,12 @@ def adjust_estimativas_special_days(df_estimativas: pd.DataFrame, special_days_l
             # TREATMENT LOGIC
             df_estimativas_adjusted = df_estimativas.copy()
             
-            # If no special_days_list provided, create default list based on year from data
+            # If no special_days_list provided, create default list based on year from schedule_day
             # TODO: Remove this when special dates added to settings
             if special_days_list is None or len(special_days_list) == 0:
                 try:
                     # Get year from the minimum date in df_estimativas
-                    ano = pd.to_datetime(df_estimativas_adjusted['data'].min()).year
+                    ano = pd.to_datetime(df_estimativas_adjusted['schedule_day'].min()).year
                     logger.info(f"Using year {ano} from df_estimativas for special dates")
                     
                     # Define special dates (Christmas and New Year season)
@@ -3195,14 +3276,14 @@ def adjust_estimativas_special_days(df_estimativas: pd.DataFrame, special_days_l
             
             # Adjust min_turno = max_turno for all special dates (both M and T shifts)
             if len(special_dates) > 0:
-                mask_special = df_estimativas_adjusted['data'].isin(special_dates)
+                mask_special = df_estimativas_adjusted['schedule_day'].isin(special_dates)
                 df_estimativas_adjusted.loc[mask_special, 'min_turno'] = df_estimativas_adjusted.loc[mask_special, 'max_turno']
                 logger.info(f"Adjusted {mask_special.sum()} rows for special dates: {special_dates}")
             
             # Adjust min_turno = max_turno for Friday morning shifts only
             if len(friday_dates) > 0:
                 mask_friday = (
-                    (df_estimativas_adjusted['data'].isin(friday_dates)) & 
+                    (df_estimativas_adjusted['schedule_day'].isin(friday_dates)) & 
                     (df_estimativas_adjusted['turno'] == 'M')
                 )
                 df_estimativas_adjusted.loc[mask_friday, 'min_turno'] = df_estimativas_adjusted.loc[mask_friday, 'max_turno']
@@ -3519,11 +3600,11 @@ def process_special_shift_types(df_calendario: pd.DataFrame, shift_type: str, em
         return False, pd.DataFrame(), error_msg
 
 
-def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None) -> Tuple[bool, pd.DataFrame, str]:
+def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None, first_date: str = None, last_date: str = None) -> Tuple[bool, pd.DataFrame, str]:
     """
     Add date-related columns to dataframe (index, WDAY, WW, WD).
     
-    Agnostic function that works for both df_calendario and df_estimativas.
+    Agnostic function that works for df_calendario, df_estimativas and df_feriados.
     
     Args:
         df: Input dataframe with date column
@@ -3531,6 +3612,8 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         add_id_col: Whether to add index column (row index) - usually only for calendario
         use_case: Processing mode (0=dynamic indexing, 1=fixed indexing for calendario)
         main_year: Main year for fixed indexing (required when use_case=1)
+        first_date: Reference start date for consistent indexing (use_case=0)
+        last_date: Reference end date for consistent indexing (use_case=0)
         
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, dataframe with new columns, error message)
@@ -3538,6 +3621,8 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
     Note:
         The 'index' column assigns sequential IDs (1, 2, 3, ...) to each unique date
         in chronological order, identifying the position of each day in the calendar range.
+        When first_date and last_date are provided, ensures consistent indexing across
+        multiple dataframes (df_calendario, df_estimativas, df_feriados).
     """
     try:
         # INPUT VALIDATION
@@ -3556,9 +3641,24 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         
         # Add index column: sequential ID for each unique date (1, 2, 3, ...)
         if use_case == 0:
-            unique_dates = sorted(df_result[date_col].unique())
-            date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
-            df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
+            if first_date is not None and last_date is not None:
+                # Create mapping from reference date range (for consistent indexing across dataframes)
+                reference_range = pd.date_range(start=first_date, end=last_date, freq='D')
+                date_to_index = {date: idx + 1 for idx, date in enumerate(reference_range)}
+                df_result['index'] = df_result[date_col].map(date_to_index)
+                
+                # Handle dates outside the reference range
+                if df_result['index'].isna().any():
+                    max_index = df_result['index'].max()
+                    if pd.isna(max_index):
+                        max_index = 0
+                    df_result['index'] = df_result['index'].fillna(max_index + 1)
+                df_result['index'] = df_result['index'].astype(int)
+            else:
+                # Original behavior: dynamic indexing from dataframe's own dates
+                unique_dates = sorted(df_result[date_col].unique())
+                date_to_index = {date: idx + 1 for idx, date in enumerate(unique_dates)}
+                df_result['index'] = df_result[date_col].map(date_to_index).astype(int)
         elif use_case == 1:
             # Fixed indexing: 22-12-[year-1] to 04-01-[year+1]
             # This ensures index matches between df_estimativas (01-01 to 31-12) and df_calendario (23-12 to 04-01)
@@ -4150,119 +4250,63 @@ def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborado
         return False, pd.DataFrame(), error_msg
 
 
-def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_calendario: pd.DataFrame, date_col_est: str = 'data', date_col_cal: str = 'DATA', shift_col_est: str = 'turno', shift_col_cal: str = 'TIPO_TURNO', employee_col: str = 'COLABORADOR', horario_col: str = 'HORARIO', param_pess_obj: float = 0.5) -> Tuple[bool, pd.DataFrame, str]:
+def calculate_and_merge_allocated_employees(
+    df_estimativas: pd.DataFrame, 
+    df_eci_section_results: pd.DataFrame,
+    date_col_est: str = 'schedule_day', 
+    shift_col_est: str = 'turno', 
+    param_pess_obj: float = 0.5
+) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Calculate actual employee headcount (+H) for each shift and merge with demand estimates.
+    Calculate staffing objective and merge with ECI sibling section allocated employees.
     
-    Cross-dataframe operation that:
-    1. Counts how many employees work M/T shifts from calendario
-    2. Handles split shifts (0.5 weighting for M+T same day)
-    3. Merges +H with estimativas
-    4. Calculates staffing objective (pess_obj) and diff
+    This function:
+    1. Calculates pess_obj (staffing objective) based on volatility threshold
+    2. Counts allocated employees from the ECI sibling section results (if available)
+    3. Merges allocated_employees_count into df_estimativas (0 when no ECI data)
+    4. Calculates diff = pess_obj - allocated_employees_count
+    
+    For non-ECI units, df_eci_section_results is empty, so allocated_employees_count
+    is 0 everywhere and diff = pess_obj, meaning the algorithm schedules normally.
+    
+    For ECI units, allocated_employees_count reflects the sibling section's headcount,
+    so diff tells the algorithm how many more people this section needs to schedule.
     
     Args:
         df_estimativas: Demand estimates with min/max/mean/sd per shift
-        df_calendario: Calendar with employee schedules
-        date_col_est: Date column in estimativas (default: 'data')
-        date_col_cal: Date column in calendario (default: 'DATA')
+        df_eci_section_results: Schedule results from sibling ECI section (empty df if not ECI).
+            Expected columns: employee_id, schedule_day, type
+        date_col_est: Date column in estimativas (default: 'schedule_day')
         shift_col_est: Shift column in estimativas (default: 'turno')
-        shift_col_cal: Shift column in calendario (default: 'TIPO_TURNO')
-        employee_col: Employee identifier (default: 'COLABORADOR')
-        horario_col: Schedule column (default: 'HORARIO')
         param_pess_obj: Volatility threshold for staffing objective (default: 0.5)
         
     Returns:
-        Tuple[bool, pd.DataFrame, str]: (success, estimativas with +H/pess_obj/diff, error)
+        Tuple[bool, pd.DataFrame, str]: (success, estimativas with pess_obj/allocated_employees_count/diff, error)
     """
     try:
         # INPUT VALIDATION
         if df_estimativas is None or df_estimativas.empty:
             return False, pd.DataFrame(), "Input validation failed: empty df_estimativas"
         
-        if df_calendario is None or df_calendario.empty:
-            return False, pd.DataFrame(), "Input validation failed: empty df_calendario"
-        
         required_cols_est = [date_col_est, shift_col_est, 'max_turno', 'min_turno', 'media_turno', 'sd_turno']
         missing_cols = [col for col in required_cols_est if col not in df_estimativas.columns]
         if missing_cols:
             return False, pd.DataFrame(), f"df_estimativas missing columns: {missing_cols}"
         
-        required_cols_cal = [date_col_cal, shift_col_cal, employee_col, horario_col]
-        missing_cols = [col for col in required_cols_cal if col not in df_calendario.columns]
-        if missing_cols:
-            return False, pd.DataFrame(), f"df_calendario missing columns: {missing_cols}"
-        
         # TREATMENT LOGIC
         df_est_result = df_estimativas.copy()
-        df_cal_work = df_calendario.copy()
         
-        # Step 6B-1: Data type conversions
+        # Data type conversions
         df_est_result['max_turno'] = pd.to_numeric(df_est_result['max_turno'], errors='coerce')
         df_est_result['min_turno'] = pd.to_numeric(df_est_result['min_turno'], errors='coerce')
         df_est_result['sd_turno'] = pd.to_numeric(df_est_result['sd_turno'], errors='coerce')
         df_est_result['media_turno'] = pd.to_numeric(df_est_result['media_turno'], errors='coerce')
         df_est_result[shift_col_est] = df_est_result[shift_col_est].str.upper()
         
-        # Filter out TIPO_DIA metadata rows
-        df_cal_work = df_cal_work[df_cal_work[employee_col] != 'TIPO_DIA'].copy()
-        
-        # Convert dates to datetime for consistency
+        # Convert dates to datetime.date for consistency
         df_est_result[date_col_est] = pd.to_datetime(df_est_result[date_col_est]).dt.date
-        df_cal_work[date_col_cal] = pd.to_datetime(df_cal_work[date_col_cal]).dt.date
         
-        # Step 6B-2 & 6B-3: Calculate +H for M and T shifts (vectorized)
-        # Identify working employees (H or NL in HORARIO)
-        df_cal_work['is_working'] = df_cal_work[horario_col].str.contains('H|NL', case=False, na=False)
-        
-        # Create pivot: for each employee-date, which shifts they work
-        employee_shifts = df_cal_work[df_cal_work['is_working']].groupby(
-            [employee_col, date_col_cal, shift_col_cal]
-        ).size().reset_index(name='count')
-        
-        # Count shifts per employee-date
-        shifts_per_emp_date = employee_shifts.groupby([employee_col, date_col_cal])[shift_col_cal].agg(set).reset_index()
-        shifts_per_emp_date.columns = [employee_col, date_col_cal, 'shifts_worked']
-        
-        # Apply 0.5 weighting for employees working both M and T
-        def calc_shift_weight(shifts, target_shift):
-            if target_shift in shifts:
-                return 0.5 if ('M' in shifts and 'T' in shifts) else 1.0
-            return 0.0
-        
-        # Calculate +H for Morning
-        shifts_per_emp_date['M_weight'] = shifts_per_emp_date['shifts_worked'].apply(
-            lambda shifts: calc_shift_weight(shifts, 'M')
-        )
-        plus_h_m = shifts_per_emp_date.groupby(date_col_cal)['M_weight'].sum().reset_index()
-        plus_h_m.columns = [date_col_cal, '+H']
-        plus_h_m[shift_col_est] = 'M'
-        
-        # Calculate +H for Afternoon
-        shifts_per_emp_date['T_weight'] = shifts_per_emp_date['shifts_worked'].apply(
-            lambda shifts: calc_shift_weight(shifts, 'T')
-        )
-        plus_h_t = shifts_per_emp_date.groupby(date_col_cal)['T_weight'].sum().reset_index()
-        plus_h_t.columns = [date_col_cal, '+H']
-        plus_h_t[shift_col_est] = 'T'
-        
-        # Combine M and T
-        plus_h_combined = pd.concat([plus_h_m, plus_h_t], ignore_index=True)
-        
-        # Step 6C: Merge +H with estimativas
-        df_est_result = df_est_result.merge(
-            plus_h_combined,
-            left_on=[date_col_est, shift_col_est],
-            right_on=[date_col_cal, shift_col_est],
-            how='left'
-        )
-        
-        # Drop duplicate date column if it exists
-        if date_col_cal in df_est_result.columns and date_col_cal != date_col_est:
-            df_est_result = df_est_result.drop(columns=[date_col_cal])
-        
-        df_est_result['+H'] = pd.to_numeric(df_est_result['+H'], errors='coerce').fillna(0)
-        
-        # Step 6D: Calculate staffing objective
+        # Calculate staffing objective (pess_obj)
         # aux = coefficient of variation (sd/mean)
         df_est_result['aux'] = np.where(
             df_est_result['media_turno'] != 0,
@@ -4277,8 +4321,52 @@ def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_cal
             np.round(df_est_result['media_turno'])
         )
         
-        # diff: gap between current staffing and objective
-        df_est_result['diff'] = df_est_result['+H'] - df_est_result['pess_obj']
+        # Drop temporary aux column
+        df_est_result = df_est_result.drop(columns=['aux'], errors='ignore')
+        
+        # Count allocated employees from ECI sibling section
+        if df_eci_section_results is not None and not df_eci_section_results.empty:
+            logger.info(f"Processing ECI sibling section results: {df_eci_section_results.shape[0]} rows")
+            
+            df_eci_work = df_eci_section_results.copy()
+            
+            # Filter out day-off entries: F (Folga/rest) and N (not scheduled)
+            # Remaining entries are working days (T=Trabajo, R=closed holiday worked, etc.)
+            df_eci_work = df_eci_work[
+                ~df_eci_work['type'].str.upper().isin(['F', 'N'])
+            ].copy()
+            
+            # Convert schedule_day to date for consistent merge
+            df_eci_work['schedule_day'] = pd.to_datetime(df_eci_work['schedule_day']).dt.date
+            
+            # Group by schedule_day and count distinct working employees
+            eci_counts = df_eci_work.groupby('schedule_day')['employee_id'].nunique().reset_index()
+            eci_counts.columns = ['schedule_day', 'allocated_employees_count']
+            
+            logger.info(f"ECI sibling section: found working employees on {len(eci_counts)} distinct days")
+            
+            # Merge with estimativas on date
+            df_est_result = df_est_result.merge(
+                eci_counts,
+                left_on=date_col_est,
+                right_on='schedule_day',
+                how='left'
+            )
+            
+            # Drop duplicate schedule_day column from merge if needed
+            if 'schedule_day' in df_est_result.columns and date_col_est != 'schedule_day':
+                df_est_result = df_est_result.drop(columns=['schedule_day'])
+        else:
+            logger.info("No ECI sibling section results (non-ECI unit or empty results) - allocated_employees_count will be 0")
+            df_est_result['allocated_employees_count'] = 0
+        
+        # Fill NaN with 0 (days where sibling section has no one working)
+        df_est_result['allocated_employees_count'] = pd.to_numeric(
+            df_est_result['allocated_employees_count'], errors='coerce'
+        ).fillna(0).astype(int)
+        
+        # diff: how many more people this section needs to schedule
+        df_est_result['diff'] = df_est_result['pess_obj'] - df_est_result['allocated_employees_count']
         
         # Ensure min_turno is at least 1
         df_est_result['min_turno'] = np.where(
@@ -4287,13 +4375,14 @@ def calculate_and_merge_allocated_employees(df_estimativas: pd.DataFrame, df_cal
             df_est_result['min_turno']
         )
         
-        # Drop temporary aux column
-        df_est_result = df_est_result.drop(columns=['aux'], errors='ignore')
-        
         # OUTPUT VALIDATION
-        plus_h_count = (~df_est_result['+H'].isna()).sum()
-        logger.info(f"Calculated +H for {plus_h_count} shift-date combinations")
         logger.info(f"Staffing objective (pess_obj) calculated using param_pess_obj={param_pess_obj}")
+        logger.info(f"allocated_employees_count stats: min={df_est_result['allocated_employees_count'].min()}, "
+                     f"max={df_est_result['allocated_employees_count'].max()}, "
+                     f"mean={df_est_result['allocated_employees_count'].mean():.2f}")
+        logger.info(f"diff stats: min={df_est_result['diff'].min()}, "
+                     f"max={df_est_result['diff'].max()}, "
+                     f"mean={df_est_result['diff'].mean():.2f}")
         
         return True, df_est_result, ""
         
@@ -4739,5 +4828,389 @@ def restrict_turnos_by_disponibilidade(
         
     except Exception as e:
         error_msg = f"Error in restrict_turnos_by_disponibilidade: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def get_limite_values(df_turnos: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp]:
+    """
+    Extract shift boundary times from df_turnos for the whole section.
+    
+    Returns the most common (mode) values for limite_superior_manha and limite_inferior_tarde.
+    If no mode exists (all values different), uses the average time.
+    
+    Args:
+        df_turnos: DataFrame with columns 'limite_superior_manha' and 'limite_inferior_tarde'
+                   (time values as strings like "12:30" or "20:00")
+    
+    Returns:
+        Tuple[pd.Timestamp, pd.Timestamp]: (limite_superior_manha, limite_inferior_tarde)
+            - limite_superior_manha: upper bound for morning shift classification
+            - limite_inferior_tarde: lower bound for afternoon shift classification
+    
+    Raises:
+        ValueError: If required columns are missing or all values are null
+    """
+    required_cols = ['limite_superior_manha', 'limite_inferior_tarde']
+    missing_cols = [col for col in required_cols if col not in df_turnos.columns]
+    if missing_cols:
+        raise ValueError(f"df_turnos missing required columns: {missing_cols}")
+    
+    if df_turnos.empty:
+        raise ValueError("df_turnos is empty")
+    
+    results = {}
+    reference_date = pd.Timestamp('2000-01-01')
+    
+    for col in required_cols:
+        # Get non-null values
+        values = df_turnos[col].dropna()
+        if values.empty:
+            raise ValueError(f"All values in '{col}' are null")
+        
+        # Vectorized time parsing: convert to datetime then normalize to reference date
+        # Handle string format "HH:MM" or "HH:MM:SS"
+        parsed_times = pd.to_datetime(values.astype(str), format='%H:%M', errors='coerce')
+        # Try HH:MM:SS format for values that failed
+        mask_nat = parsed_times.isna()
+        if mask_nat.any():
+            parsed_times_hms = pd.to_datetime(values[mask_nat].astype(str), format='%H:%M:%S', errors='coerce')
+            parsed_times = parsed_times.fillna(parsed_times_hms)
+        
+        # For any remaining NaT, try general parsing
+        mask_nat = parsed_times.isna()
+        if mask_nat.any():
+            parsed_times_general = pd.to_datetime(values[mask_nat], errors='coerce')
+            parsed_times = parsed_times.fillna(parsed_times_general)
+        
+        # Normalize to reference date (vectorized)
+        timestamps = pd.to_datetime(
+            reference_date.strftime('%Y-%m-%d') + ' ' + 
+            parsed_times.dt.strftime('%H:%M:%S').fillna('00:00:00')
+        )
+        timestamps = timestamps.dropna()
+        
+        if timestamps.empty:
+            raise ValueError(f"Could not parse any time values from '{col}'")
+        
+        # Try to find mode (most common value)
+        mode_result = timestamps.mode()
+        if len(mode_result) >= 1:
+            results[col] = mode_result.iloc[0]
+            logger.info(f"get_limite_values: Using mode for {col}: {results[col].strftime('%H:%M')}")
+        else:
+            # No mode (all values different) - use average (vectorized)
+            seconds_since_midnight = timestamps.dt.hour * 3600 + timestamps.dt.minute * 60
+            avg_seconds = seconds_since_midnight.mean()
+            avg_hour = int(avg_seconds // 3600)
+            avg_minute = int((avg_seconds % 3600) // 60)
+            results[col] = pd.Timestamp(year=2000, month=1, day=1, hour=avg_hour, minute=avg_minute)
+            logger.info(f"get_limite_values: No mode for {col}, using average: {results[col].strftime('%H:%M')}")
+    
+    return results['limite_superior_manha'], results['limite_inferior_tarde']
+
+
+def create_df_estimativas(
+    df_orcamento: pd.DataFrame,
+    df_faixa_horario: pd.DataFrame,
+    use_case: int = 0,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Create df_estimativas from df_orcamento by aggregating staffing estimates per day and shift.
+    
+    Merges df_faixa_horario to get per-day shift boundaries, then classifies each time slot:
+        - M (morning): hora_inicio_faixa <= hora_ini < limite_superior_manha
+        - T (afternoon): limite_inferior_tarde <= hora_ini < hora_fim_faixa
+    
+    Args:
+        df_orcamento: Budget/forecast data with columns:
+            - schedule_day: date
+            - hora_ini: datetime (already treated with actual date from treat_df_orcamento)
+            - pessoas_final: staffing estimate per time slot, where slot length is
+              defined by the configured granularity (e.g., 10 or 15 minutes)
+        df_faixa_horario: Time window data per day with columns:
+            - schedule_day: date (merge key)
+            - hora_inicio_faixa: start of time window
+            - hora_fim_faixa: end of time window
+            - limite_superior_manha: upper bound for M shift
+            - limite_inferior_tarde: lower bound for T shift
+        use_case: Calculation method for media_turno:
+            - 0: media_turno = sum_pessoas / N, where N is the number of slots in
+              an 8-hour shift at the configured granularity (e.g., 32 for 15 min,
+              48 for 10 min)
+            - 1: media_turno = sum_pessoas / num_periods (dynamic, based on shift duration)
+    
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, df_estimativas, error_message)
+        
+        df_estimativas columns:
+            - schedule_day: date
+            - turno: 'M' or 'T'
+            - media_turno: sum(pessoas_final) / divisor
+            - max_turno: max(pessoas_final) within shift
+            - min_turno: min(pessoas_final) within shift
+            - sd_turno: std(pessoas_final) within shift
+            - pess_obj: rounded media_turno (ceil if cv>=0.5, else round)
+    """
+    try:
+        # INPUT VALIDATION - df_orcamento
+        if df_orcamento is None or df_orcamento.empty:
+            return False, pd.DataFrame(), "df_orcamento is empty or None"
+        
+        required_cols_orc = ['schedule_day', 'hora_ini', 'pessoas_final']
+        missing_cols = [col for col in required_cols_orc if col not in df_orcamento.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_orcamento missing required columns: {missing_cols}"
+        
+        # INPUT VALIDATION - df_faixa_horario
+        if df_faixa_horario is None or df_faixa_horario.empty:
+            return False, pd.DataFrame(), "df_faixa_horario is empty or None"
+        
+        required_cols_faixa = ['schedule_day', 'hora_inicio_faixa', 'hora_fim_faixa', 'limite_superior_manha', 'limite_inferior_tarde']
+        missing_cols = [col for col in required_cols_faixa if col not in df_faixa_horario.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"df_faixa_horario missing required columns: {missing_cols}"
+        
+        try:
+            granularity = get_granularity_minutes()
+        except ValueError as e:
+            return False, pd.DataFrame(), str(e)
+        
+        # PREPARE DATA
+        df = df_orcamento.copy()
+        df_faixa = df_faixa_horario.copy()
+        logger.info(
+            "create_df_estimativas: initial shapes - "
+            f"df_orcamento={df.shape}, unique_days_orc={df['schedule_day'].nunique()}, "
+            f"df_faixa_horario={df_faixa.shape}, unique_days_faixa={df_faixa['schedule_day'].nunique()}"
+        )
+        
+        # Normalize schedule_day in both dataframes
+        df['schedule_day'] = pd.to_datetime(df['schedule_day']).dt.normalize()
+        df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+        logger.info(
+            "create_df_estimativas: after normalize - "
+            f"unique_days_orc={df['schedule_day'].nunique()}, "
+            f"unique_days_faixa={df_faixa['schedule_day'].nunique()}"
+        )
+        
+        # Ensure hora_ini is datetime
+        df['hora_ini'] = pd.to_datetime(df['hora_ini'])
+        
+        # Ensure pessoas_final is numeric
+        df['pessoas_final'] = pd.to_numeric(df['pessoas_final'], errors='coerce').fillna(0)
+        
+        # MERGE df_faixa_horario to df_orcamento on schedule_day
+        df = df.merge(df_faixa, on='schedule_day', how='left')
+        
+        # Check for unmatched rows
+        unmatched = df['hora_inicio_faixa'].isna().sum()
+        if unmatched > 0:
+            logger.warning(f"create_df_estimativas: {unmatched} rows in df_orcamento have no matching faixa_horario")
+        logger.info(
+            "create_df_estimativas: after merge - "
+            f"rows={len(df)}, unique_days={df['schedule_day'].nunique()}, "
+            f"rows_with_faixa={len(df) - unmatched}"
+        )
+        
+        # Drop rows without shift boundaries
+        df = df.dropna(subset=['hora_inicio_faixa', 'hora_fim_faixa', 'limite_superior_manha', 'limite_inferior_tarde'])
+        
+        if df.empty:
+            return False, pd.DataFrame(), "No data after merging with df_faixa_horario"
+        logger.info(
+            "create_df_estimativas: after dropping rows without faixa - "
+            f"rows={len(df)}, unique_days={df['schedule_day'].nunique()}"
+        )
+        
+        # SHIFT CLASSIFICATION
+        # M shift: hora_inicio_faixa <= hora_ini < limite_superior_manha
+        # T shift: limite_inferior_tarde <= hora_ini < hora_fim_faixa
+        df['is_M'] = (df['hora_ini'] >= df['hora_inicio_faixa']) & (df['hora_ini'] < df['limite_superior_manha'])
+        df['is_T'] = (df['hora_ini'] >= df['limite_inferior_tarde']) & (df['hora_ini'] < df['hora_fim_faixa'])
+        
+        m_slots = df['is_M'].sum()
+        t_slots = df['is_T'].sum()
+        logger.info(
+            "create_df_estimativas: shift classification - "
+            f"M_slots={m_slots}, T_slots={t_slots}, "
+            f"unique_days_with_M={df.loc[df['is_M'], 'schedule_day'].nunique()}, "
+            f"unique_days_with_T={df.loc[df['is_T'], 'schedule_day'].nunique()}"
+        )
+        
+        # CALCULATE NUMBER OF GRANULARITY-BASED PERIODS PER SHIFT PER DAY
+        # M: (limite_superior_manha - hora_inicio_faixa) / granularity minutes
+        # T: (hora_fim_faixa - limite_inferior_tarde) / granularity minutes
+        df_faixa['num_periods_M'] = (df_faixa['limite_superior_manha'] - df_faixa['hora_inicio_faixa']).dt.total_seconds() / (granularity * 60)
+        df_faixa['num_periods_T'] = (df_faixa['hora_fim_faixa'] - df_faixa['limite_inferior_tarde']).dt.total_seconds() / (granularity * 60)
+        
+        # AGGREGATE BY SHIFT
+        # Create shift dataframes
+        df_m = df[df['is_M']][['schedule_day', 'pessoas_final']].copy()
+        df_m['turno'] = 'M'
+        
+        df_t = df[df['is_T']][['schedule_day', 'pessoas_final']].copy()
+        df_t['turno'] = 'T'
+        
+        df_shifts = pd.concat([df_m, df_t], ignore_index=True)
+        
+        if df_shifts.empty:
+            return False, pd.DataFrame(), "No data classified into any shift"
+        logger.info(
+            "create_df_estimativas: df_shifts summary - "
+            f"rows={len(df_shifts)}, unique_days={df_shifts['schedule_day'].nunique()}, "
+            f"days_M={df_m['schedule_day'].nunique()}, days_T={df_t['schedule_day'].nunique()}"
+        )
+        
+        # Groupby for statistics
+        df_estimativas = df_shifts.groupby(['schedule_day', 'turno'], as_index=False).agg(
+            sum_pessoas=('pessoas_final', 'sum'),
+            max_turno=('pessoas_final', 'max'),
+            min_turno=('pessoas_final', 'min'),
+            sd_turno=('pessoas_final', 'std')
+        )
+        
+        # Merge num_periods from df_faixa
+        df_faixa_periods = df_faixa[['schedule_day', 'num_periods_M', 'num_periods_T']].copy()
+        df_estimativas = df_estimativas.merge(df_faixa_periods, on='schedule_day', how='left')
+        
+        # Select correct num_periods based on turno
+        df_estimativas['num_periods'] = np.where(
+            df_estimativas['turno'] == 'M',
+            df_estimativas['num_periods_M'],
+            df_estimativas['num_periods_T']
+        )
+        
+        # Calculate media_turno based on use_case
+        if use_case == 0:
+            # Fixed divisor: number of slots in an 8-hour shift at the configured granularity
+            df_estimativas['media_turno'] = df_estimativas['sum_pessoas'] / (8 * (60 / granularity))
+        else:
+            # Dynamic divisor: num_periods based on actual shift duration
+            df_estimativas['media_turno'] = np.where(
+                df_estimativas['num_periods'] > 0,
+                df_estimativas['sum_pessoas'] / df_estimativas['num_periods'],
+                0
+            )
+        df_estimativas['sd_turno'] = df_estimativas['sd_turno'].fillna(0)
+        
+        # Calculate pess_obj using volatility-based rounding (vectorized)
+        # Coefficient of variation: cv = sd_turno / media_turno
+        # If cv >= 0.5 (high volatility): round UP (ceil)
+        # If cv < 0.5 (low volatility): round normally
+        df_estimativas['pess_obj'] = np.where(
+            df_estimativas['media_turno'] != 0,
+            np.where(
+                df_estimativas['sd_turno'] / df_estimativas['media_turno'] >= 0.5,
+                np.ceil(df_estimativas['media_turno']),
+                np.round(df_estimativas['media_turno'])
+            ),
+            0  # If media_turno is 0, pess_obj is 0
+        )
+        
+        # Select and order final columns
+        df_estimativas = df_estimativas[['schedule_day', 'turno', 'media_turno', 'max_turno', 'min_turno', 'sd_turno', 'pess_obj']]
+        df_estimativas = df_estimativas.sort_values(['schedule_day', 'turno']).reset_index(drop=True)
+        
+        logger.info(
+            "create_df_estimativas: final df_estimativas - "
+            f"rows={len(df_estimativas)}, unique_days={df_estimativas['schedule_day'].nunique()}, "
+            f"date_range=({df_estimativas['schedule_day'].min()} to {df_estimativas['schedule_day'].max()})"
+        )
+        
+        return True, df_estimativas, ""
+        
+    except Exception as e:
+        error_msg = f"Error creating df_estimativas: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def add_pessoa_obj_whole_day(
+    df_estimativas: pd.DataFrame,
+    df_orcamento: pd.DataFrame,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Add whole day statistics to df_estimativas.
+    
+    Calculates media_dia, max_dia, min_dia, sd_dia for each day using ALL time slots
+    (not filtered by shift boundaries).
+    
+    Args:
+        df_estimativas: DataFrame from create_df_estimativas with shift-level stats
+        df_orcamento: Original budget data to calculate whole day stats. Each
+            row represents one time slot at the configured granularity.
+    
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, updated_df_estimativas, error_message)
+        
+        Added columns:
+            - media_dia: sum(pessoas_final) / N for whole day, where N is the
+              number of slots in an 8-hour day at the configured granularity
+            - max_dia: max(pessoas_final) for whole day
+            - min_dia: min(pessoas_final) for whole day
+            - sd_dia: std(pessoas_final) for whole day
+            - pess_obj_dia: rounded media_dia (ceil if cv>=0.5, else round)
+    """
+    try:
+        # INPUT VALIDATION
+        if df_estimativas is None or df_estimativas.empty:
+            return False, pd.DataFrame(), "df_estimativas is empty or None"
+        
+        if df_orcamento is None or df_orcamento.empty:
+            return False, pd.DataFrame(), "df_orcamento is empty or None"
+        
+        try:
+            granularity = get_granularity_minutes()
+        except ValueError as e:
+            return False, pd.DataFrame(), str(e)
+
+        divisor = 8 * (60 / granularity)
+        
+        df_orc = df_orcamento.copy()
+        
+        # VECTORIZED DATA PREPARATION
+        df_orc['schedule_day'] = pd.to_datetime(df_orc['schedule_day']).dt.normalize()
+        df_orc['pessoas_final'] = pd.to_numeric(df_orc['pessoas_final'], errors='coerce').fillna(0)
+        
+        # VECTORIZED AGGREGATION - single groupby for all whole day statistics
+        whole_day_stats = df_orc.groupby('schedule_day', as_index=False).agg(
+            sum_pessoas=('pessoas_final', 'sum'),
+            max_dia=('pessoas_final', 'max'),
+            min_dia=('pessoas_final', 'min'),
+            sd_dia=('pessoas_final', 'std')
+        )
+        
+        # Vectorized calculations
+        whole_day_stats['media_dia'] = whole_day_stats['sum_pessoas'] / divisor
+        whole_day_stats['sd_dia'] = whole_day_stats['sd_dia'].fillna(0)
+        
+        # Calculate pess_obj_dia using volatility-based rounding (vectorized)
+        # Same logic as shift-level: cv >= 0.5 -> ceil, else round
+        whole_day_stats['pess_obj_dia'] = np.where(
+            whole_day_stats['media_dia'] != 0,
+            np.where(
+                whole_day_stats['sd_dia'] / whole_day_stats['media_dia'] >= 0.5,
+                np.ceil(whole_day_stats['media_dia']),
+                np.round(whole_day_stats['media_dia'])
+            ),
+            0
+        )
+        
+        whole_day_stats = whole_day_stats[['schedule_day', 'media_dia', 'max_dia', 'min_dia', 'sd_dia', 'pess_obj_dia']]
+        
+        # Prepare result
+        df_result = df_estimativas.copy()
+        df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day']).dt.normalize()
+        
+        # Merge whole day stats into estimativas
+        df_result = df_result.merge(whole_day_stats, on='schedule_day', how='left')
+        
+        logger.info(f"add_pessoa_obj_whole_day: Added whole day stats to {len(df_result)} rows")
+        
+        return True, df_result, ""
+        
+    except Exception as e:
+        error_msg = f"Error adding whole day stats: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg

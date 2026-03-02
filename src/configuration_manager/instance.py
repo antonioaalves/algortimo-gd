@@ -55,8 +55,8 @@ def get_config() -> ConfigurationManager:
         'algoritmo_GD'
         
         >>> config2 = get_config()
-        >>> assert config is config2  # Same instance ✓
-        >>> assert id(config) == id(config2)  # Same memory address ✓
+        >>> assert config is config2  # Same instance 
+        >>> assert id(config) == id(config2)  # Same memory address 
     """
     global _config_instance
     
