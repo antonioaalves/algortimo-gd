@@ -125,7 +125,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                 absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total, 5)
                 continue
             elif nbr_vacations > 2:
-                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
+                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False and nbr_vacations < 6:
                     continue
             elif nbr_absences < 5:
                 continue
