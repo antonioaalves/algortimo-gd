@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import datetime
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
 
@@ -232,11 +234,11 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
             
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days, period, shift, w):
+def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, period, shift, w):
     compensation_days = []
-    weeks_added = 0
+    days_added = 0
     current_week = special_day_week
-    while weeks_added < week_compensation_limit and current_week < len(week_to_days):
+    while days_added < compensation_limit and current_week < len(week_to_days):
         current_week += 1
 
         week_days = set(week_to_days.get(current_week, []))
@@ -251,7 +253,7 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
                 available_days = {d for d in working_days.intersection(week_days - all_days_off)}
 
         if len(available_days) > 0:
-            weeks_added += 1
+            days_added += 1
             compensation_days.extend(available_days)
 
     return compensation_days
@@ -270,3 +272,29 @@ def ld_counter(shift_T, shift_M, fixed_ld, period, holidays):
     del holidays_worked_before[:lds]
     
     return holidays_worked_before
+
+#general funcs:
+
+def legenda(data_array, range_bool):
+    data_len = len(data_array)
+    if range_bool and data_len != 2:
+        logger.warning(f"Data imcompatible with range (RN, RC or RD) type")
+        return -1
+    
+    data_type = type(data_array[0])
+    if data_type == str:
+        field_type = 'C'
+    elif data_type == datetime or data_type == pd.Timestamp:
+        field_type = 'D'
+    elif data_type == int or data_type == float:
+        field_type = 'N'
+    else:
+        logger.warning(f"Data type undefined: {data_type}")
+        return -1
+    
+    if range_bool:
+        return 'R' + field_type
+    elif data_len > 1:
+        return 'L' + field_type
+    else:
+        return field_type
