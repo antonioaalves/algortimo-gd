@@ -431,7 +431,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
     debug_vars = {}  # Store debug variables to return    
     for w in workers:
 
-        if contract_type[w] in [4, 5, 6, 8]:
+        if contract_type[w] in [4, 5, 8]:
             quality_2weekend_vars = []
             
             if F_special_day == False:
@@ -643,7 +643,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             
             else:
                 if tipo_contrato >= 5:
-                    if tipo_contrato== 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1:
+                    if (tipo_contrato == 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1) or tipo_contrato == 6:
                         required_free_days = 1
                     elif actual_days_in_week >= 2:
                         required_free_days = 2

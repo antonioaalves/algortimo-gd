@@ -572,8 +572,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 else:
                     work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa)
                 check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
-            else:
+            elif tipo_contrato != 6:
                 work_days_per_week[w] = [5] * 54
+            else:
+                work_days_per_week[w] = [6] * 54
 
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
@@ -665,32 +667,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info("Roles derived: managers=%d, keyholders=%d, normals=%d", len(managers), len(keyholders), len(workers_complete) - len(managers) - len(keyholders))
 
         # =================================================================
-        # 10.2. ADAPT PROPORTIONS FOR WORKERS FOR FIRST AND LAST DAYS
-        # =================================================================
-        logger.info("Adjusting worker parameters based on last registered days")
-        proportion = {}
-        for w in workers:
-            if (last_registered_day[w] > min_day_year and last_registered_day[w] < max_day_year):
-                proportion[w] = (last_registered_day[w]- first_registered_day[w])  / (max_day_year)
-                logger.info(f"Adjusting worker {w} parameters based on last registered day {last_registered_day[w]} with proportion[w] {proportion[w]:.2f}")
-                total_l[w] = int(round(proportion[w] * total_l[w]))
-                total_l_dom[w] = int(round(proportion[w] * total_l_dom[w]))
-                c2d[w] = int(math.floor(proportion[w] * c2d[w]))
-                c3d[w] = int(math.floor(proportion[w] * c3d[w]))
-                l_d[w] = int(round(proportion[w] * l_d[w]))
-                cxx[w] = int(round(proportion[w] * cxx[w]))
-                
-                logger.info(f"Worker {w} parameters adjusted for last registered day {last_registered_day[w]}: "
-                            f"Total L: {total_l[w]}, "
-                            f"Total L DOM: {total_l_dom[w]}, "
-                            f"C2D: {c2d[w]}, "
-                            f"C3D: {c3d[w]}, "
-                            f"L_D: {l_d[w]}, "
-                            f"CXX: {cxx[w]}, ")
-
-        logger.info("Worker parameters adjusted based on first and last registered days")
-
-        # =================================================================
         # 11. PROCESS ESTIMATIVAS data
         # =================================================================
         logger.info("Processing estimativas data")
@@ -775,7 +751,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "data_demissao": data_demissao,                      
             "last_registered_day": last_registered_day,          
             "fixed_days_off": fixed_days_off,                    
-            "proportion": proportion,                            
             "fixed_LQs": fixed_LQs,                              
             "work_day_hours": work_day_hours,                    
             "work_days_per_week": work_days_per_week,            
