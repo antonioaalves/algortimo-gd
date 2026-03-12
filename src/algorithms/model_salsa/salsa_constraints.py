@@ -379,7 +379,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
     for w in workers:
         
         all_days_off = fixed_days[w].union(fixed_LQs[w])
-        all_work_days = [d for d in working_days[w] if period[0] < d < period[1]]
+        all_work_days = [d for d in working_days[w] if period[0] - 2 < d < period[1]]
         if contract_type.get(w, 0) == 8:
             max_continuous_free_days = 2
         else:
