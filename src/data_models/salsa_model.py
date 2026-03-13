@@ -76,6 +76,9 @@ from src.data_models.functions.data_treatment_functions import (
     calculate_and_merge_allocated_employees,
     treat_df_disponibilidade,
     restrict_turnos_by_disponibilidade,
+    treat_df_process_rules,
+    add_process_rules_to_df_contratos,
+    build_compensatory_output,
 )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.validations.load_process_data_validations import (
@@ -648,6 +651,25 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"admissao_proporcional is not a valid value: {parameters_cfg}.")
                 return False, "errSubproc", "admissao_proporcional is not a valid value"
 
+            # STRSOL-1372: Load process labor rules (compensatory time-off rules)
+            df_process_rules = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_process_rules from data manager")
+                df_process_rules = data_manager.load_data(
+                    'df_process_rules',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_process_rules'],
+                    process_id="'" + str(self.external_call_data['current_process_id']) + "'"
+                )
+                self.logger.info(f"df_process_rules shape (rows {df_process_rules.shape[0]}, columns {df_process_rules.shape[1]}): {df_process_rules.columns.tolist()}")
+
+                success, df_process_rules, error_msg = treat_df_process_rules(df_process_rules)
+                if not success:
+                    self.logger.warning(f"df_process_rules treatment failed: {error_msg} - proceeding with empty DataFrame")
+                    df_process_rules = pd.DataFrame()
+            except Exception as e:
+                self.logger.warning(f"Error loading df_process_rules: {e} - proceeding with empty DataFrame")
+                df_process_rules = pd.DataFrame()
+
             # Copy the dataframes into the apropriate dict
             try:
                 self.logger.info(f"Copying dataframes into the apropriate dict")
@@ -681,6 +703,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['num_sundays_year'] = num_sundays_year
                 self.auxiliary_data['num_feriados_abertos'] = num_feriados_abertos
                 self.auxiliary_data['num_feriados_fechados'] = num_feriados_fechados
+                self.auxiliary_data['df_process_rules'] = df_process_rules.copy()
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
@@ -929,6 +952,27 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"past_employees_id_list is empty: {past_employees_id_list}")
                 return False, "errSubproc", "past_employees_id_list is empty"
 
+            # STRSOL-1372: Merge process rules with contracts for algorithm consumption
+            df_process_rules_merged = pd.DataFrame()
+            try:
+                df_process_rules = self.auxiliary_data.get('df_process_rules', pd.DataFrame())
+                if not df_process_rules.empty:
+                    self.logger.info("Merging process rules with df_contratos")
+                    success, df_process_rules_merged, error_msg = add_process_rules_to_df_contratos(
+                        df_process_rules=df_process_rules,
+                        df_contratos=df_contratos
+                    )
+                    if not success:
+                        self.logger.warning(f"add_process_rules_to_df_contratos failed: {error_msg} - proceeding with empty DataFrame")
+                        df_process_rules_merged = pd.DataFrame()
+                    else:
+                        self.logger.info(f"df_process_rules_merged shape: {df_process_rules_merged.shape}")
+                else:
+                    self.logger.info("df_process_rules is empty - skipping rules merge")
+            except Exception as e:
+                self.logger.warning(f"Error merging process rules with contracts: {e} - proceeding with empty DataFrame")
+                df_process_rules_merged = pd.DataFrame()
+
             # Saving values into memory
             try:
                 self.logger.info(f"Saving df_colaborador in raw_data")
@@ -946,6 +990,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Save important information in algorithm_treatment_params
                 self.algorithm_treatment_params['employees_id_list_for_posto'] = employees_id_list_for_posto
                 self.algorithm_treatment_params['employees_id_90_list'] = employees_id_90_list
+                self.algorithm_treatment_params['df_process_rules'] = df_process_rules_merged.copy()
 
                 self.logger.info(f"load_colaborador_info completed successfully.")
                 return True, "", ""

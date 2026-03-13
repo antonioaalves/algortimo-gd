@@ -29,7 +29,8 @@
         "df_ciclos_completos_folgas_ciclos": "queryGetCiclosCompletosFolgasCiclos.sql",
         "df_disponibilidade": "queryGetDisponibilidade.sql",
         "df_eci_section_employees": "queryGetEciSectionEmployees.sql",
-        "df_eci_sibling_section": "queryGetEciSiblingSectionId.sql"
+        "df_eci_sibling_section": "queryGetEciSiblingSectionId.sql",
+        "df_process_rules": "queryGetProcessLaborRules.sql"
     },
     "available_entities_raw": {
         "df_calendario": "",

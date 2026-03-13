@@ -2,6 +2,7 @@ SELECT
     cpec.employee_id,
     cpec.schedule_day,
     cpec.contract_id,
+    cpec.labor_union_id,
     cpec.MAXIMUMWORKLOAD as maximumworkload,
     cpec.MAXIMUMDAYSPERWEEK as maximumdaysperweek,
     cpec.MAXIMUMWORKDAY as maximumworkday,
