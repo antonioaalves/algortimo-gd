@@ -26,18 +26,20 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
             shift[(w, d, 'LD')] = model.NewBoolVar(f"{w}_Day{d}_LD")
 
     if ld_holiday > 0:
+        past_holidays_worked = ...
         contingent_f, total_lds_f = compensation_days(model, shift, workers, working_days, holidays_set, week_to_days, working_shift, compensation_holiday_limit,
-                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, period, "holiday")
+                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, period, "holiday", past_holidays_worked)
     if ld_sunday > 0:
+        past_sundays_worked = ...
         contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, sundays_set, week_to_days, working_shift, compensation_sunday_limit,
-                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_sunday, period, "sunday")
+                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_sunday, period, "sunday", past_sundays_worked)
         
     ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d)
     return contingent_f, contingent_d
 
 
 def compensation_days(model, shift, workers, working_days, special_days, week_to_days, working_shift, compensation_limit,
-                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, period, day_type):
+                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, period, day_type, past_special_days_worked):
     possible_compensation_days = {}
     worked_special_days = {}
 
@@ -66,6 +68,13 @@ def compensation_days(model, shift, workers, working_days, special_days, week_to
             # Store possible compensation days for this special day
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                       compensation_limit.get((w, d), 15), working_days[w], shift, w)
+                
+        for d in past_special_days_worked[w]:
+            worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
+            worked_special_days[w][d] = worked_special_day
+            possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
+                                                                      compensation_limit.get((w, d), 15), working_days[w], shift, w)
+
 
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables
