@@ -5,7 +5,7 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_day
 logger = get_logger('algoritmo_GD')
 
 def global_compensation_days(model, shift, workers, working_days, holidays, sundays, week_to_days, working_shift, compensation_holiday_limit, compensation_sunday_limit,
-                             fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, ld_sunday, period, override_holiday_sunday):
+                             fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, ld_sunday, period, override_holiday_sunday, fixed_lds):
     if override_holiday_sunday:
         holidays_set = set(holidays)
         sundays_set = set(sundays) - holidays_set
@@ -27,18 +27,18 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
 
     if ld_holiday > 0:
         past_holidays_worked = ...
-        contingent_f, total_lds_f = compensation_days(model, shift, workers, working_days, holidays_set, week_to_days, working_shift, compensation_holiday_limit,
+        contingent_f, total_lds_f = compensation_days(model, shift, workers, working_days, holidays_set, week_to_days, working_shift, compensation_holiday_limit, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, period, "holiday", past_holidays_worked)
     if ld_sunday > 0:
         past_sundays_worked = ...
-        contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, sundays_set, week_to_days, working_shift, compensation_sunday_limit,
+        contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, sundays_set, week_to_days, working_shift, compensation_sunday_limit, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_sunday, period, "sunday", past_sundays_worked)
         
     ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d)
     return contingent_f, contingent_d
 
 
-def compensation_days(model, shift, workers, working_days, special_days, week_to_days, working_shift, compensation_limit,
+def compensation_days(model, shift, workers, working_days, special_days, week_to_days, working_shift, compensation_limit, fixed_lds,
                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, ammount, period, day_type, past_special_days_worked):
     possible_compensation_days = {}
     worked_special_days = {}
@@ -67,13 +67,18 @@ def compensation_days(model, shift, workers, working_days, special_days, week_to
                 continue
             # Store possible compensation days for this special day
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
-                                                                      compensation_limit.get((w, d), 15), working_days[w], shift, w)
+                                                                      compensation_limit.get((w, d), 15), working_days[w], shift, w, fixed_lds)
                 
         for d in past_special_days_worked[w]:
             worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
             worked_special_days[w][d] = worked_special_day
+            special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), None)
+            compensation_left_over = compensation_limit.get((w, d), 15) - (period[0] - d)
+            if compensation_left_over <= 0:
+                logger.warning(f"for Worker {w}: compensation for day {d} before period[0] will be impossible because {compensation_left_over}")
+                continue
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
-                                                                      compensation_limit.get((w, d), 15), working_days[w], shift, w)
+                                                                      compensation_left_over, working_days[w], shift, w, fixed_lds)
 
 
     # Dictionary to track compensation day usage
