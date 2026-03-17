@@ -34,7 +34,7 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
         contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, sundays_set, week_to_days, working_shift, compensation_sunday_limit, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_sunday, period, "sunday", past_sundays_worked)
         
-    ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d)
+    ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d, fixed_lds)
     return contingent_f, contingent_d
 
 
@@ -73,6 +73,7 @@ def compensation_days(model, shift, workers, working_days, special_days, week_to
             worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
             worked_special_days[w][d] = worked_special_day
             special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), None)
+
             compensation_left_over = compensation_limit.get((w, d), 15) - (period[0] - d)
             if compensation_left_over <= 0:
                 logger.warning(f"for Worker {w}: compensation for day {d} before period[0] will be impossible because {compensation_left_over}")
@@ -160,35 +161,39 @@ def compensation_days(model, shift, workers, working_days, special_days, week_to
         model.Add(total_comp_days_used == total_lds[w])
     return contingent, total_lds
 
-def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, total_lds_sundays_everyone):
+def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, total_lds_sundays_everyone, fixed_lds):
     if total_lds_holidays_everyone is not None and total_lds_sundays_everyone is not None:
         for w in workers:
+            past_lds = len(fixed_lds[w])
             if w in total_lds_holidays_everyone and w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w])
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w] + past_lds)
             elif w in total_lds_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w])
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
             elif w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w])
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == past_lds)
 
     elif total_lds_holidays_everyone is not None:
         for w in workers:
+            past_lds = len(fixed_lds[w])
             if w in total_lds_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w])
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == past_lds)
 
     elif total_lds_sundays_everyone is not None:
         for w in workers:
+            past_lds = len(fixed_lds[w])
             if w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w])
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == past_lds)
 
     else:
         for w in workers:
-            model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == 0)
+            past_lds = len(fixed_lds[w])
+            model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == past_lds)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
