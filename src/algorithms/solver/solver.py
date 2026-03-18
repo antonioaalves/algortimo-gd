@@ -37,6 +37,7 @@ def solve(
     holiday_half_day: bool,
     sunday_half_day: bool,
     eci_sibling_results_flag: bool,
+    period: List[int],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -255,6 +256,7 @@ def solve(
         special_days_worked = {}
         sun = {}
         compensation_days_off = {}
+        feriados_domingos_compensaçao = {}
 
         table_data_past = []  # List to store each worker's data as a row
         for w in workers_past:
@@ -342,6 +344,18 @@ def solve(
                 sun[w] = []
                 compensation_days_off[w] = []
 
+                feriados_domingos_compensaçao[w] = {
+                    'feriados': {
+                        'ld_given' : [],
+                        'banco_horas' : [],
+                        'no_compensation' : [],
+                    },
+                    'domingos': {
+                        'ld_given' : [],
+                        'banco_horas' : [],
+                        'no_compensation' : [],
+                    }
+                }
 
                 logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
@@ -382,24 +396,35 @@ def solve(
                         elif d in sundays:
                             sun[w].append(d)
                         time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
-                logger.info(f"{w}: days worked: {special_days_worked[w]}"
+                logger.info(f"{w}:\n\t\t\t\tholidays worked       : {special_days_worked[w]}"
+                            f"\n\t\t\t\tsundays worked        : {sun[w]}"
                             f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
                 
                 if contingente_feriados:
-                    if contingente_feriados[w] is not None and len(contingente_feriados[w]) > 0:
-                        feriados_compensaçao = [v.Name() for v in contingente_feriados[w] if solver.Value(v) == 1]
-                        if holiday_half_day == True:
-                            for i in special_days_worked[w]:
-                                feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{i}")
-                        logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao)}")
+                    if w in contingente_feriados and len(contingente_feriados[w]) > 0:
+                        for (d, comp_day), assignment_var in contingente_feriados[w].items():
+                            if solver.Value(assignment_var) == 1:
+                                if comp_day > period[1]:
+                                    feriados_domingos_compensaçao[w]["feriados"]["no_compensation"].append((d, comp_day))
+                                else:
+                                    feriados_domingos_compensaçao[w]["feriados"]["ld_given"].append((d, comp_day))
+                if holiday_half_day == True:
+                    for comp_day in special_days_worked[w]:
+                        feriados_domingos_compensaçao[w]["feriados"]['banco_horas'].append(comp_day)
+                logger.info(f"feriados e compensaçoes: \n{w}: {feriados_domingos_compensaçao[w]["feriados"]}\n")
 
                 if contingente_domingos:
-                    if contingente_domingos[w] is not None and len(contingente_domingos[w]) > 0:
-                        domingos_compensaçao = [v.Name() for v in contingente_domingos[w] if solver.Value(v) == 1]
-                        if sunday_half_day == True:
-                            for i in sun[w]:
-                                domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")
-                        logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao)}")
+                    if w in contingente_domingos[w] and len(contingente_domingos[w]) > 0:
+                        for (d, comp_day), assignment_var in contingente_domingos[w].items():
+                            if solver.Value(assignment_var) == 1:
+                                if comp_day > period[1]:
+                                    feriados_domingos_compensaçao[w]["domingos"]["no_compensation"].append((d, comp_day))
+                                else:
+                                    feriados_domingos_compensaçao[w]["domingos"]["ld_given"].append((d, comp_day))
+                if sunday_half_day == True:
+                    for comp_day in sun[w]:
+                        feriados_domingos_compensaçao[w]["domingos"]['banco_horas'].append(comp_day)
+                logger.info(f"domingos e compensaçoes: \n{w}: {feriados_domingos_compensaçao[w]["domingos"]}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {

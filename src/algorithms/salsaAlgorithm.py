@@ -359,7 +359,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Applying SALSA constraints")
             
-            contingente_f = []
+            contingente_h = []
             contingente_d = []
             
             # Basic constraint: each worker has exactly one shift per day
@@ -376,10 +376,15 @@ class SalsaAlgorithm(BaseAlgorithm):
             else:
                 self.logger.warning("Skipping constraint: working_day_shifts (disabled in config)")
 
+            if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "Espanha" and (ld_holiday > 0 or ld_sunday > 0):
+                for w in workers_complete:
+                    last_day = max(working_days[w])
+                    for d in range(last_day + 1, last_day + week_compensation_limit.get(w, 2) * 7 + 1):
+                        shift[(w, d, 'LD')] = model.NewBoolVar(f"{w}_Day{d}_LD")
             total_worked_holidays_everyone = []
             if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "Espanha" and ld_holiday > 0:
                 self.logger.info("Applying constraint: holiday_compensation_days (Espanha-specific)")
-                contingente_f, total_worked_holidays_everyone = holiday_compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit,
+                contingente_h, total_worked_holidays_everyone = holiday_compensation_days(model, shift, workers_complete, working_days, holidays, week_to_days, real_working_shift, week_compensation_limit,
                                                                                           fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, period, shift_T, shift_M, fixed_compensation_days)
             elif country != "Espanha":
                 self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Espanha)")
@@ -396,7 +401,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 self.logger.warning("Skipping constraint: sunday_compensation_days (disabled in config)")
             if constraint_selections.get("compensation_days", {}).get("enabled", True):
                 self.logger.info("Applying constraint: ld_restriction")
-                ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone)
+                ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone, contingente_h, contingente_d)
             else:
                 self.logger.warning("Skipping constraint: ld_restriction (disabled in config)")
 
@@ -481,7 +486,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_f, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag,
+                                         workers_past, h_plus, contingente_h, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag, period,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                                          optimization_details=optimization_details )

@@ -260,20 +260,33 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
     compensation_days = []
     weeks_added = 0
     current_week = special_day_week
-    while weeks_added < week_compensation_limit and current_week < len(week_to_days):
+
+    # Determine the last day in the schedule, including the extra weeks
+    last_defined_week = max(week_to_days.keys())
+    last_day_allowed = max(max(days) for days in week_to_days.values()) if week_to_days else 0
+    last_day_allowed += 7 * week_compensation_limit  # extend by extra weeks
+
+    all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
+    
+    while weeks_added < week_compensation_limit and current_week <= last_defined_week + week_compensation_limit:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, []))
+        # Normal week days from week_to_days, or create extra weeks if past the end
+        if current_week in week_to_days:
+            week_days = set(week_to_days[current_week])
+        else:
+            # Generate "virtual" week days beyond the defined weeks
+            start_day = last_day_allowed - 7 * (week_compensation_limit - (current_week - last_defined_week)) + 1
+            week_days = set(range(start_day, start_day + 7))
 
-        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
 
-        available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1] and (w, d, 'LD') in shift}
-        if sorted(week_days)[0] >= period[1]:
-            if compensation_days:
-                break
-            else:
-                available_days = {d for d in working_days.intersection(week_days - all_days_off)}
+        # Only pick days within the period and that exist in working_days
+        available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= last_day_allowed and (w, d, 'LD') in shift}
 
+        # fallback for weeks fully beyond period
+        if min(week_days) >= period[1]:
+            available_days = {d for d in week_days - all_days_off}
+        
         if len(available_days) > 0:
             weeks_added += 1
             compensation_days.extend(available_days)
