@@ -101,7 +101,7 @@ def holiday_compensation_days(model, shift, workers, working_days, holidays, wee
                     model.AddImplication(assignment_var, comp_day_used)
                     
                     # Constraint: If assignment is true, this day must be a valid day off (LD)
-                    model.Add(shift[(w, comp_day, 'LD')] == comp_day_used)
+                    model.AddImplication(assignment_var, shift[(w, comp_day, 'LD')])
 
             # KEY CONSTRAINT: At most one special day can be assigned to this compensation day
             if len(d_assignment_vars) > 1:
@@ -183,7 +183,6 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
             # Store possible compensation days for this special day
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                       week_compensation_limit.get(w, 2), working_days[w], period, shift, w)
-
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables
     comp_day_usage = {}
@@ -228,7 +227,7 @@ def sunday_compensation_days(model, shift, workers, working_days, sundays, week_
                     model.AddImplication(assignment_var, comp_day_used)
                     
                     # Constraint: If assignment is true, this day must be a valid day off (LD)
-                    model.Add(shift[(w, comp_day, 'LD')] == comp_day_used)
+                    model.AddImplication(assignment_var, shift[(w, comp_day, 'LD')])
 
             # KEY CONSTRAINT: At most one special day can be assigned to this compensation day
             if len(sunday_assignment_vars) > 1:
@@ -266,7 +265,6 @@ def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, tota
     if total_worked_holidays_everyone is not None and total_worked_sundays_everyone is not None:
         for w in workers:
             all_assignment_vars = {}
-            # Add holiday assignments
             if w in contingente_h:
                 for (d, comp_day), var in contingente_h[w].items():
                     if comp_day not in all_assignment_vars:
@@ -279,11 +277,9 @@ def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, tota
                     if comp_day not in all_assignment_vars:
                         all_assignment_vars[comp_day] = []
                     all_assignment_vars[comp_day].append(var)
-
-            #for comp_day, vars_list in all_assignment_vars.items():
-            #    if vars_list:
-            #        #logger.info(f"{w} only a max of 1 of {vars_list} can be true, ld day {comp_day}")
-            #        model.Add(sum(vars_list) <= 1)
+            for comp_day, vars_list in all_assignment_vars.items():
+                if vars_list:
+                    model.Add(sum(vars_list) <= 1)
 
             if w in total_worked_holidays_everyone and w in total_worked_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == total_worked_holidays_everyone[w] * ammount_hol + total_worked_sundays_everyone[w] * ammount_sun)
@@ -293,7 +289,6 @@ def ld_restriction(model, shift, workers, period, ammount_hol, ammount_sun, tota
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == total_worked_sundays_everyone[w] * ammount_sun)
             else:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == 0)
-
     elif total_worked_holidays_everyone is not None:
         for w in workers:
             if w in total_worked_holidays_everyone:

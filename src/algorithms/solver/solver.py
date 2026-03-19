@@ -383,22 +383,24 @@ def solve(
                         compensation_days_off[w].append(d)
                         ld_count += 1
                     elif day_assignment in ['T']:
-                        if d in special_days:
-                            special_days_worked[w].append(d)
-                            special_days_count += 1
-                        elif d in sundays:
-                            sun[w].append(d)
+                        if d >= period[0]:
+                            if d in special_days:
+                                special_days_worked[w].append(d)
+                                special_days_count += 1
+                            elif d in sundays:
+                                sun[w].append(d)
                         time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
-                        if d in special_days:
-                            special_days_worked[w].append(d)
-                            special_days_count += 1
-                        elif d in sundays:
-                            sun[w].append(d)
+                        if d >= period[0]:
+                            if d in special_days:
+                                special_days_worked[w].append(d)
+                                special_days_count += 1
+                            elif d in sundays:
+                                sun[w].append(d)
                         time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
-                logger.info(f"{w}:\n\t\t\t\tholidays worked       : {special_days_worked[w]}"
-                            f"\n\t\t\t\tsundays worked        : {sun[w]}"
-                            f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
+                logger.info(f"\n\t\tholidays worked      : {special_days_worked[w]}"
+                            f"\n\t\tsundays worked       : {sun[w]}"
+                            f"\n\t\tcompensation days off: {compensation_days_off[w]}\n")
                 
                 if contingente_feriados:
                     if w in contingente_feriados and len(contingente_feriados[w]) > 0:
@@ -414,7 +416,7 @@ def solve(
                 logger.info(f"feriados e compensaçoes: \n{w}: {feriados_domingos_compensaçao[w]["feriados"]}\n")
 
                 if contingente_domingos:
-                    if w in contingente_domingos[w] and len(contingente_domingos[w]) > 0:
+                    if w in contingente_domingos and len(contingente_domingos[w]) > 0:
                         for (d, comp_day), assignment_var in contingente_domingos[w].items():
                             if solver.Value(assignment_var) == 1:
                                 if comp_day > period[1]:
