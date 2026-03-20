@@ -471,7 +471,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_f, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag, period,
+                                         workers_past, h_plus, contingente_f, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag, period, index_to_date,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                                          optimization_details=optimization_details)
