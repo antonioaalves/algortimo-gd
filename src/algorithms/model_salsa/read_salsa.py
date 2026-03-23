@@ -229,10 +229,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         
         # Working days (non-special days)
         non_holidays = [d for d in days_of_year if d not in closed_holidays]  # Alias for compatibility
+        index_to_date = matriz_estimativas_gd.drop_duplicates(subset='index').set_index('index')['schedule_day'].fillna("2000-01-01").astype(str).to_dict()
         
         # Calculate week information
         unique_dates = sorted(matriz_calendario_gd['schedule_day'].unique())
-
         if unique_dates:
             unique_dates = [x.strftime('%Y-%m-%d') for x in unique_dates]
             # Get start weekday from the first date in the calendar data (not estimativas)
@@ -775,6 +775,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "h_plus": h_plus,
             "eci_sibling_results_flag": eci_sibling_results_flag,
             "forced_work_days": forced_work_days,
+            "index_to_date": index_to_date,
             }
         
     except Exception as e:

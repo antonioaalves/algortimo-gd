@@ -288,6 +288,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             h_plus = adapted_data["h_plus"]
             eci_sibling_results_flag = adapted_data["eci_sibling_results_flag"]
             forced_work_days = adapted_data["forced_work_days"]
+            index_to_date = adapted_data["index_to_date"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -401,7 +402,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 self.logger.warning("Skipping constraint: sunday_compensation_days (disabled in config)")
             if constraint_selections.get("compensation_days", {}).get("enabled", True):
                 self.logger.info("Applying constraint: ld_restriction")
-                ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone, contingente_h, contingente_d)
+                ld_restriction(model, shift, workers_complete, period, ld_holiday, ld_sunday, total_worked_holidays_everyone, total_worked_sundays_everyone, contingente_h, contingente_d, week_compensation_limit)
             else:
                 self.logger.warning("Skipping constraint: ld_restriction (disabled in config)")
 
@@ -486,7 +487,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_h, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag, period,
+                                         workers_past, h_plus, contingente_h, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag, period, index_to_date,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                                          optimization_details=optimization_details )
