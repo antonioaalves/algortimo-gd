@@ -19,6 +19,11 @@ Data treatment functions:
 - handle_employee_edge_cases
 - adjust_horario_for_admission_date
 - calculate_and_merge_allocated_employees
+- treat_df_process_rules
+- add_process_rules_to_df_contratos
+- treat_df_pro_emp_mov
+- build_compensatory_output
+- apply_compensatory_sched_types
 
 Dataframe manipulation functions:
 - add_calendario_passado
@@ -5214,3 +5219,506 @@ def add_pessoa_obj_whole_day(
         error_msg = f"Error adding whole day stats: {str(e)}"
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
+
+
+# =============================================================================
+# STRSOL-1372: Folgas compensatórias - process labor rules functions
+# =============================================================================
+
+def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Process and transform labor rules data from tall (one row per field) to wide 
+    (one row per rule instance per day) format.
+
+    Steps:
+        1. Validate input structure
+        2. Pivot from tall to wide: FIELD_CODE values become columns per RULE_HEAD_ID
+        3. Explode date range (BEGIN_DATE -> END_DATE) to daily granularity
+
+    Args:
+        df_process_rules: Raw DataFrame from core_process_labor_rules with columns:
+            PROCESS_ID, LABOR_UNION_ID, CONTRACT_ID, BEGIN_DATE, END_DATE,
+            RULE_CODE, RULE_ID, RULE_HEAD_ID, PRIORITY, ORDER_SEQ,
+            FIELD_CODE, RULE_FIELD_ID, FIELD_TYPE, VALUE
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if treatment succeeded
+            - df_result (pd.DataFrame): Processed rules with one row per rule-day,
+              FIELD_CODE values pivoted to columns
+            - error_message (str): Error description if operation failed
+    """
+    try:
+        # INPUT VALIDATION
+        if df_process_rules is None or df_process_rules.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_process_rules"
+
+        df_result = df_process_rules.copy()
+
+        required_cols = [
+            'PROCESS_ID', 'LABOR_UNION_ID', 'CONTRACT_ID', 'BEGIN_DATE', 'END_DATE',
+            'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID', 'FIELD_CODE', 'VALUE'
+        ]
+        missing_cols = [col for col in required_cols if col not in df_result.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
+
+        # NORMALIZE DATES
+        df_result['BEGIN_DATE'] = pd.to_datetime(df_result['BEGIN_DATE'], errors='coerce')
+        df_result['END_DATE'] = pd.to_datetime(df_result['END_DATE'], errors='coerce')
+
+        invalid_dates = df_result['BEGIN_DATE'].isna() | df_result['END_DATE'].isna()
+        if invalid_dates.any():
+            logger.warning(f"Dropping {invalid_dates.sum()} rows with invalid dates in df_process_rules")
+            df_result = df_result[~invalid_dates]
+
+        if df_result.empty:
+            return False, pd.DataFrame(), "All rows had invalid dates after parsing"
+
+        # PIVOT: tall -> wide (FIELD_CODE values become columns)
+        group_cols = [
+            'PROCESS_ID', 'LABOR_UNION_ID', 'CONTRACT_ID',
+            'BEGIN_DATE', 'END_DATE', 'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID'
+        ]
+        df_pivot = df_result.pivot_table(
+            index=group_cols,
+            columns='FIELD_CODE',
+            values='VALUE',
+            aggfunc='first'
+        ).reset_index()
+
+        df_pivot.columns.name = None
+
+        # Convert numeric rule parameters
+        numeric_fields = ['TIME_OFF_ADDITIONAL', 'TIME_OFF_DEADLINE']
+        for field in numeric_fields:
+            if field in df_pivot.columns:
+                df_pivot[field] = pd.to_numeric(df_pivot[field], errors='coerce').fillna(0).astype(int)
+
+        # EXPLODE: date range -> daily rows
+        rows = []
+        for _, row in df_pivot.iterrows():
+            date_range = pd.date_range(start=row['BEGIN_DATE'], end=row['END_DATE'], freq='D')
+            for day in date_range:
+                new_row = row.copy()
+                new_row['schedule_day'] = day
+                rows.append(new_row)
+
+        if not rows:
+            return False, pd.DataFrame(), "No rows generated after date explosion"
+
+        df_exploded = pd.DataFrame(rows)
+        df_exploded = df_exploded.drop(columns=['BEGIN_DATE', 'END_DATE'])
+        df_exploded = df_exploded.reset_index(drop=True)
+
+        # OUTPUT VALIDATION
+        expected_cols = ['schedule_day', 'RULE_CODE', 'LABOR_UNION_ID', 'CONTRACT_ID']
+        missing_output = [col for col in expected_cols if col not in df_exploded.columns]
+        if missing_output:
+            return False, pd.DataFrame(), f"Output validation failed: missing columns {missing_output}"
+
+        logger.info(f"Successfully treated df_process_rules. Shape: {df_exploded.shape}")
+        return True, df_exploded, ""
+
+    except Exception as e:
+        logger.error(f"Error in treat_df_process_rules: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def add_process_rules_to_df_contratos(
+    df_process_rules: pd.DataFrame, 
+    df_contratos: pd.DataFrame
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Merge process labor rules with contract data to produce a per-employee-day
+    DataFrame with applicable rule parameters.
+
+    Override logic: CONTRACT_ID-level rules fully replace LABOR_UNION_ID-level rules.
+    No partial inheritance of parameters between levels.
+
+    Args:
+        df_process_rules: Treated rules DataFrame (output of treat_df_process_rules),
+            with one row per rule-day, FIELD_CODE values as columns.
+        df_contratos: Contract DataFrame with employee_id, schedule_day, contract_id,
+            labor_union_id (one row per employee-day).
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if merge succeeded
+            - df_result (pd.DataFrame): Rules merged at employee-day level
+            - error_message (str): Error description if operation failed
+    """
+    try:
+        # INPUT VALIDATION
+        if df_process_rules is None or df_process_rules.empty:
+            logger.info("df_process_rules is empty - returning empty DataFrame (no rules to apply)")
+            return True, pd.DataFrame(), ""
+
+        if df_contratos is None or df_contratos.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_contratos"
+
+        required_contract_cols = ['employee_id', 'schedule_day', 'contract_id', 'labor_union_id']
+        missing_cols = [col for col in required_contract_cols if col not in df_contratos.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: df_contratos missing columns {missing_cols}"
+
+        if 'schedule_day' not in df_process_rules.columns:
+            return False, pd.DataFrame(), "Input validation failed: df_process_rules missing schedule_day"
+
+        # NORMALIZE TYPES for merge
+        df_rules = df_process_rules.copy()
+        df_contracts = df_contratos.copy()
+
+        df_rules['schedule_day'] = pd.to_datetime(df_rules['schedule_day']).dt.normalize()
+        df_contracts['schedule_day'] = pd.to_datetime(df_contracts['schedule_day']).dt.normalize()
+
+        # Separate rules into contract-level and labor-union-level
+        has_contract = df_rules['CONTRACT_ID'].notna() & (df_rules['CONTRACT_ID'] != '')
+        df_rules_contract = df_rules[has_contract].copy()
+        df_rules_labor = df_rules[~has_contract].copy()
+
+        rule_value_cols = [col for col in df_rules.columns if col not in [
+            'PROCESS_ID', 'LABOR_UNION_ID', 'CONTRACT_ID', 'schedule_day',
+            'RULE_ID', 'RULE_HEAD_ID'
+        ]]
+
+        merged_parts = []
+
+        # MERGE 1: Contract-level rules (individual contract overrides)
+        if not df_rules_contract.empty:
+            df_rules_contract['CONTRACT_ID'] = df_rules_contract['CONTRACT_ID'].astype(str)
+            df_contracts['contract_id'] = df_contracts['contract_id'].astype(str)
+
+            df_merged_contract = df_contracts.merge(
+                df_rules_contract,
+                left_on=['contract_id', 'schedule_day'],
+                right_on=['CONTRACT_ID', 'schedule_day'],
+                how='inner',
+                suffixes=('', '_rule')
+            )
+            if not df_merged_contract.empty:
+                df_merged_contract['_rule_source'] = 'contract'
+                merged_parts.append(df_merged_contract)
+                logger.info(f"Contract-level rules matched: {len(df_merged_contract)} rows")
+
+        # MERGE 2: Labor-union-level rules (collective, fallback for employees without contract-level rules)
+        if not df_rules_labor.empty:
+            df_rules_labor['LABOR_UNION_ID'] = df_rules_labor['LABOR_UNION_ID'].astype(str)
+            df_contracts['labor_union_id'] = df_contracts['labor_union_id'].astype(str)
+
+            df_merged_labor = df_contracts.merge(
+                df_rules_labor,
+                left_on=['labor_union_id', 'schedule_day'],
+                right_on=['LABOR_UNION_ID', 'schedule_day'],
+                how='inner',
+                suffixes=('', '_rule')
+            )
+
+            if not df_merged_labor.empty:
+                df_merged_labor['_rule_source'] = 'labor_union'
+
+                # Exclude employee-day-rule combinations already covered by contract-level rules
+                if merged_parts:
+                    contract_keys = merged_parts[0][['employee_id', 'schedule_day', 'RULE_CODE']].drop_duplicates()
+                    contract_keys['_has_contract_rule'] = True
+                    df_merged_labor = df_merged_labor.merge(
+                        contract_keys,
+                        on=['employee_id', 'schedule_day', 'RULE_CODE'],
+                        how='left'
+                    )
+                    df_merged_labor = df_merged_labor[df_merged_labor['_has_contract_rule'].isna()]
+                    df_merged_labor = df_merged_labor.drop(columns=['_has_contract_rule'])
+
+                if not df_merged_labor.empty:
+                    merged_parts.append(df_merged_labor)
+                    logger.info(f"Labor-union-level rules matched (after contract override): {len(df_merged_labor)} rows")
+
+        # COMBINE results
+        if not merged_parts:
+            logger.info("No rules matched any employee-day combinations")
+            return True, pd.DataFrame(), ""
+
+        df_result = pd.concat(merged_parts, ignore_index=True)
+
+        # Clean up merge artifacts
+        cols_to_drop = [col for col in df_result.columns if col.endswith('_rule')]
+        df_result = df_result.drop(columns=cols_to_drop, errors='ignore')
+
+        logger.info(f"Successfully merged process rules with contracts. Shape: {df_result.shape}")
+        return True, df_result, ""
+
+    except Exception as e:
+        logger.error(f"Error in add_process_rules_to_df_contratos: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def treat_df_pro_emp_mov(
+    df_pro_emp_mov: pd.DataFrame,
+    df_process_rules: pd.DataFrame,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Process pending compensatory movements from CORE_PRO_EMP_MOV.
+
+    Enriches each pending movement with the full rule parametrization from
+    df_process_rules (via RULE_HEAD_ID join), so the algorithm knows the
+    deadline, rest day type/subtype for each pending obligation.
+
+    Args:
+        df_pro_emp_mov: Raw DataFrame from core_pro_emp_mov with columns:
+            PROCESS_ID, EMPLOYEE_ID, SCHEDULE_DAY, RULE_HEAD_ID,
+            RULE_CODE, FIELD_CODE, VALUE_OPT1, VALUE_OPT2
+        df_process_rules: Treated rules DataFrame (output of treat_df_process_rules),
+            already pivoted wide with RULE_HEAD_ID as a column.
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if treatment succeeded
+            - df_result (pd.DataFrame): Pending movements enriched with rule params
+            - error_message (str): Error description if operation failed
+    """
+    try:
+        # INPUT VALIDATION
+        if df_pro_emp_mov is None or df_pro_emp_mov.empty:
+            return True, pd.DataFrame(), "df_pro_emp_mov is empty - no pending movements"
+
+        df_result = df_pro_emp_mov.copy()
+
+        required_cols = ['PROCESS_ID', 'EMPLOYEE_ID', 'SCHEDULE_DAY', 'RULE_HEAD_ID',
+                         'RULE_CODE', 'FIELD_CODE', 'VALUE_OPT1', 'VALUE_OPT2']
+        missing_cols = [col for col in required_cols if col not in df_result.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
+
+        # Normalize types
+        df_result['SCHEDULE_DAY'] = pd.to_datetime(df_result['SCHEDULE_DAY'], errors='coerce')
+        df_result['VALUE_OPT2'] = pd.to_numeric(df_result['VALUE_OPT2'], errors='coerce').fillna(0)
+
+        # Filter to only pending origins (VALUE_OPT1 = 'O' with a balance > 0)
+        df_result = df_result[
+            (df_result['VALUE_OPT1'] == 'O') & (df_result['VALUE_OPT2'] > 0)
+        ].copy()
+
+        if df_result.empty:
+            logger.info("treat_df_pro_emp_mov: no pending movements with balance > 0")
+            return True, pd.DataFrame(), ""
+
+        # ENRICH with rule parametrization from df_process_rules (via RULE_HEAD_ID)
+        if df_process_rules is not None and not df_process_rules.empty and 'RULE_HEAD_ID' in df_process_rules.columns:
+            rule_params = df_process_rules.drop_duplicates(subset=['RULE_HEAD_ID']).copy()
+            param_cols = [col for col in rule_params.columns if col in [
+                'RULE_HEAD_ID', 'RULE_CODE', 'TIME_OFF_ADDITIONAL', 'TIME_OFF_DEADLINE',
+                'REST_DAY_TYPE', 'REST_DAY_SUBTYPE', 'OVERLAP_SUNDAY_HOLIDAY'
+            ]]
+            rule_params = rule_params[param_cols]
+
+            df_result['RULE_HEAD_ID'] = df_result['RULE_HEAD_ID'].astype(str)
+            rule_params['RULE_HEAD_ID'] = rule_params['RULE_HEAD_ID'].astype(str)
+
+            df_result = df_result.merge(
+                rule_params,
+                on='RULE_HEAD_ID',
+                how='left',
+                suffixes=('', '_param')
+            )
+            cols_to_drop = [col for col in df_result.columns if col.endswith('_param')]
+            df_result = df_result.drop(columns=cols_to_drop, errors='ignore')
+            logger.info(f"Enriched pending movements with rule params via RULE_HEAD_ID")
+        else:
+            logger.warning("df_process_rules is empty or missing RULE_HEAD_ID - pending movements will lack rule parametrization")
+
+        df_result = df_result.reset_index(drop=True)
+        logger.info(f"Successfully treated df_pro_emp_mov. Shape: {df_result.shape}")
+        return True, df_result, ""
+
+    except Exception as e:
+        logger.error(f"Error in treat_df_pro_emp_mov: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def build_compensatory_output(
+    compensatory_dict: Dict,
+    process_id: int,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Build INT_EMP_PROCESS_MOV integration rows (Origin/Destiny) from the solver's
+    compensatory time-off output.
+
+    The solver provides tuples (worked_day, day_off) per worker per group.
+    If day_off is None the compensation was not placed in the execution period.
+
+    Mapping:
+        - day_off is not None -> O row (worked_day) + D row (day_off, ref=worked_day)
+        - day_off is None     -> O row only (pending for future executions)
+
+    Args:
+        compensatory_dict: Solver output dict keyed by worker ID, with structure:
+            {w: {'feriados': {'ld_given': [(worked_day, day_off_or_None), ...],
+                              'banco_horas': [], 'no_compensation': []},
+                 'domingos': {'ld_given': [(worked_day, day_off_or_None), ...],
+                              'banco_horas': [], 'no_compensation': []}}}
+        process_id: The process ID for the output rows.
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if output was built successfully
+            - df_output (pd.DataFrame): Integration rows with O/D classification
+            - error_message (str): Error description if operation failed
+    """
+    try:
+        if not compensatory_dict:
+            logger.info("build_compensatory_output: empty compensatory_dict, returning empty DataFrame")
+            return True, pd.DataFrame(), ""
+
+        rule_code_map = {
+            'feriados': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
+            'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
+        }
+
+        rows = []
+
+        for worker_id, groups in compensatory_dict.items():
+            for group_key, rule_code in rule_code_map.items():
+                group_data = groups.get(group_key, {})
+
+                for worked_day, day_off in group_data.get('ld_given', []):
+                    # O row: always generated for the worked special day
+                    rows.append({
+                        'PROCESS_ID': process_id,
+                        'EMPLOYEE_ID': worker_id,
+                        'SCHEDULE_DAY': worked_day,
+                        'SCHEDULE_DAY_REF': None,
+                        'RULE_CODE': rule_code,
+                        'FIELD_CODE': 'TIME_OFF_ADDITIONAL',
+                        'VALUE_OPT1': 'O',
+                        'DELETED': 0,
+                    })
+
+                    # D row: only if compensation was placed
+                    if day_off is not None:
+                        rows.append({
+                            'PROCESS_ID': process_id,
+                            'EMPLOYEE_ID': worker_id,
+                            'SCHEDULE_DAY': day_off,
+                            'SCHEDULE_DAY_REF': worked_day,
+                            'RULE_CODE': rule_code,
+                            'FIELD_CODE': 'TIME_OFF_ADDITIONAL',
+                            'VALUE_OPT1': 'D',
+                            'DELETED': 0,
+                        })
+
+                # TODO STRSOL-1372: banco_horas not considered for now
+
+        if not rows:
+            logger.info("build_compensatory_output: no compensatory rows generated")
+            return True, pd.DataFrame(), ""
+
+        df_output = pd.DataFrame(rows)
+        n_origins = (df_output['VALUE_OPT1'] == 'O').sum()
+        n_destinations = (df_output['VALUE_OPT1'] == 'D').sum()
+        n_pending = n_origins - n_destinations
+        logger.info(
+            f"build_compensatory_output: generated {len(df_output)} rows "
+            f"({n_origins} origins, {n_destinations} destinations, {n_pending} pending)"
+        )
+        return True, df_output, ""
+
+    except Exception as e:
+        logger.error(f"Error in build_compensatory_output: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def apply_compensatory_sched_types(
+    final_df: pd.DataFrame,
+    compensatory_dict: Dict,
+    df_process_rules: pd.DataFrame,
+    employee_col: str = 'colaborador',
+    date_col: str = 'data',
+) -> pd.DataFrame:
+    """
+    Override sched_type and sched_subtype for compensatory day-off rows using the
+    REST_DAY_TYPE and REST_DAY_SUBTYPE defined in df_process_rules.
+
+    This runs AFTER convert_types_out, which hardcodes all 'LD' rows to ('F', 'D').
+    The compensatory dict from the solver identifies exactly which (employee, day_off)
+    pairs are compensatory and from which rule group (feriados/domingos), allowing us
+    to look up the rule-specific type/subtype and override.
+
+    Args:
+        final_df: Output DataFrame after convert_types_out, with sched_type/sched_subtype.
+        compensatory_dict: Solver output dict keyed by worker ID:
+            {w: {'feriados': {'ld_given': [(worked_day, day_off), ...]},
+                 'domingos': {'ld_given': [(worked_day, day_off), ...]}}}
+        df_process_rules: Merged rules DataFrame (from algorithm_treatment_params)
+            with columns including RULE_CODE, REST_DAY_TYPE, REST_DAY_SUBTYPE, employee_id.
+        employee_col: Employee column name in final_df (default: 'colaborador').
+        date_col: Date column name in final_df (default: 'data').
+
+    Returns:
+        DataFrame with sched_type/sched_subtype overridden for compensatory rows.
+    """
+    try:
+        if not compensatory_dict or df_process_rules is None or df_process_rules.empty:
+            logger.info("apply_compensatory_sched_types: no compensatory data or rules - skipping")
+            return final_df
+
+        if 'sched_type' not in final_df.columns or 'sched_subtype' not in final_df.columns:
+            logger.warning("apply_compensatory_sched_types: sched_type/sched_subtype not in final_df - skipping")
+            return final_df
+
+        rule_code_map = {
+            'feriados': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
+            'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
+        }
+
+        # Build lookup: (employee_id, RULE_CODE) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
+        type_lookup = {}
+        if 'REST_DAY_TYPE' in df_process_rules.columns and 'REST_DAY_SUBTYPE' in df_process_rules.columns:
+            for _, row in df_process_rules.drop_duplicates(
+                subset=['employee_id', 'RULE_CODE']
+            ).iterrows():
+                key = (int(row['employee_id']), row['RULE_CODE'])
+                type_lookup[key] = (row['REST_DAY_TYPE'], row['REST_DAY_SUBTYPE'])
+
+        if not type_lookup:
+            logger.warning("apply_compensatory_sched_types: no type lookup built from df_process_rules - skipping")
+            return final_df
+
+        # Build set of compensatory day-off targets: (employee_id, day_off_date) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
+        overrides = {}
+        for worker_id, groups in compensatory_dict.items():
+            worker_int = int(worker_id)
+            for group_key, rule_code in rule_code_map.items():
+                group_data = groups.get(group_key, {})
+                rule_types = type_lookup.get((worker_int, rule_code))
+                if not rule_types:
+                    continue
+
+                for worked_day, day_off in group_data.get('ld_given', []):
+                    if day_off is not None:
+                        day_off_normalized = pd.Timestamp(day_off).normalize()
+                        overrides[(worker_int, day_off_normalized)] = rule_types
+
+        if not overrides:
+            logger.info("apply_compensatory_sched_types: no compensatory day-off rows to override")
+            return final_df
+
+        # Apply overrides to final_df
+        df_result = final_df.copy()
+        df_result[date_col] = pd.to_datetime(df_result[date_col]).dt.normalize()
+        df_result[employee_col] = df_result[employee_col].astype(int)
+
+        override_count = 0
+        for idx, row in df_result.iterrows():
+            key = (row[employee_col], row[date_col])
+            if key in overrides:
+                rest_day_type, rest_day_subtype = overrides[key]
+                df_result.at[idx, 'sched_type'] = rest_day_type
+                df_result.at[idx, 'sched_subtype'] = rest_day_subtype
+                override_count += 1
+
+        logger.info(f"apply_compensatory_sched_types: overrode {override_count} rows with rule-specific types")
+        return df_result
+
+    except Exception as e:
+        logger.error(f"Error in apply_compensatory_sched_types: {str(e)}", exc_info=True)
+        return final_df
