@@ -267,7 +267,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             shift_M = adapted_data['shift_M']
             shift_T = adapted_data['shift_T']
             role_by_worker = adapted_data['role_by_worker']
-            proportion = adapted_data['proportion']
             work_day_hours = adapted_data['work_day_hours']
             work_days_per_week = adapted_data['work_days_per_week']
             week_compensation_limit = adapted_data['week_compensation_limit']
@@ -364,7 +363,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Applying SALSA constraints")
             
-            contingente_f = []
+            contingente_h = []
             contingente_d = []
             
             # Basic constraint: each worker has exactly one shift per day

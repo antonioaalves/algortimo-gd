@@ -198,23 +198,47 @@ def populate_week_seed_5_6(first_week_5_6, data_admissao, week_to_days):
 
     return work_days_per_week.astype(int)
 
-def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days):
+def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period):
     nbr_weeks = len(week_to_days)
     work_days_per_week = np.full(nbr_weeks, 5)
     week_5_days = 0
+    found_week = False
     for week, days in week_to_days.items():
         days_set = set(days)
+        if sorted(days)[0] < period[0] or sorted(days)[0] > period[1]:
+            continue
         days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
         if len(days_off_week) > 1:
             week_5_days = week - 1
+            found_week = True
             break
+    if found_week != True:
+        for week, days in reversed(list(week_to_days.items())):
+            days_set = set(days)
+            if sorted(days)[0] > period[0]:
+                continue
+            days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+            if len(days_off_week) > 1:
+                week_5_days = week - 1
+                found_week = True
+                break
+    if found_week != True:
+        for week, days in week_to_days.items():
+            days_set = set(days)
+            if sorted(days)[0] < period[1]:
+                continue
+            days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+            if len(days_off_week) > 1:
+                week_5_days = week - 1
+                found_week = True
+                break
 
     if week_5_days % 2 == 0:
-        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
                     f"with days {days_off_week} since its even, first week will start with 5")
         work_days_per_week= np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
     else:
-        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
                     f"with days {days_off_week} since its odd, first week will start with 6")
         work_days_per_week= np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
 

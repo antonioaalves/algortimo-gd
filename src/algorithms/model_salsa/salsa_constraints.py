@@ -90,7 +90,6 @@ def compensation_days(model, shift, workers, working_days, special_days, week_to
     for w in workers:
         # Initialize the compensation day usage tracking for this worker
         comp_day_usage[w] = {}
-        contingent[w] = []
         all_possible_comp_days = set()
         # Now collect all possible compensation days for this worker
         for d in worked_special_days[w].keys():  # Use keys from worked_special_days[w] to ensure alignment
@@ -293,7 +292,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
     for w in workers:
         
         all_days_off = fixed_days[w].union(fixed_LQs[w])
-        all_work_days = [d for d in working_days[w] if period[0] < d < period[1]]
+        all_work_days = [d for d in working_days[w] if period[0] - 2 < d < period[1]]
         if contract_type.get(w, 0) == 8:
             max_continuous_free_days = 2
         else:
@@ -345,7 +344,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
     debug_vars = {}  # Store debug variables to return    
     for w in workers:
 
-        if contract_type[w] in [4, 5, 6, 8]:
+        if contract_type[w] in [4, 5, 8]:
             quality_2weekend_vars = []
             
             if F_special_day == False:
@@ -557,7 +556,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             
             else:
                 if tipo_contrato >= 5:
-                    if tipo_contrato== 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1:
+                    if (tipo_contrato == 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1) or tipo_contrato == 6:
                         required_free_days = 1
                     elif actual_days_in_week >= 2:
                         required_free_days = 2
