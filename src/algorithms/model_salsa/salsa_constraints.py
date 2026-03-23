@@ -34,7 +34,7 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
         contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, sundays_set, week_to_days, working_shift, compensation_sunday_limit, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_sunday, period, "sunday", past_sundays_worked)
         
-    ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d, fixed_lds, contingent_f, contingent_d)
+    ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d, fixed_lds, contingent_f, contingent_d, compensation_holiday_limit, compensation_sunday_limit)
     return contingent_f, contingent_d
 
 
@@ -160,7 +160,7 @@ def compensation_days(model, shift, workers, working_days, special_days, week_to
         model.Add(total_comp_days_used == total_lds[w])
     return contingent, total_lds
 
-def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, total_lds_sundays_everyone, fixed_lds, contingente_h, contingente_d):
+def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, total_lds_sundays_everyone, fixed_lds, contingente_h, contingente_d, compensation_h_limit, compensation_d_limit):
     if total_lds_holidays_everyone is not None and total_lds_sundays_everyone is not None:
         for w in workers:
             all_assignment_vars = {}
@@ -180,36 +180,40 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
                 if vars_list:
                     model.Add(sum(vars_list) <= 1)
 
-            past_lds = len(fixed_lds[w]) #havia algo a alterar aqui, ligado ao periodo, ja nao tenho a certeza
+            past_lds = len([d for d in fixed_lds[w] and d > period[0]]) #havia algo a alterar aqui, ligado ao periodo, ja nao tenho a certeza
+            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_holidays_everyone and w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w] + past_lds)
             elif w in total_lds_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
             elif w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
 
     elif total_lds_holidays_everyone is not None:
         for w in workers:
-            past_lds = len(fixed_lds[w])
+            past_lds = len([d for d in fixed_lds[w] and d > period[0]])
+            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
 
     elif total_lds_sundays_everyone is not None:
         for w in workers:
-            past_lds = len(fixed_lds[w])
+            past_lds = len([d for d in fixed_lds[w] and d > period[0]])
+            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 450) if (w, d, 'LD') in shift) == past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
 
     else:
         for w in workers:
-            past_lds = len(fixed_lds[w])
-            model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], period[1] + 1) if (w, d, 'LD') in shift) == past_lds)
+            past_lds = len([d for d in fixed_lds[w] and d > period[0]])
+            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
+            model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
