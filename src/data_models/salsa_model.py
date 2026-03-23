@@ -78,6 +78,7 @@ from src.data_models.functions.data_treatment_functions import (
     restrict_turnos_by_disponibilidade,
     treat_df_process_rules,
     add_process_rules_to_df_contratos,
+    treat_df_pro_emp_mov,
     build_compensatory_output,
 )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
@@ -953,9 +954,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", "past_employees_id_list is empty"
 
             # STRSOL-1372: Merge process rules with contracts for algorithm consumption
+            df_process_rules = self.auxiliary_data.get('df_process_rules', pd.DataFrame())
             df_process_rules_merged = pd.DataFrame()
             try:
-                df_process_rules = self.auxiliary_data.get('df_process_rules', pd.DataFrame())
                 if not df_process_rules.empty:
                     self.logger.info("Merging process rules with df_contratos")
                     success, df_process_rules_merged, error_msg = add_process_rules_to_df_contratos(
@@ -972,6 +973,31 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.warning(f"Error merging process rules with contracts: {e} - proceeding with empty DataFrame")
                 df_process_rules_merged = pd.DataFrame()
+
+            # STRSOL-1372: Load pending compensatory movements (CORE_PRO_EMP_MOV)
+            df_pro_emp_mov = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_pro_emp_mov from data manager")
+                df_pro_emp_mov_raw = data_manager.load_data(
+                    'df_pro_emp_mov',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_pro_emp_mov'],
+                    process_id="'" + str(process_id) + "'",
+                    colabs_id=create_employee_query_string(past_employees_id_list)
+                )
+                self.logger.info(f"df_pro_emp_mov shape (rows {df_pro_emp_mov_raw.shape[0]}, columns {df_pro_emp_mov_raw.shape[1]}): {df_pro_emp_mov_raw.columns.tolist()}")
+
+                success, df_pro_emp_mov, error_msg = treat_df_pro_emp_mov(
+                    df_pro_emp_mov=df_pro_emp_mov_raw,
+                    df_process_rules=df_process_rules
+                )
+                if not success:
+                    self.logger.warning(f"df_pro_emp_mov treatment failed: {error_msg} - proceeding with empty DataFrame")
+                    df_pro_emp_mov = pd.DataFrame()
+                else:
+                    self.logger.info(f"df_pro_emp_mov treated shape: {df_pro_emp_mov.shape}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_pro_emp_mov: {e} - proceeding with empty DataFrame")
+                df_pro_emp_mov = pd.DataFrame()
 
             # Saving values into memory
             try:
@@ -991,6 +1017,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.algorithm_treatment_params['employees_id_list_for_posto'] = employees_id_list_for_posto
                 self.algorithm_treatment_params['employees_id_90_list'] = employees_id_90_list
                 self.algorithm_treatment_params['df_process_rules'] = df_process_rules_merged.copy()
+                self.algorithm_treatment_params['df_pro_emp_mov'] = df_pro_emp_mov.copy()
 
                 self.logger.info(f"load_colaborador_info completed successfully.")
                 return True, "", ""

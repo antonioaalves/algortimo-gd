@@ -21,6 +21,7 @@ Data treatment functions:
 - calculate_and_merge_allocated_employees
 - treat_df_process_rules
 - add_process_rules_to_df_contratos
+- treat_df_pro_emp_mov
 - build_compensatory_output
 
 Dataframe manipulation functions:
@@ -5450,22 +5451,110 @@ def add_process_rules_to_df_contratos(
         return False, pd.DataFrame(), str(e)
 
 
+def treat_df_pro_emp_mov(
+    df_pro_emp_mov: pd.DataFrame,
+    df_process_rules: pd.DataFrame,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Process pending compensatory movements from CORE_PRO_EMP_MOV.
+
+    Enriches each pending movement with the full rule parametrization from
+    df_process_rules (via RULE_HEAD_ID join), so the algorithm knows the
+    deadline, rest day type/subtype for each pending obligation.
+
+    Args:
+        df_pro_emp_mov: Raw DataFrame from core_pro_emp_mov with columns:
+            PROCESS_ID, EMPLOYEE_ID, SCHEDULE_DAY, RULE_HEAD_ID,
+            RULE_CODE, FIELD_CODE, VALUE_OPT1, VALUE_OPT2
+        df_process_rules: Treated rules DataFrame (output of treat_df_process_rules),
+            already pivoted wide with RULE_HEAD_ID as a column.
+
+    Returns:
+        Tuple containing:
+            - success (bool): True if treatment succeeded
+            - df_result (pd.DataFrame): Pending movements enriched with rule params
+            - error_message (str): Error description if operation failed
+    """
+    try:
+        # INPUT VALIDATION
+        if df_pro_emp_mov is None or df_pro_emp_mov.empty:
+            return True, pd.DataFrame(), "df_pro_emp_mov is empty - no pending movements"
+
+        df_result = df_pro_emp_mov.copy()
+
+        required_cols = ['PROCESS_ID', 'EMPLOYEE_ID', 'SCHEDULE_DAY', 'RULE_HEAD_ID',
+                         'RULE_CODE', 'FIELD_CODE', 'VALUE_OPT1', 'VALUE_OPT2']
+        missing_cols = [col for col in required_cols if col not in df_result.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
+
+        # Normalize types
+        df_result['SCHEDULE_DAY'] = pd.to_datetime(df_result['SCHEDULE_DAY'], errors='coerce')
+        df_result['VALUE_OPT2'] = pd.to_numeric(df_result['VALUE_OPT2'], errors='coerce').fillna(0)
+
+        # Filter to only pending origins (VALUE_OPT1 = 'O' with a balance > 0)
+        df_result = df_result[
+            (df_result['VALUE_OPT1'] == 'O') & (df_result['VALUE_OPT2'] > 0)
+        ].copy()
+
+        if df_result.empty:
+            logger.info("treat_df_pro_emp_mov: no pending movements with balance > 0")
+            return True, pd.DataFrame(), ""
+
+        # ENRICH with rule parametrization from df_process_rules (via RULE_HEAD_ID)
+        if df_process_rules is not None and not df_process_rules.empty and 'RULE_HEAD_ID' in df_process_rules.columns:
+            rule_params = df_process_rules.drop_duplicates(subset=['RULE_HEAD_ID']).copy()
+            param_cols = [col for col in rule_params.columns if col in [
+                'RULE_HEAD_ID', 'RULE_CODE', 'TIME_OFF_ADDITIONAL', 'TIME_OFF_DEADLINE',
+                'REST_DAY_TYPE', 'REST_DAY_SUBTYPE', 'OVERLAP_SUNDAY_HOLIDAY'
+            ]]
+            rule_params = rule_params[param_cols]
+
+            df_result['RULE_HEAD_ID'] = df_result['RULE_HEAD_ID'].astype(str)
+            rule_params['RULE_HEAD_ID'] = rule_params['RULE_HEAD_ID'].astype(str)
+
+            df_result = df_result.merge(
+                rule_params,
+                on='RULE_HEAD_ID',
+                how='left',
+                suffixes=('', '_param')
+            )
+            cols_to_drop = [col for col in df_result.columns if col.endswith('_param')]
+            df_result = df_result.drop(columns=cols_to_drop, errors='ignore')
+            logger.info(f"Enriched pending movements with rule params via RULE_HEAD_ID")
+        else:
+            logger.warning("df_process_rules is empty or missing RULE_HEAD_ID - pending movements will lack rule parametrization")
+
+        df_result = df_result.reset_index(drop=True)
+        logger.info(f"Successfully treated df_pro_emp_mov. Shape: {df_result.shape}")
+        return True, df_result, ""
+
+    except Exception as e:
+        logger.error(f"Error in treat_df_pro_emp_mov: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
 def build_compensatory_output(
     compensatory_dict: Dict,
     process_id: int,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Build integration table rows (Origin/Destiny) from the solver's compensatory 
-    time-off output.
+    Build INT_EMP_PROCESS_MOV integration rows (Origin/Destiny) from the solver's
+    compensatory time-off output.
 
-    For each worker the solver provides:
-        - ld_given: list of tuples (worked_day, day_off_given)
-        - no_compensation: list of worked days without compensation in the period
+    The solver provides tuples (worked_day, day_off) per worker per group.
+    If day_off is None the compensation was not placed in the execution period.
+
+    Mapping:
+        - day_off is not None -> O row (worked_day) + D row (day_off, ref=worked_day)
+        - day_off is None     -> O row only (pending for future executions)
 
     Args:
         compensatory_dict: Solver output dict keyed by worker ID, with structure:
-            {w: {'feriados': {'ld_given': [], 'banco_horas': [], 'no_compensation': []},
-                 'domingos': {'ld_given': [], 'banco_horas': [], 'no_compensation': []}}}
+            {w: {'feriados': {'ld_given': [(worked_day, day_off_or_None), ...],
+                              'banco_horas': [], 'no_compensation': []},
+                 'domingos': {'ld_given': [(worked_day, day_off_or_None), ...],
+                              'banco_horas': [], 'no_compensation': []}}}
         process_id: The process ID for the output rows.
 
     Returns:
@@ -5474,12 +5563,6 @@ def build_compensatory_output(
             - df_output (pd.DataFrame): Integration rows with O/D classification
             - error_message (str): Error description if operation failed
     """
-    # TODO STRSOL-1372: Complete implementation once solver integration is validated end-to-end.
-    #   - Map 'feriados' entries to RULE_CODE='COMPENSATORY_TIME_OFF_HOLIDAYS'
-    #   - Map 'domingos' entries to RULE_CODE='COMPENSATORY_TIME_OFF_SUNDAYS'
-    #   - ld_given tuples -> O row (SCHEDULE_DAY=worked_day) + D row (SCHEDULE_DAY=day_off, SCHEDULE_DAY_REF=worked_day)
-    #   - no_compensation entries -> O row only (SCHEDULE_DAY=worked_day, SCHEDULE_DAY_REF empty)
-    #   - banco_horas entries are not considered for now
     try:
         if not compensatory_dict:
             logger.info("build_compensatory_output: empty compensatory_dict, returning empty DataFrame")
@@ -5496,38 +5579,31 @@ def build_compensatory_output(
             for group_key, rule_code in rule_code_map.items():
                 group_data = groups.get(group_key, {})
 
-                # ld_given: tuple (worked_day, day_off_given) -> O + D rows
                 for worked_day, day_off in group_data.get('ld_given', []):
+                    # O row: always generated for the worked special day
                     rows.append({
                         'PROCESS_ID': process_id,
                         'EMPLOYEE_ID': worker_id,
                         'SCHEDULE_DAY': worked_day,
                         'SCHEDULE_DAY_REF': None,
                         'RULE_CODE': rule_code,
+                        'FIELD_CODE': 'TIME_OFF_ADDITIONAL',
                         'VALUE_OPT1': 'O',
-                        'DELETED': 0,
-                    })
-                    rows.append({
-                        'PROCESS_ID': process_id,
-                        'EMPLOYEE_ID': worker_id,
-                        'SCHEDULE_DAY': day_off,
-                        'SCHEDULE_DAY_REF': worked_day,
-                        'RULE_CODE': rule_code,
-                        'VALUE_OPT1': 'D',
                         'DELETED': 0,
                     })
 
-                # no_compensation: worked days without day off -> O row only
-                for worked_day in group_data.get('no_compensation', []):
-                    rows.append({
-                        'PROCESS_ID': process_id,
-                        'EMPLOYEE_ID': worker_id,
-                        'SCHEDULE_DAY': worked_day,
-                        'SCHEDULE_DAY_REF': None,
-                        'RULE_CODE': rule_code,
-                        'VALUE_OPT1': 'O',
-                        'DELETED': 0,
-                    })
+                    # D row: only if compensation was placed
+                    if day_off is not None:
+                        rows.append({
+                            'PROCESS_ID': process_id,
+                            'EMPLOYEE_ID': worker_id,
+                            'SCHEDULE_DAY': day_off,
+                            'SCHEDULE_DAY_REF': worked_day,
+                            'RULE_CODE': rule_code,
+                            'FIELD_CODE': 'TIME_OFF_ADDITIONAL',
+                            'VALUE_OPT1': 'D',
+                            'DELETED': 0,
+                        })
 
                 # TODO STRSOL-1372: banco_horas not considered for now
 
@@ -5536,7 +5612,13 @@ def build_compensatory_output(
             return True, pd.DataFrame(), ""
 
         df_output = pd.DataFrame(rows)
-        logger.info(f"build_compensatory_output: generated {len(df_output)} rows ({(df_output['VALUE_OPT1'] == 'O').sum()} origins, {(df_output['VALUE_OPT1'] == 'D').sum()} destinations)")
+        n_origins = (df_output['VALUE_OPT1'] == 'O').sum()
+        n_destinations = (df_output['VALUE_OPT1'] == 'D').sum()
+        n_pending = n_origins - n_destinations
+        logger.info(
+            f"build_compensatory_output: generated {len(df_output)} rows "
+            f"({n_origins} origins, {n_destinations} destinations, {n_pending} pending)"
+        )
         return True, df_output, ""
 
     except Exception as e:
