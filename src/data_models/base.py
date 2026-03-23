@@ -37,6 +37,8 @@ from src.data_models.functions.data_treatment_functions import (
     create_df_estimativas,
     add_pessoa_obj_whole_day,
     treat_df_orcamento,
+    apply_compensatory_sched_types,
+    build_compensatory_output,
 )
 from src.data_models.validations.load_process_data_validations import (
     validate_posto_id,
@@ -625,6 +627,10 @@ class BaseDescansosDataModel(ABC):
 
                 self.rare_data['df_results'] = results.get('core_results', {}).get('formatted_schedule', pd.DataFrame())
                 #self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
+
+                # STRSOL-1372: Store compensatory dict from solver for sched_type/sched_subtype override
+                # TODO STRSOL-1372: Confirm the exact key path in the solver results dict
+                self.rare_data['compensatory_dict'] = results.get('core_results', {}).get('feriados_domingos_compensacao', {})
                 
                 # Save CSV file for debugging (using config manager if available)
                 try:
@@ -812,6 +818,22 @@ class BaseDescansosDataModel(ABC):
 
             self.logger.info("Converting types out")
             final_df = convert_types_out(pd.DataFrame(final_df))
+
+            # STRSOL-1372: Override sched_type/sched_subtype for compensatory day-off rows
+            # using rule-defined REST_DAY_TYPE/REST_DAY_SUBTYPE from df_process_rules
+            compensatory_dict = self.rare_data.get('compensatory_dict', {})
+            df_process_rules = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
+            if compensatory_dict and not df_process_rules.empty:
+                date_col = 'data' if 'data' in final_df.columns else 'date'
+                self.logger.info("Applying compensatory sched_type/sched_subtype overrides")
+                final_df = apply_compensatory_sched_types(
+                    final_df=final_df,
+                    compensatory_dict=compensatory_dict,
+                    df_process_rules=df_process_rules,
+                    employee_col='colaborador',
+                    date_col=date_col,
+                )
+
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             # Drop columns that exist (matricula_int may not exist if merge used employee_id)
             # Keep matricula for insertion - we'll create colaborador from it
@@ -849,6 +871,24 @@ class BaseDescansosDataModel(ABC):
             self.logger.info("format_results completed successfully. Storing final_df in formatted_data.")
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             self.formatted_data['df_final'] = final_df.copy()
+
+            # STRSOL-1372: Build compensatory output (O/D rows for INT_EMP_PROCESS_MOV)
+            compensatory_dict = self.rare_data.get('compensatory_dict', {})
+            process_id = self.external_call_data.get("current_process_id", "")
+            if compensatory_dict:
+                self.logger.info("Building compensatory output from solver results")
+                success, df_compensatory, error_msg = build_compensatory_output(
+                    compensatory_dict=compensatory_dict,
+                    process_id=process_id,
+                )
+                if success and not df_compensatory.empty:
+                    self.formatted_data['df_compensatory'] = df_compensatory.copy()
+                    self.logger.info(f"Compensatory output stored: {len(df_compensatory)} rows")
+                elif not success:
+                    self.logger.warning(f"build_compensatory_output failed: {error_msg}")
+                else:
+                    self.logger.info("No compensatory output rows generated")
+
             return True            
         except Exception as e:
             self.logger.error(f"Error performing format_results: {str(e)}", exc_info=True) 
@@ -927,3 +967,67 @@ class BaseDescansosDataModel(ABC):
         except Exception as e:
             self.logger.error(f"Error validating insert_results from data manager: {str(e)}")
             return False                    
+
+    def insert_compensatory_results(self, data_manager: BaseDataManager) -> bool:
+        """
+        STRSOL-1372: Insert compensatory output (O/D rows) into INT_EMP_PROCESS_MOV.
+        Built by build_compensatory_output in format_results and stored in formatted_data['df_compensatory'].
+        """
+        try:
+            self.logger.info("Entered insert_compensatory_results method.")
+
+            if 'df_compensatory' not in self.formatted_data:
+                self.logger.info("No compensatory output to insert (df_compensatory not in formatted_data)")
+                return True
+
+            df_compensatory = self.formatted_data['df_compensatory'].copy()
+
+            if df_compensatory.empty:
+                self.logger.info("df_compensatory is empty, nothing to insert")
+                return True
+
+            try:
+                self.logger.info(f"Preparing compensatory DataFrame for insertion ({len(df_compensatory)} rows)")
+                df_compensatory['SCHEDULE_DAY'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY']).dt.strftime('%Y-%m-%d')
+                df_compensatory['SCHEDULE_DAY_REF'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY_REF'], errors='coerce').dt.strftime('%Y-%m-%d')
+                df_compensatory['SCHEDULE_DAY_REF'] = df_compensatory['SCHEDULE_DAY_REF'].where(
+                    df_compensatory['SCHEDULE_DAY_REF'].notna(), None
+                )
+
+                df_compensatory = df_compensatory.rename(columns={
+                    'PROCESS_ID': 'fk_processo',
+                    'EMPLOYEE_ID': 'employee_id',
+                    'SCHEDULE_DAY': 'schedule_day',
+                    'SCHEDULE_DAY_REF': 'schedule_day_ref',
+                    'RULE_CODE': 'rule_code',
+                    'FIELD_CODE': 'field_code',
+                    'VALUE_OPT1': 'value_opt1',
+                    'DELETED': 'deleted',
+                })
+
+                cols_to_insert = ['fk_processo', 'employee_id', 'schedule_day', 'schedule_day_ref',
+                                  'rule_code', 'field_code', 'value_opt1', 'deleted']
+                df_compensatory = df_compensatory[cols_to_insert]
+            except Exception as e:
+                self.logger.error(f"Error preparing compensatory DataFrame for insertion: {str(e)}")
+                return False
+
+            try:
+                query_path = self.config_manager.paths.sql_processing_paths['insert_compensatory_results_df']
+                valid_insertion = bulk_insert_with_query(
+                    data_manager=data_manager,
+                    data=df_compensatory,
+                    query_file=query_path,
+                )
+                if not valid_insertion:
+                    self.logger.error("Error inserting compensatory results")
+                    return False
+                self.logger.info("Compensatory results inserted successfully")
+                return True
+            except Exception as e:
+                self.logger.error(f"Error inserting compensatory results with bulk_insert_with_query: {str(e)}", exc_info=True)
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error performing insert_compensatory_results: {str(e)}", exc_info=True)
+            return False

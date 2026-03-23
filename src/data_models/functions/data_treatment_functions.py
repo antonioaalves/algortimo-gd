@@ -23,6 +23,7 @@ Data treatment functions:
 - add_process_rules_to_df_contratos
 - treat_df_pro_emp_mov
 - build_compensatory_output
+- apply_compensatory_sched_types
 
 Dataframe manipulation functions:
 - add_calendario_passado
@@ -5624,3 +5625,100 @@ def build_compensatory_output(
     except Exception as e:
         logger.error(f"Error in build_compensatory_output: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), str(e)
+
+
+def apply_compensatory_sched_types(
+    final_df: pd.DataFrame,
+    compensatory_dict: Dict,
+    df_process_rules: pd.DataFrame,
+    employee_col: str = 'colaborador',
+    date_col: str = 'data',
+) -> pd.DataFrame:
+    """
+    Override sched_type and sched_subtype for compensatory day-off rows using the
+    REST_DAY_TYPE and REST_DAY_SUBTYPE defined in df_process_rules.
+
+    This runs AFTER convert_types_out, which hardcodes all 'LD' rows to ('F', 'D').
+    The compensatory dict from the solver identifies exactly which (employee, day_off)
+    pairs are compensatory and from which rule group (feriados/domingos), allowing us
+    to look up the rule-specific type/subtype and override.
+
+    Args:
+        final_df: Output DataFrame after convert_types_out, with sched_type/sched_subtype.
+        compensatory_dict: Solver output dict keyed by worker ID:
+            {w: {'feriados': {'ld_given': [(worked_day, day_off), ...]},
+                 'domingos': {'ld_given': [(worked_day, day_off), ...]}}}
+        df_process_rules: Merged rules DataFrame (from algorithm_treatment_params)
+            with columns including RULE_CODE, REST_DAY_TYPE, REST_DAY_SUBTYPE, employee_id.
+        employee_col: Employee column name in final_df (default: 'colaborador').
+        date_col: Date column name in final_df (default: 'data').
+
+    Returns:
+        DataFrame with sched_type/sched_subtype overridden for compensatory rows.
+    """
+    try:
+        if not compensatory_dict or df_process_rules is None or df_process_rules.empty:
+            logger.info("apply_compensatory_sched_types: no compensatory data or rules - skipping")
+            return final_df
+
+        if 'sched_type' not in final_df.columns or 'sched_subtype' not in final_df.columns:
+            logger.warning("apply_compensatory_sched_types: sched_type/sched_subtype not in final_df - skipping")
+            return final_df
+
+        rule_code_map = {
+            'feriados': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
+            'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
+        }
+
+        # Build lookup: (employee_id, RULE_CODE) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
+        type_lookup = {}
+        if 'REST_DAY_TYPE' in df_process_rules.columns and 'REST_DAY_SUBTYPE' in df_process_rules.columns:
+            for _, row in df_process_rules.drop_duplicates(
+                subset=['employee_id', 'RULE_CODE']
+            ).iterrows():
+                key = (int(row['employee_id']), row['RULE_CODE'])
+                type_lookup[key] = (row['REST_DAY_TYPE'], row['REST_DAY_SUBTYPE'])
+
+        if not type_lookup:
+            logger.warning("apply_compensatory_sched_types: no type lookup built from df_process_rules - skipping")
+            return final_df
+
+        # Build set of compensatory day-off targets: (employee_id, day_off_date) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
+        overrides = {}
+        for worker_id, groups in compensatory_dict.items():
+            worker_int = int(worker_id)
+            for group_key, rule_code in rule_code_map.items():
+                group_data = groups.get(group_key, {})
+                rule_types = type_lookup.get((worker_int, rule_code))
+                if not rule_types:
+                    continue
+
+                for worked_day, day_off in group_data.get('ld_given', []):
+                    if day_off is not None:
+                        day_off_normalized = pd.Timestamp(day_off).normalize()
+                        overrides[(worker_int, day_off_normalized)] = rule_types
+
+        if not overrides:
+            logger.info("apply_compensatory_sched_types: no compensatory day-off rows to override")
+            return final_df
+
+        # Apply overrides to final_df
+        df_result = final_df.copy()
+        df_result[date_col] = pd.to_datetime(df_result[date_col]).dt.normalize()
+        df_result[employee_col] = df_result[employee_col].astype(int)
+
+        override_count = 0
+        for idx, row in df_result.iterrows():
+            key = (row[employee_col], row[date_col])
+            if key in overrides:
+                rest_day_type, rest_day_subtype = overrides[key]
+                df_result.at[idx, 'sched_type'] = rest_day_type
+                df_result.at[idx, 'sched_subtype'] = rest_day_subtype
+                override_count += 1
+
+        logger.info(f"apply_compensatory_sched_types: overrode {override_count} rows with rule-specific types")
+        return df_result
+
+    except Exception as e:
+        logger.error(f"Error in apply_compensatory_sched_types: {str(e)}", exc_info=True)
+        return final_df

@@ -1,0 +1,1 @@
+INSERT INTO wfm.int_emp_process_mov (fk_processo, employee_id, schedule_day, schedule_day_ref, rule_code, field_code, value_opt1, deleted) VALUES (:fk_processo, :employee_id, to_date(:schedule_day,'YYYY-MM-DD'), to_date(:schedule_day_ref,'YYYY-MM-DD'), :rule_code, :field_code, :value_opt1, :deleted)

@@ -11,6 +11,7 @@
         "params_df": "queryGetAlgoParameters.sql",
         "parameters_cfg": "queryGetParametersCFG.sql",
         "insert_results_df": "insert_results.sql",
+        "insert_compensatory_results_df": "insertCompensatoryResults.sql",
         "df_mpd_valid_employees": "getProcessMpdEmployees.sql",
         "df_feriados": "queryGetFeriados.sql"
     },
