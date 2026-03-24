@@ -38,6 +38,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
+        matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
+        #logger.info(matriz_process_rules_gd.to_string())
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
@@ -49,26 +51,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Period Start and end Time:")
         logger.info(f"Start: {start_date}")
         logger.info(f"End: {end_date}")
-
-        ld_holiday = float(algorithm_treatment_params['ld_holiday_param'])
-        if ld_holiday - (math.floor(ld_holiday)) != 0:
-            ld_holiday = int(math.floor(ld_holiday))
-            holiday_half_day = True
-        else:
-            holiday_half_day = False
-            ld_holiday = int(ld_holiday)
-
-        ld_sunday = float(algorithm_treatment_params['ld_sunday_param'])
-        if ld_sunday - (math.floor(ld_sunday)) != 0:
-            ld_sunday = int(math.floor(ld_sunday))
-            sunday_half_day = True
-        else:
-            sunday_half_day = False
-            ld_sunday = int(ld_sunday)
-
-        logger.info("Required Compensation Days loaded:")
-        logger.info(f"  - Holiday Compensation Days: {ld_holiday} and half day: {holiday_half_day}")
-        logger.info(f"  - Sunday Compensation Days: {ld_sunday} and half day: {sunday_half_day}")
         
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
@@ -82,6 +64,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
         matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()    
+        matriz_process_rules_gd.columns = matriz_process_rules_gd.columns.str.lower()    
 
         logger.info(f"Input DataFrames loaded:")
         logger.info(f"  - matriz_colaborador: {matriz_colaborador_gd.shape}")
@@ -710,9 +693,34 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Country is {country}")
 
         logger.info("[OK] Data processing completed successfully")
-        
+
         # =================================================================
-        # 13. RETURN ALL PROCESSED data
+        # 13. COMPENSATION RULES
+        # =================================================================
+
+        matriz_process_rules_gd
+        holiday_rules = {}
+        sunday_rules = {}
+        override_holiday_sunday = {}
+        for w in workers_complete:
+            holiday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_head_id"] == 8].drop_duplicates(subset="index")
+            holiday_rules[w] = {
+                "amount": holiday_df.set_index('index')['time_off_additional'].fillna(1).astype(int).to_dict(),
+                "compensation_limit": holiday_df.set_index('index')['time_off_deadline'].fillna(15).astype(int).to_dict(),
+            }
+
+            sunday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_head_id"] == 7].drop_duplicates(subset="index")
+            sunday_rules[w] = {
+                "amount": sunday_df.set_index('index')['time_off_additional'].fillna(1).astype(int).to_dict(),
+                "compensation_limit": sunday_df.set_index('index')['time_off_deadline'].fillna(15).astype(int).to_dict(),
+            }
+            override_holiday_sunday[w] = holiday_df.set_index('index')['time_off_additional'].fillna('N').to_dict()
+
+        #logger.info(f"holiday rules: {holiday_rules}")
+        #logger.info(f"sunday rules: {sunday_rules}")
+
+        # =================================================================
+        # 14. RETURN ALL PROCESSED data
         # =================================================================
         return {
             "matriz_calendario_gd": matriz_calendario_gd,        
@@ -766,18 +774,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "year_range": year_range,
             "unique_dates": unique_dates,
             "period": period,
-            "holiday_half_day": holiday_half_day,
-            "sunday_half_day": sunday_half_day,
-            "ld_holiday": ld_holiday,
-            "ld_sunday": ld_sunday,
             "managers": managers,
             "keyholders": keyholders,
             "locked_days": locked_days,
             "h_plus": h_plus,
             "eci_sibling_results_flag": eci_sibling_results_flag,
             "forced_work_days": forced_work_days,
-            "compensation_holiday_limit": compensation_holiday_limit,
-            "compensation_sunday_limit": compensation_sunday_limit,
+            "holiday_rules": holiday_rules,
+            "sunday_rules": sunday_rules,
             "override_holiday_sunday": override_holiday_sunday,
             "index_to_date": index_to_date,
             }

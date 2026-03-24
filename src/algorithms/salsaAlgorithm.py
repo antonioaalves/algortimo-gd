@@ -269,7 +269,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             role_by_worker = adapted_data['role_by_worker']
             work_day_hours = adapted_data['work_day_hours']
             work_days_per_week = adapted_data['work_days_per_week']
-            week_compensation_limit = adapted_data['week_compensation_limit']
             max_continuous_days = adapted_data["num_dias_cons"]
             country = adapted_data["country"]
             partial_workers_complete = adapted_data['partial_workers_complete']
@@ -278,18 +277,14 @@ class SalsaAlgorithm(BaseAlgorithm):
             year_range = adapted_data["year_range"]
             unique_dates = adapted_data["unique_dates"]
             period = adapted_data["period"]
-            holiday_half_day = adapted_data["holiday_half_day"]
-            ld_holiday = adapted_data["ld_holiday"]
-            ld_sunday = adapted_data["ld_sunday"]
-            sunday_half_day = adapted_data["sunday_half_day"]
             managers = adapted_data["managers"]
             keyholders = adapted_data["keyholders"]
             locked_days = adapted_data["locked_days"]
             h_plus = adapted_data["h_plus"]
             eci_sibling_results_flag = adapted_data["eci_sibling_results_flag"]
             forced_work_days = adapted_data["forced_work_days"]
-            compensation_holiday_limit = adapted_data["compensation_holiday_limit"]
-            compensation_sunday_limit = adapted_data["compensation_sunday_limit"]
+            holiday_rules = adapted_data["holiday_rules"]
+            sunday_rules = adapted_data["sunday_rules"]
             override_holiday_sunday = adapted_data["override_holiday_sunday"]
             index_to_date = adapted_data["index_to_date"]
             
@@ -363,7 +358,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Applying SALSA constraints")
             
-            contingente_h = []
+            contingente_f = []
             contingente_d = []
             
             # Basic constraint: each worker has exactly one shift per day
@@ -382,8 +377,8 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "Espanha":
                 self.logger.info("Applying constraint: holiday_compensation_days (Espanha-specific)")
-                contingente_f, contingente_d = global_compensation_days(model, shift, workers, working_days, holidays, sundays, week_to_days, real_working_shift, compensation_holiday_limit, compensation_sunday_limit, 
-                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, ld_holiday, ld_sunday, period, override_holiday_sunday, fixed_compensation_days)
+                contingente_f, contingente_d = global_compensation_days(model, shift, workers, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
+                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days)
             elif country != "Espanha":
                 self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Espanha)")
             else:
@@ -469,13 +464,14 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, results = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_f, contingente_d, holiday_half_day, sunday_half_day, eci_sibling_results_flag, period, index_to_date,
+            schedule_df, results, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
+                                         workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                                          optimization_details=optimization_details)
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
+            self.feriados_domingos_compensacao = feriados_domingos_compensacao
             # =================================================================
             # FILTER BY PARTIAL WORKERS IF REQUESTED
             # =================================================================
@@ -651,7 +647,8 @@ class SalsaAlgorithm(BaseAlgorithm):
                     'schedule': algorithm_results,
                     'formatted_schedule': formatted_schedules['database_format'],
                     'wide_format_schedule': formatted_schedules['wide_format'],
-                    'status': solver_status
+                    'status': solver_status,
+                    'feriados_domingos_compensacao': getattr(self, 'feriados_domingos_compensacao', {})
                 },
                 'metadata': _create_metadata(self.algo_name, self.process_id, self.start_date, self.end_date, self.parameters, stats, solver_attributes),
                 'scheduling_stats': stats,

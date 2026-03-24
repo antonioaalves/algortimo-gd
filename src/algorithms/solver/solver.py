@@ -34,8 +34,6 @@ def solve(
     h_plus: Dict[int, int],
     contingente_feriados: Dict[int, List[bool]],
     contingente_domingos: Dict[int, List[bool]],
-    holiday_half_day: bool,
-    sunday_half_day: bool,
     eci_sibling_results_flag: bool,
     period: List[int],
     index_to_date: Dict[int, str],
@@ -126,7 +124,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 30  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -348,12 +346,10 @@ def solve(
                 feriados_domingos_compensacao[w] = {
                     'feriados': {
                         'ld_given' : [],
-                        'banco_horas' : [],
                         'no_compensation' : [],
                     },
                     'domingos': {
                         'ld_given' : [],
-                        'banco_horas' : [],
                         'no_compensation' : [],
                     }
                 }
@@ -412,9 +408,6 @@ def solve(
                                         compensation_days_off[w].append(day)
                                 else:
                                     feriados_domingos_compensacao[w]["feriados"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
-                if holiday_half_day == True:
-                    for d in special_days_worked[w]:
-                        feriados_domingos_compensacao[w]["feriados"]['banco_horas'].append(index_to_date[d])
 
                 if contingente_domingos:
                     if w in contingente_domingos and len(contingente_domingos[w]) > 0:
@@ -427,9 +420,7 @@ def solve(
                                         compensation_days_off[w].append(day)
                                 else:
                                     feriados_domingos_compensacao[w]["domingos"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
-                if sunday_half_day == True:
-                    for d in sun[w]:
-                        feriados_domingos_compensacao[w]["domingos"]['banco_horas'].append(index_to_date[d])
+
                 logger.info(f"\n\t\tholidays worked      : {len(special_days_worked[w])}, {special_days_worked[w]}"
                             f"\n\t\tsundays worked       : {len(sun[w])}, {sun[w]}"
                             f"\n\t\tcompensation days off: {len(compensation_days_off[w])}, {compensation_days_off[w]}\n")
@@ -512,7 +503,7 @@ def solve(
         
         logger.info("[OK] Solver completed successfully")
         df.columns = unique_dates_row
-        return df , results
+        return df , results, feriados_domingos_compensacao
         
     except Exception as e:
         logger.error(f"Error in solver: {str(e)}", exc_info=True)
