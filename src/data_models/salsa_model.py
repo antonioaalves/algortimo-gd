@@ -667,6 +667,21 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if not success:
                     self.logger.warning(f"df_process_rules treatment failed: {error_msg} - proceeding with empty DataFrame")
                     df_process_rules = pd.DataFrame()
+                else:
+                    success, df_process_rules, error_msg = add_date_related_columns(
+                        df=df_process_rules,
+                        date_col='schedule_day',
+                        add_id_col=False,
+                        use_case=1,
+                        main_year=main_year,
+                        first_date=first_day_passado,
+                        last_date=last_day_passado
+                    )
+                    if not success:
+                        self.logger.warning(f"df_process_rules add_date_related_columns failed: {error_msg} - proceeding with empty DataFrame")
+                        df_process_rules = pd.DataFrame()
+                    else:
+                        self.logger.info(f"df_process_rules after date columns: shape {df_process_rules.shape}, columns {df_process_rules.columns.tolist()}")
             except Exception as e:
                 self.logger.warning(f"Error loading df_process_rules: {e} - proceeding with empty DataFrame")
                 df_process_rules = pd.DataFrame()
