@@ -4,7 +4,7 @@ SELECT
     cpem.SCHEDULE_DAY,
     cpem.RULE_HEAD_ID,
     cpem.RULE_CODE,
-    cpem.FIELD_CODE,
+    cpem.RULE_FIELD_CODE,
     cpem.VALUE_OPT1,
     cpem.VALUE_OPT2
 FROM wfm.core_pro_emp_mov cpem

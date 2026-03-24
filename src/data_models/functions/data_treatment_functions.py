@@ -5227,13 +5227,13 @@ def add_pessoa_obj_whole_day(
 
 def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Process and transform labor rules data from tall (one row per field) to wide 
+    Process and transform labor rules data from tall (one row per field) to wide
     (one row per rule instance per day) format.
 
     Steps:
         1. Validate input structure
-        2. Pivot from tall to wide: FIELD_CODE values become columns per RULE_HEAD_ID
-        3. Explode date range (BEGIN_DATE -> END_DATE) to daily granularity
+        2. Pivot from tall to wide: field_code values become columns per rule_head_id
+        3. Explode date range (begin_date -> end_date) to daily granularity
 
     Args:
         df_process_rules: Raw DataFrame from core_process_labor_rules with columns:
@@ -5254,20 +5254,26 @@ def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.Dat
             return False, pd.DataFrame(), "Input validation failed: empty df_process_rules"
 
         df_result = df_process_rules.copy()
+        # Normalize incoming schema to lowercase to keep a single internal
+        # convention regardless of DB driver/query alias casing.
+        df_result.columns = [str(col).strip().lower() for col in df_result.columns]
 
         required_cols = [
-            'PROCESS_ID', 'LABOR_UNION_ID', 'CONTRACT_ID', 'BEGIN_DATE', 'END_DATE',
-            'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID', 'FIELD_CODE', 'VALUE'
+            'process_id', 'labor_union_id', 'contract_id', 'begin_date', 'end_date',
+            'rule_code', 'rule_id', 'rule_head_id', 'field_code', 'value'
         ]
         missing_cols = [col for col in required_cols if col not in df_result.columns]
         if missing_cols:
             return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
 
-        # NORMALIZE DATES
-        df_result['BEGIN_DATE'] = pd.to_datetime(df_result['BEGIN_DATE'], errors='coerce')
-        df_result['END_DATE'] = pd.to_datetime(df_result['END_DATE'], errors='coerce')
+        # Normalize field codes used for pivot-generated parameter columns.
+        df_result['field_code'] = df_result['field_code'].astype(str).str.strip().str.upper()
 
-        invalid_dates = df_result['BEGIN_DATE'].isna() | df_result['END_DATE'].isna()
+        # NORMALIZE DATES
+        df_result['begin_date'] = pd.to_datetime(df_result['begin_date'], errors='coerce')
+        df_result['end_date'] = pd.to_datetime(df_result['end_date'], errors='coerce')
+
+        invalid_dates = df_result['begin_date'].isna() | df_result['end_date'].isna()
         if invalid_dates.any():
             logger.warning(f"Dropping {invalid_dates.sum()} rows with invalid dates in df_process_rules")
             df_result = df_result[~invalid_dates]
@@ -5275,19 +5281,37 @@ def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.Dat
         if df_result.empty:
             return False, pd.DataFrame(), "All rows had invalid dates after parsing"
 
-        # PIVOT: tall -> wide (FIELD_CODE values become columns)
+        # PIVOT: tall -> wide (field_code values become columns)
+        # labor_union_id and contract_id are mutually exclusive nullable keys:
+        # pivot_table drops rows with NaN index keys by default, which would
+        # silently discard all rules. Fill with a sentinel before pivoting and
+        # restore NaN afterwards so downstream merge logic stays correct.
+        _SENTINEL = '__NULL__'
+        logger.info(
+            f"treat_df_process_rules pre-pivot: {len(df_result)} rows | "
+            f"labor_union_id nulls: {df_result['labor_union_id'].isna().sum()} | "
+            f"contract_id nulls: {df_result['contract_id'].isna().sum()}"
+        )
+        df_result['labor_union_id'] = df_result['labor_union_id'].fillna(_SENTINEL)
+        df_result['contract_id'] = df_result['contract_id'].fillna(_SENTINEL)
+
         group_cols = [
-            'PROCESS_ID', 'LABOR_UNION_ID', 'CONTRACT_ID',
-            'BEGIN_DATE', 'END_DATE', 'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID'
+            'process_id', 'labor_union_id', 'contract_id',
+            'begin_date', 'end_date', 'rule_code', 'rule_id', 'rule_head_id'
         ]
         df_pivot = df_result.pivot_table(
             index=group_cols,
-            columns='FIELD_CODE',
-            values='VALUE',
+            columns='field_code',
+            values='value',
             aggfunc='first'
         ).reset_index()
 
         df_pivot.columns.name = None
+
+        # Restore nulls after pivot
+        df_pivot['labor_union_id'] = df_pivot['labor_union_id'].replace(_SENTINEL, None)
+        df_pivot['contract_id'] = df_pivot['contract_id'].replace(_SENTINEL, None)
+        logger.info(f"treat_df_process_rules post-pivot: {len(df_pivot)} rule instances")
 
         # Convert numeric rule parameters
         numeric_fields = ['TIME_OFF_ADDITIONAL', 'TIME_OFF_DEADLINE']
@@ -5298,7 +5322,7 @@ def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.Dat
         # EXPLODE: date range -> daily rows
         rows = []
         for _, row in df_pivot.iterrows():
-            date_range = pd.date_range(start=row['BEGIN_DATE'], end=row['END_DATE'], freq='D')
+            date_range = pd.date_range(start=row['begin_date'], end=row['end_date'], freq='D')
             for day in date_range:
                 new_row = row.copy()
                 new_row['schedule_day'] = day
@@ -5308,11 +5332,11 @@ def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.Dat
             return False, pd.DataFrame(), "No rows generated after date explosion"
 
         df_exploded = pd.DataFrame(rows)
-        df_exploded = df_exploded.drop(columns=['BEGIN_DATE', 'END_DATE'])
+        df_exploded = df_exploded.drop(columns=['begin_date', 'end_date'])
         df_exploded = df_exploded.reset_index(drop=True)
 
         # OUTPUT VALIDATION
-        expected_cols = ['schedule_day', 'RULE_CODE', 'LABOR_UNION_ID', 'CONTRACT_ID']
+        expected_cols = ['schedule_day', 'rule_code', 'labor_union_id', 'contract_id']
         missing_output = [col for col in expected_cols if col not in df_exploded.columns]
         if missing_output:
             return False, pd.DataFrame(), f"Output validation failed: missing columns {missing_output}"
@@ -5373,26 +5397,26 @@ def add_process_rules_to_df_contratos(
         df_contracts['schedule_day'] = pd.to_datetime(df_contracts['schedule_day']).dt.normalize()
 
         # Separate rules into contract-level and labor-union-level
-        has_contract = df_rules['CONTRACT_ID'].notna() & (df_rules['CONTRACT_ID'] != '')
+        has_contract = df_rules['contract_id'].notna() & (df_rules['contract_id'] != '')
         df_rules_contract = df_rules[has_contract].copy()
         df_rules_labor = df_rules[~has_contract].copy()
 
         rule_value_cols = [col for col in df_rules.columns if col not in [
-            'PROCESS_ID', 'LABOR_UNION_ID', 'CONTRACT_ID', 'schedule_day',
-            'RULE_ID', 'RULE_HEAD_ID'
+            'process_id', 'labor_union_id', 'contract_id', 'schedule_day',
+            'rule_id', 'rule_head_id'
         ]]
 
         merged_parts = []
 
         # MERGE 1: Contract-level rules (individual contract overrides)
         if not df_rules_contract.empty:
-            df_rules_contract['CONTRACT_ID'] = df_rules_contract['CONTRACT_ID'].astype(str)
+            df_rules_contract['contract_id'] = df_rules_contract['contract_id'].astype(str)
             df_contracts['contract_id'] = df_contracts['contract_id'].astype(str)
 
             df_merged_contract = df_contracts.merge(
                 df_rules_contract,
                 left_on=['contract_id', 'schedule_day'],
-                right_on=['CONTRACT_ID', 'schedule_day'],
+                right_on=['contract_id', 'schedule_day'],
                 how='inner',
                 suffixes=('', '_rule')
             )
@@ -5403,13 +5427,13 @@ def add_process_rules_to_df_contratos(
 
         # MERGE 2: Labor-union-level rules (collective, fallback for employees without contract-level rules)
         if not df_rules_labor.empty:
-            df_rules_labor['LABOR_UNION_ID'] = df_rules_labor['LABOR_UNION_ID'].astype(str)
+            df_rules_labor['labor_union_id'] = df_rules_labor['labor_union_id'].astype(str)
             df_contracts['labor_union_id'] = df_contracts['labor_union_id'].astype(str)
 
             df_merged_labor = df_contracts.merge(
                 df_rules_labor,
                 left_on=['labor_union_id', 'schedule_day'],
-                right_on=['LABOR_UNION_ID', 'schedule_day'],
+                right_on=['labor_union_id', 'schedule_day'],
                 how='inner',
                 suffixes=('', '_rule')
             )
@@ -5419,11 +5443,11 @@ def add_process_rules_to_df_contratos(
 
                 # Exclude employee-day-rule combinations already covered by contract-level rules
                 if merged_parts:
-                    contract_keys = merged_parts[0][['employee_id', 'schedule_day', 'RULE_CODE']].drop_duplicates()
+                    contract_keys = merged_parts[0][['employee_id', 'schedule_day', 'rule_code']].drop_duplicates()
                     contract_keys['_has_contract_rule'] = True
                     df_merged_labor = df_merged_labor.merge(
                         contract_keys,
-                        on=['employee_id', 'schedule_day', 'RULE_CODE'],
+                        on=['employee_id', 'schedule_day', 'rule_code'],
                         how='left'
                     )
                     df_merged_labor = df_merged_labor[df_merged_labor['_has_contract_rule'].isna()]
@@ -5482,49 +5506,56 @@ def treat_df_pro_emp_mov(
             return True, pd.DataFrame(), "df_pro_emp_mov is empty - no pending movements"
 
         df_result = df_pro_emp_mov.copy()
+        df_result.columns = [str(col).strip().lower() for col in df_result.columns]
 
-        required_cols = ['PROCESS_ID', 'EMPLOYEE_ID', 'SCHEDULE_DAY', 'RULE_HEAD_ID',
-                         'RULE_CODE', 'FIELD_CODE', 'VALUE_OPT1', 'VALUE_OPT2']
+        required_cols = ['process_id', 'employee_id', 'schedule_day', 'rule_head_id',
+                         'rule_code', 'field_code', 'value_opt1', 'value_opt2']
         missing_cols = [col for col in required_cols if col not in df_result.columns]
         if missing_cols:
             return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
 
         # Normalize types
-        df_result['SCHEDULE_DAY'] = pd.to_datetime(df_result['SCHEDULE_DAY'], errors='coerce')
-        df_result['VALUE_OPT2'] = pd.to_numeric(df_result['VALUE_OPT2'], errors='coerce').fillna(0)
+        df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day'], errors='coerce')
+        df_result['value_opt2'] = pd.to_numeric(df_result['value_opt2'], errors='coerce').fillna(0)
 
-        # Filter to only pending origins (VALUE_OPT1 = 'O' with a balance > 0)
+        # Filter to only pending origins (value_opt1 = 'O' with a balance > 0)
         df_result = df_result[
-            (df_result['VALUE_OPT1'] == 'O') & (df_result['VALUE_OPT2'] > 0)
+            (df_result['value_opt1'] == 'O') & (df_result['value_opt2'] > 0)
         ].copy()
 
         if df_result.empty:
             logger.info("treat_df_pro_emp_mov: no pending movements with balance > 0")
             return True, pd.DataFrame(), ""
 
-        # ENRICH with rule parametrization from df_process_rules (via RULE_HEAD_ID)
-        if df_process_rules is not None and not df_process_rules.empty and 'RULE_HEAD_ID' in df_process_rules.columns:
-            rule_params = df_process_rules.drop_duplicates(subset=['RULE_HEAD_ID']).copy()
+        # ENRICH with rule parametrization from df_process_rules (via rule_head_id)
+        if df_process_rules is not None and not df_process_rules.empty:
+            rule_params = df_process_rules.copy()
+            rule_params.columns = [str(col).strip().lower() for col in rule_params.columns]
+        else:
+            rule_params = pd.DataFrame()
+
+        if not rule_params.empty and 'rule_head_id' in rule_params.columns:
+            rule_params = rule_params.drop_duplicates(subset=['rule_head_id']).copy()
             param_cols = [col for col in rule_params.columns if col in [
-                'RULE_HEAD_ID', 'RULE_CODE', 'TIME_OFF_ADDITIONAL', 'TIME_OFF_DEADLINE',
-                'REST_DAY_TYPE', 'REST_DAY_SUBTYPE', 'OVERLAP_SUNDAY_HOLIDAY'
+                'rule_head_id', 'rule_code', 'time_off_additional', 'time_off_deadline',
+                'rest_day_type', 'rest_day_subtype', 'overlap_sunday_holiday'
             ]]
             rule_params = rule_params[param_cols]
 
-            df_result['RULE_HEAD_ID'] = df_result['RULE_HEAD_ID'].astype(str)
-            rule_params['RULE_HEAD_ID'] = rule_params['RULE_HEAD_ID'].astype(str)
+            df_result['rule_head_id'] = df_result['rule_head_id'].astype(str)
+            rule_params['rule_head_id'] = rule_params['rule_head_id'].astype(str)
 
             df_result = df_result.merge(
                 rule_params,
-                on='RULE_HEAD_ID',
+                on='rule_head_id',
                 how='left',
                 suffixes=('', '_param')
             )
             cols_to_drop = [col for col in df_result.columns if col.endswith('_param')]
             df_result = df_result.drop(columns=cols_to_drop, errors='ignore')
-            logger.info(f"Enriched pending movements with rule params via RULE_HEAD_ID")
+            logger.info("Enriched pending movements with rule params via rule_head_id")
         else:
-            logger.warning("df_process_rules is empty or missing RULE_HEAD_ID - pending movements will lack rule parametrization")
+            logger.warning("df_process_rules is empty or missing rule_head_id - pending movements will lack rule parametrization")
 
         df_result = df_result.reset_index(drop=True)
         logger.info(f"Successfully treated df_pro_emp_mov. Shape: {df_result.shape}")
@@ -5672,12 +5703,14 @@ def apply_compensatory_sched_types(
 
         # Build lookup: (employee_id, RULE_CODE) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
         type_lookup = {}
-        if 'REST_DAY_TYPE' in df_process_rules.columns and 'REST_DAY_SUBTYPE' in df_process_rules.columns:
-            for _, row in df_process_rules.drop_duplicates(
-                subset=['employee_id', 'RULE_CODE']
+        rules_normalized = df_process_rules.copy()
+        rules_normalized.columns = [str(col).strip().lower() for col in rules_normalized.columns]
+        if 'rest_day_type' in rules_normalized.columns and 'rest_day_subtype' in rules_normalized.columns and 'rule_code' in rules_normalized.columns:
+            for _, row in rules_normalized.drop_duplicates(
+                subset=['employee_id', 'rule_code']
             ).iterrows():
-                key = (int(row['employee_id']), row['RULE_CODE'])
-                type_lookup[key] = (row['REST_DAY_TYPE'], row['REST_DAY_SUBTYPE'])
+                key = (int(row['employee_id']), row['rule_code'])
+                type_lookup[key] = (row['rest_day_type'], row['rest_day_subtype'])
 
         if not type_lookup:
             logger.warning("apply_compensatory_sched_types: no type lookup built from df_process_rules - skipping")
