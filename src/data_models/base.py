@@ -947,10 +947,49 @@ class BaseDescansosDataModel(ABC):
                     self.logger.error("Error inserting results")
                     return False
                 self.logger.info("Results inserted successfully")
-                return True
             except Exception as e:
                 self.logger.error(f"Error inserting results with bulk_insert_with_query: {str(e)}", exc_info=True)
                 return False
+
+            # STRSOL-1372: Insert compensatory output (O/D rows) into INT_EMP_PROCESS_MOV
+            if 'df_compensatory' in self.formatted_data:
+                df_compensatory = self.formatted_data['df_compensatory'].copy()
+                if not df_compensatory.empty:
+                    try:
+                        self.logger.info(f"Inserting compensatory results ({len(df_compensatory)} rows)")
+                        df_compensatory['SCHEDULE_DAY'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY']).dt.strftime('%Y-%m-%d')
+                        df_compensatory['SCHEDULE_DAY_REF'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY_REF'], errors='coerce').dt.strftime('%Y-%m-%d')
+                        df_compensatory['SCHEDULE_DAY_REF'] = df_compensatory['SCHEDULE_DAY_REF'].where(
+                            df_compensatory['SCHEDULE_DAY_REF'].notna(), None
+                        )
+                        df_compensatory = df_compensatory.rename(columns={
+                            'PROCESS_ID': 'fk_processo',
+                            'EMPLOYEE_ID': 'employee_id',
+                            'SCHEDULE_DAY': 'schedule_day',
+                            'SCHEDULE_DAY_REF': 'schedule_day_ref',
+                            'RULE_CODE': 'rule_code',
+                            'FIELD_CODE': 'field_code',
+                            'VALUE_OPT1': 'value_opt1',
+                            'DELETED': 'deleted',
+                        })
+                        df_compensatory = df_compensatory[['fk_processo', 'employee_id', 'schedule_day',
+                                                           'schedule_day_ref', 'rule_code', 'field_code',
+                                                           'value_opt1', 'deleted']]
+
+                        compensatory_query_path = self.config_manager.paths.sql_processing_paths['insert_compensatory_results_df']
+                        valid_compensatory = bulk_insert_with_query(
+                            data_manager=data_manager,
+                            data=df_compensatory,
+                            query_file=compensatory_query_path,
+                        )
+                        if not valid_compensatory:
+                            self.logger.warning("Error inserting compensatory results")
+                        else:
+                            self.logger.info("Compensatory results inserted successfully")
+                    except Exception as e:
+                        self.logger.warning(f"Error inserting compensatory results: {str(e)}", exc_info=True)
+
+            return True
 
         except Exception as e:
             self.logger.error(f"Error performing insert_results from data manager: {str(e)}", exc_info=True)
@@ -966,68 +1005,4 @@ class BaseDescansosDataModel(ABC):
             return True
         except Exception as e:
             self.logger.error(f"Error validating insert_results from data manager: {str(e)}")
-            return False                    
-
-    def insert_compensatory_results(self, data_manager: BaseDataManager) -> bool:
-        """
-        STRSOL-1372: Insert compensatory output (O/D rows) into INT_EMP_PROCESS_MOV.
-        Built by build_compensatory_output in format_results and stored in formatted_data['df_compensatory'].
-        """
-        try:
-            self.logger.info("Entered insert_compensatory_results method.")
-
-            if 'df_compensatory' not in self.formatted_data:
-                self.logger.info("No compensatory output to insert (df_compensatory not in formatted_data)")
-                return True
-
-            df_compensatory = self.formatted_data['df_compensatory'].copy()
-
-            if df_compensatory.empty:
-                self.logger.info("df_compensatory is empty, nothing to insert")
-                return True
-
-            try:
-                self.logger.info(f"Preparing compensatory DataFrame for insertion ({len(df_compensatory)} rows)")
-                df_compensatory['SCHEDULE_DAY'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY']).dt.strftime('%Y-%m-%d')
-                df_compensatory['SCHEDULE_DAY_REF'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY_REF'], errors='coerce').dt.strftime('%Y-%m-%d')
-                df_compensatory['SCHEDULE_DAY_REF'] = df_compensatory['SCHEDULE_DAY_REF'].where(
-                    df_compensatory['SCHEDULE_DAY_REF'].notna(), None
-                )
-
-                df_compensatory = df_compensatory.rename(columns={
-                    'PROCESS_ID': 'fk_processo',
-                    'EMPLOYEE_ID': 'employee_id',
-                    'SCHEDULE_DAY': 'schedule_day',
-                    'SCHEDULE_DAY_REF': 'schedule_day_ref',
-                    'RULE_CODE': 'rule_code',
-                    'FIELD_CODE': 'field_code',
-                    'VALUE_OPT1': 'value_opt1',
-                    'DELETED': 'deleted',
-                })
-
-                cols_to_insert = ['fk_processo', 'employee_id', 'schedule_day', 'schedule_day_ref',
-                                  'rule_code', 'field_code', 'value_opt1', 'deleted']
-                df_compensatory = df_compensatory[cols_to_insert]
-            except Exception as e:
-                self.logger.error(f"Error preparing compensatory DataFrame for insertion: {str(e)}")
-                return False
-
-            try:
-                query_path = self.config_manager.paths.sql_processing_paths['insert_compensatory_results_df']
-                valid_insertion = bulk_insert_with_query(
-                    data_manager=data_manager,
-                    data=df_compensatory,
-                    query_file=query_path,
-                )
-                if not valid_insertion:
-                    self.logger.error("Error inserting compensatory results")
-                    return False
-                self.logger.info("Compensatory results inserted successfully")
-                return True
-            except Exception as e:
-                self.logger.error(f"Error inserting compensatory results with bulk_insert_with_query: {str(e)}", exc_info=True)
-                return False
-
-        except Exception as e:
-            self.logger.error(f"Error performing insert_compensatory_results: {str(e)}", exc_info=True)
             return False

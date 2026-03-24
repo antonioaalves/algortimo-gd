@@ -706,14 +706,6 @@ class AlgoritmoGDService(BaseService):
                             progress=(progress+0.7)/len(posto_id_list),
                             message="Valid insert_results, advancing to the next substage"
                         )
-
-                    # STRSOL-1372: Insert compensatory results (O/D rows into INT_EMP_PROCESS_MOV)
-                    valid_compensatory_insert = self.data_model.insert_compensatory_results(
-                        data_manager=self.data_manager
-                    )
-                    if not valid_compensatory_insert:
-                        self.logger.warning("Compensatory results insertion failed, continuing with process")
-
                         progress += 1
 
             # TODO: Needs to ensure it inserted it correctly?
