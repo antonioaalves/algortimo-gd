@@ -177,8 +177,10 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
             for comp_day, vars_list in all_assignment_vars.items():
                 if vars_list:
                     model.Add(sum(vars_list) <= 1)
-
-            past_lds = len([d for d in fixed_lds[w] and d > period[0]]) #havia algo a alterar aqui, ligado ao periodo, ja nao tenho a certeza
+            if fixed_lds[w] == []:
+                past_lds = 0
+            else:
+                past_lds = len([d for d in fixed_lds[w] and d > period[0]]) #havia algo a alterar aqui, ligado ao periodo, ja nao tenho a certeza
             after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_holidays_everyone and w in total_lds_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w] + past_lds)
@@ -191,7 +193,10 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
 
     elif total_lds_holidays_everyone is not None:
         for w in workers:
-            past_lds = len([d for d in fixed_lds[w] and d > period[0]])
+            if fixed_lds[w] == []:
+                past_lds = 0
+            else:
+                past_lds = len([d for d in fixed_lds[w] and d > period[0]])
             after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_holidays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
@@ -200,7 +205,10 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
 
     elif total_lds_sundays_everyone is not None:
         for w in workers:
-            past_lds = len([d for d in fixed_lds[w] and d > period[0]])
+            if fixed_lds[w] == []:
+                past_lds = 0
+            else:
+                past_lds = len([d for d in fixed_lds[w] and d > period[0]])
             after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
@@ -209,7 +217,10 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
 
     else:
         for w in workers:
-            past_lds = len([d for d in fixed_lds[w] and d > period[0]])
+            if fixed_lds[w] == []:
+                past_lds = 0
+            else:
+                past_lds = len([d for d in fixed_lds[w] and d > period[0]])
             after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
 
