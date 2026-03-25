@@ -377,11 +377,11 @@ def solve(
                     elif day_assignment == 'LQ':
                         lq_count += 1
                     elif day_assignment == 'LD':
-                        if d >= period[0]:
+                        if period[0] <= d <= period[1]:
                             compensation_days_off[w].append(index_to_date[d])
                             ld_count += 1
                     elif day_assignment in ['T']:
-                        if d >= period[0]:
+                        if period[0] <= d <= period[1]:
                             if d in special_days:
                                 special_days_worked[w].append(index_to_date[d])
                                 special_days_count += 1
@@ -389,7 +389,7 @@ def solve(
                                 sun[w].append(index_to_date[d])
                         time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
-                        if d >= period[0]:
+                        if period[0] <= d <= period[1]:
                             if d in special_days:
                                 special_days_worked[w].append(index_to_date[d])
                                 special_days_count += 1
