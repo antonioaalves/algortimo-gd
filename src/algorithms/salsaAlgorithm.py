@@ -287,6 +287,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             sunday_rules = adapted_data["sunday_rules"]
             override_holiday_sunday = adapted_data["override_holiday_sunday"]
             index_to_date = adapted_data["index_to_date"]
+            holiday_past_lds = adapted_data["holiday_past_lds"]
+            sunday_past_lds = adapted_data["sunday_past_lds"]
             
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -378,7 +380,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "Espanha":
                 self.logger.info("Applying constraint: holiday_compensation_days (Espanha-specific)")
                 contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
-                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days)
+                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds, sunday_past_lds)
             elif country != "Espanha":
                 self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Espanha)")
             else:
