@@ -403,7 +403,7 @@ def solve(
                             if solver.Value(assignment_var) == 1:
                                 if comp_day > period[1]: 
                                     day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w]["feriados"]["no_compensation"].append((index_to_date[d], day))
+                                    feriados_domingos_compensacao[w]["feriados"]["no_compensation"].append(index_to_date[d])
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
@@ -415,7 +415,7 @@ def solve(
                             if solver.Value(assignment_var) == 1:
                                 if comp_day > period[1]:
                                     day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w]["domingos"]["no_compensation"].append((index_to_date[d], day))
+                                    feriados_domingos_compensacao[w]["domingos"]["no_compensation"].append(index_to_date[d])
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
