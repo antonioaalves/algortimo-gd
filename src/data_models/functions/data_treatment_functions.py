@@ -5758,8 +5758,8 @@ def apply_compensatory_sched_types(
             return final_df
 
         rule_code_map = {
-            'feriados': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
-            'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
+            'feriados': 'ld_holiday',
+            'domingos': 'ld_sunday',
         }
 
         # Build lookup: (employee_id, RULE_CODE) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
