@@ -5280,6 +5280,12 @@ def treat_df_process_rules(
         # Normalize field codes used for pivot-generated parameter columns.
         df_result['field_code'] = df_result['field_code'].astype(str).str.strip().str.upper()
 
+        RULE_CODE_MAP = {
+            'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
+            'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
+        }
+        df_result['rule_code'] = df_result['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df_result['rule_code'])
+
         # NORMALIZE DATES
         df_result['begin_date'] = pd.to_datetime(df_result['begin_date'], errors='coerce')
         df_result['end_date'] = pd.to_datetime(df_result['end_date'], errors='coerce')
@@ -5534,23 +5540,23 @@ def treat_df_pro_emp_mov(
         df_result = df_pro_emp_mov.copy()
         df_result.columns = [str(col).strip().lower() for col in df_result.columns]
 
-        required_cols = ['process_id', 'employee_id', 'schedule_day', 'rule_head_id',
-                         'rule_code', 'field_code', 'value_opt1', 'value_opt2']
-        missing_cols = [col for col in required_cols if col not in df_result.columns]
-        if missing_cols:
-            return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
-
         # Normalize types
         df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day'], errors='coerce')
-        df_result['value_opt2'] = pd.to_numeric(df_result['value_opt2'], errors='coerce').fillna(0)
+        df_result['n_lds_pending'] = pd.to_numeric(df_result['value'], errors='coerce').fillna(0)
 
-        # Filter to only pending origins (value_opt1 = 'O' with a balance > 0)
+        RULE_CODE_MAP = {
+            'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
+            'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
+        }
+        df_result['rule_code'] = df_result['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df_result['rule_code'])
+
+        # Filter to only pending origins (value_opt2 = 'O' with a balance > 0)
         df_result = df_result[
-            (df_result['value_opt1'] == 'O') & (df_result['value_opt2'] > 0)
+            (df_result['value_opt1'] == 'O') & (df_result['n_lds_pending'] > 0)
         ].copy()
 
         if df_result.empty:
-            logger.info("treat_df_pro_emp_mov: no pending movements with balance > 0")
+            logger.info("treat_df_pro_emp_mov: no pending movements after filter")
             return True, pd.DataFrame(), ""
 
         # ENRICH with rule parametrization from df_process_rules (via rule_head_id)
@@ -5610,10 +5616,15 @@ def build_compensatory_output(
 
     Args:
         compensatory_dict: Solver output dict keyed by worker ID, with structure:
-            {w: {'feriados': {'ld_given': [(worked_day, day_off_or_None), ...],
-                              'banco_horas': [], 'no_compensation': []},
-                 'domingos': {'ld_given': [(worked_day, day_off_or_None), ...],
-                              'banco_horas': [], 'no_compensation': []}}}
+            {w: {'feriados': {'ld_given':        [(worked_day, day_off), ...],
+                              'no_compensation': [worked_day, ...],
+                              'banco_horas':     []},
+                 'domingos': {'ld_given':        [(worked_day, day_off), ...],
+                              'no_compensation': [worked_day, ...],
+                              'banco_horas':     []}}}
+            ld_given entries always have both dates (no Nones).
+            no_compensation entries are single worked_day values where no day off
+            could be placed inside the execution period.
         process_id: The process ID for the output rows.
         df_process_rules_raw: Raw (pre-pivot) rules DataFrame with columns RULE_CODE,
             RULE_ID, FIELD_CODE, RULE_FIELD_ID. Used to look up the numeric IDs for
@@ -5663,26 +5674,29 @@ def build_compensatory_output(
             for group_key, rule_code in rule_code_map.items():
                 group_data = groups.get(group_key, {})
 
+                field_code = 'TIME_OFF_ADDITIONAL'
+                rule_id = rule_id_lookup.get(rule_code)
+                rule_head_id = rule_head_id_lookup.get(rule_code)
+                rule_field_id = rule_field_id_lookup.get((rule_code, field_code))
+
+                row_base = {
+                    'PROCESS_ID': process_id,
+                    'EMPLOYEE_ID': worker_id,
+                    'RULE_HEAD_ID': rule_head_id,
+                    'RULE_ID': rule_id,
+                    'RULE_CODE': rule_code,
+                    'RULE_FIELD_ID': rule_field_id,
+                    'FIELD_CODE': field_code,
+                }
+
+                # ld_given: day off was placed inside the period -> Origin + Destination
                 for worked_day, day_off in group_data.get('ld_given', []):
-                    field_code = 'TIME_OFF_ADDITIONAL'
-                    rule_id = rule_id_lookup.get(rule_code)
-                    rule_head_id = rule_head_id_lookup.get(rule_code)
-                    rule_field_id = rule_field_id_lookup.get((rule_code, field_code))
+                    rows.append({**row_base, 'SCHEDULE_DAY': worked_day, 'SCHEDULE_DAY_REF': None,      'VALUE_OPT1': 'O'})
+                    rows.append({**row_base, 'SCHEDULE_DAY': day_off,    'SCHEDULE_DAY_REF': worked_day, 'VALUE_OPT1': 'D'})
 
-                    row_base = {
-                        'PROCESS_ID': process_id,
-                        'EMPLOYEE_ID': worker_id,
-                        'RULE_HEAD_ID': rule_head_id,
-                        'RULE_ID': rule_id,
-                        'RULE_CODE': rule_code,
-                        'RULE_FIELD_ID': rule_field_id,
-                        'FIELD_CODE': field_code,
-                    }
-
+                # no_compensation: special day worked but day off could not be placed -> Origin only (pending)
+                for worked_day in group_data.get('no_compensation', []):
                     rows.append({**row_base, 'SCHEDULE_DAY': worked_day, 'SCHEDULE_DAY_REF': None, 'VALUE_OPT1': 'O'})
-
-                    if day_off is not None:
-                        rows.append({**row_base, 'SCHEDULE_DAY': day_off, 'SCHEDULE_DAY_REF': worked_day, 'VALUE_OPT1': 'D'})
 
                 # TODO STRSOL-1372: banco_horas not considered for now
 

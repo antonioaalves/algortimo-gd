@@ -1016,8 +1016,32 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if not success:
                     self.logger.warning(f"df_pro_emp_mov treatment failed: {error_msg} - proceeding with empty DataFrame")
                     df_pro_emp_mov = pd.DataFrame()
+                elif df_pro_emp_mov.empty:
+                    self.logger.info("df_pro_emp_mov is empty after treatment - no pending movements")
                 else:
-                    self.logger.info(f"df_pro_emp_mov treated shape: {df_pro_emp_mov.shape}")
+                    df_pro_emp_mov['time_off_deadline'] = pd.to_numeric(df_pro_emp_mov['time_off_deadline'], errors='coerce')
+                    missing_deadline = df_pro_emp_mov['time_off_deadline'].isna()
+                    if missing_deadline.any():
+                        self.logger.warning(f"Dropping {missing_deadline.sum()} df_pro_emp_mov rows with no time_off_deadline (no matching rule)")
+                        df_pro_emp_mov = df_pro_emp_mov[~missing_deadline].copy()
+                    df_pro_emp_mov['time_off_deadline'] = df_pro_emp_mov['time_off_deadline'].astype(int)
+                    df_pro_emp_mov['deadline_date'] = pd.to_datetime(df_pro_emp_mov['schedule_day']) + pd.to_timedelta(
+                        df_pro_emp_mov['time_off_deadline'], unit='D'
+                    )
+                    success, df_pro_emp_mov, error_msg = add_date_related_columns(
+                        df=df_pro_emp_mov,
+                        date_col='schedule_day',
+                        add_id_col=False,
+                        use_case=1,
+                        main_year=self.auxiliary_data['main_year'],
+                        first_date=first_date_passado,
+                        last_date=last_date_passado
+                    )
+                    if not success:
+                        self.logger.warning(f"df_pro_emp_mov add_date_related_columns failed: {error_msg} - proceeding with empty DataFrame")
+                        df_pro_emp_mov = pd.DataFrame()
+                    else:
+                        self.logger.info(f"df_pro_emp_mov after date columns: shape {df_pro_emp_mov.shape}, columns {df_pro_emp_mov.columns.tolist()}")
             except Exception as e:
                 self.logger.warning(f"Error loading df_pro_emp_mov: {e} - proceeding with empty DataFrame")
                 df_pro_emp_mov = pd.DataFrame()
@@ -1856,7 +1880,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.error(f"Error in dataframe date filtering method: {e}", exc_info=True)
                 return False, "", str(e)
-            
+
             # Store processed dataframes in raw_data
             try:
                 self.medium_data['df_colaborador'] = df_colaborador.copy()
