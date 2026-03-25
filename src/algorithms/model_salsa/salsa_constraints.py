@@ -11,8 +11,8 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
 
     for w in workers:
         last_day = period[1]
-        last_compensation_f = holiday_rules[w]["compensation_limit"][last_day]
-        last_compensation_d = sunday_rules[w]["compensation_limit"][last_day]
+        last_compensation_f = holiday_rules[w]["compensation_limit"][max(holiday_rules[w]["compensation_limit"])]
+        last_compensation_d = sunday_rules[w]["compensation_limit"][max(sunday_rules[w]["compensation_limit"])]
 
         biggest_limit = last_compensation_f if last_compensation_f > last_compensation_d else last_compensation_d
 
@@ -37,12 +37,15 @@ def compensation_days(model, shift, workers, working_days, special_days, overrid
     worked_special_days = {}
 
     for w in workers:
-
+        if w not in special_day_rules:
+            continue
         worked_special_days[w] = {}
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
-        for d in [day for day in special_days if (day in working_days[w] - off - LQs) and period[0] <= day < period[1]]:
+        for d in [day for day in special_days if (day in working_days[w] - off - LQs) and period[0] <= day <= period[1]]:
+            if d not in special_day_rules[w]["compensation_limit"]:
+                continue
             if day_type == "holiday":
                 if override_holiday_sunday[w][d] == 'N':
                     continue
@@ -87,6 +90,8 @@ def compensation_days(model, shift, workers, working_days, special_days, overrid
     contingent = {}
     total_lds = {}
     for w in workers:
+        if len(worked_special_days[w]) == 0:
+            continue
         # Initialize the compensation day usage tracking for this worker
         comp_day_usage[w] = {}
         all_possible_comp_days = set()
@@ -180,7 +185,7 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
             if fixed_lds[w] == []:
                 past_lds = 0
             else:
-                past_lds = len([d for d in fixed_lds[w] if d > period[0]]) #havia algo a alterar aqui, ligado ao periodo, ja nao tenho a certeza
+                past_lds = len([d for d in fixed_lds[w] if d > period[0]])
             after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_holidays_everyone and w in total_lds_sundays_everyone:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w] + past_lds)
@@ -190,7 +195,6 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
-
     elif total_lds_holidays_everyone is not None:
         for w in workers:
             if fixed_lds[w] == []:
@@ -202,7 +206,6 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
             else:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
-
     elif total_lds_sundays_everyone is not None:
         for w in workers:
             if fixed_lds[w] == []:
@@ -214,7 +217,6 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
                 model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
-
     else:
         for w in workers:
             if fixed_lds[w] == []:
