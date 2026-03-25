@@ -5346,6 +5346,7 @@ def treat_df_process_rules(
             explode_start = row['begin_date'] if clip_start is None else max(row['begin_date'], clip_start)
             explode_end   = row['end_date']   if clip_end   is None else min(row['end_date'],   clip_end)
             if explode_start > explode_end:
+                logger.warning(f"Rule not active within the clip window - skipping: {row['rule_code']}")
                 continue  # rule not active within the clip window — skip entirely
             date_range = pd.date_range(start=explode_start, end=explode_end, freq='D')
             for day in date_range:
