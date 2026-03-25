@@ -875,11 +875,13 @@ class BaseDescansosDataModel(ABC):
             # STRSOL-1372: Build compensatory output (O/D rows for INT_EMP_PROCESS_MOV)
             compensatory_dict = self.rare_data.get('compensatory_dict', {})
             process_id = self.external_call_data.get("current_process_id", "")
+            df_process_rules_raw = self.auxiliary_data.get('df_process_rules_raw', pd.DataFrame())
             if compensatory_dict:
                 self.logger.info("Building compensatory output from solver results")
                 success, df_compensatory, error_msg = build_compensatory_output(
                     compensatory_dict=compensatory_dict,
                     process_id=process_id,
+                    df_process_rules_raw=df_process_rules_raw,
                 )
                 if success and not df_compensatory.empty:
                     self.formatted_data['df_compensatory'] = df_compensatory.copy()
@@ -962,19 +964,26 @@ class BaseDescansosDataModel(ABC):
                         df_compensatory['SCHEDULE_DAY_REF'] = df_compensatory['SCHEDULE_DAY_REF'].where(
                             df_compensatory['SCHEDULE_DAY_REF'].notna(), None
                         )
+                        df_compensatory['CREATE_USER'] = 'WFM'
+                        df_compensatory['CREATE_DATE'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         df_compensatory = df_compensatory.rename(columns={
-                            'PROCESS_ID': 'fk_processo',
+                            'PROCESS_ID': 'process_id',
                             'EMPLOYEE_ID': 'employee_id',
                             'SCHEDULE_DAY': 'schedule_day',
                             'SCHEDULE_DAY_REF': 'schedule_day_ref',
+                            'RULE_HEAD_ID': 'rule_head_id',
+                            'RULE_ID': 'rule_id',
                             'RULE_CODE': 'rule_code',
+                            'RULE_FIELD_ID': 'rule_field_id',
                             'FIELD_CODE': 'field_code',
                             'VALUE_OPT1': 'value_opt1',
-                            'DELETED': 'deleted',
+                            'CREATE_USER': 'create_user',
+                            'CREATE_DATE': 'create_date',
                         })
-                        df_compensatory = df_compensatory[['fk_processo', 'employee_id', 'schedule_day',
-                                                           'schedule_day_ref', 'rule_code', 'field_code',
-                                                           'value_opt1', 'deleted']]
+                        df_compensatory = df_compensatory[['process_id', 'employee_id', 'schedule_day',
+                                                           'schedule_day_ref', 'rule_head_id', 'rule_id',
+                                                           'rule_code', 'rule_field_id', 'field_code',
+                                                           'value_opt1', 'create_user', 'create_date']]
 
                         compensatory_query_path = self.config_manager.paths.sql_processing_paths['insert_compensatory_results_df']
                         valid_compensatory = bulk_insert_with_query(

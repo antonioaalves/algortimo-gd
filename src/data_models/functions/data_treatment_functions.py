@@ -5225,7 +5225,11 @@ def add_pessoa_obj_whole_day(
 # STRSOL-1372: Folgas compensatórias - process labor rules functions
 # =============================================================================
 
-def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_process_rules(
+    df_process_rules: pd.DataFrame,
+    first_date: str = None,
+    last_date: str = None,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Process and transform labor rules data from tall (one row per field) to wide
     (one row per rule instance per day) format.
@@ -5233,13 +5237,20 @@ def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.Dat
     Steps:
         1. Validate input structure
         2. Pivot from tall to wide: field_code values become columns per rule_head_id
-        3. Explode date range (begin_date -> end_date) to daily granularity
+        3. Explode date range (begin_date -> end_date) to daily granularity,
+           clipped to [first_date, last_date] so that rules with very wide DB
+           validity windows (e.g. 2020-2030) only produce rows for the execution
+           year.  Rules with no overlap with [first_date, last_date] are skipped.
 
     Args:
         df_process_rules: Raw DataFrame from core_process_labor_rules with columns:
             PROCESS_ID, LABOR_UNION_ID, CONTRACT_ID, BEGIN_DATE, END_DATE,
             RULE_CODE, RULE_ID, RULE_HEAD_ID, PRIORITY, ORDER_SEQ,
             FIELD_CODE, RULE_FIELD_ID, FIELD_TYPE, VALUE
+        first_date: Optional start of the execution year (YYYY-MM-DD).  When
+            provided the explosion is clipped so schedule_day >= first_date.
+        last_date: Optional end of the execution year (YYYY-MM-DD).  When
+            provided the explosion is clipped so schedule_day <= last_date.
 
     Returns:
         Tuple containing:
@@ -5319,10 +5330,24 @@ def treat_df_process_rules(df_process_rules: pd.DataFrame) -> Tuple[bool, pd.Dat
             if field in df_pivot.columns:
                 df_pivot[field] = pd.to_numeric(df_pivot[field], errors='coerce').fillna(0).astype(int)
 
-        # EXPLODE: date range -> daily rows
+        # Resolve optional clip boundaries
+        clip_start = pd.to_datetime(first_date) if first_date is not None else None
+        clip_end   = pd.to_datetime(last_date)  if last_date  is not None else None
+        if clip_start is not None or clip_end is not None:
+            logger.info(
+                f"treat_df_process_rules: clipping explosion to "
+                f"[{clip_start.date() if clip_start else '—'}, "
+                f"{clip_end.date()   if clip_end   else '—'}]"
+            )
+
+        # EXPLODE: date range -> daily rows (clipped to execution year when provided)
         rows = []
         for _, row in df_pivot.iterrows():
-            date_range = pd.date_range(start=row['begin_date'], end=row['end_date'], freq='D')
+            explode_start = row['begin_date'] if clip_start is None else max(row['begin_date'], clip_start)
+            explode_end   = row['end_date']   if clip_end   is None else min(row['end_date'],   clip_end)
+            if explode_start > explode_end:
+                continue  # rule not active within the clip window — skip entirely
+            date_range = pd.date_range(start=explode_start, end=explode_end, freq='D')
             for day in date_range:
                 new_row = row.copy()
                 new_row['schedule_day'] = day
@@ -5569,6 +5594,7 @@ def treat_df_pro_emp_mov(
 def build_compensatory_output(
     compensatory_dict: Dict,
     process_id: int,
+    df_process_rules_raw: pd.DataFrame = None,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Build INT_EMP_PROCESS_MOV integration rows (Origin/Destiny) from the solver's
@@ -5588,6 +5614,9 @@ def build_compensatory_output(
                  'domingos': {'ld_given': [(worked_day, day_off_or_None), ...],
                               'banco_horas': [], 'no_compensation': []}}}
         process_id: The process ID for the output rows.
+        df_process_rules_raw: Raw (pre-pivot) rules DataFrame with columns RULE_CODE,
+            RULE_ID, FIELD_CODE, RULE_FIELD_ID. Used to look up the numeric IDs for
+            each rule_code / field_code combination.
 
     Returns:
         Tuple containing:
@@ -5605,6 +5634,28 @@ def build_compensatory_output(
             'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
         }
 
+        # Build lookup dicts from raw rules: rule_code -> rule_id
+        # and (rule_code, field_code) -> rule_field_id
+        rule_id_lookup: Dict = {}
+        rule_head_id_lookup: Dict = {}
+        rule_field_id_lookup: Dict = {}
+        if df_process_rules_raw is not None and not df_process_rules_raw.empty:
+            df_rules_norm = df_process_rules_raw.copy()
+            df_rules_norm.columns = [str(c).strip().upper() for c in df_rules_norm.columns]
+            required = {'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID', 'FIELD_CODE', 'RULE_FIELD_ID'}
+            if required.issubset(df_rules_norm.columns):
+                for _, row in df_rules_norm[list(required)].drop_duplicates().iterrows():
+                    rc = row['RULE_CODE']
+                    if rc not in rule_id_lookup and pd.notna(row['RULE_ID']):
+                        rule_id_lookup[rc] = row['RULE_ID']
+                    if rc not in rule_head_id_lookup and pd.notna(row['RULE_HEAD_ID']):
+                        rule_head_id_lookup[rc] = row['RULE_HEAD_ID']
+                    key = (rc, row['FIELD_CODE'])
+                    if key not in rule_field_id_lookup and pd.notna(row['RULE_FIELD_ID']):
+                        rule_field_id_lookup[key] = row['RULE_FIELD_ID']
+            else:
+                logger.warning(f"build_compensatory_output: df_process_rules_raw missing columns for ID lookup. Has: {list(df_rules_norm.columns)}, needs: {required}")
+
         rows = []
 
         for worker_id, groups in compensatory_dict.items():
@@ -5612,30 +5663,25 @@ def build_compensatory_output(
                 group_data = groups.get(group_key, {})
 
                 for worked_day, day_off in group_data.get('ld_given', []):
-                    # O row: always generated for the worked special day
-                    rows.append({
+                    field_code = 'TIME_OFF_ADDITIONAL'
+                    rule_id = rule_id_lookup.get(rule_code)
+                    rule_head_id = rule_head_id_lookup.get(rule_code)
+                    rule_field_id = rule_field_id_lookup.get((rule_code, field_code))
+
+                    row_base = {
                         'PROCESS_ID': process_id,
                         'EMPLOYEE_ID': worker_id,
-                        'SCHEDULE_DAY': worked_day,
-                        'SCHEDULE_DAY_REF': None,
+                        'RULE_HEAD_ID': rule_head_id,
+                        'RULE_ID': rule_id,
                         'RULE_CODE': rule_code,
-                        'FIELD_CODE': 'TIME_OFF_ADDITIONAL',
-                        'VALUE_OPT1': 'O',
-                        'DELETED': 0,
-                    })
+                        'RULE_FIELD_ID': rule_field_id,
+                        'FIELD_CODE': field_code,
+                    }
 
-                    # D row: only if compensation was placed
+                    rows.append({**row_base, 'SCHEDULE_DAY': worked_day, 'SCHEDULE_DAY_REF': None, 'VALUE_OPT1': 'O'})
+
                     if day_off is not None:
-                        rows.append({
-                            'PROCESS_ID': process_id,
-                            'EMPLOYEE_ID': worker_id,
-                            'SCHEDULE_DAY': day_off,
-                            'SCHEDULE_DAY_REF': worked_day,
-                            'RULE_CODE': rule_code,
-                            'FIELD_CODE': 'TIME_OFF_ADDITIONAL',
-                            'VALUE_OPT1': 'D',
-                            'DELETED': 0,
-                        })
+                        rows.append({**row_base, 'SCHEDULE_DAY': day_off, 'SCHEDULE_DAY_REF': worked_day, 'VALUE_OPT1': 'D'})
 
                 # TODO STRSOL-1372: banco_horas not considered for now
 

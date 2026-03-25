@@ -654,6 +654,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # STRSOL-1372: Load process labor rules (compensatory time-off rules)
             df_process_rules = pd.DataFrame()
+            df_process_rules_raw = pd.DataFrame()
             try:
                 self.logger.info("Loading df_process_rules from data manager")
                 df_process_rules = data_manager.load_data(
@@ -662,8 +663,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                     process_id="'" + str(self.external_call_data['current_process_id']) + "'"
                 )
                 self.logger.info(f"df_process_rules shape (rows {df_process_rules.shape[0]}, columns {df_process_rules.shape[1]}): {df_process_rules.columns.tolist()}")
+                df_process_rules_raw = df_process_rules.copy()
 
-                success, df_process_rules, error_msg = treat_df_process_rules(df_process_rules)
+                success, df_process_rules, error_msg = treat_df_process_rules(
+                    df_process_rules,
+                    first_date=first_year_date,
+                    last_date=last_year_date,
+                )
                 if not success:
                     self.logger.warning(f"df_process_rules treatment failed: {error_msg} - proceeding with empty DataFrame")
                     df_process_rules = pd.DataFrame()
@@ -685,6 +691,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.warning(f"Error loading df_process_rules: {e} - proceeding with empty DataFrame")
                 df_process_rules = pd.DataFrame()
+                df_process_rules_raw = pd.DataFrame()
 
             # Copy the dataframes into the apropriate dict
             try:
@@ -720,6 +727,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['num_feriados_abertos'] = num_feriados_abertos
                 self.auxiliary_data['num_feriados_fechados'] = num_feriados_fechados
                 self.auxiliary_data['df_process_rules'] = df_process_rules.copy()
+                self.auxiliary_data['df_process_rules_raw'] = df_process_rules_raw.copy()
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
