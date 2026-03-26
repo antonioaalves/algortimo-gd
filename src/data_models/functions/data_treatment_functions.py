@@ -929,10 +929,15 @@ def treat_df_contratos(df_contratos: pd.DataFrame) -> Tuple[bool, pd.DataFrame, 
         # TREATMENT LOGIC
         df_result = df_contratos.copy()
         
-        # Convert timedelta columns to hours (total seconds / 3600)
-        df_result['maximumworkload'] = pd.to_timedelta(df_result['maximumworkload']).dt.total_seconds() / 3600
-        df_result['maximumworkday'] = pd.to_timedelta(df_result['maximumworkday']).dt.total_seconds() / 3600
-        df_result['maximumdaysperweek'] = pd.to_timedelta(df_result['maximumdaysperweek']).dt.total_seconds() / 3600
+        # NUMBER columns (already in hours) — just cast Decimal to float
+        for col in ['maximumworkload', 'maximumdaysperweek']:
+            df_result[col] = df_result[col].astype(float)
+        # INTERVAL columns — convert timedelta to hours
+        for col in ['maximumworkday']:
+            if pd.api.types.is_timedelta64_dtype(df_result[col]):
+                df_result[col] = df_result[col].dt.total_seconds() / 3600
+            else:
+                df_result[col] = pd.to_timedelta(df_result[col].astype(float)).dt.total_seconds() / 3600
         
         # Calculate carga_diaria (daily workload)
         # Use the minimum of average daily workload and maximum workday
