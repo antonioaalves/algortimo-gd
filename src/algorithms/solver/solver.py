@@ -347,10 +347,12 @@ def solve(
                     'feriados': {
                         'ld_given' : [],
                         'no_compensation' : [],
+                        'worked_before_period' : [],
                     },
                     'domingos': {
                         'ld_given' : [],
                         'no_compensation' : [],
+                        'worked_before_period' : []
                     }
                 }
 
@@ -381,7 +383,7 @@ def solve(
                             compensation_days_off[w].append(index_to_date[d])
                             ld_count += 1
                     elif day_assignment in ['T']:
-                        if period[0] <= d <= period[1]:
+                        if 12 <= d <= period[1]:
                             if d in special_days:
                                 special_days_worked[w].append(index_to_date[d])
                                 special_days_count += 1
@@ -389,7 +391,7 @@ def solve(
                                 sun[w].append(index_to_date[d])
                         time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
-                        if period[0] <= d <= period[1]:
+                        if 12 <= d <= period[1]:
                             if d in special_days:
                                 special_days_worked[w].append(index_to_date[d])
                                 special_days_count += 1
@@ -407,6 +409,8 @@ def solve(
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
+                                    if d < period[0]:
+                                        feriados_domingos_compensacao[w]["domingos"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
                                     feriados_domingos_compensacao[w]["feriados"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 if contingente_domingos:
@@ -419,6 +423,8 @@ def solve(
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
+                                    if d < period[0]:
+                                        feriados_domingos_compensacao[w]["domingos"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
                                     feriados_domingos_compensacao[w]["domingos"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 logger.info(f"\n\t\tholidays worked      : {len(special_days_worked[w])}, {special_days_worked[w]}"

@@ -72,19 +72,23 @@ def compensation_days(model, shift, workers, working_days, special_days, overrid
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                       special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, period)
                 
+        logger.info(f"{w}: past days worked and limit {past_special_days_worked[w]["days_&_limit"]}")
         for d in past_special_days_worked[w]["days_&_limit"]:
             worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
             amount_lds[w][d] = past_special_days_worked[w]["days_&_amount"][d]
             worked_special_days[w][d] = worked_special_day
             special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), None)
+            if special_day_week is not None:
+                special_day_week -= -1
         
             compensation_left_over = past_special_days_worked[w]["days_&_limit"][d] - (period[0] - d)
+            logger.info(f"calculated time: {compensation_left_over} from day {d} to start date {period[0]} with limit {past_special_days_worked[w]["days_&_limit"][d]}")
             if compensation_left_over <= 0:
                 logger.warning(f"for Worker {w}: compensation for day {d}, before {period[0]}, will be impossible because there's no time remaing: {compensation_left_over}")
                 continue
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                       compensation_left_over, working_days[w], shift, w, fixed_lds, period)
-
+            logger.info(f"For {w}: day {d} before period {period[0]} got possible_compensation_days: {possible_compensation_days[w][d]}")
 
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables

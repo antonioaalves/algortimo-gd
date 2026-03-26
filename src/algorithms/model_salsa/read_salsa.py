@@ -40,8 +40,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
         matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
         matriz_past_lds_gd = algorithm_treatment_params['df_pro_emp_mov'].copy()
-        logger.info(matriz_process_rules_gd.to_string())
-        logger.info(matriz_past_lds_gd.to_string())
+        #logger.info(matriz_process_rules_gd.to_string())
+        #logger.info(matriz_past_lds_gd.to_string())
 
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
@@ -722,8 +722,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 }
                 override_holiday_sunday[w] = holiday_df_w['time_off_additional'].fillna('N').to_dict()
 
-        logger.info(f"holiday rules: {holiday_rules}")
-        logger.info(f"sunday rules: {sunday_rules}")
+        #logger.info(f"holiday rules: {holiday_rules}")
+        #logger.info(f"sunday rules: {sunday_rules}")
 
         holiday_past_lds = {}
         sunday_past_lds = {}
@@ -742,8 +742,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     "days_&_amount": sunday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
                 }
 
-        logger.info(f"past holiday : {holiday_past_lds}")
-        logger.info(f"past sunday : {sunday_past_lds}")
+        #logger.info(f"past holiday : {holiday_past_lds}")
+        #logger.info(f"past sunday : {sunday_past_lds}")
         # =================================================================
         # 14. RETURN ALL PROCESSED data
         # =================================================================
