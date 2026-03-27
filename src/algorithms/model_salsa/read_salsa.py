@@ -66,8 +66,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
         matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()
-        matriz_process_rules_gd.columns = matriz_process_rules_gd.columns.str.lower()
-        matriz_past_lds_gd.columns = matriz_past_lds_gd.columns.str.lower()
 
         logger.info(f"Input DataFrames loaded:")
         logger.info(f"  - matriz_colaborador: {matriz_colaborador_gd.shape}")
@@ -706,6 +704,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         sunday_rules = {}
         override_holiday_sunday = {}
         if not matriz_process_rules_gd.empty:
+            matriz_process_rules_gd.columns = matriz_process_rules_gd.columns.str.lower()
             holiday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_holiday"]
             sunday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_sunday"]
             for w in workers_complete:
@@ -720,14 +719,16 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     "amount": sunday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
                     "compensation_limit": sunday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
                 }
-                override_holiday_sunday[w] = holiday_df_w['time_off_additional'].fillna('N').to_dict()
+                override_holiday_sunday[w] = holiday_df_w['overlap_sunday_holiday'].fillna('N').to_dict()
 
-        #logger.info(f"holiday rules: {holiday_rules}")
-        #logger.info(f"sunday rules: {sunday_rules}")
+        logger.info(f"holiday rules: {holiday_rules}")
+        logger.info(f"sunday rules: {sunday_rules}")
+        logger.info(f"override rules: {override_holiday_sunday}")
 
         holiday_past_lds = {}
         sunday_past_lds = {}
         if not matriz_past_lds_gd.empty:
+            matriz_past_lds_gd.columns = matriz_past_lds_gd.columns.str.lower()
             holiday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_holiday"]
             sunday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_sunday"]
             for w in workers_complete:

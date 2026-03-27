@@ -20,17 +20,17 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
         for d in range(last_day + 1, last_day + biggest_limit + 1):
             shift[(w, d, 'LD')] = model.NewBoolVar(f"{w}_Day{d}_LD")
 
-    contingent_f, total_lds_f = compensation_days(model, shift, workers, working_days, set(holidays), override_holiday_sunday, week_to_days, working_shift, holiday_rules, fixed_lds,
+    contingent_f, total_lds_f = compensation_days(model, shift, workers, working_days, set(holidays), set(sundays), override_holiday_sunday, week_to_days, working_shift, holiday_rules, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "holiday", holiday_past_lds)
 
-    contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, set(sundays), override_holiday_sunday, week_to_days, working_shift, sunday_rules, fixed_lds,
+    contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, set(sundays), set(holidays), override_holiday_sunday, week_to_days, working_shift, sunday_rules, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "sunday", sunday_past_lds)
         
     ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d, fixed_lds, contingent_f, contingent_d, holiday_rules, sunday_rules)
     return contingent_f, contingent_d
 
 
-def compensation_days(model, shift, workers, working_days, special_days, override_holiday_sunday, week_to_days, working_shift, special_day_rules, fixed_lds,
+def compensation_days(model, shift, workers, working_days, special_days, special_days_2, override_holiday_sunday, week_to_days, working_shift, special_day_rules, fixed_lds,
                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, day_type, past_special_days_worked):
     possible_compensation_days = {}
     worked_special_days = {}
@@ -46,12 +46,13 @@ def compensation_days(model, shift, workers, working_days, special_days, overrid
         for d in [day for day in special_days if (day in working_days[w] - off - LQs) and period[0] <= day <= period[1]]:
             if d not in special_day_rules[w]["compensation_limit"]:
                 continue
-            if day_type == "holiday":
-                if override_holiday_sunday[w][d] == 'N':
-                    continue
-            elif day_type == "sunday":
-                if override_holiday_sunday[w][d] == 'S':
-                    continue
+            if d in special_days_2:
+                if day_type == "holiday":
+                    if override_holiday_sunday[w][d] == 'N':  
+                        continue
+                elif day_type == "sunday":
+                    if override_holiday_sunday[w][d] == 'Y':
+                        continue
             # Create a boolean variable to track if the worker worked on this special day
             amount_lds[w][d] = special_day_rules[w]["amount"][d]
             worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
@@ -72,23 +73,21 @@ def compensation_days(model, shift, workers, working_days, special_days, overrid
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                       special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, period)
                 
-        logger.info(f"{w}: past days worked and limit {past_special_days_worked[w]["days_&_limit"]}")
-        for d in past_special_days_worked[w]["days_&_limit"]:
-            worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
-            amount_lds[w][d] = past_special_days_worked[w]["days_&_amount"][d]
-            worked_special_days[w][d] = worked_special_day
-            special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), None)
-            if special_day_week is not None:
-                special_day_week -= -1
-        
-            compensation_left_over = past_special_days_worked[w]["days_&_limit"][d] - (period[0] - d)
-            logger.info(f"calculated time: {compensation_left_over} from day {d} to start date {period[0]} with limit {past_special_days_worked[w]["days_&_limit"][d]}")
-            if compensation_left_over <= 0:
-                logger.warning(f"for Worker {w}: compensation for day {d}, before {period[0]}, will be impossible because there's no time remaing: {compensation_left_over}")
-                continue
-            possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
-                                                                      compensation_left_over, working_days[w], shift, w, fixed_lds, period)
-            logger.info(f"For {w}: day {d} before period {period[0]} got possible_compensation_days: {possible_compensation_days[w][d]}")
+        if w in past_special_days_worked:
+            for d in past_special_days_worked[w]["days_&_limit"]:
+                worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
+                amount_lds[w][d] = past_special_days_worked[w]["days_&_amount"][d]
+                worked_special_days[w][d] = worked_special_day
+                special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), 1) - 1
+
+                compensation_left_over = past_special_days_worked[w]["days_&_limit"][d] - (period[0] - d) + 1
+                logger.info(f"calculated time: {compensation_left_over} from day {d} to start date {period[0]} with limit {past_special_days_worked[w]['days_&_limit'][d]}")
+                if compensation_left_over <= 0:
+                    logger.warning(f"for Worker {w}: compensation for day {d}, before {period[0]}, will be impossible because there's no time remaing: {compensation_left_over}")
+                    continue
+                possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
+                                                                          compensation_left_over, working_days[w], shift, w, fixed_lds, period)
+                logger.info(f"For {w}: day {d} before period {period[0]} got possible_compensation_days: {possible_compensation_days[w][d]}")
 
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables
@@ -192,45 +191,41 @@ def ld_restriction(model, shift, workers, period, total_lds_holidays_everyone, t
                 past_lds = 0
             else:
                 past_lds = len([d for d in fixed_lds[w] if d > period[0]])
-            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_holidays_everyone and w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + total_lds_sundays_everyone[w] + past_lds)
             elif w in total_lds_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
             elif w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == past_lds)
     elif total_lds_holidays_everyone is not None:
         for w in workers:
             if fixed_lds[w] == []:
                 past_lds = 0
             else:
                 past_lds = len([d for d in fixed_lds[w] if d > period[0]])
-            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_holidays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == total_lds_holidays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == past_lds)
     elif total_lds_sundays_everyone is not None:
         for w in workers:
             if fixed_lds[w] == []:
                 past_lds = 0
             else:
                 past_lds = len([d for d in fixed_lds[w] if d > period[0]])
-            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
             if w in total_lds_sundays_everyone:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == total_lds_sundays_everyone[w] + past_lds)
             else:
-                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
+                model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == past_lds)
     else:
         for w in workers:
             if fixed_lds[w] == []:
                 past_lds = 0
             else:
                 past_lds = len([d for d in fixed_lds[w] if d > period[0]])
-            after_period = period[1] + max(compensation_h_limit.get((w, period[1]), 15), compensation_d_limit.get((w, period[1]), 15)) + 1
-            model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], after_period) if (w, d, 'LD') in shift) == past_lds)
+            model.Add(sum(shift[(w, d, 'LD')] for d in range(period[0], 500) if (w, d, 'LD') in shift) == past_lds)
 
 def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
     # Constraint for workers having an assigned shift
