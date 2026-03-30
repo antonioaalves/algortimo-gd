@@ -303,9 +303,8 @@ def working_day_shifts(model, shift, workers, working_days, check_shift, workers
 
 def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days, fixed_LQs, period):
     for w in workers:
-        
-        all_days_off = fixed_days[w].union(fixed_LQs[w])
-        all_work_days = [d for d in working_days[w] if period[0] - 2 < d < period[1]]
+        all_days_off = set(fixed_days[w].union(fixed_LQs[w]))
+        all_work_days = [d for d in working_days[w] if period[0] - 3 < d < period[1]]
         if contract_type.get(w, 0) == 8:
             max_continuous_free_days = 2
         else:
@@ -317,11 +316,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
             free_day = model.NewBoolVar(f"free_day_{w}_{d}")
             
             # Sum the L, F, and LQ shifts for this day
-            # If F_special_day is True, consider F shifts as well
-            free_shift_sum = sum(
-                    shift.get((w, d, shift_type), 0) 
-                    for shift_type in ["L", "F", "LQ", "LD"]
-                )
+            free_shift_sum = sum(shift.get((w, d, shift_type), 0) for shift_type in ["L", "F", "LQ", "LD"])
 
             # Link the boolean variable to whether any free shift is assigned
             model.Add(free_shift_sum >= 1).OnlyEnforceIf(free_day)
@@ -334,7 +329,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
             # Get the sequence of consecutive day indices
             day_sequence = all_work_days[i:i + max_continuous_free_days + 1]
 
-            if all(day_sequence[j] in all_days_off for j in range(len(day_sequence))):
+            if all(day in all_days_off for day in day_sequence):
                 continue
             # Check if all days in the sequence are actually consecutive (no gaps)
             is_consecutive = all(
@@ -346,11 +341,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
             if is_consecutive:
                 # At least one of the (max_continuous_free_days + 1) consecutive days must NOT be a free day
                 # This prevents having more than max_continuous_free_days consecutive free days
-                model.AddBoolOr([
-                    free_day_vars[day].Not() 
-                    for day in day_sequence
-                ])
-
+                model.AddBoolOr([free_day_vars[day].Not() for day in day_sequence])
 
 def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, year_range, period):
     # Track quality 2-day weekends and ensure LQ is only used in this pattern

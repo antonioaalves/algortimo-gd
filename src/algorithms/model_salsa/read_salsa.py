@@ -694,7 +694,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         country = algorithm_treatment_params['nome_pais']
         logger.info(f"Country is {country}")
 
-        logger.info("[OK] Data processing completed successfully")
 
         # =================================================================
         # 13. COMPENSATION RULES
