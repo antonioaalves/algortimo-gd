@@ -363,13 +363,10 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     for d in days_of_year:
         for s in real_working_shift:
             target = pessObj.get((d, s), 0)
-            assigned_workers = sum(
-                shift[(w, d, s)] * work_day_hours[w].get(d, 8)
-                for w in all_workers if (w, d, s) in shift
-            )
+            assigned_workers = sum(shift[(w, d, s)] * work_day_hours[w].get(d, 8) for w in all_workers if (w, d, s) in shift)
 
-            excess  = model.NewIntVar(0, len(all_workers)*80000, f'excess_{d}_{s}')
-            deficit = model.NewIntVar(0, target*80000, f'deficit_{d}_{s}')
+            excess  = model.NewIntVar(0, len(all_workers)*80, f'excess_{d}_{s}')
+            deficit = model.NewIntVar(0, target*80, f'deficit_{d}_{s}')
 
             model.Add(excess >= assigned_workers - target)
             model.Add(deficit >= target - assigned_workers)
@@ -388,8 +385,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     daily_deficit = {}
     daily_excess  = {}
 
-    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 80000
-    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 80000
+    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 80
+    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 80
     for d in days_of_year_working:
         daily_deficit[d] = model.NewIntVar(0, max_daily_deficit_possible, f'daily_deficit_{d}')
         daily_excess[d]  = model.NewIntVar(0, max_daily_excess_possible,  f'daily_excess_{d}')
@@ -421,14 +418,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     penalty_vars    = []
 
     for d in days_of_year_working:
-        daily_deficit[d] = model.NewIntVar(0, max_daily_deficit_possible, f'daily_deficit_{d}')
-        daily_excess[d]  = model.NewIntVar(0, max_daily_excess_possible,  f'daily_excess_{d}')
-
-        model.Add(daily_deficit[d] == sum(deficit for (dd, s, deficit) in deficit_diff_vars if dd == d))
-        model.Add(daily_excess[d]  == sum(excess for (dd, s, excess) in excess_diff_vars if dd == d))
-
-
-    for d in days_of_year_working:
         day_has_excess[d]  = model.NewBoolVar(f'day_{d}_has_excess')
         day_has_deficit[d] = model.NewBoolVar(f'day_{d}_has_deficit')
         day_has_both[d]    = model.NewBoolVar(f'day_{d}_has_both')
@@ -454,12 +443,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     
     
     deficit_cases = {
-        'x': (deficit_over_x_worst_case, deficit_over_x_day_weight),
-        'y': (deficit_over_y_worst_case, deficit_over_y_day_weight),
-        'z': (deficit_over_z_worst_case, deficit_over_z_day_weight),
-        't': (deficit_over_t_worst_case, deficit_over_t_day_weight),
-        'k': (deficit_over_k_worst_case, deficit_over_k_day_weight),
-        'q': (deficit_over_q_worst_case, deficit_over_q_day_weight),
+        'x': (deficit_over_x_worst_case, deficit_over_x_day_weight), #8
+        'y': (deficit_over_y_worst_case, deficit_over_y_day_weight), #12
+        'z': (deficit_over_z_worst_case, deficit_over_z_day_weight), #16
+        't': (deficit_over_t_worst_case, deficit_over_t_day_weight), #20
+        'k': (deficit_over_k_worst_case, deficit_over_k_day_weight), #24
+        'q': (deficit_over_q_worst_case, deficit_over_q_day_weight), #32
     }
 
     day_deficit_over = {c: {} for c in deficit_cases}
@@ -476,7 +465,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     for c, (_, weight) in deficit_cases.items():
 
         num_days = model.NewIntVar(
-            0, len(days_of_year_working),
+            0, len(days_of_year_working) + 30,
             f'num_days_deficit_over_{c}'
         )
 
@@ -492,7 +481,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     weekly_diff_vars = []
     sorted_weeks = sorted(week_to_days.keys())
-    safe_limit = len(all_workers) * 8 * len(real_working_shift)  # same as before
+    safe_limit = len(all_workers) * 800 * len(real_working_shift)  # same as before
 
     for w in sorted_weeks:
         days = set(week_to_days[w])
@@ -542,7 +531,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     biweekly_diff_vars = []
     sorted_weeks = sorted(week_to_days.keys())
-    safe_limit = len(all_workers) * 8 * len(real_working_shift)
 
     for i in range(len(sorted_weeks) - 1):
         w1, w2 = sorted_weeks[i], sorted_weeks[i + 1]
