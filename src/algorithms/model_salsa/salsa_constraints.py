@@ -74,6 +74,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                                                                       special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, period)
                 
         if w in past_special_days_worked:
+            logger.info(f"past special days {w} worked: {past_special_days_worked[w]}")
             for d in past_special_days_worked[w]["days_&_limit"]:
                 worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
                 amount_lds[w][d] = past_special_days_worked[w]["days_&_amount"][d]

@@ -36,7 +36,7 @@ project_structure = {
                 #    'parameters': {}
                 #},
                 "insertions": {
-                    "insert_results": True
+                    "insert_results": False
                 }
             },
             "substages": {

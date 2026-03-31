@@ -385,6 +385,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Espanha)")
             else:
                 self.logger.warning("Skipping constraint: holiday_compensation_days (disabled in config)")
+            exit(0)
 
             if workers:
                 # Week working days constraint based on contract type
@@ -431,7 +432,6 @@ class SalsaAlgorithm(BaseAlgorithm):
                     salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period)
                 else:
                     self.logger.warning("Skipping constraint: salsa_2_free_days_week (disabled in config)")
-    
                 if constraint_selections.get("first_day_not_free", {}).get("enabled", True):
                     self.logger.info("Applying constraint: first_day_not_free")
                     first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off, period)
