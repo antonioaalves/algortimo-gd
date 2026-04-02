@@ -742,7 +742,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 holiday_ld_w = holiday_lds[holiday_lds["employee_id"] == w].set_index('schedule_day')
                 holiday_ld_w.index = holiday_ld_w.index.map(lambda d: day_of_year_dict_inverted[d.strftime('%Y-%m-%d')])
                 holiday_past_lds[w] = {
-                    "days_&_limit": holiday_ld_w['time_off_deadline'].astype(int).apply( lambda x: x -(period[0] - y) + 1).to_dict(),
+                    "days_&_limit": holiday_ld_w['time_off_deadline'].astype(int).to_dict(),
                     "days_&_amount": holiday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
                 }
                 sunday_ld_w = sunday_lds[sunday_lds["employee_id"] == w].set_index('schedule_day')
@@ -751,10 +751,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     "days_&_limit": sunday_ld_w['time_off_deadline'].astype(int).to_dict(),
                     "days_&_amount": sunday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
                 }
+                if w in holiday_past_lds:
+                    for d in holiday_past_lds[w]["days_&_limit"]:
+                        holiday_past_lds[w]["days_&_limit"][d] = holiday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
+                if w in sunday_past_lds:
+                    for d in sunday_past_lds[w]["days_&_limit"]:
+                        sunday_past_lds[w]["days_&_limit"][d] = sunday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
 
             logger.info(f"past holiday : {holiday_past_lds}")
-        exit(0)
-        #logger.info(f"past sunday : {sunday_past_lds}")
+            logger.info(f"past sunday : {sunday_past_lds}")
         # =================================================================
         # 14. RETURN ALL PROCESSED data
         # =================================================================

@@ -258,26 +258,28 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
             
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, period):
+def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, closed_days, period):
     compensation_days = []
     days_analysed = 0
     current_week = special_day_week
-
-    absences = worker_absences.union(vacation_days)
+    absences = worker_absences.union(vacation_days.union(closed_days))
     all_days_off = fixed_days_off.union(fixed_LQs.union(absences.union(fixed_lds)))
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
         week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        if len(week_days.intersection(absences)) >= 5:
+            continue
+        available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0]}
 
-        available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift}
-
-        days_analysed += len(week_days - absences)
+        days_analysed += len({d for d in week_days - absences if d >= period[0]})
         if days_analysed > compensation_limit:
             diff = days_analysed - compensation_limit
             if diff > len(available_days):
                 break
-            available_days = set(sorted(available_days)[:-diff])
+            diff -= len(week_days.intersection(all_days_off))
+            if diff > 0:
+                available_days = set(sorted(available_days)[:-diff])
 
         if min(week_days) >= period[1]:
             available_days = {d for d in week_days - all_days_off if (w, d, 'LD') in shift}
