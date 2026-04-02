@@ -440,7 +440,12 @@ def treat_df_calendario_passado(df_calendario_passado: pd.DataFrame, case_type: 
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
 
-def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str, end_date: str) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_ausencias_ferias(
+    df_ausencias_ferias: pd.DataFrame,
+    start_date: str,
+    end_date: str,
+    classification_mode: str = 'db_is_holiday'
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Process employee absences and vacation data for scheduling integration.
     
@@ -450,7 +455,7 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str
     
     Business Logic:
         - Expands date intervals into individual daily records
-        - Maps specific absence reasons to vacation type 'V' (configurable via config)
+        - Classifies vacation rows either from DB `is_holiday` or legacy motivo config
         - Filters out overlapping absences that are already in historical calendar
         - Handles both single-day and multi-day absence periods
     
@@ -472,6 +477,10 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str
         df_ausencias_ferias: DataFrame with absence records (data_ini, data_fim, tipo_ausencia)
         start_date: Beginning of scheduling period (YYYY-MM-DD format)
         end_date: End of scheduling period (YYYY-MM-DD format)
+        classification_mode: Vacation classification source.
+            Supported values:
+            - 'db_is_holiday': use query output `is_holiday`
+            - 'legacy_motivo_list': use configured `codigos_motivo_ausencia`
         
     Returns:
         Tuple containing:
@@ -496,12 +505,28 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str
         if start_date_dt > end_date_dt:
             return False, pd.DataFrame(), "Input validation failed: start_date is greater than end_date"
 
+        valid_classification_modes = {'db_is_holiday', 'legacy_motivo_list'}
+        if classification_mode not in valid_classification_modes:
+            error_msg = (
+                "Input validation failed: invalid classification_mode "
+                f"'{classification_mode}'"
+            )
+            logger.error(error_msg)
+            return False, pd.DataFrame(), error_msg
+
         required_columns = ['data_ini', 'data_fim']
         missing_columns = [col for col in required_columns if col not in df_ausencias_ferias.columns]
         if missing_columns:
             error_msg = f"Input validation failed: missing columns {missing_columns}"
             logger.error(error_msg)
             return False, pd.DataFrame(), error_msg
+
+        logger.info(
+            "Starting df_ausencias_ferias treatment: rows=%s, columns=%s, classification_mode=%s",
+            len(df_ausencias_ferias),
+            df_ausencias_ferias.columns.tolist(),
+            classification_mode
+        )
 
         # TREATMENT LOGIC
         if not df_ausencias_ferias['data_ini'].equals(df_ausencias_ferias['data_fim']):
@@ -549,6 +574,7 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str
                             'data_fim': row['data_fim'],
                             'tipo_ausencia': row['tipo_ausencia'],
                             'fk_motivo_ausencia': row['fk_motivo_ausencia'],
+                            'is_holiday': row.get('is_holiday'),
                         })
                     ])
                 except Exception as e:
@@ -580,22 +606,83 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str
                 axis='columns'
             )
 
-        # Convert tipo_ausencia to 'V' for specific vacation motivo_ausencia codes
-        motivos_ausencia_list = _config.parameters.get_parameter_default('codigos_motivo_ausencia')
-        if 'fk_motivo_ausencia' in df_ausencias_ferias.columns:
+        if classification_mode == 'db_is_holiday':
+            if 'is_holiday' not in df_ausencias_ferias.columns:
+                error_msg = (
+                    "Input validation failed: missing column ['is_holiday'] "
+                    "for classification_mode='db_is_holiday'"
+                )
+                logger.error(error_msg)
+                return False, pd.DataFrame(), error_msg
+
             before_v_count = (df_ausencias_ferias['tipo_ausencia'] == 'V').sum()
-            
-            # Normalize types: convert both to strings for comparison (data may be string or int)
-            motivos_ausencia_list_str = [str(m) for m in motivos_ausencia_list]
-            df_motivos_str = df_ausencias_ferias['fk_motivo_ausencia'].astype(str)
-            matching_mask = df_motivos_str.isin(motivos_ausencia_list_str)
-            df_ausencias_ferias.loc[matching_mask, 'tipo_ausencia'] = 'V'
+            normalized_is_holiday = pd.to_numeric(
+                df_ausencias_ferias['is_holiday'],
+                errors='coerce'
+            )
+            null_is_holiday_count = normalized_is_holiday.isna().sum()
+            holiday_mask = normalized_is_holiday == 1
+            non_holiday_mask = normalized_is_holiday == 0
+
+            df_ausencias_ferias['is_holiday'] = normalized_is_holiday
+            df_ausencias_ferias.loc[holiday_mask, 'tipo_ausencia'] = 'V'
+
             after_v_count = (df_ausencias_ferias['tipo_ausencia'] == 'V').sum()
             converted_count = after_v_count - before_v_count
-            if converted_count > 0:
-                logger.info(f"Converted {converted_count} absence rows to vacation (V) based on motivo codes")
+
+            holiday_reason_counts = {}
+            if 'fk_motivo_ausencia' in df_ausencias_ferias.columns:
+                holiday_reason_counts = (
+                    df_ausencias_ferias.loc[holiday_mask, 'fk_motivo_ausencia']
+                    .astype(str)
+                    .value_counts()
+                    .head(10)
+                    .to_dict()
+                )
+
+            logger.info(
+                "Vacation classification summary [db_is_holiday]: total_rows=%s, flagged_holiday=%s, flagged_not_holiday=%s, null_is_holiday=%s, already_v=%s, converted_to_v=%s",
+                len(df_ausencias_ferias),
+                int(holiday_mask.sum()),
+                int(non_holiday_mask.sum()),
+                int(null_is_holiday_count),
+                int(before_v_count),
+                int(converted_count)
+            )
+            if holiday_reason_counts:
+                logger.info(
+                    "Vacation classification summary [db_is_holiday]: top holiday motivo counts=%s",
+                    holiday_reason_counts
+                )
+            if null_is_holiday_count > 0:
+                logger.warning(
+                    "Vacation classification summary [db_is_holiday]: found %s rows with null is_holiday; keeping original tipo_ausencia",
+                    int(null_is_holiday_count)
+                )
         else:
-            logger.warning("fk_motivo_ausencia column not found, cannot convert to V")
+            motivos_ausencia_list = _config.parameters.get_parameter_default('codigos_motivo_ausencia')
+            if 'fk_motivo_ausencia' in df_ausencias_ferias.columns:
+                before_v_count = (df_ausencias_ferias['tipo_ausencia'] == 'V').sum()
+
+                # Normalize types: convert both to strings for comparison (data may be string or int)
+                motivos_ausencia_list_str = [str(m) for m in motivos_ausencia_list]
+                df_motivos_str = df_ausencias_ferias['fk_motivo_ausencia'].astype(str)
+                matching_mask = df_motivos_str.isin(motivos_ausencia_list_str)
+                df_ausencias_ferias.loc[matching_mask, 'tipo_ausencia'] = 'V'
+                after_v_count = (df_ausencias_ferias['tipo_ausencia'] == 'V').sum()
+                converted_count = after_v_count - before_v_count
+                logger.info(
+                    "Vacation classification summary [legacy_motivo_list]: total_rows=%s, matching_motivos=%s, already_v=%s, converted_to_v=%s, configured_motivos=%s",
+                    len(df_ausencias_ferias),
+                    int(matching_mask.sum()),
+                    int(before_v_count),
+                    int(converted_count),
+                    motivos_ausencia_list
+                )
+            else:
+                logger.warning(
+                    "fk_motivo_ausencia column not found, cannot convert to V in legacy_motivo_list mode"
+                )
 
         # Filter out tipo_ausencia = 'A' for dates outside start_date and end_date (these are already present coming from df_calendario_passado)
         if 'tipo_ausencia' in df_ausencias_ferias.columns and 'data' in df_ausencias_ferias.columns:
@@ -611,6 +698,12 @@ def treat_df_ausencias_ferias(df_ausencias_ferias: pd.DataFrame, start_date: str
         # OUTPUT VALIDATION
         if not df_ausencias_ferias.empty and 'data' not in df_ausencias_ferias.columns:
             return False, pd.DataFrame(), "Treatment failed: missing data column in result"
+
+        logger.info(
+            "Finished df_ausencias_ferias treatment: rows=%s, tipo_ausencia_counts=%s",
+            len(df_ausencias_ferias),
+            df_ausencias_ferias['tipo_ausencia'].astype(str).value_counts().to_dict()
+        )
             
         return True, df_ausencias_ferias, ""
 
