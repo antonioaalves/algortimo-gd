@@ -1207,6 +1207,24 @@ class SalsaDataModel(BaseDescansosDataModel):
                     end_date=last_date_passado
                 )
                 self.logger.info(f"df_ausencias_ferias shape (rows {df_ausencias_ferias.shape[0]}, columns {df_ausencias_ferias.shape[1]}): {df_ausencias_ferias.columns.tolist()}")
+                if not df_ausencias_ferias.empty:
+                    raw_tipo_counts = df_ausencias_ferias['tipo_ausencia'].astype(str).value_counts().to_dict()
+                    self.logger.info(
+                        "df_ausencias_ferias raw summary: tipo_ausencia_counts=%s",
+                        raw_tipo_counts
+                    )
+                    if 'is_holiday' in df_ausencias_ferias.columns:
+                        raw_is_holiday_counts = (
+                            df_ausencias_ferias['is_holiday']
+                            .astype('string')
+                            .fillna('<NULL>')
+                            .value_counts(dropna=False)
+                            .to_dict()
+                        )
+                        self.logger.info(
+                            "df_ausencias_ferias raw summary: is_holiday_counts=%s",
+                            raw_is_holiday_counts
+                        )
 
             except Exception as e:
                 self.logger.error(f"Error loading ausencias_ferias: {e}", exc_info=True)
@@ -1217,11 +1235,17 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_ausencias_ferias, error_msg = treat_df_ausencias_ferias(
                     df_ausencias_ferias=df_ausencias_ferias,
                     start_date=start_date_str,
-                    end_date=end_date_str
+                    end_date=end_date_str,
+                    classification_mode='db_is_holiday'
                 )
                 if not success:
                     self.logger.error(f"Ausencias ferias treatment failed: {error_msg}")
                     return False, "errSubproc", error_msg
+                self.logger.info(
+                    "df_ausencias_ferias treated summary: rows=%s, tipo_ausencia_counts=%s",
+                    len(df_ausencias_ferias),
+                    df_ausencias_ferias['tipo_ausencia'].astype(str).value_counts().to_dict() if not df_ausencias_ferias.empty else {}
+                )
             except Exception as e:
                 self.logger.error(f"Error treating ausencias_ferias: {e}", exc_info=True)
                 return False, "errSubproc", "Error treating ausencias_ferias"

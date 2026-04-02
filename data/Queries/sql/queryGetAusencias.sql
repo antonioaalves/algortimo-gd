@@ -4,9 +4,11 @@ MATRICULA as matricula,
 DATA_INI as data_ini,
 DATA_FIM as data_fim,
 TIPO_AUSENCIA as tipo_ausencia,
-FK_MOTIVO_AUSENCIA as fk_motivo_ausencia
+FK_MOTIVO_AUSENCIA as fk_motivo_ausencia,
+cat.is_holiday as is_holiday
 from  wfm.esc_ausencia ea
 inner join wfm.esc_colaborador ec  on ec.codigo = ea.fk_colaborador 
+left join wfm.core_absence_type cat on cat.fk_exchange_reason = ea.fk_motivo_ausencia
 where  1=1
 -- and {condition} 
 and MATRICULA IN ({colabs_id})
