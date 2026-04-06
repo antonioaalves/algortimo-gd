@@ -629,22 +629,16 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             )
             sundays_per_worker_q.append(sunday_free)
 
-        if not sundays_per_worker_q:
-            continue    
+        # Pairwise absolute differences
+        for i in range(len(sundays_per_worker_q)):
+            for j in range(i + 1, len(sundays_per_worker_q)):
 
-        
-        max_sundays_q = model.NewIntVar(0, len(sundays), f"max_sundays_q{qi}")
-        min_sundays_q = model.NewIntVar(0, len(sundays), f"min_sundays_q{qi}")
+                diff = model.NewIntVar(0, len(sundays), f"sunday_diff_q{qi}_{i}_{j}")
 
-        model.AddMaxEquality(max_sundays_q, sundays_per_worker_q)
-        model.AddMinEquality(min_sundays_q, sundays_per_worker_q)
+                model.Add(diff >= sundays_per_worker_q[i] - sundays_per_worker_q[j])
+                model.Add(diff >= sundays_per_worker_q[j] - sundays_per_worker_q[i])
 
-        
-        sunday_diff_q = model.NewIntVar(0, len(sundays), f"sunday_diff_q{qi}")
-        model.Add(sunday_diff_q == max_sundays_q - min_sundays_q)
-
-        
-        objective_terms.append(sunday_diff_q * sundays_diff_weight)
+                objective_terms.append(diff * sundays_diff_weight)
 
 
     # 6. Balancing number of free EsLQ across the workers 
@@ -664,23 +658,17 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                 if (w, d-1, 'LQ') in shift and year_range[0] < d <= year_range[1]
             )
             LQs_per_worker_q.append(LQs)
-        if not LQs_per_worker_q:
-            continue    
 
-        
-        max_LQs_q = model.NewIntVar(0, len(sundays), f"max_LQs_q{qi}")
-        min_LQs_q = model.NewIntVar(0, len(sundays), f"min_LQs_q{qi}")
+        # Pairwise absolute differences
+        for i in range(len(LQs_per_worker_q)):
+            for j in range(i + 1, len(LQs_per_worker_q)):
 
-        model.AddMaxEquality(max_LQs_q, LQs_per_worker_q)
-        model.AddMinEquality(min_LQs_q, LQs_per_worker_q)
+                diff = model.NewIntVar(0, len(sundays), f"LQ_diff_q{qi}_{i}_{j}")
 
-       
-        LQs_diff_q = model.NewIntVar(0, len(sundays), f"LQs_diff_q{qi}")
-        model.Add(LQs_diff_q == max_LQs_q - min_LQs_q)
+                model.Add(diff >= LQs_per_worker_q[i] - LQs_per_worker_q[j])
+                model.Add(diff >= LQs_per_worker_q[j] - LQs_per_worker_q[i])
 
-        
-        objective_terms.append(LQs_diff_q * LQs_diff_weight)
-
+                objective_terms.append(diff * LQs_diff_weight)
 
     # 7. Not consecutive free days error 
       

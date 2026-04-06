@@ -337,11 +337,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         work_days_per_week = {}
         week_compensation_limit = {}
 
-        print(len(workers_complete))
-        print(len(workers))
-        workers_complete = sorted(workers_complete)[:-50]
-        workers = workers_complete
-        print(len(workers_complete))
         for w in workers_complete:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             
