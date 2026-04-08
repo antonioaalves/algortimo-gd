@@ -21,6 +21,7 @@ Data treatment functions:
 - calculate_and_merge_allocated_employees
 - treat_df_process_rules
 - add_process_rules_to_df_contratos
+- build_rule_head_param_lookup
 - treat_df_pro_emp_mov
 - build_compensatory_output
 - apply_compensatory_sched_types
@@ -37,7 +38,7 @@ Dataframe manipulation functions:
 import datetime as dt
 import pandas as pd
 import numpy as np
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from base_data_project.log_config import get_logger
 
 # Local stuff
@@ -5606,39 +5607,86 @@ def add_process_rules_to_df_contratos(
         return False, pd.DataFrame(), str(e)
 
 
+def build_rule_head_param_lookup(df_process_rules_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Tall CORE_PROCESS_LABOR_RULES → one wide row per rule_head_id (no date explosion,
+    no execution-year clip). Used to attach TIME_OFF_DEADLINE and related params to
+    pending CORE_PRO_EMP_MOV rows even when treated df_process_rules omits that head.
+    """
+    if df_process_rules_raw is None or df_process_rules_raw.empty:
+        return pd.DataFrame()
+
+    df = df_process_rules_raw.copy()
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    required = [
+        'process_id', 'labor_union_id', 'contract_id', 'begin_date', 'end_date',
+        'rule_code', 'rule_id', 'rule_head_id', 'field_code', 'value',
+    ]
+    if any(c not in df.columns for c in required):
+        logger.warning("build_rule_head_param_lookup: missing columns in raw labor rules")
+        return pd.DataFrame()
+
+    df['field_code'] = df['field_code'].astype(str).str.strip().str.upper()
+    RULE_CODE_MAP = {
+        'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
+        'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
+    }
+    df['rule_code'] = (
+        df['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df['rule_code'])
+    )
+    df['begin_date'] = pd.to_datetime(df['begin_date'], errors='coerce')
+    df['end_date'] = pd.to_datetime(df['end_date'], errors='coerce')
+    bad = df['begin_date'].isna() | df['end_date'].isna()
+    if bad.any():
+        df = df[~bad]
+    if df.empty:
+        return pd.DataFrame()
+
+    _SENTINEL = '__NULL__'
+    df['labor_union_id'] = df['labor_union_id'].fillna(_SENTINEL)
+    df['contract_id'] = df['contract_id'].fillna(_SENTINEL)
+    group_cols = [
+        'process_id', 'labor_union_id', 'contract_id',
+        'begin_date', 'end_date', 'rule_code', 'rule_id', 'rule_head_id',
+    ]
+    wide = df.pivot_table(
+        index=group_cols, columns='field_code', values='value', aggfunc='first',
+    ).reset_index()
+    wide.columns.name = None
+    wide['labor_union_id'] = wide['labor_union_id'].replace(_SENTINEL, None)
+    wide['contract_id'] = wide['contract_id'].replace(_SENTINEL, None)
+
+    for field in ('TIME_OFF_ADDITIONAL', 'TIME_OFF_DEADLINE'):
+        if field in wide.columns:
+            wide[field] = pd.to_numeric(wide[field], errors='coerce').fillna(0).astype(int)
+
+    wide.columns = [str(c).strip().lower() for c in wide.columns]
+    wide = wide.drop_duplicates(subset=['rule_head_id'], keep='first').reset_index(drop=True)
+    return wide
+
+
+_PARAM_COLS = (
+    'time_off_additional', 'time_off_deadline', 'rest_day_type', 'rest_day_subtype', 'overlap_sunday_holiday',
+)
+
+
 def treat_df_pro_emp_mov(
     df_pro_emp_mov: pd.DataFrame,
     df_process_rules: pd.DataFrame,
+    df_process_rules_raw: Optional[pd.DataFrame] = None,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Process pending compensatory movements from CORE_PRO_EMP_MOV.
-
-    Enriches each pending movement with the full rule parametrization from
-    df_process_rules (via RULE_HEAD_ID join), so the algorithm knows the
-    deadline, rest day type/subtype for each pending obligation.
-
-    Args:
-        df_pro_emp_mov: Raw DataFrame from core_pro_emp_mov with columns:
-            PROCESS_ID, EMPLOYEE_ID, SCHEDULE_DAY, RULE_HEAD_ID,
-            RULE_CODE, FIELD_CODE, VALUE_OPT1, VALUE_OPT2
-        df_process_rules: Treated rules DataFrame (output of treat_df_process_rules),
-            already pivoted wide with RULE_HEAD_ID as a column.
-
-    Returns:
-        Tuple containing:
-            - success (bool): True if treatment succeeded
-            - df_result (pd.DataFrame): Pending movements enriched with rule params
-            - error_message (str): Error description if operation failed
+    Pending CORE_PRO_EMP_MOV rows: filter origins with balance, merge rule parameters
+    by rule_head_id. Prefer raw CORE_PROCESS_LABOR_RULES (no year clip); optionally
+    fill gaps from treated df_process_rules.
     """
     try:
-        # INPUT VALIDATION
         if df_pro_emp_mov is None or df_pro_emp_mov.empty:
             return True, pd.DataFrame(), "df_pro_emp_mov is empty - no pending movements"
 
         df_result = df_pro_emp_mov.copy()
-        df_result.columns = [str(col).strip().lower() for col in df_result.columns]
+        df_result.columns = [str(c).strip().lower() for c in df_result.columns]
 
-        # Normalize types
         df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day'], errors='coerce')
         df_result['n_lds_pending'] = pd.to_numeric(df_result['value'], errors='coerce').fillna(0)
 
@@ -5646,49 +5694,56 @@ def treat_df_pro_emp_mov(
             'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
             'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
         }
-        df_result['rule_code'] = df_result['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df_result['rule_code'])
+        df_result['rule_code'] = (
+            df_result['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df_result['rule_code'])
+        )
 
-        # Filter to only pending origins (value_opt2 = 'O' with a balance > 0)
         df_result = df_result[
-            (df_result['value_opt1'] == 'O') & (df_result['n_lds_pending'] > 0)
+            (df_result['value_opt1'].astype(str).str.strip() == 'O') & (df_result['n_lds_pending'] > 0)
         ].copy()
 
         if df_result.empty:
             logger.info("treat_df_pro_emp_mov: no pending movements after filter")
             return True, pd.DataFrame(), ""
 
-        # ENRICH with rule parametrization from df_process_rules (via rule_head_id)
-        if df_process_rules is not None and not df_process_rules.empty:
-            rule_params = df_process_rules.copy()
-            rule_params.columns = [str(col).strip().lower() for col in rule_params.columns]
-        else:
-            rule_params = pd.DataFrame()
+        df_result['rule_head_id'] = df_result['rule_head_id'].astype(str)
 
-        if not rule_params.empty and 'rule_head_id' in rule_params.columns:
-            rule_params = rule_params.drop_duplicates(subset=['rule_head_id']).copy()
-            param_cols = [col for col in rule_params.columns if col in [
-                'rule_head_id', 'rule_code', 'time_off_additional', 'time_off_deadline',
-                'rest_day_type', 'rest_day_subtype', 'overlap_sunday_holiday'
-            ]]
-            rule_params = rule_params[param_cols]
-
-            df_result['rule_head_id'] = df_result['rule_head_id'].astype(str)
-            rule_params['rule_head_id'] = rule_params['rule_head_id'].astype(str)
-
-            df_result = df_result.merge(
-                rule_params,
-                on='rule_head_id',
-                how='left',
-                suffixes=('', '_param')
+        lookup = build_rule_head_param_lookup(df_process_rules_raw) if df_process_rules_raw is not None else pd.DataFrame()
+        if not lookup.empty and 'rule_head_id' in lookup.columns:
+            lookup = lookup.copy()
+            lookup['rule_head_id'] = lookup['rule_head_id'].astype(str)
+            use_cols = ['rule_head_id'] + [c for c in _PARAM_COLS if c in lookup.columns]
+            df_result = df_result.merge(lookup[use_cols], on='rule_head_id', how='left')
+            logger.info(
+                f"treat_df_pro_emp_mov: merged rule_head lookup ({len(lookup)} heads) for pending rows"
             )
-            cols_to_drop = [col for col in df_result.columns if col.endswith('_param')]
-            df_result = df_result.drop(columns=cols_to_drop, errors='ignore')
-            logger.info("Enriched pending movements with rule params via rule_head_id")
-        else:
-            logger.warning("df_process_rules is empty or missing rule_head_id - pending movements will lack rule parametrization")
+
+        if df_process_rules is not None and not df_process_rules.empty:
+            fb = df_process_rules.copy()
+            fb.columns = [str(c).strip().lower() for c in fb.columns]
+            if 'rule_head_id' in fb.columns:
+                fb = fb.drop_duplicates(subset=['rule_head_id'])
+                fb_cols = ['rule_head_id'] + [c for c in _PARAM_COLS if c in fb.columns]
+                fb = fb[[c for c in fb_cols if c in fb.columns]]
+                fb['rule_head_id'] = fb['rule_head_id'].astype(str)
+                df_result = df_result.merge(fb, on='rule_head_id', how='left', suffixes=('', '_fb'))
+                for c in _PARAM_COLS:
+                    cfb = f'{c}_fb'
+                    if c in df_result.columns and cfb in df_result.columns:
+                        df_result[c] = df_result[c].where(df_result[c].notna(), df_result[cfb])
+                        df_result = df_result.drop(columns=[cfb])
+                    elif cfb in df_result.columns:
+                        df_result[c] = df_result[cfb]
+                        df_result = df_result.drop(columns=[cfb])
+                logger.info("treat_df_pro_emp_mov: applied treated df_process_rules where params were still missing")
+
+        if 'time_off_deadline' not in df_result.columns:
+            logger.warning("treat_df_pro_emp_mov: time_off_deadline column missing after merges")
+        elif df_result['time_off_deadline'].isna().all():
+            logger.warning("treat_df_pro_emp_mov: time_off_deadline all NaN after merges")
 
         df_result = df_result.reset_index(drop=True)
-        logger.info(f"Successfully treated df_pro_emp_mov. Shape: {df_result.shape}")
+        logger.info(f"treat_df_pro_emp_mov: done shape={df_result.shape}")
         return True, df_result, ""
 
     except Exception as e:

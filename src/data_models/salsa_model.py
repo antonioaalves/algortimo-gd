@@ -1009,9 +1009,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                 )
                 self.logger.info(f"df_pro_emp_mov shape (rows {df_pro_emp_mov_raw.shape[0]}, columns {df_pro_emp_mov_raw.shape[1]}): {df_pro_emp_mov_raw.columns.tolist()}")
 
+                df_process_rules_raw = self.auxiliary_data.get('df_process_rules_raw', pd.DataFrame())
                 success, df_pro_emp_mov, error_msg = treat_df_pro_emp_mov(
                     df_pro_emp_mov=df_pro_emp_mov_raw,
-                    df_process_rules=df_process_rules
+                    df_process_rules=df_process_rules,
+                    df_process_rules_raw=df_process_rules_raw,
                 )
                 if not success:
                     self.logger.warning(f"df_pro_emp_mov treatment failed: {error_msg} - proceeding with empty DataFrame")
