@@ -9,11 +9,14 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
 
     contingent_f = total_lds_f = contingent_d = total_lds_d = []
 
+    last_compensation_f = 1
+    last_compensation_d = 1
     for w in workers:
         last_day = period[1]
-        last_compensation_f = holiday_rules[w]["compensation_limit"][max(holiday_rules[w]["compensation_limit"])]
-        last_compensation_d = sunday_rules[w]["compensation_limit"][max(sunday_rules[w]["compensation_limit"])]
-
+        if w in holiday_rules:
+            last_compensation_f = holiday_rules[w]["compensation_limit"][max(holiday_rules[w]["compensation_limit"])]
+        if w in sunday_rules:
+            last_compensation_d = sunday_rules[w]["compensation_limit"][max(sunday_rules[w]["compensation_limit"])]
         biggest_limit = last_compensation_f if last_compensation_f > last_compensation_d else last_compensation_d
 
         last_day = max(working_days[w])
@@ -25,7 +28,6 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
 
     contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, set(sundays), set(holidays), override_holiday_sunday, week_to_days, working_shift, sunday_rules, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "sunday", sunday_past_lds, closed_days)
-        
     ld_restriction(model, shift, workers, period, total_lds_f, total_lds_d, fixed_lds, contingent_f, contingent_d, holiday_rules, sunday_rules)
     return contingent_f, contingent_d
 
@@ -36,11 +38,11 @@ def compensation_days(model, shift, workers, working_days, special_days, special
     worked_special_days = {}
     amount_lds = {}
     for w in workers:
-        if w not in special_day_rules:
-            continue
         amount_lds[w] = {}
         worked_special_days[w] = {}
         possible_compensation_days[w] = {}
+        if w  in special_day_rules:
+            continue
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
         for d in [day for day in special_days if (day in working_days[w] - off - LQs) and period[0] <= day <= period[1]]:
@@ -72,13 +74,12 @@ def compensation_days(model, shift, workers, working_days, special_days, special
             # Store possible compensation days for this special day
             possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                       special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period)
-                
         if w in past_special_days_worked:
             logger.info(f"past special days {w} worked: {past_special_days_worked[w]}")
             for d in past_special_days_worked[w]["days_&_limit"]:
-                logger.info(f"calculated time: {past_special_days_worked[w]["days_&_limit"][d]} from day {d} to start date {period[0]}")
+                logger.info(f"calculated time: {past_special_days_worked[w]['days_&_limit'][d]} from day {d} to start date {period[0]}")
                 if past_special_days_worked[w]["days_&_limit"][d] <= 0:
-                    logger.warning(f"for Worker {w}: compensation for day {d}, before {period[0]}, will be impossible because there's no time remaing: {past_special_days_worked[w]["days_&_limit"][d]}")
+                    logger.warning(f"for Worker {w}: compensation for day {d}, before {period[0]}, will be impossible because there's no time remaing: {past_special_days_worked[w]['days_&_limit'][d]}")
                     continue
                 else:
                     special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), 1)
