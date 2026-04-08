@@ -876,12 +876,14 @@ class BaseDescansosDataModel(ABC):
             compensatory_dict = self.rare_data.get('compensatory_dict', {})
             process_id = self.external_call_data.get("current_process_id", "")
             df_process_rules_raw = self.auxiliary_data.get('df_process_rules_raw', pd.DataFrame())
+            df_pro_emp_mov_raw = self.auxiliary_data.get('df_pro_emp_mov_raw', pd.DataFrame())
             if compensatory_dict:
                 self.logger.info("Building compensatory output from solver results")
                 success, df_compensatory, error_msg = build_compensatory_output(
                     compensatory_dict=compensatory_dict,
                     process_id=process_id,
                     df_process_rules_raw=df_process_rules_raw,
+                    df_pro_emp_mov=df_pro_emp_mov_raw,
                 )
                 if success and not df_compensatory.empty:
                     self.formatted_data['df_compensatory'] = df_compensatory.copy()

@@ -5755,6 +5755,7 @@ def build_compensatory_output(
     compensatory_dict: Dict,
     process_id: int,
     df_process_rules_raw: pd.DataFrame = None,
+    df_pro_emp_mov: pd.DataFrame = None,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Build INT_EMP_PROCESS_MOV integration rows (Origin/Destiny) from the solver's
@@ -5780,8 +5781,14 @@ def build_compensatory_output(
             could be placed inside the execution period.
         process_id: The process ID for the output rows.
         df_process_rules_raw: Raw (pre-pivot) rules DataFrame with columns RULE_CODE,
-            RULE_ID, FIELD_CODE, RULE_FIELD_ID. Used to look up the numeric IDs for
-            each rule_code / field_code combination.
+            RULE_ID, RULE_HEAD_ID, FIELD_CODE, RULE_FIELD_ID. Used to look up the
+            numeric IDs for each rule_code / field_code combination (global fallback).
+        df_pro_emp_mov: Raw CORE_PRO_EMP_MOV DataFrame with columns EMPLOYEE_ID,
+            RULE_CODE, SCHEDULE_DAY, RULE_HEAD_ID. Merged on (EMPLOYEE_ID, RULE_CODE,
+            worked_day) to assign the exact RULE_HEAD_ID per worked day. This is
+            necessary because RULE_HEAD_ID varies by LABOR_UNION_ID / CONTRACT_ID /
+            date validity window and an employee can have stacked temporary contracts.
+            df_process_rules_raw is used as a fallback for any rows not matched here.
 
     Returns:
         Tuple containing:
@@ -5799,68 +5806,99 @@ def build_compensatory_output(
             'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
         }
 
-        # Build lookup dicts from raw rules: rule_code -> rule_id
-        # and (rule_code, field_code) -> rule_field_id
-        rule_id_lookup: Dict = {}
-        rule_head_id_lookup: Dict = {}
-        rule_field_id_lookup: Dict = {}
-        if df_process_rules_raw is not None and not df_process_rules_raw.empty:
-            df_rules_norm = df_process_rules_raw.copy()
-            df_rules_norm.columns = [str(c).strip().upper() for c in df_rules_norm.columns]
-            required = {'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID', 'FIELD_CODE', 'RULE_FIELD_ID'}
-            if required.issubset(df_rules_norm.columns):
-                for _, row in df_rules_norm[list(required)].drop_duplicates().iterrows():
-                    rc = row['RULE_CODE']
-                    if rc not in rule_id_lookup and pd.notna(row['RULE_ID']):
-                        rule_id_lookup[rc] = row['RULE_ID']
-                    if rc not in rule_head_id_lookup and pd.notna(row['RULE_HEAD_ID']):
-                        rule_head_id_lookup[rc] = row['RULE_HEAD_ID']
-                    key = (rc, row['FIELD_CODE'])
-                    if key not in rule_field_id_lookup and pd.notna(row['RULE_FIELD_ID']):
-                        rule_field_id_lookup[key] = row['RULE_FIELD_ID']
-            else:
-                logger.warning(f"build_compensatory_output: df_process_rules_raw missing columns for ID lookup. Has: {list(df_rules_norm.columns)}, needs: {required}")
-
-        rows = []
-
+        # --- Step 1: explode compensatory_dict into a flat DataFrame ---
+        # The loop is only responsible for shape transformation (nested dict → rows).
+        # No ID lookups happen here; those are all deferred to the merges below.
+        records = []
         for worker_id, groups in compensatory_dict.items():
             for group_key, rule_code in rule_code_map.items():
                 group_data = groups.get(group_key, {})
-
-                field_code = 'TIME_OFF_ADDITIONAL'
-                rule_id = rule_id_lookup.get(rule_code)
-                rule_head_id = rule_head_id_lookup.get(rule_code)
-                rule_field_id = rule_field_id_lookup.get((rule_code, field_code))
-
-                row_base = {
-                    'PROCESS_ID': process_id,
-                    'EMPLOYEE_ID': worker_id,
-                    'RULE_HEAD_ID': rule_head_id,
-                    'RULE_ID': rule_id,
-                    'RULE_CODE': rule_code,
-                    'RULE_FIELD_ID': rule_field_id,
-                    'FIELD_CODE': field_code,
-                }
-
-                # ld_given: day off was placed inside the period -> Origin + Destination
                 for worked_day, day_off in group_data.get('ld_given', []):
-                    rows.append({**row_base, 'SCHEDULE_DAY': worked_day, 'SCHEDULE_DAY_REF': None,      'VALUE_OPT1': 'O'})
-                    rows.append({**row_base, 'SCHEDULE_DAY': day_off,    'SCHEDULE_DAY_REF': worked_day, 'VALUE_OPT1': 'D'})
-
-                # no_compensation: special day worked but day off could not be placed -> Origin only (pending)
-                for worked_day in group_data.get('no_compensation', []):
-                    rows.append({**row_base, 'SCHEDULE_DAY': worked_day, 'SCHEDULE_DAY_REF': None, 'VALUE_OPT1': 'O'})
-
+                    records.append((worker_id, rule_code, worked_day, None,       'O'))
+                    records.append((worker_id, rule_code, day_off,    worked_day, 'D'))
                 # TODO STRSOL-1372: banco_horas not considered for now
+                for worked_day in group_data.get('no_compensation', []):
+                    records.append((worker_id, rule_code, worked_day, None, 'O'))
 
-        if not rows:
+        if not records:
             logger.info("build_compensatory_output: no compensatory rows generated")
             return True, pd.DataFrame(), ""
 
-        df_output = pd.DataFrame(rows)
-        n_origins = (df_output['VALUE_OPT1'] == 'O').sum()
+        df_output = pd.DataFrame(records, columns=['EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY', 'SCHEDULE_DAY_REF', 'VALUE_OPT1'])
+        df_output['PROCESS_ID'] = process_id
+        df_output['FIELD_CODE'] = 'TIME_OFF_ADDITIONAL'
+        df_output['SCHEDULE_DAY']     = pd.to_datetime(df_output['SCHEDULE_DAY'])
+        df_output['SCHEDULE_DAY_REF'] = pd.to_datetime(df_output['SCHEDULE_DAY_REF'], errors='coerce')
+
+        # The merge key for RULE_HEAD_ID is always the *worked day*:
+        #   'O' rows  → SCHEDULE_DAY is already the worked day
+        #   'D' rows  → SCHEDULE_DAY is the day off; SCHEDULE_DAY_REF is the worked day
+        df_output['_worked_day'] = df_output['SCHEDULE_DAY_REF'].fillna(df_output['SCHEDULE_DAY'])
+
+        # --- Step 2: merge RULE_HEAD_ID from df_pro_emp_mov (per-entry, most precise) ---
+        # RULE_HEAD_ID varies by LABOR_UNION_ID / CONTRACT_ID / date validity window.
+        # An employee can have stacked temporary contracts, so the same employee may
+        # legitimately have different RULE_HEAD_IDs for the same RULE_CODE on different
+        # worked days. Each 'O' row in CORE_PRO_EMP_MOV already carries the exact
+        # RULE_HEAD_ID resolved for that employee on that specific day, so merging on
+        # (EMPLOYEE_ID, RULE_CODE, SCHEDULE_DAY) gives us the finest-grained match.
+        if df_pro_emp_mov is not None and not df_pro_emp_mov.empty:
+            mov = df_pro_emp_mov.copy()
+            mov.columns = [str(c).strip().upper() for c in mov.columns]
+            needed = {'EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY', 'RULE_HEAD_ID'}
+            if needed.issubset(mov.columns):
+                if 'VALUE_OPT1' in mov.columns:
+                    mov = mov[mov['VALUE_OPT1'].astype(str).str.strip() == 'O']
+                mov = (
+                    mov[['EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY', 'RULE_HEAD_ID']]
+                    .assign(SCHEDULE_DAY=lambda x: pd.to_datetime(x['SCHEDULE_DAY']))
+                    .drop_duplicates(subset=['EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY'])
+                    .rename(columns={'SCHEDULE_DAY': '_worked_day'})
+                )
+                df_output = df_output.merge(mov, on=['EMPLOYEE_ID', 'RULE_CODE', '_worked_day'], how='left')
+                logger.info(f"build_compensatory_output: merged RULE_HEAD_ID from df_pro_emp_mov ({mov.shape[0]} origin rows)")
+            else:
+                logger.warning(f"build_compensatory_output: df_pro_emp_mov missing columns {needed - set(mov.columns)}. Falling back to global lookup.")
+                df_output['RULE_HEAD_ID'] = pd.NA
+        else:
+            df_output['RULE_HEAD_ID'] = pd.NA
+
+        # --- Step 3: merge RULE_ID, RULE_FIELD_ID, and RULE_HEAD_ID fallback from df_process_rules_raw ---
+        if df_process_rules_raw is not None and not df_process_rules_raw.empty:
+            rules = df_process_rules_raw.copy()
+            rules.columns = [str(c).strip().upper() for c in rules.columns]
+
+            if {'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID', 'FIELD_CODE', 'RULE_FIELD_ID'}.issubset(rules.columns):
+                # RULE_HEAD_ID fallback: first match per RULE_CODE (for any rows not
+                # covered by df_pro_emp_mov, e.g. brand-new employees with no prior movements)
+                rh_fallback = rules.drop_duplicates(subset=['RULE_CODE'])[['RULE_CODE', 'RULE_HEAD_ID']].rename(columns={'RULE_HEAD_ID': '_RULE_HEAD_ID_fb'})
+                df_output = df_output.merge(rh_fallback, on='RULE_CODE', how='left')
+                df_output['RULE_HEAD_ID'] = df_output['RULE_HEAD_ID'].where(df_output['RULE_HEAD_ID'].notna(), df_output['_RULE_HEAD_ID_fb'])
+                df_output = df_output.drop(columns=['_RULE_HEAD_ID_fb'])
+
+                # RULE_ID is the same across all unions for the same RULE_CODE
+                rule_ids = rules.drop_duplicates(subset=['RULE_CODE'])[['RULE_CODE', 'RULE_ID']]
+                df_output = df_output.merge(rule_ids, on='RULE_CODE', how='left')
+
+                # RULE_FIELD_ID for TIME_OFF_ADDITIONAL
+                rule_field_ids = (
+                    rules[rules['FIELD_CODE'] == 'TIME_OFF_ADDITIONAL']
+                    .drop_duplicates(subset=['RULE_CODE'])[['RULE_CODE', 'RULE_FIELD_ID']]
+                )
+                df_output = df_output.merge(rule_field_ids, on='RULE_CODE', how='left')
+            else:
+                logger.warning(f"build_compensatory_output: df_process_rules_raw missing required columns. Has: {list(rules.columns)}")
+                df_output['RULE_ID'] = pd.NA
+                df_output['RULE_FIELD_ID'] = pd.NA
+        else:
+            df_output['RULE_ID'] = pd.NA
+            df_output['RULE_FIELD_ID'] = pd.NA
+
+        df_output = df_output.drop(columns=['_worked_day'])
+
+        n_origins      = (df_output['VALUE_OPT1'] == 'O').sum()
         n_destinations = (df_output['VALUE_OPT1'] == 'D').sum()
-        n_pending = n_origins - n_destinations
+        n_pending      = n_origins - n_destinations
         logger.info(
             f"build_compensatory_output: generated {len(df_output)} rows "
             f"({n_origins} origins, {n_destinations} destinations, {n_pending} pending)"
