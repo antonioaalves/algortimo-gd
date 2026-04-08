@@ -1,6 +1,0 @@
-[Config]
-user = ANTONIO_ALVES
-pwd = TL}nt]c.2043
-url = 10.175.23.29
-port = 1526
-service_name = standard_salsa.database.backbone.oraclevcn.com

@@ -19,23 +19,24 @@ def test_query_execution():
     print("=== Query Execution Test ===")
     
     try:
-        # Import your config
-        from src.config import CONFIG
-        print("✓ Config imported successfully")
+        # Import configuration manager
+        from src.configuration_manager.manager import ConfigurationManager
+        config_manager = ConfigurationManager()
+        print(" Configuration manager imported successfully")
         
         # Import the data manager factory
         from base_data_project.utils import create_components
-        print("✓ Data manager factory imported successfully")
+        print(" Data manager factory imported successfully")
         
         # Create data manager
         print("\n1. Creating data manager...")
-        data_manager, _ = create_components(use_db=True, config=CONFIG)
-        print("✓ Data manager created successfully")
+        data_manager, _ = create_components(use_db=True, config=config_manager)
+        print(" Data manager created successfully")
         
         # Test connection
         print("\n2. Testing database connection...")
         with data_manager:
-            print("✓ Database connection established")
+            print(" Database connection established")
             
             # Test basic query first
             print("\n3. Testing basic database query...")
@@ -43,14 +44,14 @@ def test_query_execution():
                 # Simple Oracle test query
                 basic_result = data_manager.session.execute("SELECT 1 FROM DUAL")
                 basic_data = basic_result.fetchone()
-                print(f"✓ Basic query successful: {basic_data}")
+                print(f" Basic query successful: {basic_data}")
             except Exception as e:
                 print(f"✗ Basic query failed: {e}")
                 return False
             
             # Get the specific entity and query file we're testing
             print("\n4. Testing specific entity query...")
-            entities = CONFIG.get('available_entities_processing', {})
+            entities = config_manager.paths.available_entities_processing
             entity_name = 'valid_emp'  # The one that's failing
             
             if entity_name not in entities:
@@ -66,7 +67,7 @@ def test_query_execution():
             if not os.path.exists(query_file_path):
                 print(f"✗ Query file does not exist: {query_file_path}")
                 return False
-            print("✓ Query file exists")
+            print(" Query file exists")
             
             # Read query file content
             print("\n6. Reading query file content...")
@@ -78,7 +79,7 @@ def test_query_execution():
                     print("✗ Query file is empty")
                     return False
                     
-                print(f"✓ Query file read successfully")
+                print(f" Query file read successfully")
                 print(f"Query length: {len(query_content)} characters")
                 print(f"First 200 characters: {query_content[:200]}...")
                 
@@ -100,7 +101,7 @@ def test_query_execution():
                 rows = result.fetchall()
                 columns = list(result.keys()) if hasattr(result, 'keys') else []
                 
-                print(f"✓ Query executed successfully")
+                print(f" Query executed successfully")
                 print(f"Rows returned: {len(rows)}")
                 print(f"Columns: {columns}")
                 
@@ -122,7 +123,7 @@ def test_query_execution():
                     query_file=query_file_path
                 )
                 
-                print(f"✓ Data manager load_data successful")
+                print(f" Data manager load_data successful")
                 print(f"DataFrame shape: {df.shape}")
                 print(f"DataFrame columns: {list(df.columns)}")
                 
@@ -157,9 +158,10 @@ def test_config_paths():
     print("\n=== Config Paths Test ===")
     
     try:
-        from src.config import CONFIG
+        from src.configuration_manager.manager import ConfigurationManager
+        config_manager = ConfigurationManager()
         
-        entities = CONFIG.get('available_entities_processing', {})
+        entities = config_manager.paths.available_entities_processing
         
         for entity_name, query_path in entities.items():
             print(f"\nEntity: {entity_name}")
@@ -170,7 +172,7 @@ def test_config_paths():
                 continue
                 
             if os.path.exists(query_path):
-                print("✓ File exists")
+                print(" File exists")
                 
                 # Check file size
                 file_size = os.path.getsize(query_path)
@@ -179,7 +181,7 @@ def test_config_paths():
                 if file_size == 0:
                     print("✗ File is empty!")
                 else:
-                    print("✓ File has content")
+                    print(" File has content")
             else:
                 print("✗ File does not exist!")
                 
@@ -192,21 +194,22 @@ def test_database_connection_only():
     print("\n=== Database Connection Only Test ===")
     
     try:
-        from src.config import CONFIG
+        from src.configuration_manager.manager import ConfigurationManager
+        config_manager = ConfigurationManager()
         from base_data_project.utils import create_components
         
         print("Creating data manager...")
-        data_manager, _ = create_components(use_db=True, config=CONFIG)
+        data_manager, _ = create_components(use_db=True, config=config_manager)
         
         print("Testing connection...")
         with data_manager:
-            print("✓ Connection successful")
+            print(" Connection successful")
             
             # Test a simple query
             from sqlalchemy import text
             result = data_manager.session.execute(text("SELECT SYSDATE FROM DUAL"))
             current_time = result.fetchone()
-            print(f"✓ Database time: {current_time[0]}")
+            print(f" Database time: {current_time[0]}")
             
         return True
         
