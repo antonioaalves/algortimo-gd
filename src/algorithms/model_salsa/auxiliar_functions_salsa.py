@@ -255,6 +255,43 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
             logger.error(f"For worker {w}, in week {week} by contract they're supposed to work "
                          f"{work_days_per_week[week - 1]} days but have received {actual_days_off} "
                          f"days off: {days_set.intersection(fixed_days_off.union(fixed_LQs))}. Process will be Infeasible!")
+
+def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_days_salsa):
+    dynamic_empty = set()
+    for week, days in week_to_days_salsa.items():
+        if len(days) <= 6:
+            continue
+        days_set = set(days)
+        absences_in_week = days_set.intersection(worker_absences)
+        nbr_absences = len(absences_in_week)
+        vacations_in_week = days_set.intersection(vacation_days)
+        nbr_vacations = len(vacations_in_week)
+        if nbr_absences == nbr_vacations == 0:
+            continue
+
+        empty_days = 5 - contract_type
+        if nbr_absences >= empty_days:
+            days = set(sorted(absences_in_week)[:empty_days])
+            worker_absences -= days
+            dynamic_empty |= days
+            continue
+        elif nbr_absences > 0:
+            days = set(sorted(absences_in_week)[:nbr_absences])
+            worker_absences -= days
+            dynamic_empty |= days
+            empty_days -= nbr_absences
+
+        if nbr_vacations >= empty_days:
+            days = set(sorted(vacations_in_week)[:empty_days])
+            vacation_days -= days
+            dynamic_empty |= days
+            continue
+        elif nbr_vacations > 0:
+            days = set(sorted(vacations_in_week)[:nbr_vacations])
+            vacation_days -= days
+            dynamic_empty |= days
+        logger.info(f"in week {week} had to remove {5 - contract_type} days to create {dynamic_empty.intersection(days_set)} dynamic empty days")
+    return worker_absences, vacation_days, dynamic_empty
             
 #salsa_constraints funcs:
 

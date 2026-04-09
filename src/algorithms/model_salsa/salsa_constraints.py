@@ -358,8 +358,7 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
     debug_vars = {}  # Store debug variables to return    
     for w in workers:
-
-        if contract_type[w] in [4, 5, 8]:
+        if  contract_type[w] != 6:
             quality_2weekend_vars = []
             
             if F_special_day == False:
@@ -388,8 +387,6 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         # Track the quality weekend count
                         quality_2weekend_vars.append(quality_weekend_2)
                 
-                # Constraint: The worker should have at least c2d quality weekends
-                model.Add(sum(quality_2weekend_vars) >= c2d.get(w, 0))
                 
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
@@ -454,8 +451,6 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         # Track the quality weekend count
                         quality_2weekend_vars.append(quality_weekend_2)
                 
-                # Constraint: The worker should have at least c2d quality weekends
-                model.Add(sum(quality_2weekend_vars) >= c2d.get(w, 0))
                 
                 # Now ensure LQ shifts ONLY appear on Saturdays before Sundays with L shifts
                 # For every working day for this worker
@@ -490,6 +485,9 @@ def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_da
                         
                         # Final constraint: LQ can only be assigned if this day could be part of a quality weekend
                         model.Add(shift.get((w, d, "LQ"), 0) <= could_be_quality_weekend)
+        else:
+            model.Add(sum(shift.get((w, d, "LQ"), 0) for d in working_days[w] if (w, d, 'LQ') in shift) == 0)
+
     return debug_vars
 
 def salsa_saturday_L_constraint(model, shift, workers, working_days, period):
@@ -652,23 +650,26 @@ def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year,
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)
 
-def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_set):
+def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_set, dynamic_empty_days, fixed_days_off, fixed_LQs):
     for w in workers:
         days_worked = contract_type.get(w, 0)
         if days_worked <= 4:
+            days_off = fixed_days_off[w].union(fixed_LQs[w])
             for week, days in week_to_days.items():
                 # Sum shifts across days and shift types
                 empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
-                if len(working_days[w].intersection(days)) == 7:
+                if len(working_days[w].intersection(days)) >= 5:
                     model.Add(empty_shifts == 5 - days_worked)
                     ordered_days = sorted(days)
                     for i in range(len(ordered_days)):
                         for j in range(i + 1, len(ordered_days)):
                             d1 = ordered_days[i]
+                            if d1 in days_off:
+                                continue
                             d2 = ordered_days[j]
 
                             if (w, d1, 'L') in shift and (w, d2, '-') in shift:
                                 model.Add(shift[(w, d1, 'L')] + shift[(w, d2, '-')] <= 1)
                 else:
-                    days_set = set(days)
+                    days_set = set(days) - dynamic_empty_days[w]
                     model.Add(sum(shift[(w, d, '-')] for d in (days_set - set(empty_set[w])) if (w, d, '-') in shift) == 0)

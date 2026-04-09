@@ -289,7 +289,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             index_to_date = adapted_data["index_to_date"]
             holiday_past_lds = adapted_data["holiday_past_lds"]
             sunday_past_lds = adapted_data["sunday_past_lds"]
-            
+            dynamic_empty = adapted_data["dynamic_empty"]
+
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
             check_shift = self.parameters["check_shifts"]
@@ -349,9 +350,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.model = model
             
             # Create decision variables
-            shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences,
-                                       vacation_days, empty_days, closed_holidays, fixed_days_off, fixed_LQs, 
-                                       shift_M, shift_T, workers_past, fixed_compensation_days, locked_days, forced_work_days, contract_type)
+            shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences, vacation_days, 
+                                       empty_days, closed_holidays, fixed_days_off, fixed_LQs, shift_M, shift_T, workers_past,
+                                       fixed_compensation_days, locked_days, forced_work_days, contract_type, dynamic_empty)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -449,7 +450,8 @@ class SalsaAlgorithm(BaseAlgorithm):
                     one_colab_min_constraint(model, shift, workers, real_working_shift, days_of_year, shift_M, shift_T, period)
                 else:
                     self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
-                dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_days)
+
+                dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs)
             self.logger.info("All enabled SALSA constraints applied")
             
             # =================================================================
