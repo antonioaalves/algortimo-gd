@@ -43,8 +43,6 @@ def compensation_days(model, shift, workers, working_days, special_days, special
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
-        if w  in special_day_rules:
-            continue
         if w in special_day_rules:
             for d in [day for day in special_days if (day in working_days[w] - off - LQs) and period[0] <= day <= period[1]]:
                 if d not in special_day_rules[w]["compensation_limit"]:
@@ -283,16 +281,21 @@ def LQ_attribution(model, shift, workers, working_days, c2d, year_range):
     for w in workers:
         model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if year_range[0] <= d < year_range[1] and (w, d, "LQ") in shift) >= c2d.get(w, 0))
 
-def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift, period):
+def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift, period, contract_type):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
     #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
+    check_shift_with_empty = check_shift + ["-"]
     if workers:
         for w in workers:
             for d in working_days[w]:
                 if not (period[0] < d < period[1]):
                     continue
                 total_shifts = []
-                for s in check_shift:
+                if contract_type.get(w, 0) > 4:
+                    check = check_shift
+                else:
+                    check = check_shift_with_empty
+                for s in check:
                     if (w, d, s) in shift:
                         total_shifts.append(shift[(w, d, s)])
                 if total_shifts:
@@ -552,7 +555,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                         else:
                             required_free_days = 2
                 else:
-                    free_days_weekly = 7 - tipo_contrato
+                    free_days_weekly = 2
                     proportion = actual_days_in_week / 7.0
                     proportion_days = proportion * free_days_weekly
                     if admissao_proporcional == 'floor':
@@ -577,11 +580,9 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                     else:
                          required_free_days = 0
                 else:
-                    if len(week_work_days) >= 7 - tipo_contrato:
-                        required_free_days = 7 - tipo_contrato
-                    elif len(week_work_days) == 2:
-                            required_free_days = 2
-                    elif len(week_work_days) == 1:
+                    if actual_days_in_week >= 2:
+                        required_free_days = 2
+                    elif actual_days_in_week == 1:
                             required_free_days = 1
                     else:
                          required_free_days = 0
@@ -594,11 +595,10 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 logger.info(f" Worker {w} - Adjusted Required Free Days to {required_free_days} due to fixed days off: {fixed_days_week}")
 
             # Only add constraint if we require at least 1 free day
-
-            # Only add constraint if we require at least 1 free day
             if required_free_days >= 0:
                 # Create a sum of free shifts for this worker in the current week
                 free_shift_sum = sum(shift.get((w, d, shift_type), 0) for d in week_work_days for shift_type in ["L", "LQ"])
+                #logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
                 if required_free_days == 2:
                     if (len(week_work_days) >= 2):
                         model.Add(free_shift_sum == required_free_days)
@@ -651,14 +651,24 @@ def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year,
                     available_workers += 1
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)
+
 def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_set):
     for w in workers:
-        if contract_type.get(w, 0) == 4:
+        days_worked = contract_type.get(w, 0)
+        if days_worked <= 4:
             for week, days in week_to_days.items():
                 # Sum shifts across days and shift types
                 empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
                 if len(working_days[w].intersection(days)) == 7:
-                    model.Add(empty_shifts == 1)
+                    model.Add(empty_shifts == 5 - days_worked)
+                    ordered_days = sorted(days)
+                    for i in range(len(ordered_days)):
+                        for j in range(i + 1, len(ordered_days)):
+                            d1 = ordered_days[i]
+                            d2 = ordered_days[j]
+
+                            if (w, d1, 'L') in shift and (w, d2, '-') in shift:
+                                model.Add(shift[(w, d1, 'L')] + shift[(w, d2, '-')] <= 1)
                 else:
                     days_set = set(days)
                     model.Add(sum(shift[(w, d, '-')] for d in (days_set - set(empty_set[w])) if (w, d, '-') in shift) == 0)

@@ -373,7 +373,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Working day shifts constraint
             if constraint_selections.get("working_day_shifts", {}).get("enabled", True):
                 self.logger.info("Applying constraint: working_day_shifts")
-                working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift, period)
+                working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift, period, contract_type)
             else:
                 self.logger.warning("Skipping constraint: working_day_shifts (disabled in config)")
 
