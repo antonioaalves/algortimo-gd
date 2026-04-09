@@ -43,8 +43,6 @@ def compensation_days(model, shift, workers, working_days, special_days, special
         possible_compensation_days[w] = {}
         off = set(fixed_days_off[w])
         LQs = set(fixed_LQs[w])
-        if w  in special_day_rules:
-            continue
         if w in special_day_rules:
             for d in [day for day in special_days if (day in working_days[w] - off - LQs) and period[0] <= day <= period[1]]:
                 if d not in special_day_rules[w]["compensation_limit"]:
