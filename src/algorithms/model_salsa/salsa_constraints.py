@@ -48,12 +48,13 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                 if d not in special_day_rules[w]["compensation_limit"]:
                     continue
                 if d in special_days_2:
-                    if day_type == "holiday":
-                        if override_holiday_sunday[w][d] == 'N':  
-                            continue
-                    elif day_type == "sunday":
-                        if override_holiday_sunday[w][d] == 'Y':
-                            continue
+                    if w in override_holiday_sunday:
+                        if day_type == "holiday":
+                            if override_holiday_sunday[w][d] == 'N':  
+                                continue
+                        elif day_type == "sunday":
+                            if override_holiday_sunday[w][d] == 'Y':
+                                continue
                 # Create a boolean variable to track if the worker worked on this special day
                 amount_lds[w][d] = special_day_rules[w]["amount"][d]
                 worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')

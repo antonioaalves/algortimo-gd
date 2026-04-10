@@ -712,13 +712,20 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     "amount": holiday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
                     "compensation_limit": holiday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
                 }
+                if not holiday_rules[w]["amount"]:
+                    holiday_rules.pop(w, None)
 
                 sunday_df_w = sunday_df[sunday_df["employee_id"] == w].drop_duplicates(subset="index").set_index('index')
                 sunday_rules[w] = {
                     "amount": sunday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
                     "compensation_limit": sunday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
                 }
+                if not sunday_rules[w]["amount"]:
+                    sunday_rules.pop(w, None)
+
                 override_holiday_sunday[w] = holiday_df_w['overlap_sunday_holiday'].fillna('N').to_dict()
+                if not override_holiday_sunday[w]:
+                    override_holiday_sunday.pop(w, None)
 
         logger.info(f"holiday rules: {holiday_rules}")
         logger.info(f"sunday rules: {sunday_rules}")
