@@ -5488,8 +5488,22 @@ def add_process_rules_to_df_contratos(
     Merge process labor rules with contract data to produce a per-employee-day
     DataFrame with applicable rule parameters.
 
-    Override logic: CONTRACT_ID-level rules fully replace LABOR_UNION_ID-level rules.
-    No partial inheritance of parameters between levels.
+    Hierarchy (contract takes priority over labour union):
+        1. CONTRACT_ID-level rules are applied first.  When a contract-level rule
+           exists for a given employee-day-rule_code combination it fully replaces
+           any labour-union rule for the same combination.
+        2. LABOR_UNION_ID-level rules are used as a fallback only for employee-day
+           combinations that were NOT covered by a contract-level rule.
+        3. If neither level yields a match the employee receives no compensation
+           rules (empty result — no days off generated).
+
+    NOTE on type normalisation: treat_df_process_rules stores the nullable id
+    columns (contract_id / labor_union_id) as Python object dtype because it
+    uses a string sentinel to survive pivot_table's NaN-index-drop behaviour.
+    This means a numeric id such as 9 arrives here as the float 9.0 rather than
+    the integer 9 that Oracle returns via df_contratos.  Using astype(str) would
+    produce '9.0' vs '9' — causing a silent merge miss.  We normalise both sides
+    with pd.to_numeric so both become float64 9.0 before merging.
 
     Args:
         df_process_rules: Treated rules DataFrame (output of treat_df_process_rules),
@@ -5527,10 +5541,22 @@ def add_process_rules_to_df_contratos(
         df_rules['schedule_day'] = pd.to_datetime(df_rules['schedule_day']).dt.normalize()
         df_contracts['schedule_day'] = pd.to_datetime(df_contracts['schedule_day']).dt.normalize()
 
+        # Normalize numeric ID columns to float64 so that int 9 and float 9.0
+        # compare as equal during the merge (astype(str) would produce '9' vs '9.0').
+        for col in ['contract_id', 'labor_union_id']:
+            df_rules[col] = pd.to_numeric(df_rules[col], errors='coerce')
+            df_contracts[col] = pd.to_numeric(df_contracts[col], errors='coerce')
+
         # Separate rules into contract-level and labor-union-level
-        has_contract = df_rules['contract_id'].notna() & (df_rules['contract_id'] != '')
+        has_contract = df_rules['contract_id'].notna()
         df_rules_contract = df_rules[has_contract].copy()
         df_rules_labor = df_rules[~has_contract].copy()
+
+        logger.info(
+            f"add_process_rules_to_df_contratos: "
+            f"contract-level rule rows={len(df_rules_contract)}, "
+            f"labor-union-level rule rows={len(df_rules_labor)}"
+        )
 
         rule_value_cols = [col for col in df_rules.columns if col not in [
             'process_id', 'labor_union_id', 'contract_id', 'schedule_day',
@@ -5539,11 +5565,8 @@ def add_process_rules_to_df_contratos(
 
         merged_parts = []
 
-        # MERGE 1: Contract-level rules (individual contract overrides)
+        # MERGE 1: Contract-level rules — highest priority
         if not df_rules_contract.empty:
-            df_rules_contract['contract_id'] = df_rules_contract['contract_id'].astype(str)
-            df_contracts['contract_id'] = df_contracts['contract_id'].astype(str)
-
             df_merged_contract = df_contracts.merge(
                 df_rules_contract,
                 left_on=['contract_id', 'schedule_day'],
@@ -5555,12 +5578,12 @@ def add_process_rules_to_df_contratos(
                 df_merged_contract['_rule_source'] = 'contract'
                 merged_parts.append(df_merged_contract)
                 logger.info(f"Contract-level rules matched: {len(df_merged_contract)} rows")
+            else:
+                logger.info("Contract-level rules: no matches found for any employee-day")
 
-        # MERGE 2: Labor-union-level rules (collective, fallback for employees without contract-level rules)
+        # MERGE 2: Labor-union-level rules — fallback when no contract rule covers
+        #          the employee-day-rule_code combination
         if not df_rules_labor.empty:
-            df_rules_labor['labor_union_id'] = df_rules_labor['labor_union_id'].astype(str)
-            df_contracts['labor_union_id'] = df_contracts['labor_union_id'].astype(str)
-
             df_merged_labor = df_contracts.merge(
                 df_rules_labor,
                 left_on=['labor_union_id', 'schedule_day'],
@@ -5587,6 +5610,10 @@ def add_process_rules_to_df_contratos(
                 if not df_merged_labor.empty:
                     merged_parts.append(df_merged_labor)
                     logger.info(f"Labor-union-level rules matched (after contract override): {len(df_merged_labor)} rows")
+                else:
+                    logger.info("Labor-union-level rules: all matches superseded by contract-level rules")
+            else:
+                logger.info("Labor-union-level rules: no matches found for any employee-day")
 
         # COMBINE results
         if not merged_parts:
