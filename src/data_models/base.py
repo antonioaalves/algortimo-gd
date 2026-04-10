@@ -823,13 +823,15 @@ class BaseDescansosDataModel(ABC):
             # using rule-defined REST_DAY_TYPE/REST_DAY_SUBTYPE from df_process_rules
             compensatory_dict = self.rare_data.get('compensatory_dict', {})
             df_process_rules = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
-            if compensatory_dict and not df_process_rules.empty:
+            df_pro_emp_mov = self.algorithm_treatment_params.get('df_pro_emp_mov', pd.DataFrame())
+            if compensatory_dict:
                 date_col = 'data' if 'data' in final_df.columns else 'date'
                 self.logger.info("Applying compensatory sched_type/sched_subtype overrides")
                 final_df = apply_compensatory_sched_types(
                     final_df=final_df,
                     compensatory_dict=compensatory_dict,
                     df_process_rules=df_process_rules,
+                    df_pro_emp_mov=df_pro_emp_mov,
                     employee_col='colaborador',
                     date_col=date_col,
                 )
