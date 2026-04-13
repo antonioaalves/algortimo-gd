@@ -999,6 +999,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # STRSOL-1372: Load pending compensatory movements (CORE_PRO_EMP_MOV)
             df_pro_emp_mov = pd.DataFrame()
+            df_pro_emp_mov_raw = pd.DataFrame()
             try:
                 self.logger.info("Loading df_pro_emp_mov from data manager")
                 df_pro_emp_mov_raw = data_manager.load_data(
@@ -1053,6 +1054,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Saving df_colaborador in raw_data")
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
+                self.auxiliary_data['df_pro_emp_mov_raw'] = df_pro_emp_mov_raw.copy()
                 self.auxiliary_data['df_contratos'] = df_contratos.copy()
                 self.auxiliary_data['df_disponibilidade'] = df_disponibilidade.copy() if not df_disponibilidade.empty else pd.DataFrame()
                 # TODO: Remove this, not used
