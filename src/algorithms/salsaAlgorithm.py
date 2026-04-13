@@ -443,7 +443,6 @@ class SalsaAlgorithm(BaseAlgorithm):
                     free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range)
                 else:
                     self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
-                # Compensation days - check both country and config flag
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")
@@ -451,7 +450,11 @@ class SalsaAlgorithm(BaseAlgorithm):
                 else:
                     self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
 
-                dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs)
+                if constraint_selections.get("dynamic_empty_day", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: dynamic_empty_day")
+                    dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional)
+                else:
+                    self.logger.warning("Skipping constraint: dynamic_empty_day (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")
             
             # =================================================================
