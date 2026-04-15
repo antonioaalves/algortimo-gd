@@ -5488,8 +5488,22 @@ def add_process_rules_to_df_contratos(
     Merge process labor rules with contract data to produce a per-employee-day
     DataFrame with applicable rule parameters.
 
-    Override logic: CONTRACT_ID-level rules fully replace LABOR_UNION_ID-level rules.
-    No partial inheritance of parameters between levels.
+    Hierarchy (contract takes priority over labour union):
+        1. CONTRACT_ID-level rules are applied first.  When a contract-level rule
+           exists for a given employee-day-rule_code combination it fully replaces
+           any labour-union rule for the same combination.
+        2. LABOR_UNION_ID-level rules are used as a fallback only for employee-day
+           combinations that were NOT covered by a contract-level rule.
+        3. If neither level yields a match the employee receives no compensation
+           rules (empty result — no days off generated).
+
+    NOTE on type normalisation: treat_df_process_rules stores the nullable id
+    columns (contract_id / labor_union_id) as Python object dtype because it
+    uses a string sentinel to survive pivot_table's NaN-index-drop behaviour.
+    This means a numeric id such as 9 arrives here as the float 9.0 rather than
+    the integer 9 that Oracle returns via df_contratos.  Using astype(str) would
+    produce '9.0' vs '9' — causing a silent merge miss.  We normalise both sides
+    with pd.to_numeric so both become float64 9.0 before merging.
 
     Args:
         df_process_rules: Treated rules DataFrame (output of treat_df_process_rules),
@@ -5527,10 +5541,22 @@ def add_process_rules_to_df_contratos(
         df_rules['schedule_day'] = pd.to_datetime(df_rules['schedule_day']).dt.normalize()
         df_contracts['schedule_day'] = pd.to_datetime(df_contracts['schedule_day']).dt.normalize()
 
+        # Normalize numeric ID columns to float64 so that int 9 and float 9.0
+        # compare as equal during the merge (astype(str) would produce '9' vs '9.0').
+        for col in ['contract_id', 'labor_union_id']:
+            df_rules[col] = pd.to_numeric(df_rules[col], errors='coerce')
+            df_contracts[col] = pd.to_numeric(df_contracts[col], errors='coerce')
+
         # Separate rules into contract-level and labor-union-level
-        has_contract = df_rules['contract_id'].notna() & (df_rules['contract_id'] != '')
+        has_contract = df_rules['contract_id'].notna()
         df_rules_contract = df_rules[has_contract].copy()
         df_rules_labor = df_rules[~has_contract].copy()
+
+        logger.info(
+            f"add_process_rules_to_df_contratos: "
+            f"contract-level rule rows={len(df_rules_contract)}, "
+            f"labor-union-level rule rows={len(df_rules_labor)}"
+        )
 
         rule_value_cols = [col for col in df_rules.columns if col not in [
             'process_id', 'labor_union_id', 'contract_id', 'schedule_day',
@@ -5539,11 +5565,8 @@ def add_process_rules_to_df_contratos(
 
         merged_parts = []
 
-        # MERGE 1: Contract-level rules (individual contract overrides)
+        # MERGE 1: Contract-level rules — highest priority
         if not df_rules_contract.empty:
-            df_rules_contract['contract_id'] = df_rules_contract['contract_id'].astype(str)
-            df_contracts['contract_id'] = df_contracts['contract_id'].astype(str)
-
             df_merged_contract = df_contracts.merge(
                 df_rules_contract,
                 left_on=['contract_id', 'schedule_day'],
@@ -5555,12 +5578,12 @@ def add_process_rules_to_df_contratos(
                 df_merged_contract['_rule_source'] = 'contract'
                 merged_parts.append(df_merged_contract)
                 logger.info(f"Contract-level rules matched: {len(df_merged_contract)} rows")
+            else:
+                logger.info("Contract-level rules: no matches found for any employee-day")
 
-        # MERGE 2: Labor-union-level rules (collective, fallback for employees without contract-level rules)
+        # MERGE 2: Labor-union-level rules — fallback when no contract rule covers
+        #          the employee-day-rule_code combination
         if not df_rules_labor.empty:
-            df_rules_labor['labor_union_id'] = df_rules_labor['labor_union_id'].astype(str)
-            df_contracts['labor_union_id'] = df_contracts['labor_union_id'].astype(str)
-
             df_merged_labor = df_contracts.merge(
                 df_rules_labor,
                 left_on=['labor_union_id', 'schedule_day'],
@@ -5587,6 +5610,10 @@ def add_process_rules_to_df_contratos(
                 if not df_merged_labor.empty:
                     merged_parts.append(df_merged_labor)
                     logger.info(f"Labor-union-level rules matched (after contract override): {len(df_merged_labor)} rows")
+                else:
+                    logger.info("Labor-union-level rules: all matches superseded by contract-level rules")
+            else:
+                logger.info("Labor-union-level rules: no matches found for any employee-day")
 
         # COMBINE results
         if not merged_parts:
@@ -5756,6 +5783,7 @@ def build_compensatory_output(
     process_id: int,
     df_process_rules_raw: pd.DataFrame = None,
     df_pro_emp_mov: pd.DataFrame = None,
+    df_process_rules_merged: pd.DataFrame = None,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Build INT_EMP_PROCESS_MOV integration rows (Origin/Destiny) from the solver's
@@ -5767,6 +5795,17 @@ def build_compensatory_output(
     Mapping:
         - day_off is not None -> O row (worked_day) + D row (day_off, ref=worked_day)
         - day_off is None     -> O row only (pending for future executions)
+
+    RULE_HEAD_ID resolution (two sources, in priority order):
+        1. df_pro_emp_mov — O records from previous runs, keyed on
+           (EMPLOYEE_ID, RULE_CODE, worked_day). Used for worked days that fall
+           outside the current execution period and whose origin record was already
+           written by a prior run.
+        2. df_process_rules_merged — per-employee contract/labor-union resolved rules
+           from the current run, keyed on (EMPLOYEE_ID, RULE_CODE). Used for worked
+           days that belong to the current execution period (new origins).
+        If neither source resolves the ID, a warning is logged and the value is left
+        null — no global first-match fallback is applied.
 
     Args:
         compensatory_dict: Solver output dict keyed by worker ID, with structure:
@@ -5781,14 +5820,17 @@ def build_compensatory_output(
             could be placed inside the execution period.
         process_id: The process ID for the output rows.
         df_process_rules_raw: Raw (pre-pivot) rules DataFrame with columns RULE_CODE,
-            RULE_ID, RULE_HEAD_ID, FIELD_CODE, RULE_FIELD_ID. Used to look up the
-            numeric IDs for each rule_code / field_code combination (global fallback).
+            RULE_ID, FIELD_CODE, RULE_FIELD_ID. Used ONLY to look up RULE_ID and
+            RULE_FIELD_ID, which are consistent across labor unions for the same
+            RULE_CODE. NOT used for RULE_HEAD_ID resolution.
         df_pro_emp_mov: Raw CORE_PRO_EMP_MOV DataFrame with columns EMPLOYEE_ID,
             RULE_CODE, SCHEDULE_DAY, RULE_HEAD_ID. Merged on (EMPLOYEE_ID, RULE_CODE,
-            worked_day) to assign the exact RULE_HEAD_ID per worked day. This is
-            necessary because RULE_HEAD_ID varies by LABOR_UNION_ID / CONTRACT_ID /
-            date validity window and an employee can have stacked temporary contracts.
-            df_process_rules_raw is used as a fallback for any rows not matched here.
+            worked_day) to assign the exact RULE_HEAD_ID for worked days whose origin
+            record was already written in a previous execution.
+        df_process_rules_merged: Per-employee rules DataFrame produced by
+            add_process_rules_to_df_contratos (algorithm_treatment_params['df_process_rules']).
+            Keyed on (EMPLOYEE_ID, RULE_CODE) to resolve RULE_HEAD_ID for worked days
+            from the current execution period.
 
     Returns:
         Tuple containing:
@@ -5863,29 +5905,75 @@ def build_compensatory_output(
         else:
             df_output['RULE_HEAD_ID'] = pd.NA
 
-        # --- Step 3: merge RULE_ID, RULE_FIELD_ID, and RULE_HEAD_ID fallback from df_process_rules_raw ---
+        # --- Step 2.5: per-employee RULE_HEAD_ID from df_process_rules_merged (current period) ---
+        # treat_df_process_rules remaps RULE_CODE to an internal short form:
+        #   'COMPENSATORY_TIME_OFF_SUNDAYS'  -> 'ld_sunday'
+        #   'COMPENSATORY_TIME_OFF_HOLIDAYS' -> 'ld_holiday'
+        # We reverse that mapping so the join key aligns with df_output['RULE_CODE'],
+        # which must carry the original database values used in the integration rows.
+        _RULE_CODE_REVERSE = {
+            'LD_SUNDAY':  'COMPENSATORY_TIME_OFF_SUNDAYS',
+            'LD_HOLIDAY': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
+        }
+        if df_process_rules_merged is not None and not df_process_rules_merged.empty:
+            perm = df_process_rules_merged.copy()
+            perm.columns = [str(c).strip().upper() for c in perm.columns]
+            _rc_upper = perm['RULE_CODE'].astype(str).str.strip().str.upper()
+            perm['RULE_CODE'] = _rc_upper.map(_RULE_CODE_REVERSE).fillna(_rc_upper)
+            if {'EMPLOYEE_ID', 'RULE_CODE', 'RULE_HEAD_ID'}.issubset(perm.columns):
+                rh_per_employee = (
+                    perm[['EMPLOYEE_ID', 'RULE_CODE', 'RULE_HEAD_ID']]
+                    .drop_duplicates(subset=['EMPLOYEE_ID', 'RULE_CODE'])
+                    .rename(columns={'RULE_HEAD_ID': '_RULE_HEAD_ID_pm'})
+                )
+                df_output = df_output.merge(rh_per_employee, on=['EMPLOYEE_ID', 'RULE_CODE'], how='left')
+                df_output['RULE_HEAD_ID'] = df_output['RULE_HEAD_ID'].where(
+                    df_output['RULE_HEAD_ID'].notna(), df_output['_RULE_HEAD_ID_pm']
+                )
+                df_output = df_output.drop(columns=['_RULE_HEAD_ID_pm'])
+                n_resolved = df_output['RULE_HEAD_ID'].notna().sum()
+                logger.info(
+                    f"build_compensatory_output: resolved RULE_HEAD_ID from df_process_rules_merged "
+                    f"({n_resolved}/{len(df_output)} rows now resolved)"
+                )
+            else:
+                logger.warning(
+                    f"build_compensatory_output: df_process_rules_merged missing required columns "
+                    f"for RULE_HEAD_ID resolution. Has: {list(perm.columns)}"
+                )
+
+        n_missing_rh = df_output['RULE_HEAD_ID'].isna().sum()
+        if n_missing_rh > 0:
+            missing_employees = df_output.loc[df_output['RULE_HEAD_ID'].isna(), 'EMPLOYEE_ID'].unique().tolist()
+            logger.warning(
+                f"build_compensatory_output: {n_missing_rh} rows have no RULE_HEAD_ID after "
+                f"df_pro_emp_mov and df_process_rules_merged lookups. "
+                f"Affected employees: {missing_employees}"
+            )
+
+        # --- Step 3: resolve RULE_ID and RULE_FIELD_ID from df_process_rules_raw ---
+        # RULE_HEAD_ID is now known per row. Look up RULE_ID and RULE_FIELD_ID using
+        # RULE_HEAD_ID as the join key so each employee gets the IDs for their exact
+        # rule head — not a global first-match on RULE_CODE.
         if df_process_rules_raw is not None and not df_process_rules_raw.empty:
             rules = df_process_rules_raw.copy()
             rules.columns = [str(c).strip().upper() for c in rules.columns]
 
-            if {'RULE_CODE', 'RULE_ID', 'RULE_HEAD_ID', 'FIELD_CODE', 'RULE_FIELD_ID'}.issubset(rules.columns):
-                # RULE_HEAD_ID fallback: first match per RULE_CODE (for any rows not
-                # covered by df_pro_emp_mov, e.g. brand-new employees with no prior movements)
-                rh_fallback = rules.drop_duplicates(subset=['RULE_CODE'])[['RULE_CODE', 'RULE_HEAD_ID']].rename(columns={'RULE_HEAD_ID': '_RULE_HEAD_ID_fb'})
-                df_output = df_output.merge(rh_fallback, on='RULE_CODE', how='left')
-                df_output['RULE_HEAD_ID'] = df_output['RULE_HEAD_ID'].where(df_output['RULE_HEAD_ID'].notna(), df_output['_RULE_HEAD_ID_fb'])
-                df_output = df_output.drop(columns=['_RULE_HEAD_ID_fb'])
+            if {'RULE_HEAD_ID', 'RULE_ID', 'FIELD_CODE', 'RULE_FIELD_ID'}.issubset(rules.columns):
+                # Normalize RULE_HEAD_ID type to match what was resolved in steps 2/2.5
+                rules['RULE_HEAD_ID'] = pd.to_numeric(rules['RULE_HEAD_ID'], errors='coerce')
+                df_output['RULE_HEAD_ID'] = pd.to_numeric(df_output['RULE_HEAD_ID'], errors='coerce')
 
-                # RULE_ID is the same across all unions for the same RULE_CODE
-                rule_ids = rules.drop_duplicates(subset=['RULE_CODE'])[['RULE_CODE', 'RULE_ID']]
-                df_output = df_output.merge(rule_ids, on='RULE_CODE', how='left')
+                # RULE_ID per RULE_HEAD_ID
+                rule_ids = rules.drop_duplicates(subset=['RULE_HEAD_ID'])[['RULE_HEAD_ID', 'RULE_ID']]
+                df_output = df_output.merge(rule_ids, on='RULE_HEAD_ID', how='left')
 
-                # RULE_FIELD_ID for TIME_OFF_ADDITIONAL
+                # RULE_FIELD_ID per (RULE_HEAD_ID, FIELD_CODE=TIME_OFF_ADDITIONAL)
                 rule_field_ids = (
                     rules[rules['FIELD_CODE'] == 'TIME_OFF_ADDITIONAL']
-                    .drop_duplicates(subset=['RULE_CODE'])[['RULE_CODE', 'RULE_FIELD_ID']]
+                    .drop_duplicates(subset=['RULE_HEAD_ID'])[['RULE_HEAD_ID', 'RULE_FIELD_ID']]
                 )
-                df_output = df_output.merge(rule_field_ids, on='RULE_CODE', how='left')
+                df_output = df_output.merge(rule_field_ids, on='RULE_HEAD_ID', how='left')
             else:
                 logger.warning(f"build_compensatory_output: df_process_rules_raw missing required columns. Has: {list(rules.columns)}")
                 df_output['RULE_ID'] = pd.NA
