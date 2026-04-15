@@ -212,7 +212,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # Working days (non-special days)
         non_holidays = [d for d in days_of_year if d not in closed_holidays]  # Alias for compatibility
         index_to_date = matriz_calendario_gd.drop_duplicates(subset='index').set_index('index')['schedule_day'].fillna("2000-01-01").astype(str).to_dict()
-        logger.info(index_to_date)
+        #logger.info(index_to_date)
         
         # Calculate week information
         unique_dates = sorted(matriz_calendario_gd['schedule_day'].unique())
@@ -278,7 +278,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             logger.info(f"  - Start weekday (from first date): {start_weekday}")
             logger.info(f"  - Weeks found: {sorted(week_to_days.keys())}")
             logger.info(f"  - Total weeks: {len(week_to_days)}")
-            logger.info(f"  - Sample weeks: {dict(list(week_to_days.items())[:])}")
+            #logger.info(f"  - Sample weeks: {dict(list(week_to_days.items())[:])}")
                 
         else:
             start_weekday = 0
