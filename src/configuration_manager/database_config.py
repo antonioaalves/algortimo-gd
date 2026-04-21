@@ -213,7 +213,7 @@ class DatabaseConfig:
             Exception: If URL generation fails
         """
         try:
-            connection_url = (f"oracle+cx_oracle://{self.username}:"
+            connection_url = (f"oracle+oracledb://{self.username}:"
                             f"{self.password}@"
                             f"{self.host}:{self.port}/"
                             f"?service_name={self.service_name}")
@@ -285,7 +285,7 @@ class DatabaseConfig:
             url = self.get_connection_url()
             
             # Basic format validation
-            if not url.startswith("oracle+cx_oracle://"):
+            if not url.startswith("oracle+oracledb://"):
                 return False
             
             if "@" not in url or ":" not in url:
