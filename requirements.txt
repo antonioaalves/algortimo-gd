@@ -1,6 +1,6 @@
 absl-py==2.3.0
 asttokens==3.0.0
-base-data-project @ git+https://github.com/antonioaalves/base-data-project.git@hotfix/temporary_algorithm_arg_fix
+base-data-project @ git+https://github.com/antonioaalves/base-data-project.git@feature/config-component
 cffi==1.17.1
 click==8.2.1
 colorama==0.4.6
