@@ -61,7 +61,7 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         else:
             logger.info(f"DEBUG: using SQLAlchemy connection as-is")
         
-        query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_errors.sql')
+        query_file_path = os.path.join(pathOS, 'data', 'Queries', 'WFM_Process', 'Setters', 'set_process_errors.sql')
         logger.info(f"DEBUG: query_file_path: {query_file_path}")
         
         # Load the query from file

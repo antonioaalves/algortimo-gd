@@ -12,7 +12,7 @@ THIS IS THE GETTERS FOR THE FUNCTIONS REGARDING THE WFM PROCESSES AND CONTROL OF
 from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 import os
 import pandas as pd
-import cx_Oracle
+import oracledb as cx_Oracle  # oracledb replaces cx_Oracle
 def get_process_valid_emp(pathOS, process_id,connection):
     """
     Retrieves valid employees for a given process ID from the database.
@@ -31,7 +31,7 @@ def get_process_valid_emp(pathOS, process_id,connection):
         connection = ensure_connection_with_config(connection)
         
         # Read SQL query from file
-        query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Getters', "get_process_valid_employess.sql")
+        query_file_path = os.path.join(pathOS, 'data', 'Queries', 'WFM_Process', 'Getters', "get_process_valid_employess.sql")
         with open(query_file_path, 'r') as file:
             query = file.read().strip().replace("\n", " ")
         
@@ -82,7 +82,7 @@ def get_process_by_status(pathOS, user, process_type, event_type, status, connec
         connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
-        query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters","get_process_by_status.sql")
+        query_file_path = os.path.join(pathOS, "data", "Queries", "WFM_Process","Getters","get_process_by_status.sql")
         with open(query_file_path, 'r') as file:
             query = file.read().strip().replace("\n", " ")
         
@@ -122,7 +122,7 @@ def get_process_by_id(pathOS, process_id, connection):
         connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
-        query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters", "get_process_by_id.sql")
+        query_file_path = os.path.join(pathOS, "data", "Queries", "WFM_Process","Getters", "get_process_by_id.sql")
         with open(query_file_path, 'r') as file:
             query = file.read().strip().replace("\n", " ")
         
@@ -158,7 +158,7 @@ def get_total_process_by_status(pathOS, connection):
         connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
-        query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters", "get_total_process_by_status.sql")
+        query_file_path = os.path.join(pathOS, "data", "Queries", "WFM_Process","Getters", "get_total_process_by_status.sql")
         with open(query_file_path, 'r') as file:
             query = file.read().strip().replace("\n", " ")
         

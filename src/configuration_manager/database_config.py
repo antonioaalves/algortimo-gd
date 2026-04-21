@@ -1,19 +1,46 @@
 """
 Database connection configuration management.
 
-This module handles Oracle database connection settings including:
-- Connection parameters (host, port, service name)
-- Authentication credentials (username, password)
-- Schema information
-- Connection URL generation
+Configuration is read from environment variables. If a legacy
+src/settings/oracle_connection_parameters.json file exists it is used as a
+fallback (keyed by environment name) for backwards compatibility.
 
-Configuration is loaded from src/settings/oracle_connection_parameters.json
-based on the specified environment (dev, staging, prod, etc.).
+Environment variables (all required unless the legacy JSON is present):
+    ORACLE_DB_HOST           - database host
+    ORACLE_DB_PORT           - database port (int, default 1521)
+    ORACLE_DB_SERVICE_NAME   - Oracle service name
+    ORACLE_DB_USER           - database username
+    ORACLE_DB_PASSWORD       - database password
+    ORACLE_DB_SCHEMA         - default schema (default "WFM")
+
+ORACLE_DB_DSN may be provided as an alternative to host/port/service_name
+(format: "host:port/service_name" or an Easy Connect string).
 """
 
 import json
-from typing import Dict, Any
+import os
+from pathlib import Path
+from typing import Dict, Any, Optional
 from base_data_project.log_config import get_logger
+
+_LEGACY_CONFIG_PATH = Path("src/settings/oracle_connection_parameters.json")
+
+
+def _parse_dsn(dsn: str, fallback_port: str = "1521") -> tuple[str, str, str]:
+    """
+    Parse an Easy Connect DSN like "host:port/service_name" into its parts.
+
+    Accepts variants without port ("host/service_name") using fallback_port.
+    Returns ("", fallback_port, "") if parsing fails.
+    """
+    host, port, service = "", fallback_port, ""
+    if "/" in dsn:
+        host_port, service = dsn.split("/", 1)
+        if ":" in host_port:
+            host, port = host_port.split(":", 1)
+        else:
+            host = host_port
+    return host.strip(), port.strip() or fallback_port, service.strip()
 
 
 class DatabaseConfig:
@@ -68,35 +95,82 @@ class DatabaseConfig:
     
     def _load_database_config(self) -> Dict[str, Any]:
         """
-        Load database configuration for the specified environment.
-        
+        Load database configuration from environment variables, falling back
+        to the legacy JSON file if env vars are not set.
+
         Returns:
-            Dict[str, Any]: Database configuration for the environment
-            
+            Dict[str, Any]: Database configuration for the environment.
+
         Raises:
-            FileNotFoundError: If configuration file doesn't exist
-            ValueError: If environment not found in configuration
-            json.JSONDecodeError: If JSON is malformed
+            ValueError: If neither env vars nor the legacy JSON provide a
+                complete configuration.
         """
+        env_config = self._load_from_env()
+        if env_config is not None:
+            return env_config
+
+        legacy_config = self._load_from_legacy_json()
+        if legacy_config is not None:
+            return legacy_config
+
+        raise ValueError(
+            "Database configuration not found. Set ORACLE_DB_HOST / "
+            "ORACLE_DB_SERVICE_NAME (or ORACLE_DB_DSN) plus ORACLE_DB_USER "
+            "and ORACLE_DB_PASSWORD environment variables."
+        )
+
+    @staticmethod
+    def _load_from_env() -> Optional[Dict[str, Any]]:
+        user = os.environ.get("ORACLE_DB_USER")
+        password = os.environ.get("ORACLE_DB_PASSWORD")
+        if not user or not password:
+            return None
+
+        dsn = os.environ.get("ORACLE_DB_DSN", "").strip()
+        host = os.environ.get("ORACLE_DB_HOST", "").strip()
+        service_name = os.environ.get("ORACLE_DB_SERVICE_NAME", "").strip()
+        port_raw = os.environ.get("ORACLE_DB_PORT", "1521").strip() or "1521"
+
+        if dsn and not (host and service_name):
+            host, port_raw, service_name = _parse_dsn(dsn, fallback_port=port_raw)
+
+        if not host or not service_name:
+            return None
+
         try:
-            with open("src/settings/oracle_connection_parameters.json", "r") as file:
+            port = int(port_raw)
+        except ValueError as exc:
+            raise ValueError(f"ORACLE_DB_PORT must be an integer, got {port_raw!r}") from exc
+
+        return {
+            "host": host,
+            "port": port,
+            "service_name": service_name,
+            "username": user,
+            "password": password,
+            "schema": os.environ.get("ORACLE_DB_SCHEMA", "WFM"),
+        }
+
+    def _load_from_legacy_json(self) -> Optional[Dict[str, Any]]:
+        if not _LEGACY_CONFIG_PATH.exists():
+            return None
+        try:
+            with _LEGACY_CONFIG_PATH.open("r") as file:
                 all_configs = json.load(file)
-            
-            if self.environment not in all_configs:
-                available_envs = list(all_configs.keys())
-                raise ValueError(
-                    f"Environment '{self.environment}' not found in database config. "
-                    f"Available environments: {available_envs}"
-                )
-            
-            return all_configs[self.environment]
-            
-        except FileNotFoundError:
-            raise FileNotFoundError(
-                "Database configuration file 'oracle_connection_parameters.json' not found"
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in {_LEGACY_CONFIG_PATH}: {exc}") from exc
+
+        if self.environment not in all_configs:
+            available = list(all_configs.keys())
+            raise ValueError(
+                f"Environment '{self.environment}' not found in legacy database "
+                f"config. Available environments: {available}"
             )
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in database configuration: {e}")
+        self.logger.warning(
+            "Using legacy oracle_connection_parameters.json; migrate to "
+            "ORACLE_DB_* environment variables."
+        )
+        return all_configs[self.environment]
     
     def _validate_required_fields(self) -> None:
         """
