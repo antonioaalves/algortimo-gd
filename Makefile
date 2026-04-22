@@ -1,8 +1,8 @@
-.PHONY: help install test lint clean run batch api orchestrator docker-build docker-up docker-down docker-api docker-batch docker-logs version
+.PHONY: help install test lint clean run batch api orchestrator docker-build docker-up docker-down docker-api docker-batch docker-logs version release release-patch release-minor release-major
 
 PYTHON  ?= python
 PORT    ?= 5000
-VERSION ?= 1.1-dev
+VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0)
 IMAGE   ?= algoritmo-gd
 
 help: ## Show this help
@@ -54,3 +54,16 @@ docker-logs: ## Follow container logs
 
 version: ## Show project version
 	@echo $(VERSION)
+
+release-patch: ## Bump patch, tag, push, build and publish to OCIR
+	scripts/release.sh patch
+
+release-minor: ## Bump minor, tag, push, build and publish to OCIR
+	scripts/release.sh minor
+
+release-major: ## Bump major, tag, push, build and publish to OCIR
+	scripts/release.sh major
+
+release: ## Explicit version release: make release NEW=1.2.3
+	@test -n "$(NEW)" || (echo "Usage: make release NEW=1.2.3"; exit 2)
+	scripts/release.sh --version=$(NEW)
