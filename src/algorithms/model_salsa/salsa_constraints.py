@@ -83,7 +83,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                     logger.warning(f"for Worker {w}: compensation for day {d}, before {period[0]}, will be impossible because there's no time remaing: {past_special_days_worked[w]['days_&_limit'][d]}")
                     continue
                 else:
-                    special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), 1)
+                    special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), 1) - 1
                     possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                               past_special_days_worked[w]["days_&_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d)
                     if len(possible_compensation_days[w][d]) != 0:
