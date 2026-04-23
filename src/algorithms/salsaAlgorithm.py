@@ -290,6 +290,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             holiday_past_lds = adapted_data["holiday_past_lds"]
             sunday_past_lds = adapted_data["sunday_past_lds"]
             dynamic_empty = adapted_data["dynamic_empty"]
+            dummy_workers = adapted_data["dummy_workers"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -398,7 +399,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Maximum continuous working days constraint
                 if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: maximum_continuous_working_days")
-                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period)
+                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period, dummy_workers)
                 else:
                     self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
                 
@@ -471,7 +472,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             schedule_df, results, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date,
+                                         workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date, dummy_workers,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                                          optimization_details=optimization_details)
