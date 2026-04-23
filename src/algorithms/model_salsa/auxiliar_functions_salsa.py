@@ -292,7 +292,14 @@ def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_day
             dynamic_empty |= days
         logger.info(f"in week {week} had to remove {5 - contract_type} days to create {dynamic_empty.intersection(days_set)} dynamic empty days")
     return worker_absences, vacation_days, dynamic_empty
-            
+
+def fixed_to_dynamic(empty_days, dynamic_empty, data_admissao, data_demissao):
+    days = set([d for d in empty_days if data_admissao < d < data_demissao])
+    if days:
+        empty_days -= days
+        dynamic_empty |= days
+    return empty_days, dynamic_empty
+
 #salsa_constraints funcs:
 
 def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, closed_days, period, day):
