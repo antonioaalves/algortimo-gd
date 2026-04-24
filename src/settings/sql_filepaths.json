@@ -11,6 +11,7 @@
         "params_df": "queryGetAlgoParameters.sql",
         "parameters_cfg": "queryGetParametersCFG.sql",
         "insert_results_df": "insert_results.sql",
+        "insert_compensatory_results_df": "insertCompensatoryResults.sql",
         "df_mpd_valid_employees": "getProcessMpdEmployees.sql",
         "df_feriados": "queryGetFeriados.sql"
     },
@@ -26,7 +27,12 @@
         "df_days_off": "queryGetDaysOff.sql",
         "df_contratos": "queryGetCoreProEmpContract.sql",
         "df_core_pro_emp_horario_det": "queryGetCoreProEmpHorarioDet.sql",
-        "df_ciclos_completos_folgas_ciclos": "queryGetCiclosCompletosFolgasCiclos.sql"
+        "df_ciclos_completos_folgas_ciclos": "queryGetCiclosCompletosFolgasCiclos.sql",
+        "df_disponibilidade": "queryGetDisponibilidade.sql",
+        "df_eci_section_employees": "queryGetEciSectionEmployees.sql",
+        "df_eci_sibling_section": "queryGetEciSiblingSectionId.sql",
+        "df_process_rules": "queryGetProcessLaborRules.sql",
+        "df_pro_emp_mov": "queryGetCoreProEmpMov.sql"
     },
     "available_entities_raw": {
         "df_calendario": "",

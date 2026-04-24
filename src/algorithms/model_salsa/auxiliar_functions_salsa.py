@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import datetime
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
 
@@ -113,21 +115,22 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
         nbr_absences = len(absences_in_week)
         vacations_in_week = days_set.intersection(vacations.union(closed_holidays))
         nbr_vacations = len(vacations_in_week)
-        total = nbr_vacations + nbr_absences - len(days_set.intersection(closed_holidays))
-
+        if len(days_set.intersection(vacations)) > 0 and len(days_set.intersection(absences)) > 0:
+            total = nbr_vacations + nbr_absences - len(days_set.intersection(closed_holidays))
+        else:
+            total = 0
         if work_days_per_week is None or work_days_per_week[week - 1] == 5:
-
-            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2) :
+            if len(days_off) >= 2 or (nbr_absences + nbr_vacations < 2):
                 #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
-            
-            if nbr_absences < 5 and nbr_vacations < 6:
-                if total > 5:
-                    absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total ,5)
-
-                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False:
+            if total > 5:
+                absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total, 5)
+                continue
+            elif nbr_vacations > 2:
+                if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False and nbr_vacations < 6:
                     continue
-
+            elif nbr_absences < 5:
+                continue
             atributing_days = sorted(days_set - closed_holidays)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
@@ -166,15 +169,16 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     fixed_days_off |= {l2,l1}
                 
         else:
-            if len(days_off) > 0:
+            if len(days_off) > 0 or (nbr_absences + nbr_vacations < 2):
                 logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
                 continue
-            if nbr_absences <= 6 and nbr_vacations < 7:
-                if total > 6:
-                    return mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), None,6)
-
+            if total > 6:
+                absences, vacations, fixed_days_off, fixed_LQs =  mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), None,6)
+            elif nbr_vacations > 2:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 6, days) == False:
                     continue
+            elif nbr_absences < 6:
+                continue
             atributing_days = sorted(days_set - closed_holidays)
             l1 = atributing_days[-1]
             absences -= {l1}
@@ -194,23 +198,47 @@ def populate_week_seed_5_6(first_week_5_6, data_admissao, week_to_days):
 
     return work_days_per_week.astype(int)
 
-def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days):
+def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period):
     nbr_weeks = len(week_to_days)
     work_days_per_week = np.full(nbr_weeks, 5)
     week_5_days = 0
+    found_week = False
     for week, days in week_to_days.items():
         days_set = set(days)
+        if sorted(days)[0] < period[0] or sorted(days)[0] > period[1]:
+            continue
         days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
         if len(days_off_week) > 1:
             week_5_days = week - 1
+            found_week = True
             break
+    if found_week != True:
+        for week, days in reversed(list(week_to_days.items())):
+            days_set = set(days)
+            if sorted(days)[0] > period[0]:
+                continue
+            days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+            if len(days_off_week) > 1:
+                week_5_days = week - 1
+                found_week = True
+                break
+    if found_week != True:
+        for week, days in week_to_days.items():
+            days_set = set(days)
+            if sorted(days)[0] < period[1]:
+                continue
+            days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+            if len(days_off_week) > 1:
+                week_5_days = week - 1
+                found_week = True
+                break
 
     if week_5_days % 2 == 0:
-        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
                     f"with days {days_off_week} since its even, first week will start with 5")
         work_days_per_week= np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
     else:
-        logger.info(f"Found week that has to be of 5 working days in week {week_5_days + 1}, "
+        logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
                     f"with days {days_off_week} since its odd, first week will start with 6")
         work_days_per_week= np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
 
@@ -227,30 +255,80 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
             logger.error(f"For worker {w}, in week {week} by contract they're supposed to work "
                          f"{work_days_per_week[week - 1]} days but have received {actual_days_off} "
                          f"days off: {days_set.intersection(fixed_days_off.union(fixed_LQs))}. Process will be Infeasible!")
-            
+
+def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_days_salsa):
+    dynamic_empty = set()
+    for week, days in week_to_days_salsa.items():
+        if len(days) <= 6:
+            continue
+        days_set = set(days)
+        absences_in_week = days_set.intersection(worker_absences)
+        nbr_absences = len(absences_in_week)
+        vacations_in_week = days_set.intersection(vacation_days)
+        nbr_vacations = len(vacations_in_week)
+        if nbr_absences == nbr_vacations == 0:
+            continue
+
+        empty_days = 5 - contract_type
+        if nbr_absences >= empty_days:
+            days = set(sorted(absences_in_week)[:empty_days])
+            worker_absences -= days
+            dynamic_empty |= days
+            continue
+        elif nbr_absences > 0:
+            days = set(sorted(absences_in_week)[:nbr_absences])
+            worker_absences -= days
+            dynamic_empty |= days
+            empty_days -= nbr_absences
+
+        if nbr_vacations >= empty_days:
+            days = set(sorted(vacations_in_week)[:empty_days])
+            vacation_days -= days
+            dynamic_empty |= days
+            continue
+        elif nbr_vacations > 0:
+            days = set(sorted(vacations_in_week)[:nbr_vacations])
+            vacation_days -= days
+            dynamic_empty |= days
+        logger.info(f"in week {week} had to remove {5 - contract_type} days to create {dynamic_empty.intersection(days_set)} dynamic empty days")
+    return worker_absences, vacation_days, dynamic_empty
+
+def fixed_to_dynamic(empty_days, dynamic_empty, data_admissao, data_demissao):
+    days = set([d for d in empty_days if data_admissao < d < data_demissao])
+    if days:
+        empty_days -= days
+        dynamic_empty |= days
+    return empty_days, dynamic_empty
+
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, week_compensation_limit, working_days, period):
+def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, closed_days, period, day):
     compensation_days = []
-    weeks_added = 0
+    days_analysed = 0
     current_week = special_day_week
-
-    while weeks_added < week_compensation_limit and current_week < len(week_to_days):
+    absences = worker_absences.union(vacation_days.union(closed_days))
+    all_days_off = fixed_days_off.union(fixed_LQs.union(absences.union(fixed_lds)))
+    while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, []))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        if len(week_days.intersection(absences)) >= 5:
+            continue
+        available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0] and d > day}
 
-        all_days_off = vacation_days.union(worker_absences.union(fixed_days_off.union(fixed_LQs)))
-
-        available_days = {d for d in working_days.intersection(week_days - all_days_off) if d <= period[1]}
-        if sorted(week_days)[0] >= period[1]:
-            if compensation_days:
+        days_analysed += len({d for d in week_days - absences if d >= period[0] and d > day})
+        if days_analysed > compensation_limit:
+            diff = days_analysed - compensation_limit
+            if diff > len(available_days):
                 break
-            else:
-                available_days = {d for d in working_days.intersection(week_days - all_days_off)}
+            diff -= len(week_days.intersection(all_days_off))
+            if diff > 0:
+                available_days = set(sorted(available_days)[:-diff])
+
+        if min(week_days) >= period[1]:
+            available_days = {d for d in week_days - all_days_off if (w, d, 'LD') in shift}
 
         if len(available_days) > 0:
-            weeks_added += 1
             compensation_days.extend(available_days)
 
     return compensation_days
@@ -269,3 +347,29 @@ def ld_counter(shift_T, shift_M, fixed_ld, period, holidays):
     del holidays_worked_before[:lds]
     
     return holidays_worked_before
+
+#general funcs:
+
+def legenda(data_array, range_bool):
+    data_len = len(data_array)
+    if range_bool and data_len != 2:
+        logger.warning(f"Data imcompatible with range (RN, RC or RD) type")
+        return -1
+    
+    data_type = type(data_array[0])
+    if data_type == str:
+        field_type = 'C'
+    elif data_type == datetime or data_type == pd.Timestamp:
+        field_type = 'D'
+    elif data_type == int or data_type == float:
+        field_type = 'N'
+    else:
+        logger.warning(f"Data type undefined: {data_type}")
+        return -1
+    
+    if range_bool:
+        return 'R' + field_type
+    elif data_len > 1:
+        return 'L' + field_type
+    else:
+        return field_type

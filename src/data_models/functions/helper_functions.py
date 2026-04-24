@@ -5,7 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import datetime as dt
-from typing import List, Optional, Tuple, Dict
+from typing import Any, List, Optional, Tuple, Dict, Union
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers import DBDataManager
 
@@ -18,6 +18,35 @@ PROJECT_NAME = _config.project_name
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
+
+
+def get_granularity_minutes() -> int:
+    """
+    Get the configured time-slot granularity in minutes.
+    
+    Uses the system configuration (src/settings/system_settings.py) and enforces that
+    the value is a positive integer.
+    
+    Returns:
+        int: Granularity in minutes.
+    
+    Raises:
+        ValueError: If the configured granularity is missing, non-integer or <= 0.
+    """
+    granularity = getattr(_config.system, "granularity", None)
+    try:
+        granularity_int = int(granularity)
+    except (TypeError, ValueError):
+        error_msg = "granularity must be an integer number of minutes"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    if granularity_int <= 0:
+        error_msg = "granularity must be a positive integer number of minutes"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    return granularity_int
 
 
 def count_dates_per_year(start_date_str: str, end_date_str: str) -> tuple[str, str, int]:
@@ -80,7 +109,7 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
     Args:
         df: pd.DataFrame, dataframe with parameters
         posto_id: int, posto ID
-        unit_id: int, unit ID  
+        unit_id: int or str, unit ID  
         secao_id: int, section ID
         params_names_list: list, list of parameter names to retrieve
     Returns:
@@ -124,11 +153,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
         #logger.info(f"DEBUG: Rows matching section condition:\n {matching_section}")
     
     # 3. Unit-specific: fk_tipo_posto is null AND fk_secao is null AND fk_unidade = unit_id
-    if unit_id is not None:
+    if unit_id is not None and str(unit_id).strip():
         unit_condition = (
             (df_filtered['fk_tipo_posto'].isna()) & 
             (df_filtered['fk_secao'].isna()) & 
-            (df_filtered['fk_unidade'] == unit_id)
+            (df_filtered['fk_unidade'].astype(str) == str(unit_id).strip())
         )
         conditions.append(unit_condition)
         #logger.info(f"DEBUG: Added unit condition for unit_id={unit_id}")
@@ -185,11 +214,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
                     continue
         
         # Priority 3: Unit-specific (fk_tipo_posto and fk_secao are null, fk_unidade matches)
-        if unit_id is not None:
+        if unit_id is not None and str(unit_id).strip():
             unit_specific = param_rows[
                 (param_rows['fk_tipo_posto'].isna()) & 
                 (param_rows['fk_secao'].isna()) & 
-                (param_rows['fk_unidade'] == unit_id)
+                (param_rows['fk_unidade'].astype(str) == str(unit_id).strip())
             ]
             if not unit_specific.empty:
                 value = get_value_from_row(unit_specific.iloc[0])
@@ -437,7 +466,7 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
             return 'NL'
         
         # Working days
-        if tipo_dia == 'A':
+        if tipo_dia in ['A', 'H']:
             if intervalo >= 1:
                 return 'P'
             return 'MoT'
@@ -1121,6 +1150,8 @@ def bulk_insert_with_query(data_manager: DBDataManager,
         'closed', 'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
     
     Performance Features:
+        - Batch execution using executemany (via SQLAlchemy) for dramatically faster inserts
+        - Fallback to row-by-row execution if batch mode fails
         - Progress logging every 1000 records
         - Single transaction for all records
         - Parameter binding for efficient execution
@@ -1169,6 +1200,8 @@ def bulk_insert_with_query(data_manager: DBDataManager,
         - Removes 'pathOS' from kwargs if present (connection metadata)
         - Creates completely new session on retry (not just reconnect)
         - Commits only after all records inserted successfully
+        - Uses batch executemany for performance, with automatic fallback to row-by-row
+        - NaN/None in string columns replaced with '' before batch (Oracle treats '' as NULL)
     """
     logger = get_logger(PROJECT_NAME)
    
@@ -1184,9 +1217,10 @@ def bulk_insert_with_query(data_manager: DBDataManager,
     if data.empty:
         logger.warning("Empty DataFrame provided, no records to insert")
         return True
- 
+
     # Simple retry loop for connection issues
     max_retries = 2
+    batch_size = 1000
    
     for attempt in range(max_retries + 1):
         try:
@@ -1224,32 +1258,82 @@ def bulk_insert_with_query(data_manager: DBDataManager,
            
             logger.info(f"Executing bulk insert of {len(data)} rows (attempt {attempt + 1})")
            
-            # Convert DataFrame to list of dictionaries for parameter binding
-            records = data.to_dict('records')
-           
-            # Execute the insert for each record
-            for i, record in enumerate(records):
+            # Prepare records for insertion
+            # Fill NaN/None with '' ONLY in string/object columns for cx_Oracle executemany compatibility.
+            # cx_Oracle infers column types from the first row; if the first row has None for a string
+            # column, it cannot determine the type and fails on subsequent rows with actual values.
+            # Oracle treats '' and NULL as identical, so this has zero effect on stored data.
+            data_copy = data.copy()
+            string_cols = data_copy.select_dtypes(include=['object']).columns
+            if len(string_cols) > 0:
+                data_copy[string_cols] = data_copy[string_cols].fillna('')
+            
+            records = data_copy.to_dict('records')
+            
+            # Merge kwargs into records if provided
+            clean_kwargs = {k: v for k, v in kwargs.items() if k != 'pathOS'} if kwargs else {}
+            if clean_kwargs:
+                records = [{**clean_kwargs, **record} for record in records]
+            
+            # --- Batch execution (executemany) with full fallback to row-by-row ---
+            # Strategy: try ALL batches first. If executemany fails on any batch,
+            # rollback EVERYTHING and re-insert ALL records row-by-row from scratch.
+            # This avoids partial state where some batches succeed and others don't.
+            total_records = len(records)
+            inserted_count = 0
+            use_row_by_row = False
+            
+            try:
+                for batch_start in range(0, total_records, batch_size):
+                    batch_end = min(batch_start + batch_size, total_records)
+                    batch = records[batch_start:batch_end]
+                    
+                    # Fast path: batch executemany
+                    # SQLAlchemy 2.0 uses cursor.executemany() when given a list of dicts
+                    data_manager.session.execute(text(insert_query), batch)
+                    inserted_count += len(batch)
+                    logger.info(f"Batch inserted {inserted_count}/{total_records} records")
+                    
+            except Exception as batch_error:
+                # Check if this is a connection error — let the outer retry handler deal with it
+                batch_error_str = str(batch_error).lower()
+                connection_error_keywords = [
+                    'not connected', 'dpi-1010', 'connection', 'timeout', 'closed',
+                    'broken', 'lost', 'ora-12170', 'ora-03135', 'ora-00028', 'ora-02391'
+                ]
+                if any(kw in batch_error_str for kw in connection_error_keywords):
+                    raise  # Propagate to outer retry loop
+                
+                # Non-connection error: executemany is not compatible with this data.
+                # Rollback everything and switch to row-by-row for ALL records.
+                logger.warning(f"Batch executemany failed, rolling back and retrying "
+                               f"all {total_records} records row-by-row: {batch_error}")
                 try:
-                    # Merge additional kwargs with record data
-                    params = {**kwargs, **record}
-                    # Remove pathOS from params if it exists (it's for connection handling only)
-                    params.pop('pathOS', None)
-                   
-                    data_manager.session.execute(text(insert_query), params)
-                   
-                    # Log progress for large datasets
-                    if (i + 1) % 1000 == 0:
-                        logger.info(f"Processed {i + 1}/{len(records)} records")
-                       
-                except Exception as record_error:
-                    logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
-                    logger.debug(f"Failed record data: {record}")
-                    raise
-           
+                    data_manager.session.rollback()
+                except Exception:
+                    pass
+                use_row_by_row = True
+                inserted_count = 0
+            
+            # Fallback: row-by-row for ALL records (only runs if batch mode failed)
+            if use_row_by_row:
+                for i, record in enumerate(records):
+                    try:
+                        data_manager.session.execute(text(insert_query), record)
+                        inserted_count += 1
+                        
+                        if inserted_count % 1000 == 0:
+                            logger.info(f"Row-by-row: processed {inserted_count}/{total_records} records")
+                            
+                    except Exception as record_error:
+                        logger.error(f"Error inserting record {i + 1}: {str(record_error)}")
+                        logger.debug(f"Failed record data: {record}")
+                        raise
+            
             # Commit all inserts
             data_manager.session.commit()
            
-            logger.info(f"Successfully inserted {len(records)} records")
+            logger.info(f"Successfully inserted {inserted_count} records")
             return True
            
         except Exception as e:
@@ -1522,7 +1606,7 @@ def get_week_pattern(seq_turno: str, semana1: str, week_in_cycle: int) -> str:
     # Unknown pattern - return as-is
     return seq_turno
 
-def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int], Dict[int, List[str]], List[str]]:
+def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[Union[int, str], int, List[int], Dict[int, List[str]], List[str]]:
     """
     Extract organizational structure and employee groupings from validated employee data.
     
@@ -1531,7 +1615,7 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
     unit and section but may be distributed across multiple job positions (postos).
     
     Extracted Information:
-        1. unit_id: Organizational unit (assumes single unit)
+        1. unit_id: Organizational unit (assumes single unit); preserved as string or int from source
         2. secao_id: Section within unit (assumes single section)
         3. posto_id_list: All unique job position types in scope
         4. employees_by_posto_dict: Employees grouped by their job position
@@ -1552,14 +1636,14 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
     
     Args:
         df_valid_emp: Validated employee DataFrame with columns:
-            - fk_unidade: Unit identifier
+            - fk_unidade: Unit identifier (int or str)
             - fk_secao: Section identifier
             - fk_tipo_posto: Job position type
             - fk_colaborador: Employee identifier
         
     Returns:
         Tuple containing:
-            - unit_id (int): Unique unit ID (first value from unique set)
+            - unit_id (str): Unique unit ID as string (first value from unique set; supports numeric or string IDs)
             - secao_id (int): Unique section ID (first value from unique set)
             - posto_id_list (List[int]): List of all job position types
             - employees_by_posto_dict (Dict[int, List[str]]): Map of posto_id → employee_id_list
@@ -1568,27 +1652,25 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
     Example Output:
         >>> unit_id, secao_id, posto_ids, emp_by_posto, all_emps = get_valid_emp_info(df)
         >>> print(unit_id)
-        1
+        '1' or 'ABC'
         >>> print(secao_id)
         5
         >>> print(posto_ids)
         [10, 20, 30]
-        >>> print(emp_by_posto)
-        {10: ['101', '102'], 20: ['103'], 30: ['104', '105', '106']}
-        >>> print(all_emps)
-        ['101', '102', '103', '104', '105', '106']
         
     Error Handling:
-        Returns (0, 0, [], {}, []) on any exception, with error logged.
+        Returns ("", 0, [], {}, []) on any exception, with error logged.
         This signals to caller that organizational info extraction failed.
         
     Note:
+        unit_id is normalized to string to support both numeric and string unit identifiers.
         Converts posto_id keys to int and employee IDs to str for consistency
         with downstream processing requirements.
     """
     try:
         logger.info(f"Getting unit_id, secao_id, posto_id_list, employees_by_posto_dict, employees_id_total_list")
-        unit_id = int(df_valid_emp['fk_unidade'].unique()[0])  # Get first (and only) unique value
+        raw_unit = df_valid_emp['fk_unidade'].unique()[0]
+        unit_id = str(raw_unit).strip() if raw_unit is not None else ""
         secao_id = int(df_valid_emp['fk_secao'].unique()[0])   # Get first (and only) unique value
         posto_id_list = df_valid_emp['fk_tipo_posto'].unique().astype(int).tolist()  # Get list of unique values
 
@@ -1602,7 +1684,7 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[int, int, List[int],
 
     except Exception as e:
         logger.error(f"Error getting valid_emp info: {e}", exc_info=True)
-        return 0, 0, [], {}, []
+        return "", 0, [], {}, []
 
 def get_matriculas_for_employee_id(employee_id_list: List[int], employee_id_matriculas_map: Dict[int, str]) -> Tuple[bool, List[str], str]:
     """
@@ -1690,15 +1772,177 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
         logger.error(error_msg, exc_info=True)
         return False, {}, error_msg
 
-def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, use_case: int = 0) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_faixa_secao_to_long(df_faixa_secao_wide: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Function that gets the df_faixa_horario from the df_orcamento and df_turnos
-    
+    Transform wide esc_faixa_horario (aber_seg, fech_seg, ... per weekday) to long format
+    with one row per schedule_day and hora_inicio_faixa / hora_fim_faixa.
+
+    Expects columns: fk_secao, aber_seg, fech_seg, aber_ter, fech_ter, ... aber_fer, fech_fer,
+    and DATA_INI/DATA_FIM or data_ini/data_fim (date range to expand).
+
+    Returns:
+        Tuple[bool, pd.DataFrame, str]: (success, df with schedule_day, hora_inicio_faixa, hora_fim_faixa [, fk_secao], error_message)
+    """
+    try:
+        if df_faixa_secao_wide is None or df_faixa_secao_wide.empty:
+            return False, pd.DataFrame(), "df_faixa_secao_wide is empty or None"
+
+        df = df_faixa_secao_wide.copy()
+        # Normalize column names (Oracle may return DATA_INI/DATA_FIM uppercase)
+        df.columns = [c.lower() if isinstance(c, str) else c for c in df.columns]
+        date_ini_col = 'data_ini' if 'data_ini' in df.columns else None
+        date_fim_col = 'data_fim' if 'data_fim' in df.columns else None
+        if date_ini_col is None or date_fim_col is None:
+            return False, pd.DataFrame(), "df_faixa_secao_wide missing data_ini and/or data_fim columns"
+
+        time_columns = [
+            "aber_seg", "fech_seg", "aber_ter", "fech_ter", "aber_qua", "fech_qua",
+            "aber_qui", "fech_qui", "aber_sex", "fech_sex", "aber_sab", "fech_sab",
+            "aber_dom", "fech_dom", "aber_fer", "fech_fer"
+        ]
+        missing = [c for c in time_columns if c not in df.columns]
+        if missing:
+            return False, pd.DataFrame(), f"df_faixa_secao_wide missing time columns: {missing}"
+
+        df[date_ini_col] = pd.to_datetime(df[date_ini_col])
+        df[date_fim_col] = pd.to_datetime(df[date_fim_col])
+
+        expanded_rows = []
+        for _, row in df.iterrows():
+            date_range = pd.date_range(start=row[date_ini_col], end=row[date_fim_col], freq='D')
+            for date in date_range:
+                new_row = row.copy()
+                new_row['data'] = date
+                expanded_rows.append(new_row)
+
+        if not expanded_rows:
+            return False, pd.DataFrame(), "No dates in data_ini..data_fim range"
+
+        df_exp = pd.DataFrame(expanded_rows)
+        id_vars = [c for c in ['fk_secao', 'data', date_ini_col, date_fim_col] if c in df_exp.columns]
+        df_long = pd.melt(
+            df_exp,
+            id_vars=id_vars,
+            value_vars=time_columns,
+            var_name='wd_ab',
+            value_name='value'
+        )
+        df_long[['a_f', 'wd']] = df_long['wd_ab'].str.split('_', expand=True)
+        pivot_index = [c for c in id_vars if c in df_long.columns] + ['wd']
+        df_wide = df_long.pivot_table(
+            index=pivot_index,
+            columns='a_f',
+            values='value',
+            aggfunc='first'
+        ).reset_index()
+        df_wide.columns.name = None
+
+        # Match weekday from date to column (seg, ter, ...)
+        df_wide['wd'] = df_wide['wd'].str.replace('sab', 'sáb')
+        df_wide['wd_date'] = df_wide['data'].dt.day_name().str.lower()
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('saturday', 'sáb')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('sunday', 'dom')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('monday', 'seg')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('tuesday', 'ter')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('wednesday', 'qua')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('thursday', 'qui')
+        df_wide['wd_date'] = df_wide['wd_date'].str.replace('friday', 'sex')
+
+        out = df_wide[df_wide['wd'] == df_wide['wd_date']].copy()
+        out['schedule_day'] = pd.to_datetime(out['data']).dt.normalize()
+        # Keep start/end as timestamps with date (raw from DB); same structure as df_orc_filtered
+        out['hora_inicio_faixa'] = pd.to_datetime(out['aber'], errors='coerce')
+        out['hora_fim_faixa'] = pd.to_datetime(out['fech'], errors='coerce')
+        out = out.dropna(subset=['hora_inicio_faixa', 'hora_fim_faixa'])
+        result_cols = ['schedule_day', 'hora_inicio_faixa', 'hora_fim_faixa']
+        if 'fk_secao' in out.columns:
+            result_cols.insert(0, 'fk_secao')
+        result = out[result_cols].sort_values('schedule_day').reset_index(drop=True)
+        logger.info(f"treat_df_faixa_secao_to_long: produced {len(result)} rows (long format)")
+        return True, result, ""
+    except Exception as e:
+        logger.error(f"treat_df_faixa_secao_to_long failed: {e}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def _fill_faixa_fallback(
+    df_faixa: pd.DataFrame,
+    missing_mask: pd.Series,
+    unique_days: np.ndarray,
+    df_faixa_secao: Optional[pd.DataFrame],
+    log: Any,
+) -> None:
+    """Fill hora_inicio_faixa/hora_fim_faixa for rows where missing_mask is True. Use df_faixa_secao if provided and valid, else 06:40/22:40."""
+    if not missing_mask.any():
+        return
+    required = ['schedule_day', 'hora_inicio_faixa', 'hora_fim_faixa']
+    use_secao = (
+        df_faixa_secao is not None
+        and not df_faixa_secao.empty
+        and all(c in df_faixa_secao.columns for c in required)
+    )
+    if use_secao:
+        secao = df_faixa_secao.copy()
+        secao['schedule_day'] = pd.to_datetime(secao['schedule_day']).dt.normalize()
+        secao = secao.drop_duplicates(subset=['schedule_day'], keep='first')
+        # Normalize to same structure as df_orc_filtered: schedule_day + time part of start/end
+        t_ini = secao['hora_inicio_faixa']
+        t_fim = secao['hora_fim_faixa']
+        time_ini = pd.to_timedelta(
+            t_ini.dt.hour * 3600 + t_ini.dt.minute * 60 + t_ini.dt.second, unit='s'
+        )
+        time_fim = pd.to_timedelta(
+            t_fim.dt.hour * 3600 + t_fim.dt.minute * 60 + t_fim.dt.second, unit='s'
+        )
+        # When faixa spans past midnight (e.g. 06:00–00:00 next day), t_fim date > t_ini date.
+        # Use schedule_day + 1 day as base for end so hora_fim_faixa is end-of-day (e.g. next day 00:00).
+        fim_next_day = t_fim.dt.normalize() > t_ini.dt.normalize()
+        secao = secao.assign(
+            hora_inicio_faixa=secao['schedule_day'] + time_ini,
+            hora_fim_faixa=np.where(
+                fim_next_day,
+                secao['schedule_day'] + pd.Timedelta(days=1) + time_fim,
+                secao['schedule_day'] + time_fim,
+            ),
+        )
+        df_faixa.loc[missing_mask, 'hora_inicio_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'].map(
+            secao.set_index('schedule_day')['hora_inicio_faixa']
+        )
+        df_faixa.loc[missing_mask, 'hora_fim_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'].map(
+            secao.set_index('schedule_day')['hora_fim_faixa']
+        )
+        still_missing = df_faixa['hora_inicio_faixa'].isna()
+        if still_missing.any():
+            log.info("get_df_faixa_horario: df_faixa_secao did not cover all days; filling remaining with 06:40/22:40")
+            missing_mask = still_missing
+        else:
+            log.info("get_df_faixa_horario: used df_faixa_secao for fallback faixa times")
+            return
+    default_start = pd.Timedelta(hours=6, minutes=40)
+    default_end = pd.Timedelta(hours=22, minutes=40)
+    df_faixa.loc[missing_mask, 'hora_inicio_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'] + default_start
+    df_faixa.loc[missing_mask, 'hora_fim_faixa'] = df_faixa.loc[missing_mask, 'schedule_day'] + default_end
+
+
+def get_df_faixa_horario(
+    df_orcamento: pd.DataFrame,
+    df_turnos: pd.DataFrame,
+    use_case: int = 0,
+    df_faixa_secao: Optional[pd.DataFrame] = None,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Function that gets the df_faixa_horario from the df_orcamento and df_turnos.
+
+    For use_case 1, if there are no rows with pessoas_min > 0, fallback is used:
+    df_faixa_secao (long format with schedule_day, hora_inicio_faixa, hora_fim_faixa)
+    if provided and non-empty; otherwise hardcoded 06:40 / 22:40.
+
     Args:
         df_orcamento: DataFrame with the orcamento data
         df_turnos: DataFrame with the turnos data
         use_case: int with the use case
-        
+        df_faixa_secao: Optional long-format faixa per day (schedule_day, hora_inicio_faixa, hora_fim_faixa); used as fallback in use_case 1
+
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, df_faixa_horario, error_message)
     """
@@ -1787,18 +2031,40 @@ def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, us
             return True, df_faixa, ""
         
         elif use_case == 1:
-            df_orcamento = df_orcamento.copy()
-            mask_pessoas_min = df_orcamento['pessoas_min'] > 0
-            df_orcamento = df_orcamento[mask_pessoas_min]
-            df_faixa = df_orcamento.groupby('schedule_day', as_index=False).agg(
-                hora_inicio_faixa=('hora_ini', 'min'),
-                hora_fim_faixa=('hora_ini', 'max')
-            )
-            # Calculate ponto_medio as the midpoint between hora_inicio_faixa and hora_fim_faixa
+            df_orc_full = df_orcamento.copy()
+            df_orc_full['schedule_day'] = pd.to_datetime(df_orc_full['schedule_day']).dt.normalize()
+            unique_days = df_orc_full['schedule_day'].unique()
+            mask_pessoas_min = df_orc_full['pessoas_min'] > 0
+            df_orc_filtered = df_orc_full[mask_pessoas_min]
+
+            if not df_orc_filtered.empty:
+                df_faixa = df_orc_filtered.groupby('schedule_day', as_index=False).agg(
+                    hora_inicio_faixa=('hora_ini', 'min'),
+                    hora_fim_faixa=('hora_ini', 'max')
+                )
+                # Ensure all days from df_orcamento are present; fill missing from df_faixa_secao or default
+                df_days = pd.DataFrame({'schedule_day': unique_days})
+                df_days['schedule_day'] = pd.to_datetime(df_days['schedule_day']).dt.normalize()
+                df_faixa = df_days.merge(df_faixa, on='schedule_day', how='left')
+                missing = df_faixa['hora_inicio_faixa'].isna()
+                if missing.any():
+                    _fill_faixa_fallback(df_faixa, missing, unique_days, df_faixa_secao, logger)
+            else:
+                # No rows with pessoas_min > 0: use df_faixa_secao fallback or hardcoded 06:40 / 22:40
+                logger.warning(
+                    "get_df_faixa_horario (use_case=1): no rows with pessoas_min > 0 "
+                    "(total rows: %d). Using fallback (df_faixa_secao or 06:40/22:40).",
+                    len(df_orc_full),
+                )
+                df_faixa = pd.DataFrame({'schedule_day': unique_days})
+                df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
+                _fill_faixa_fallback(df_faixa, pd.Series(True, index=df_faixa.index), unique_days, df_faixa_secao, logger)
+
+            # Calculate ponto_medio and limites
             df_faixa['ponto_medio'] = df_faixa['hora_inicio_faixa'] + (df_faixa['hora_fim_faixa'] - df_faixa['hora_inicio_faixa']) / 2
-            # For this use_case, the objective is to consider both limite_superior_manha and limite_inferior_tarde as the middle point
             df_faixa['limite_superior_manha'] = df_faixa['ponto_medio']
             df_faixa['limite_inferior_tarde'] = df_faixa['ponto_medio']
+            df_faixa = df_faixa.sort_values('schedule_day').reset_index(drop=True)
             return True, df_faixa, ""
 
         else:
@@ -1806,6 +2072,12 @@ def get_df_faixa_horario(df_orcamento: pd.DataFrame, df_turnos: pd.DataFrame, us
     except Exception as e:
         return False, pd.DataFrame(), f"Error getting df_faixa_horario: {e}"
 
+def get_df_estrutura_wfm_info(df_estrutura_wfm: pd.DataFrame) -> str:
+    """
+    """
+    nome_pais = str(df_estrutura_wfm['nome_pais'].unique()[0])
+
+    return nome_pais
 
 def filter_insert_results(df: pd.DataFrame, start_date: str, end_date: str, wfm_proc_colab: str = '') -> pd.DataFrame:
     """
@@ -1884,3 +2156,62 @@ def filter_insert_results(df: pd.DataFrame, start_date: str, end_date: str, wfm_
     except Exception as e:
         logger.error(f"Error in filter_insert_results: {str(e)}", exc_info=True)
         return df
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ECI Unit Helper Functions
+# ──────────────────────────────────────────────────────────────────────────────
+
+def is_eci_unit(df_estrutura_wfm: pd.DataFrame) -> bool:
+    """
+    Check if the current unit is an ECI unit based on the unit name.
+    
+    ECI units are identified by their name starting with "ECI".
+    
+    Args:
+        df_estrutura_wfm: DataFrame with organizational structure (must contain 'nome_unidade')
+        
+    Returns:
+        bool: True if this is an ECI unit, False otherwise
+    """
+    try:
+        if df_estrutura_wfm is None or df_estrutura_wfm.empty:
+            return False
+        if 'nome_unidade' not in df_estrutura_wfm.columns:
+            logger.warning("is_eci_unit: 'nome_unidade' column not found in df_estrutura_wfm")
+            return False
+        nome_unidade = str(df_estrutura_wfm['nome_unidade'].iloc[0]).strip().upper()
+        return nome_unidade.startswith("ECI")
+    except Exception as e:
+        logger.error(f"Error in is_eci_unit: {str(e)}", exc_info=True)
+        return False
+
+
+def get_sibling_section_name(nome_secao: str) -> Optional[str]:
+    """
+    Get the sibling section name for ECI units.
+    
+    ECI units operate in pairs: if the current section contains "WOMAN", the sibling
+    is "MAN", and vice versa.
+    
+    Note: "WOMAN" must be checked before "MAN" because "WOMAN" contains "MAN".
+    
+    Args:
+        nome_secao: Current section name (e.g. "SHOP OPERATION MAN", "SHOP OPERATION WOMAN")
+        
+    Returns:
+        Optional[str]: The sibling section keyword ("MAN" or "WOMAN"), or None if not identifiable
+    """
+    try:
+        nome_upper = str(nome_secao).strip().upper()
+        # WOMAN must be checked first because "WOMAN" contains "MAN"
+        if "WOMAN" in nome_upper:
+            return "MAN"
+        elif "MAN" in nome_upper:
+            return "WOMAN"
+        else:
+            logger.warning(f"get_sibling_section_name: Could not identify sibling for section '{nome_secao}'")
+            return None
+    except Exception as e:
+        logger.error(f"Error in get_sibling_section_name: {str(e)}", exc_info=True)
+        return None

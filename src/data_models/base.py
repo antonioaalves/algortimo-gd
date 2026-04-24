@@ -37,6 +37,8 @@ from src.data_models.functions.data_treatment_functions import (
     create_df_estimativas,
     add_pessoa_obj_whole_day,
     treat_df_orcamento,
+    apply_compensatory_sched_types,
+    build_compensatory_output,
 )
 from src.data_models.validations.load_process_data_validations import (
     validate_posto_id,
@@ -112,6 +114,7 @@ class BaseDescansosDataModel(ABC):
             # Get current_posto_id from auxiliary_data
             try:
                 posto_id = self.auxiliary_data['current_posto_id']
+                df_estrutura_wfm = self.auxiliary_data['df_estrutura_wfm'].copy()
                 self.logger.info(f"Loaded information from auxiliary_data into posto_id: {posto_id}")
             except Exception as e:
                 self.logger.error(f"Error getting posto_id from auxiliary_data: {e}", exc_info=True)
@@ -176,21 +179,6 @@ class BaseDescansosDataModel(ABC):
                 return False, "errSubproc", str(e)
 
             try:
-                self.logger.info("Loading df_estrutura_wfm from data manager")
-                # Estrutura wfm information
-                query_path = _config.paths.sql_auxiliary_paths.get('df_estrutura_wfm', '')
-                if query_path == '':
-                    self.logger.warning("df_estrutura_wfm query path not found in config")
-                df_estrutura_wfm = data_manager.load_data(
-                    'df_estrutura_wfm', 
-                    query_file=query_path
-                )
-                self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_estrutura_wfm: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
-
-            try:
                 self.logger.info("Getting df_feriados from auxiliary_data (already loaded and treated)")
                 # Use already-loaded and treated df_feriados from auxiliary_data
                 df_feriados = self.auxiliary_data.get('df_feriados', pd.DataFrame())
@@ -200,23 +188,6 @@ class BaseDescansosDataModel(ABC):
                     self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error getting df_feriados from auxiliary_data: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
-
-            try:
-                self.logger.info("Loading df_faixa_horario from data manager")
-                # faixa horario information
-                # Note: Could filter by fk_secao in query if secao_id is available at this point
-                # Currently filtering after load for flexibility (secao_id comes from auxiliary_data)
-                query_path = _config.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
-                if query_path == '':
-                    self.logger.warning("df_faixa_horario query path not found in config")
-                df_faixa_horario = data_manager.load_data(
-                    'df_faixa_horario',
-                    query_file=query_path
-                )
-                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error loading df_faixa_horario: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
             try:
@@ -245,6 +216,25 @@ class BaseDescansosDataModel(ABC):
                 self.logger.error(f"Closed days treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
 
+            # df_faixa_horario from get_df_faixa_horario (df_orcamento + optional df_faixa_secao fallback from load_process_data)
+            try:
+                df_faixa_secao = self.auxiliary_data.get('df_faixa_secao', pd.DataFrame())
+                if df_faixa_secao.empty:
+                    self.logger.info("df_faixa_secao not in auxiliary_data or empty; get_df_faixa_horario will use internal fallback if needed")
+                success, df_faixa_horario, error_msg = get_df_faixa_horario(
+                    df_orcamento=df_orcamento,
+                    df_turnos=df_turnos,
+                    use_case=1,
+                    df_faixa_secao=df_faixa_secao if not df_faixa_secao.empty else None,
+                )
+                if not success:
+                    self.logger.error(f"Failed to get df_faixa_horario: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
+            except Exception as e:
+                self.logger.error(f"Error getting df_faixa_horario: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
             try:
                 self.logger.info("Loading df_granularidade from data manager")
                 # granularidade information
@@ -271,7 +261,6 @@ class BaseDescansosDataModel(ABC):
                 # TODO: save the dataframes if they are needed elsewhere, if not let them die here
                 self.raw_data['df_estimativas'] = df_estimativas.copy()
                 self.auxiliary_data['df_turnos'] = df_turnos.copy()
-                self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_faixa_horario'] = df_faixa_horario.copy()
                 self.auxiliary_data['df_orcamento'] = df_orcamento.copy()
                 self.auxiliary_data['df_granularidade'] = df_granularidade.copy()
@@ -408,12 +397,13 @@ class BaseDescansosDataModel(ABC):
             
             try:
                 self.logger.info("Loading DataFrames from existing data")
-                # Get DataFrames from existing data
+                # Get DataFrames from existing data (df_faixa_horario was computed in load_estimativas_info)
                 df_turnos = self.auxiliary_data['df_turnos'].copy()
                 df_feriados = self.auxiliary_data['df_feriados'].copy()
                 df_orcamento = self.auxiliary_data['df_orcamento'].copy()  # This is dfGranularidade equivalent - TODO: check if this is needed
+                df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
                 
-                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}")
+                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}, df_faixa_horario: {df_faixa_horario.shape}")
             except KeyError as e:
                 self.logger.error(f"Missing required DataFrame: {e}", exc_info=True)
                 return False, "", ""
@@ -421,21 +411,7 @@ class BaseDescansosDataModel(ABC):
                 self.logger.error(f"Error loading DataFrames: {e}", exc_info=True)
                 return False, "", ""
             
-            # Get shift boundary times from df_turnos (mode or average across section)
-            try:
-                # TODO: add helper function to get the df with faixa start and end time, ponto_medio and limite_superior_manha, limite_inferior_tarde
-                success, df_faixa_horario, error_msg = get_df_faixa_horario(
-                    df_orcamento=df_orcamento, 
-                    df_turnos=df_turnos, 
-                    use_case=1
-                )
-                if not success:
-                    self.logger.error(f"Failed to get df_faixa_horario: {error_msg}")
-                    return False, "errSubproc", error_msg
-                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
-            except Exception as e:
-                self.logger.error(f"Error getting df_faixa_horario: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+            # df_faixa_horario already in auxiliary_data (computed in load_estimativas_info with df_faixa_secao fallback)
 
             # Create df_estimativas from df_orcamento by aggregating per day/shift
             # M shift: hora_inicio_faixa <= hora_ini < limite_superior_manha
@@ -651,6 +627,10 @@ class BaseDescansosDataModel(ABC):
 
                 self.rare_data['df_results'] = results.get('core_results', {}).get('formatted_schedule', pd.DataFrame())
                 #self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
+
+                # STRSOL-1372: Store compensatory dict from solver for sched_type/sched_subtype override
+                # TODO STRSOL-1372: Confirm the exact key path in the solver results dict
+                self.rare_data['compensatory_dict'] = results.get('core_results', {}).get('feriados_domingos_compensacao', {})
                 
                 # Save CSV file for debugging (using config manager if available)
                 try:
@@ -838,6 +818,24 @@ class BaseDescansosDataModel(ABC):
 
             self.logger.info("Converting types out")
             final_df = convert_types_out(pd.DataFrame(final_df))
+
+            # STRSOL-1372: Override sched_type/sched_subtype for compensatory day-off rows
+            # using rule-defined REST_DAY_TYPE/REST_DAY_SUBTYPE from df_process_rules
+            compensatory_dict = self.rare_data.get('compensatory_dict', {})
+            df_process_rules = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
+            df_pro_emp_mov = self.algorithm_treatment_params.get('df_pro_emp_mov', pd.DataFrame())
+            if compensatory_dict:
+                date_col = 'data' if 'data' in final_df.columns else 'date'
+                self.logger.info("Applying compensatory sched_type/sched_subtype overrides")
+                final_df = apply_compensatory_sched_types(
+                    final_df=final_df,
+                    compensatory_dict=compensatory_dict,
+                    df_process_rules=df_process_rules,
+                    df_pro_emp_mov=df_pro_emp_mov,
+                    employee_col='colaborador',
+                    date_col=date_col,
+                )
+
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             # Drop columns that exist (matricula_int may not exist if merge used employee_id)
             # Keep matricula for insertion - we'll create colaborador from it
@@ -875,6 +873,30 @@ class BaseDescansosDataModel(ABC):
             self.logger.info("format_results completed successfully. Storing final_df in formatted_data.")
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             self.formatted_data['df_final'] = final_df.copy()
+
+            # STRSOL-1372: Build compensatory output (O/D rows for INT_EMP_PROCESS_MOV)
+            compensatory_dict = self.rare_data.get('compensatory_dict', {})
+            process_id = self.external_call_data.get("current_process_id", "")
+            df_process_rules_raw = self.auxiliary_data.get('df_process_rules_raw', pd.DataFrame())
+            df_pro_emp_mov_raw = self.auxiliary_data.get('df_pro_emp_mov_raw', pd.DataFrame())
+            df_process_rules_merged = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
+            if compensatory_dict:
+                self.logger.info("Building compensatory output from solver results")
+                success, df_compensatory, error_msg = build_compensatory_output(
+                    compensatory_dict=compensatory_dict,
+                    process_id=process_id,
+                    df_process_rules_raw=df_process_rules_raw,
+                    df_pro_emp_mov=df_pro_emp_mov_raw,
+                    df_process_rules_merged=df_process_rules_merged,
+                )
+                if success and not df_compensatory.empty:
+                    self.formatted_data['df_compensatory'] = df_compensatory.copy()
+                    self.logger.info(f"Compensatory output stored: {len(df_compensatory)} rows")
+                elif not success:
+                    self.logger.warning(f"build_compensatory_output failed: {error_msg}")
+                else:
+                    self.logger.info("No compensatory output rows generated")
+
             return True            
         except Exception as e:
             self.logger.error(f"Error performing format_results: {str(e)}", exc_info=True) 
@@ -933,10 +955,56 @@ class BaseDescansosDataModel(ABC):
                     self.logger.error("Error inserting results")
                     return False
                 self.logger.info("Results inserted successfully")
-                return True
             except Exception as e:
                 self.logger.error(f"Error inserting results with bulk_insert_with_query: {str(e)}", exc_info=True)
                 return False
+
+            # STRSOL-1372: Insert compensatory output (O/D rows) into INT_EMP_PROCESS_MOV
+            if 'df_compensatory' in self.formatted_data:
+                df_compensatory = self.formatted_data['df_compensatory'].copy()
+                if not df_compensatory.empty:
+                    try:
+                        self.logger.info(f"Inserting compensatory results ({len(df_compensatory)} rows)")
+                        df_compensatory['SCHEDULE_DAY'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY']).dt.strftime('%Y-%m-%d')
+                        df_compensatory['SCHEDULE_DAY_REF'] = pd.to_datetime(df_compensatory['SCHEDULE_DAY_REF'], errors='coerce').dt.strftime('%Y-%m-%d')
+                        df_compensatory['SCHEDULE_DAY_REF'] = df_compensatory['SCHEDULE_DAY_REF'].where(
+                            df_compensatory['SCHEDULE_DAY_REF'].notna(), None
+                        )
+                        df_compensatory['CREATE_USER'] = 'WFM'
+                        df_compensatory['CREATE_DATE'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        df_compensatory = df_compensatory.rename(columns={
+                            'PROCESS_ID': 'process_id',
+                            'EMPLOYEE_ID': 'employee_id',
+                            'SCHEDULE_DAY': 'schedule_day',
+                            'SCHEDULE_DAY_REF': 'schedule_day_ref',
+                            'RULE_HEAD_ID': 'rule_head_id',
+                            'RULE_ID': 'rule_id',
+                            'RULE_CODE': 'rule_code',
+                            'RULE_FIELD_ID': 'rule_field_id',
+                            'FIELD_CODE': 'field_code',
+                            'VALUE_OPT1': 'value_opt1',
+                            'CREATE_USER': 'create_user',
+                            'CREATE_DATE': 'create_date',
+                        })
+                        df_compensatory = df_compensatory[['process_id', 'employee_id', 'schedule_day',
+                                                           'schedule_day_ref', 'rule_head_id', 'rule_id',
+                                                           'rule_code', 'rule_field_id', 'field_code',
+                                                           'value_opt1', 'create_user', 'create_date']]
+
+                        compensatory_query_path = self.config_manager.paths.sql_processing_paths['insert_compensatory_results_df']
+                        valid_compensatory = bulk_insert_with_query(
+                            data_manager=data_manager,
+                            data=df_compensatory,
+                            query_file=compensatory_query_path,
+                        )
+                        if not valid_compensatory:
+                            self.logger.warning("Error inserting compensatory results")
+                        else:
+                            self.logger.info("Compensatory results inserted successfully")
+                    except Exception as e:
+                        self.logger.warning(f"Error inserting compensatory results: {str(e)}", exc_info=True)
+
+            return True
 
         except Exception as e:
             self.logger.error(f"Error performing insert_results from data manager: {str(e)}", exc_info=True)
@@ -952,4 +1020,4 @@ class BaseDescansosDataModel(ABC):
             return True
         except Exception as e:
             self.logger.error(f"Error validating insert_results from data manager: {str(e)}")
-            return False                    
+            return False

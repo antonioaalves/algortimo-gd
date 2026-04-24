@@ -25,11 +25,15 @@ from src.data_models.functions.helper_functions import (
     get_employees_id_90_list,
     get_matriculas_for_employee_id,
     get_employee_id_matriculas_map_dict,
+    get_df_estrutura_wfm_info,
     create_employee_query_string,
     count_holidays_in_period,
     count_sundays_in_period,
     count_open_holidays,
-    convert_fields_to_int
+    convert_fields_to_int,
+    is_eci_unit,
+    get_sibling_section_name,
+    treat_df_faixa_secao_to_long,
 )
 from src.data_models.functions.data_treatment_functions import (
     separate_df_ciclos_completos_folgas_ciclos,
@@ -70,6 +74,12 @@ from src.data_models.functions.data_treatment_functions import (
     handle_employee_edge_cases,
     adjust_horario_for_admission_date,
     calculate_and_merge_allocated_employees,
+    treat_df_disponibilidade,
+    restrict_turnos_by_disponibilidade,
+    treat_df_process_rules,
+    add_process_rules_to_df_contratos,
+    treat_df_pro_emp_mov,
+    build_compensatory_output,
 )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.validations.load_process_data_validations import (
@@ -86,6 +96,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_df_folgas_ciclos,
     validate_valid_emp_info,
     validate_num_sundays_year,
+    validate_df_estrutura_wfm,
 )
 from src.data_models.validations.func_inicializa_validations import (
     validate_df_calendario_structure,
@@ -293,6 +304,86 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error("Invalid valid_emp info")
                 return False, "errSubproc", "Invalid valid_emp info"
 
+            # df_estrutura_wfm query and get info to store it in 
+            try:
+                df_estrutura_wfm = data_manager.load_data(
+                    entity='df_estrutura_wfm',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_estrutura_wfm'],
+                    secao_id=secao_id
+                )
+                self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
+            except Exception as e:
+                self.logger.error("")
+                return False, "", ""
+
+            if not validate_df_estrutura_wfm(df_estrutura_wfm):
+                self.logger.error("")
+                return False, "", ""
+
+            nome_pais = get_df_estrutura_wfm_info(df_estrutura_wfm)
+
+            # ECI Unit Detection: check if this is an ECI unit and load sibling section data
+            eci_flag = is_eci_unit(df_estrutura_wfm)
+            df_eci_section_results = pd.DataFrame()  # Empty by default (non-ECI path)
+            eci_sibling_results_flag = False  # Set True only when ECI sibling section has results (see below)
+
+            if eci_flag:
+                nome_secao = str(df_estrutura_wfm['nome_secao'].iloc[0])
+                sibling_section_name = get_sibling_section_name(nome_secao)
+                self.logger.info(f"ECI unit detected. Current section: '{nome_secao}', sibling section keyword: '{sibling_section_name}'")
+
+                if sibling_section_name:
+                    try:
+                        # Step 1: Resolve sibling section ID
+                        df_sibling_section = data_manager.load_data(
+                            entity='df_eci_sibling_section',
+                            query_file=self.config_manager.paths.sql_auxiliary_paths['df_eci_sibling_section'],
+                            unit_id="'" + str(unit_id) + "'",
+                            sibling_section_name="'" + sibling_section_name + "'"
+                        )
+                        self.logger.info(f"df_sibling_section shape (rows {df_sibling_section.shape[0]}, columns {df_sibling_section.shape[1]}): {df_sibling_section.columns.tolist()}")
+
+                        if not df_sibling_section.empty:
+                            sibling_secao_id = df_sibling_section['fk_secao'].iloc[0]
+                            self.logger.info(f"Sibling section resolved: secao_id={sibling_secao_id}, nome='{df_sibling_section['nome_secao'].iloc[0]}'")
+
+                            # Step 2: Load sibling section employees from view
+                            df_eci_employees = data_manager.load_data(
+                                entity='df_eci_section_employees',
+                                query_file=self.config_manager.paths.sql_auxiliary_paths['df_eci_section_employees'],
+                                secao_id="'" + str(sibling_secao_id) + "'"
+                            )
+                            self.logger.info(f"df_eci_employees shape (rows {df_eci_employees.shape[0]}, columns {df_eci_employees.shape[1]}): {df_eci_employees.columns.tolist()}")
+                            
+                            # Flag if we have results from the sibling section
+                            eci_sibling_results_flag = True if not df_eci_employees.empty or len(df_eci_employees) > 0 else False    
+
+                            if not df_eci_employees.empty:
+                                # Step 3: Load sibling section schedule results using queryGetCoreSchedule
+                                eci_employee_ids = df_eci_employees['employee_id'].tolist()
+                                start_date_temp = self.external_call_data.get('start_date', '')
+                                end_date_temp = self.external_call_data.get('end_date', '')
+                                
+                                df_eci_section_results = data_manager.load_data(
+                                    entity='df_eci_section_results',
+                                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_calendario_passado'],
+                                    start_date=start_date_temp,
+                                    end_date=end_date_temp,
+                                    colabs=create_employee_query_string(eci_employee_ids)
+                                )
+                                self.logger.info(f"df_eci_section_results shape (rows {df_eci_section_results.shape[0]}, columns {df_eci_section_results.shape[1]}): {df_eci_section_results.columns.tolist()}")
+                            else:
+                                self.logger.info("No employees found in sibling ECI section - proceeding with empty df_eci_section_results")
+                        else:
+                            self.logger.warning(f"Could not find sibling section for unit_id={unit_id} with name containing '{sibling_section_name}'")
+                    except Exception as e:
+                        self.logger.warning(f"Error loading ECI sibling section data: {e}. Proceeding with empty df_eci_section_results")
+                        df_eci_section_results = pd.DataFrame()
+                else:
+                    self.logger.warning(f"Could not determine sibling section for '{nome_secao}' - proceeding with empty df_eci_section_results")
+            else:
+                self.logger.info("Non-ECI unit detected - skipping sibling section data loading")
+
             # Get start and end date
             start_date = self.external_call_data.get('start_date', '')
             end_date = self.external_call_data.get('end_date', '')
@@ -493,6 +584,34 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"No closed days found in the specified date range - proceeding with empty DataFrame")
                 # Empty df_closed_days is valid - it means no closed days in the period
 
+            # Load df_faixa_secao (wide from queryGetEscFaixaHorario), transform to long, for use as fallback in get_df_faixa_horario
+            try:
+                self.logger.info("Loading df_faixa_secao from data manager (queryGetEscFaixaHorario)")
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_faixa_horario', '')
+                if query_path:
+                    start_date_quoted = "'" + first_day_passado + "'"
+                    end_date_quoted = "'" + last_day_passado + "'"
+                    df_faixa_secao_wide = data_manager.load_data(
+                        'df_faixa_secao',
+                        query_file=query_path,
+                        secao_id=secao_id,
+                        start_date=start_date_quoted,
+                        end_date=end_date_quoted,
+                    )
+                    self.logger.info(f"df_faixa_secao (wide) shape: {df_faixa_secao_wide.shape[0]} rows, {df_faixa_secao_wide.shape[1]} cols")
+                    success, df_faixa_secao, error_msg = treat_df_faixa_secao_to_long(df_faixa_secao_wide)
+                    if success:
+                        self.logger.info(f"df_faixa_secao (long) shape: {df_faixa_secao.shape[0]} rows")
+                    else:
+                        self.logger.warning(f"treat_df_faixa_secao_to_long failed: {error_msg}; df_faixa_secao will be empty")
+                        df_faixa_secao = pd.DataFrame()
+                else:
+                    self.logger.warning("df_faixa_horario query path not found; df_faixa_secao will be empty")
+                    df_faixa_secao = pd.DataFrame()
+            except Exception as e:
+                self.logger.warning(f"Error loading or treating df_faixa_secao: {e}; proceeding with empty df_faixa_secao", exc_info=True)
+                df_faixa_secao = pd.DataFrame()
+
             # Load global parameters - Very important!! This could be done with params_lq query most probably
             try:
                 self.logger.info(f"Loading parameters from data manager")
@@ -533,6 +652,47 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"admissao_proporcional is not a valid value: {parameters_cfg}.")
                 return False, "errSubproc", "admissao_proporcional is not a valid value"
 
+            # STRSOL-1372: Load process labor rules (compensatory time-off rules)
+            df_process_rules = pd.DataFrame()
+            df_process_rules_raw = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_process_rules from data manager")
+                df_process_rules = data_manager.load_data(
+                    'df_process_rules',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_process_rules'],
+                    process_id="'" + str(self.external_call_data['current_process_id']) + "'"
+                )
+                self.logger.info(f"df_process_rules shape (rows {df_process_rules.shape[0]}, columns {df_process_rules.shape[1]}): {df_process_rules.columns.tolist()}")
+                df_process_rules_raw = df_process_rules.copy()
+
+                success, df_process_rules, error_msg = treat_df_process_rules(
+                    df_process_rules,
+                    first_date=first_year_date,
+                    last_date=last_year_date,
+                )
+                if not success:
+                    self.logger.warning(f"df_process_rules treatment failed: {error_msg} - proceeding with empty DataFrame")
+                    df_process_rules = pd.DataFrame()
+                else:
+                    success, df_process_rules, error_msg = add_date_related_columns(
+                        df=df_process_rules,
+                        date_col='schedule_day',
+                        add_id_col=False,
+                        use_case=1,
+                        main_year=main_year,
+                        first_date=first_day_passado,
+                        last_date=last_day_passado
+                    )
+                    if not success:
+                        self.logger.warning(f"df_process_rules add_date_related_columns failed: {error_msg} - proceeding with empty DataFrame")
+                        df_process_rules = pd.DataFrame()
+                    else:
+                        self.logger.info(f"df_process_rules after date columns: shape {df_process_rules.shape}, columns {df_process_rules.columns.tolist()}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_process_rules: {e} - proceeding with empty DataFrame")
+                df_process_rules = pd.DataFrame()
+                df_process_rules_raw = pd.DataFrame()
+
             # Copy the dataframes into the apropriate dict
             try:
                 self.logger.info(f"Copying dataframes into the apropriate dict")
@@ -540,10 +700,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
+                self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
                 self.auxiliary_data['df_params'] = df_params.copy()
                 self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_closed_days'] = df_closed_days.copy()
+                self.auxiliary_data['df_faixa_secao'] = df_faixa_secao.copy()
                 self.auxiliary_data['df_mpd_valid_employees'] = df_mpd_valid_employees.copy()
                 self.auxiliary_data['df_fk_colaborador_matricula'] = df_fk_colaborador_matricula.copy()
                 self.auxiliary_data['unit_id'] = unit_id 
@@ -559,14 +721,21 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['employees_id_by_posto_dict'] = employees_id_by_posto_dict
                 self.auxiliary_data['employee_id_matriculas_map'] = employee_id_matriculas_map.copy()
                 self.auxiliary_data['case_type'] = case_type
+                self.auxiliary_data['is_eci_unit'] = eci_flag
+                self.auxiliary_data['df_eci_section_results'] = df_eci_section_results.copy()
                 self.auxiliary_data['num_sundays_year'] = num_sundays_year
                 self.auxiliary_data['num_feriados_abertos'] = num_feriados_abertos
                 self.auxiliary_data['num_feriados_fechados'] = num_feriados_fechados
+                self.auxiliary_data['df_process_rules'] = df_process_rules.copy()
+                self.auxiliary_data['df_process_rules_raw'] = df_process_rules_raw.copy()
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
                 self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
                 self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
+                self.algorithm_treatment_params['nome_pais'] = nome_pais
+                self.algorithm_treatment_params['eci_flag'] = eci_flag
+                self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag
 
                 self.logger.info(f"algorithm_treatment_params: {self.algorithm_treatment_params}")
 
@@ -739,6 +908,50 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_contratos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
+            # Load df_disponibilidade (employee availability restrictions)
+            try:
+                self.logger.info("Loading df_disponibilidade from data manager")
+                df_disponibilidade = data_manager.load_data(
+                    entity='df_disponibilidade',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_disponibilidade'),
+                    process_id="'" + str(process_id) + "'",
+                    start_date=first_date_passado,
+                    end_date=last_date_passado,
+                    colabs_id=create_employee_query_string(past_employees_id_list)
+                )
+                if df_disponibilidade.empty:
+                    self.logger.info("df_disponibilidade is empty - no availability restrictions found")
+                else:
+                    self.logger.info(f"df_disponibilidade shape (rows {df_disponibilidade.shape[0]}, columns {df_disponibilidade.shape[1]}): {df_disponibilidade.columns.tolist()}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_disponibilidade: {e} - proceeding without availability restrictions")
+                df_disponibilidade = pd.DataFrame()
+
+            # Treat df_disponibilidade if not empty
+            if not df_disponibilidade.empty:
+                try:
+                    # Extract employee limits from df_colaborador for availability treatment
+                    limit_columns = ['employee_id', 'matricula', 'limite_superior_manha', 'limite_inferior_tarde']
+                    available_limit_columns = [col for col in limit_columns if col in df_colaborador.columns]
+                    
+                    if 'employee_id' in available_limit_columns:
+                        df_colaborador_limits = df_colaborador[available_limit_columns].copy()
+                        self.logger.info(f"Extracted employee limits for df_disponibilidade treatment: {len(df_colaborador_limits)} employees")
+                        
+                        success, df_disponibilidade, error_msg = treat_df_disponibilidade(
+                            df_disponibilidade=df_disponibilidade,
+                            df_colaborador_limits=df_colaborador_limits
+                        )
+                        if not success:
+                            self.logger.warning(f"df_disponibilidade treatment failed: {error_msg} - proceeding without availability restrictions")
+                            df_disponibilidade = pd.DataFrame()
+                    else:
+                        self.logger.warning("employee_id column not found in df_colaborador - skipping df_disponibilidade treatment")
+                        df_disponibilidade = pd.DataFrame()
+                except Exception as e:
+                    self.logger.warning(f"Error treating df_disponibilidade: {e} - proceeding without availability restrictions")
+                    df_disponibilidade = pd.DataFrame()
+
             success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador=df_colaborador, employees_id_list=past_employees_id_list)
             if not success:
                 self.logger.error(f"Colaborador treatment failed: {error_msg}")
@@ -763,12 +976,87 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"past_employees_id_list is empty: {past_employees_id_list}")
                 return False, "errSubproc", "past_employees_id_list is empty"
 
+            # STRSOL-1372: Merge process rules with contracts for algorithm consumption
+            df_process_rules = self.auxiliary_data.get('df_process_rules', pd.DataFrame())
+            df_process_rules_merged = pd.DataFrame()
+            try:
+                if not df_process_rules.empty:
+                    self.logger.info("Merging process rules with df_contratos")
+                    success, df_process_rules_merged, error_msg = add_process_rules_to_df_contratos(
+                        df_process_rules=df_process_rules,
+                        df_contratos=df_contratos
+                    )
+                    if not success:
+                        self.logger.warning(f"add_process_rules_to_df_contratos failed: {error_msg} - proceeding with empty DataFrame")
+                        df_process_rules_merged = pd.DataFrame()
+                    else:
+                        self.logger.info(f"df_process_rules_merged shape: {df_process_rules_merged.shape}")
+                else:
+                    self.logger.info("df_process_rules is empty - skipping rules merge")
+            except Exception as e:
+                self.logger.warning(f"Error merging process rules with contracts: {e} - proceeding with empty DataFrame")
+                df_process_rules_merged = pd.DataFrame()
+
+            # STRSOL-1372: Load pending compensatory movements (CORE_PRO_EMP_MOV)
+            df_pro_emp_mov = pd.DataFrame()
+            df_pro_emp_mov_raw = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_pro_emp_mov from data manager")
+                df_pro_emp_mov_raw = data_manager.load_data(
+                    'df_pro_emp_mov',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_pro_emp_mov'],
+                    process_id="'" + str(process_id) + "'",
+                    colabs_id=create_employee_query_string(past_employees_id_list)
+                )
+                self.logger.info(f"df_pro_emp_mov shape (rows {df_pro_emp_mov_raw.shape[0]}, columns {df_pro_emp_mov_raw.shape[1]}): {df_pro_emp_mov_raw.columns.tolist()}")
+
+                df_process_rules_raw = self.auxiliary_data.get('df_process_rules_raw', pd.DataFrame())
+                success, df_pro_emp_mov, error_msg = treat_df_pro_emp_mov(
+                    df_pro_emp_mov=df_pro_emp_mov_raw,
+                    df_process_rules=df_process_rules,
+                    df_process_rules_raw=df_process_rules_raw,
+                )
+                if not success:
+                    self.logger.warning(f"df_pro_emp_mov treatment failed: {error_msg} - proceeding with empty DataFrame")
+                    df_pro_emp_mov = pd.DataFrame()
+                elif df_pro_emp_mov.empty:
+                    self.logger.info("df_pro_emp_mov is empty after treatment - no pending movements")
+                else:
+                    df_pro_emp_mov['time_off_deadline'] = pd.to_numeric(df_pro_emp_mov['time_off_deadline'], errors='coerce')
+                    missing_deadline = df_pro_emp_mov['time_off_deadline'].isna()
+                    if missing_deadline.any():
+                        self.logger.warning(f"Dropping {missing_deadline.sum()} df_pro_emp_mov rows with no time_off_deadline (no matching rule)")
+                        df_pro_emp_mov = df_pro_emp_mov[~missing_deadline].copy()
+                    df_pro_emp_mov['time_off_deadline'] = df_pro_emp_mov['time_off_deadline'].astype(int)
+                    df_pro_emp_mov['deadline_date'] = pd.to_datetime(df_pro_emp_mov['schedule_day']) + pd.to_timedelta(
+                        df_pro_emp_mov['time_off_deadline'], unit='D'
+                    )
+                    success, df_pro_emp_mov, error_msg = add_date_related_columns(
+                        df=df_pro_emp_mov,
+                        date_col='schedule_day',
+                        add_id_col=False,
+                        use_case=1,
+                        main_year=self.auxiliary_data['main_year'],
+                        first_date=first_date_passado,
+                        last_date=last_date_passado
+                    )
+                    if not success:
+                        self.logger.warning(f"df_pro_emp_mov add_date_related_columns failed: {error_msg} - proceeding with empty DataFrame")
+                        df_pro_emp_mov = pd.DataFrame()
+                    else:
+                        self.logger.info(f"df_pro_emp_mov after date columns: shape {df_pro_emp_mov.shape}, columns {df_pro_emp_mov.columns.tolist()}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_pro_emp_mov: {e} - proceeding with empty DataFrame")
+                df_pro_emp_mov = pd.DataFrame()
+
             # Saving values into memory
             try:
                 self.logger.info(f"Saving df_colaborador in raw_data")
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
+                self.auxiliary_data['df_pro_emp_mov_raw'] = df_pro_emp_mov_raw.copy()
                 self.auxiliary_data['df_contratos'] = df_contratos.copy()
+                self.auxiliary_data['df_disponibilidade'] = df_disponibilidade.copy() if not df_disponibilidade.empty else pd.DataFrame()
                 # TODO: Remove this, not used
                 self.auxiliary_data['num_fer_doms'] = 0
                 # Note: employee_id_matriculas_map and matriculas_list already in auxiliary_data from load_process_data
@@ -779,6 +1067,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Save important information in algorithm_treatment_params
                 self.algorithm_treatment_params['employees_id_list_for_posto'] = employees_id_list_for_posto
                 self.algorithm_treatment_params['employees_id_90_list'] = employees_id_90_list
+                self.algorithm_treatment_params['df_process_rules'] = df_process_rules_merged.copy()
+                self.algorithm_treatment_params['df_pro_emp_mov'] = df_pro_emp_mov.copy()
 
                 self.logger.info(f"load_colaborador_info completed successfully.")
                 return True, "", ""
@@ -921,6 +1211,24 @@ class SalsaDataModel(BaseDescansosDataModel):
                     end_date=last_date_passado
                 )
                 self.logger.info(f"df_ausencias_ferias shape (rows {df_ausencias_ferias.shape[0]}, columns {df_ausencias_ferias.shape[1]}): {df_ausencias_ferias.columns.tolist()}")
+                if not df_ausencias_ferias.empty:
+                    raw_tipo_counts = df_ausencias_ferias['tipo_ausencia'].astype(str).value_counts().to_dict()
+                    self.logger.info(
+                        "df_ausencias_ferias raw summary: tipo_ausencia_counts=%s",
+                        raw_tipo_counts
+                    )
+                    if 'is_holiday' in df_ausencias_ferias.columns:
+                        raw_is_holiday_counts = (
+                            df_ausencias_ferias['is_holiday']
+                            .astype('string')
+                            .fillna('<NULL>')
+                            .value_counts(dropna=False)
+                            .to_dict()
+                        )
+                        self.logger.info(
+                            "df_ausencias_ferias raw summary: is_holiday_counts=%s",
+                            raw_is_holiday_counts
+                        )
 
             except Exception as e:
                 self.logger.error(f"Error loading ausencias_ferias: {e}", exc_info=True)
@@ -931,11 +1239,17 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_ausencias_ferias, error_msg = treat_df_ausencias_ferias(
                     df_ausencias_ferias=df_ausencias_ferias,
                     start_date=start_date_str,
-                    end_date=end_date_str
+                    end_date=end_date_str,
+                    classification_mode='db_is_holiday'
                 )
                 if not success:
                     self.logger.error(f"Ausencias ferias treatment failed: {error_msg}")
                     return False, "errSubproc", error_msg
+                self.logger.info(
+                    "df_ausencias_ferias treated summary: rows=%s, tipo_ausencia_counts=%s",
+                    len(df_ausencias_ferias),
+                    df_ausencias_ferias['tipo_ausencia'].astype(str).value_counts().to_dict() if not df_ausencias_ferias.empty else {}
+                )
             except Exception as e:
                 self.logger.error(f"Error treating ausencias_ferias: {e}", exc_info=True)
                 return False, "errSubproc", "Error treating ausencias_ferias"
@@ -1206,7 +1520,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # Add df_core_pro_emp_horario_det to df_calendario
+                # Add df_folgas_ciclos to df_calendario
                 success, df_calendario, error_msg = add_folgas_ciclos(df_calendario, df_folgas_ciclos)
                 if not success:
                     self.logger.error(f"Adding folgas ciclos failed: {error_msg}")
@@ -1251,6 +1565,17 @@ class SalsaDataModel(BaseDescansosDataModel):
         
                 # Note: Admission date adjustment (Step 6A) moved to func_inicializa
                 # as it requires df_colaborador (cross-dataframe operation)
+                
+                # Apply availability restrictions (df_disponibilidade) to df_calendario
+                df_disponibilidade = self.auxiliary_data.get('df_disponibilidade', pd.DataFrame())
+                success, df_calendario_restricted, msg = restrict_turnos_by_disponibilidade(
+                    df_calendario=df_calendario,
+                    df_disponibilidade=df_disponibilidade
+                )
+                if success:
+                    df_calendario = df_calendario_restricted
+                else:
+                    self.logger.warning(f"Failed to apply availability restrictions: {msg} - proceeding without restrictions")
                 
                 # TODO: Save df_calendario to appropriate location and return success
                 self.logger.info("Calendar transformations completed successfully")
@@ -1486,6 +1811,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Load df_contratos for merging (needed for Step 3I)
                 df_contratos = self.auxiliary_data['df_contratos'].copy()
 
+                # Load ECI sibling section results (empty df if non-ECI)
+                df_eci_section_results = self.auxiliary_data.get('df_eci_section_results', pd.DataFrame()).copy()
+
                 main_year = self.auxiliary_data['main_year']
                 start_date = self.external_call_data.get('start_date')
                 end_date = self.external_call_data.get('end_date')
@@ -1551,18 +1879,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to adjust HORARIO for admission dates: {error_msg}")
                 return False, "errSubproc", error_msg
 
-            # Calculate +H and merge with estimativas (Step 6B/C/D - cross-dataframe operation)
-            # TODO: Change this, param_pessoas_objetivo is not here!!!
+            # Calculate pess_obj, merge ECI allocated employees, and compute diff
             param_pess_obj = self.external_call_data.get('param_pessoas_objetivo', 0.5)
             success, df_estimativas, error_msg = calculate_and_merge_allocated_employees(
                 df_estimativas=df_estimativas,
-                df_calendario=df_calendario,
+                df_eci_section_results=df_eci_section_results,
                 date_col_est='schedule_day',
-                date_col_cal='schedule_day',
                 shift_col_est='turno',
-                shift_col_cal='tipo_turno',
-                employee_col='employee_id',
-                horario_col='horario',
                 param_pess_obj=param_pess_obj
             )
             if not success:
@@ -1585,7 +1908,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.error(f"Error in dataframe date filtering method: {e}", exc_info=True)
                 return False, "", str(e)
-            
+
             # Store processed dataframes in raw_data
             try:
                 self.medium_data['df_colaborador'] = df_colaborador.copy()

@@ -31,10 +31,12 @@ def solve(
     work_day_hours: Dict[int, Dict[int, int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
+    h_plus: Dict[int, int],
     contingente_feriados: Dict[int, List[bool]],
     contingente_domingos: Dict[int, List[bool]],
-    holiday_half_day: bool,
-    sunday_half_day: bool,
+    eci_sibling_results_flag: bool,
+    period: List[int],
+    index_to_date: Dict[int, str],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -253,6 +255,7 @@ def solve(
         special_days_worked = {}
         sun = {}
         compensation_days_off = {}
+        feriados_domingos_compensacao = {}
 
         table_data_past = []  # List to store each worker's data as a row
         for w in workers_past:
@@ -340,6 +343,18 @@ def solve(
                 sun[w] = []
                 compensation_days_off[w] = []
 
+                feriados_domingos_compensacao[w] = {
+                    'feriados': {
+                        'ld_given' : [],
+                        'no_compensation' : [],
+                        'worked_before_period' : [],
+                    },
+                    'domingos': {
+                        'ld_given' : [],
+                        'no_compensation' : [],
+                        'worked_before_period' : []
+                    }
+                }
 
                 logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
@@ -364,40 +379,59 @@ def solve(
                     elif day_assignment == 'LQ':
                         lq_count += 1
                     elif day_assignment == 'LD':
-                        compensation_days_off[w].append(d)
-                        ld_count += 1
+                        if period[0] <= d <= period[1]:
+                            compensation_days_off[w].append(index_to_date[d])
+                            ld_count += 1
                     elif day_assignment in ['T']:
-                        if d in special_days:
-                            special_days_worked[w].append(d)
-                            special_days_count += 1
-                        elif d in sundays:
-                            sun[w].append(d)
+                        if 12 <= d <= period[1]:
+                            if d in special_days:
+                                special_days_worked[w].append(index_to_date[d])
+                                special_days_count += 1
+                            elif d in sundays:
+                                sun[w].append(index_to_date[d])
                         time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
-                        if d in special_days:
-                            special_days_worked[w].append(d)
-                            special_days_count += 1
-                        elif d in sundays:
-                            sun[w].append(d)
+                        if 12 <= d <= period[1]:
+                            if d in special_days:
+                                special_days_worked[w].append(index_to_date[d])
+                                special_days_count += 1
+                            elif d in sundays:
+                                sun[w].append(index_to_date[d])
                         time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
-                logger.info(f"{w}: days worked: {special_days_worked[w]}"
-                            f"\n\t\t\t\tcompensation days off: {compensation_days_off[w]}")
-                
+
                 if contingente_feriados:
-                    if contingente_feriados[w] is not None and len(contingente_feriados[w]) > 0:
-                        feriados_compensaçao = [v.Name() for v in contingente_feriados[w] if solver.Value(v) == 1]
-                        if holiday_half_day == True:
-                            for i in special_days_worked[w]:
-                                feriados_compensaçao.append(f"worker_{w}_half_day_for_holiday_{i}")
-                        logger.info(f"feriados e compensaçoes: \n{sorted(feriados_compensaçao)}")
+                    if w in contingente_feriados and len(contingente_feriados[w]) > 0:
+                        for (d, comp_day), assignment_var in contingente_feriados[w].items():
+                            if solver.Value(assignment_var) == 1:
+                                if comp_day > period[1]: 
+                                    day = index_to_date.get(comp_day, comp_day)
+                                    feriados_domingos_compensacao[w]["feriados"]["no_compensation"].append(index_to_date[d])
+                                    if day not in compensation_days_off[w]:
+                                        compensation_days_off[w].append(day)
+                                else:
+                                    if d < period[0]:
+                                        feriados_domingos_compensacao[w]["feriados"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
+                                    feriados_domingos_compensacao[w]["feriados"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 if contingente_domingos:
-                    if contingente_domingos[w] is not None and len(contingente_domingos[w]) > 0:
-                        domingos_compensaçao = [v.Name() for v in contingente_domingos[w] if solver.Value(v) == 1]
-                        if sunday_half_day == True:
-                            for i in sun[w]:
-                                domingos_compensaçao.append(f"worker_{w}_half_day_for_sunday_{i}")
-                        logger.info(f"domingos e compensaçoes: \n{sorted(domingos_compensaçao)}")
+                    if w in contingente_domingos and len(contingente_domingos[w]) > 0:
+                        for (d, comp_day), assignment_var in contingente_domingos[w].items():
+                            if solver.Value(assignment_var) == 1:
+                                if comp_day > period[1]:
+                                    day = index_to_date.get(comp_day, comp_day)
+                                    feriados_domingos_compensacao[w]["domingos"]["no_compensation"].append(index_to_date[d])
+                                    if day not in compensation_days_off[w]:
+                                        compensation_days_off[w].append(day)
+                                else:
+                                    if d < period[0]:
+                                        feriados_domingos_compensacao[w]["domingos"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
+                                    feriados_domingos_compensacao[w]["domingos"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
+
+                logger.info(f"\n\t\tholidays worked      : {len(special_days_worked[w])}, {special_days_worked[w]}"
+                            f"\n\t\tsundays worked       : {len(sun[w])}, {sun[w]}"
+                            f"\n\t\tcompensation days off: {len(compensation_days_off[w])}, {compensation_days_off[w]}\n")
+                logger.info(f"feriados e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['feriados']}")
+                logger.info(f"domingos e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['domingos']}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {
@@ -451,9 +485,16 @@ def solve(
                 df2.loc[len(df2)] = time_worked_T_row
             else:
                 df2 = df.copy()
-
             df2.loc[len(df2)] = time_worked_M_row_after
             df2.loc[len(df2)] = time_worked_T_row_after
+
+            if eci_sibling_results_flag:
+                sister_eci_M = ["Sister_Section_M"] + [h_plus.get((i, 'M'), -1) for i in range(len(days_of_year_sorted))]
+                sister_eci_T = ["Sister_Section_T"] + [h_plus.get((i, 'T'), -1) for i in range(len(days_of_year_sorted))]
+
+                df2.loc[len(df2)] = sister_eci_M
+                df2.loc[len(df2)] = sister_eci_T
+
             df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")
         except Exception as e:
@@ -468,7 +509,7 @@ def solve(
         
         logger.info("[OK] Solver completed successfully")
         df.columns = unique_dates_row
-        return df , results
+        return df , results, feriados_domingos_compensacao
         
     except Exception as e:
         logger.error(f"Error in solver: {str(e)}", exc_info=True)
