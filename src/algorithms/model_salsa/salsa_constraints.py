@@ -693,9 +693,15 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, workin
                             if d1 in days_off:
                                 continue
                             d2 = ordered_days[j]
+                            terms = []
 
-                            if ((w, d1, 'L') in shift or (w, d1, 'LD') in shift) and (w, d2, '-') in shift:
-                                model.Add(shift[(w, d1, 'L')] + shift[(w, d1, 'LD')] + shift[(w, d2, '-')] <= 1)
+                            if (w, d1, 'L') in shift:
+                                terms.append(shift[(w, d1, 'L')])
+                            if (w, d1, 'LD') in shift:
+                                terms.append(shift[(w, d1, 'LD')])
+                            if len(terms) >= 1 and (w, d2, '-') in shift:
+                                model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
+
                 elif worker_admissao < min(days) < worker_demissao:
                     model.Add(empty_shifts == empty_days_week)
                     
@@ -708,8 +714,14 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, workin
                             d2 = ordered_days[j]
                             if d2 in dynamic_empty_days[w]:
                                 continue
-                            if ((w, d1, 'L') in shift or (w, d1, 'LD') in shift) and (w, d2, '-') in shift:
-                                model.Add(shift[(w, d1, 'L')] + shift[(w, d1, 'LD')] + shift[(w, d2, '-')] <= 1)
+                            terms = []
+
+                            if (w, d1, 'L') in shift:
+                                terms.append(shift[(w, d1, 'L')])
+                            if (w, d1, 'LD') in shift:
+                                terms.append(shift[(w, d1, 'LD')])
+                            if len(terms) >= 1 and (w, d2, '-') in shift:
+                                model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
                 else:
                     days_set = set(days) - dynamic_empty_days[w]
                     model.Add(sum(shift[(w, d, '-')] for d in (days_set - set(empty_set[w])) if (w, d, '-') in shift) == 0)
