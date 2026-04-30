@@ -37,6 +37,7 @@ def solve(
     eci_sibling_results_flag: bool,
     period: List[int],
     index_to_date: Dict[int, str],
+    dummy_workers: dict[int, dict[str, int]],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -333,6 +334,13 @@ def solve(
         time_worked_day_T_after = time_worked_day_T.copy()
         for w in workers:
             try:
+                if dummy_workers:
+                    if w in dummy_workers:
+                        logger.info(f"{w} is a dummy worker, skiping")
+                        continue
+                    if w * -1 in dummy_workers:
+                        temp_worker = -w
+                        logger.info(f"{w} changes contract on date {dummy_workers[temp_worker]["change_date"]}")
                 worker_row = [w]  # Start with the worker's name
                 l_count = 0
                 lq_count = 0
