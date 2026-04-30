@@ -170,7 +170,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                 
         else:
             if len(days_off) > 0 or (nbr_absences + nbr_vacations < 2):
-                logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
+                #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
                 continue
             if total > 6:
                 absences, vacations, fixed_days_off, fixed_LQs =  mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), None,6)
