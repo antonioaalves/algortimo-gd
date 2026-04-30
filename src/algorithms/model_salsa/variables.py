@@ -108,7 +108,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         if len(locked_days[w]) > 0:
             logger.info(f"\tDEBUG locked days {sorted(locked_days[w])}\n")
  
-        if contract_type.get(w, 0) <= 4:
+        if contract_type.get(w, 0) <= 4 and w in dynamic_empty:
             fixed_dynamic_empty = dynamic_empty[w]
             logger.info(f"\tDEBUG fixed dynamic empty days {sorted(fixed_dynamic_empty)}\n")
             blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set | fixed_dynamic_empty

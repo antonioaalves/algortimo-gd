@@ -548,7 +548,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                     elif actual_days_in_week < 4:
                         required_free_days = 0
                     else:
-                        if tipo_contrato == 8 and work_days_per_week[w][week - 1] == 6:
+                        if work_days_per_week[w][week - 1] == 6:
                             required_free_days = 1
                         else:
                             required_free_days = 2

@@ -557,9 +557,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
-            if contract_type[w] <= 4:
-                worker_absences[w], vacation_days[w], dynamic_empty[w] = absences_to_empty(worker_absences[w], vacation_days[w], contract_type[w], week_to_days_salsa)
-                empty_days[w], dynamic_empty[w] = fixed_to_dynamic(empty_days[w], dynamic_empty[w], data_admissao[w], data_demissao[w])
 
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
             if not working_days[w]:
@@ -567,6 +564,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
         
         for w in workers:
+            if contract_type[w] <= 4:
+                worker_absences[w], vacation_days[w], dynamic_empty[w] = absences_to_empty(worker_absences[w], vacation_days[w], contract_type[w], week_to_days_salsa)
+                empty_days[w], dynamic_empty[w] = fixed_to_dynamic(empty_days[w], dynamic_empty[w], data_admissao[w], data_demissao[w])
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
