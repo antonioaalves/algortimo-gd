@@ -13,6 +13,7 @@ from src.orquestrador_functions.Classes.Connection.connect import ensure_connect
 import os
 import pandas as pd
 import oracledb as cx_Oracle  # oracledb replaces cx_Oracle
+import oracledb as cx_Oracle  # oracledb replaces cx_Oracle
 def get_process_valid_emp(pathOS, process_id,connection):
     """
     Retrieves valid employees for a given process ID from the database.

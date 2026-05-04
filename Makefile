@@ -2,7 +2,7 @@
 
 PYTHON  ?= python
 PORT    ?= 5000
-VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0)
+VERSION := 1.1-dev
 IMAGE   ?= algoritmo-gd
 
 help: ## Show this help
