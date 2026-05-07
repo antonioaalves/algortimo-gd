@@ -259,7 +259,7 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
                 max_days = work_days_per_week[w][week - 1]
             model.Add(total_shifts <= max_days)
 
-def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days, period):
+def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days, period, dummy_workers, workers_with_dummy):
     #limits maximum continuous working days
     for w in workers:
         for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
@@ -274,7 +274,44 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
             )
             # If all 11 days have a working shift, that would exceed our limit of 10 consecutive days
             model.Add(consecutive_days <= max_days)
-
+    if dummy_workers:
+        for w in workers_with_dummy:
+            dummies = sorted([entry["dummy"] for entry in workers_with_dummy.get(w, [])])
+            for k in range(1, max_days + 1):
+                consecutive_days = sum(
+                    shift[(w, dummy_workers[dummies[0]]["start_date"] - i, s)]
+                    for i in range(k)
+                    for s in working_shift
+                    if (w, dummy_workers[dummies[0]]["start_date"] - i, s) in shift
+                ) + sum(
+                    shift[(dummies[0], dummy_workers[dummies[0]]["start_date"] + j, s)]
+                    for j in range(max_days + 1 - k)
+                    for s in working_shift
+                    if (dummies[0], dummy_workers[dummies[0]]["start_date"] + j, s) in shift)
+                model.Add(consecutive_days <= max_days)
+            lenght_dummies = len(dummies)
+            if lenght_dummies < 2:
+                continue
+            for a in range(lenght_dummies - 1):
+                dummy = dummies[a]
+                dummy_second = dummies[a + 1]
+                if dummy_workers[dummy]["end_date"] == dummy_workers[dummy_second]["start_date"]:
+                    change_date = dummy_workers[dummy]["end_date"]
+                    # We check windows that cross the change boundary:
+                    # some days before change_date (original)
+                    # and some days after (dummy)
+                    for k in range(1, max_days + 1):
+                        consecutive_days = sum(
+                            shift[(dummy, change_date - i, s)]
+                            for i in range(k)
+                            for s in working_shift
+                            if (dummy, change_date - i, s) in shift
+                        ) + sum(
+                            shift[(dummy_second, change_date + j, s)]
+                            for j in range(max_days + 1 - k)
+                            for s in working_shift
+                            if (dummy_second, change_date + j, s) in shift)
+                        model.Add(consecutive_days <= max_days)
 
 def LQ_attribution(model, shift, workers, working_days, c2d, year_range):
     # #constraint for maximum of LD days in a year

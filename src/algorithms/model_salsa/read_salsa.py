@@ -385,7 +385,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         forced_work_days = {}
         dynamic_empty = {}
         dummy_workers = {}
-       
+        workers_with_dummy = {}
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
             #logger.info(worker_calendar.to_string(index=False))
@@ -905,6 +905,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "sunday_past_lds": sunday_past_lds,
             "dynamic_empty": dynamic_empty,
             "dummy_workers": dummy_workers,
+            "workers_with_dummy": workers_with_dummy,
             }
         
     except Exception as e:

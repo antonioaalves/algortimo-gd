@@ -37,7 +37,8 @@ def solve(
     eci_sibling_results_flag: bool,
     period: List[int],
     index_to_date: Dict[int, str],
-    dummy_workers: dict[int, dict[str, int]],
+    dummy_workers: Dict[int, Dict[str, int]],
+    worker_with_dummy: Dict[int, tuple[int, int]],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -338,9 +339,8 @@ def solve(
                     if w in dummy_workers:
                         logger.info(f"{w} is a dummy worker, skiping")
                         continue
-                    if w * -1 in dummy_workers:
-                        temp_worker = -w
-                        logger.info(f"{w} changes contract on date {dummy_workers[temp_worker]["change_date"]}")
+                    if w in worker_with_dummy:
+                        logger.info(f"{w} changes contract  {len(worker_with_dummy[w])} times.")
                 worker_row = [w]  # Start with the worker's name
                 l_count = 0
                 lq_count = 0

@@ -291,6 +291,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             sunday_past_lds = adapted_data["sunday_past_lds"]
             dynamic_empty = adapted_data["dynamic_empty"]
             dummy_workers = adapted_data["dummy_workers"]
+            workers_with_dummy = adapted_data["workers_with_dummy"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -399,7 +400,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Maximum continuous working days constraint
                 if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: maximum_continuous_working_days")
-                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period, dummy_workers)
+                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period, dummy_workers, dummy_workers, workers_with_dummy)
                 else:
                     self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
                 
