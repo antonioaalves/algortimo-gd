@@ -20,7 +20,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
     free_days_special_days, shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
     LQ_attribution, working_day_shifts, salsa_2_consecutive_free_days, salsa_2_day_quality_weekend,
     salsa_saturday_L_constraint, salsa_2_free_days_week, first_day_not_free, free_days_special_days, one_colab_min_constraint,
-    global_compensation_days, dynamic_empty_day
+    global_compensation_days, dynamic_empty_day, free_days_sundays, free_days_saturdays
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
 from src.algorithms.solver.solver import solve
@@ -250,6 +250,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             workers = adapted_data['workers']
             contract_type = adapted_data['contract_type']
             total_l_dom = adapted_data['total_l_dom']
+            total_l_sab = adapted_data['total_l_sab']
+            total_l_dom_or_sab = adapted_data['total_l_dom_or_sab']
             c2d = adapted_data['c2d']
             pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
@@ -440,9 +442,21 @@ class SalsaAlgorithm(BaseAlgorithm):
     
                 if constraint_selections.get("free_days_special_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: free_days_special_days")
-                    free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range)
+                    free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom_or_sab, year_range)
                 else:
                     self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
+
+                if constraint_selections.get("free_days_sundays", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: free_days_sundays")
+                    free_days_sundays(model, shift, sundays, workers, working_days, total_l_dom, year_range)
+                else:
+                    self.logger.warning("Skipping constraint: free_days_sundays (disabled in config)")
+                
+                if constraint_selections.get("free_days_saturdays", {}).get("enabled", True):
+                    self.logger.info("Applying constraint: free_days_saturdays")
+                    free_days_saturdays(model, shift, sundays, workers, working_days, total_l_sab, year_range)
+                else:
+                    self.logger.warning("Skipping constraint: free_days_saturdays (disabled in config)")
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")

@@ -95,6 +95,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     days_of_year_real= [d for d in days_of_year if year_range[0] <= d <= year_range[1] and d not in closed_holidays]
     days_of_year_working= [d for d in days_of_year if d not in closed_holidays]
     sundays = [d for d in sundays if d not in closed_holidays]
+    saturdays = [d - 1 for d in sundays if d - 1 not in closed_holidays]
     workers_not_complete = [w for w in workers if w not in workers_complete_cycle]
     if len(workers_not_complete) < 1:
         workers_not_complete_exist = False
@@ -662,7 +663,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         if percentage_of_importance_workers>0:
             objective_terms.append(objective_zero_eci * no_workers_weight * 5)
 
-    # 5. Balancing number of free sundays across the workers 
+    # 5.1 Balancing number of free sundays across the workers 
  
     for qi, workers_q in q_groups.items():
     
@@ -695,6 +696,40 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
         
         objective_terms.append(sunday_diff_q * sundays_diff_weight)
+
+    # 5.2 Balancing number of free saturdays across the workers 
+ 
+    for qi, workers_q in q_groups.items():
+    
+        if len(workers_q) <= 1:
+            continue  
+
+        saturdays_per_worker_q = []
+
+        for w in workers_q:
+            saturday_free = sum(
+                shift[(w, d, 'L')]
+                for d in saturdays
+                if (w, d, 'L') in shift and year_range[0] <= d <= year_range[1]
+            )
+            saturdays_per_worker_q.append(saturday_free)
+
+        if not saturdays_per_worker_q:
+            continue    
+
+        
+        max_saturdays_q = model.NewIntVar(0, len(saturdays), f"max_saturdays_q{qi}")
+        min_saturdays_q = model.NewIntVar(0, len(saturdays), f"min_saturdays_q{qi}")
+
+        model.AddMaxEquality(max_saturdays_q, saturdays_per_worker_q)
+        model.AddMinEquality(min_saturdays_q, saturdays_per_worker_q)
+
+        
+        saturday_diff_q = model.NewIntVar(0, len(saturdays), f"saturday_diff_q{qi}")
+        model.Add(saturday_diff_q == max_saturdays_q - min_saturdays_q)
+
+        
+        objective_terms.append(saturday_diff_q * sundays_diff_weight)
 
 
     # 6. Balancing number of free EsLQ across the workers 
@@ -1014,7 +1049,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     #        sunday_difference * total_sunday_imbalance_weight
     #    )
 
-    # 10 Control the periodicity of free Sundays
+    # 10.1 Control the periodicity of free Sundays
     
     excess_free_sundays_per_worker = {}
 
@@ -1061,7 +1096,60 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         model.Add(total_excess_free_sundays == sum(excess_free_sundays_per_worker.values()))
 
         objective_terms.append(total_excess_free_sundays * sunday_imbalance_weight_periodicity)
-       
+    
+    # 10.2 Control the periodicity of free Saturdays
+    
+    excess_free_saturdays_per_worker = {}
+
+    windows = [
+        saturdays[i:i+3]
+        for i in range(len(saturdays) - 2)
+    ]
+
+    if workers_not_complete_exist:
+        all_workers_not_complete = workers_not_complete + workers_past
+        for w in workers_not_complete:
+            window_violations = []
+
+            for idx, window in enumerate(windows):
+                free_saturdays = []
+
+                for d in window:
+                    terms = []
+
+                    if (w, d, 'L') in shift:
+                        terms.append(shift[(w, d, 'L')])
+                    if (w, d, 'LQ') in shift:
+                        terms.append(shift[(w, d, 'LQ')])
+                    if terms.empty:
+                        free = model.NewIntVar(0, 0, f"missing_L_{w}_{d}")
+                    else:
+                        free = terms
+
+                    free_saturdays.append(free)
+
+                total_free = model.NewIntVar(0, 3, f"free_3s_{w}_{idx}")
+                model.Add(total_free == sum(free_saturdays))
+
+                violation = model.NewBoolVar(f"excess_free_saturday_{w}_{idx}")
+                model.Add(total_free >= 2).OnlyEnforceIf(violation)
+                model.Add(total_free <= 1).OnlyEnforceIf(violation.Not())
+
+                window_violations.append(violation)
+
+            total_excess = model.NewIntVar(
+                0, len(window_violations),
+                f"total_excess_free_saturdays_{w}"
+            )
+            model.Add(total_excess == sum(window_violations))
+
+            excess_free_saturdays_per_worker[w] = total_excess
+
+        total_excess_free_saturdays = model.NewIntVar(0, len(saturdays) * len(workers_not_complete),"total_excess_free_saturdays")
+
+        model.Add(total_excess_free_saturdays == sum(excess_free_saturdays_per_worker.values()))
+
+        objective_terms.append(total_excess_free_saturdays * sunday_imbalance_weight_periodicity)
 
     # 11. Balancing LQ's across the year
 
