@@ -265,8 +265,9 @@ class DescansosDataModel(BaseDataModel):
             # Load important info into memory
             try:
                 self.logger.info(f"Loading important info into memory(unit_id, secao_id, posto_id_list, colabs_id_list, main_year)")
-                # Save important this important info to be able to use it on querys
-                unit_id = valid_emp['fk_unidade'].unique()[0]  # Get first (and only) unique value
+                # Save important this important info to be able to use it on querys (unit_id as string for int/str compatibility)
+                raw_unit = valid_emp['fk_unidade'].unique()[0]
+                unit_id = str(raw_unit).strip() if raw_unit is not None else ""
                 secao_id = valid_emp['fk_secao'].unique()[0]   # Get first (and only) unique value
                 posto_id_list = valid_emp['fk_tipo_posto'].unique().tolist()  # Get list of unique values
                 self.logger.info(f"unit_id: {unit_id}, secao_id: {secao_id}, posto_id_list: {posto_id_list} stored in variables")
