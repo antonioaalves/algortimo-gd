@@ -476,19 +476,18 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Setting up SALSA optimization objective")
 
-            optimization_details = salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj, working_days,
-                                                      closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker, 
-                                                      work_day_hours, workers_past, year_range, managers, keyholders, h_plus, eci_sibling_results_flag)
+            salsa_optimization(model, days_of_year, workers_complete, workers_complete_cycle, real_working_shift, shift, pessObj, working_days,
+                               closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, total_l_dom, total_l_sab, total_l_dom_or_sab, 
+                               work_day_hours, workers_past, year_range, managers, keyholders, h_plus, eci_sibling_results_flag)
 
             # =================================================================
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, results, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
+            schedule_df, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
                                          workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date,
                                          pd.Series(['Worker'] + (unique_dates)),
-                                         output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
-                                         optimization_details=optimization_details)
+                                         output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'))
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
             self.feriados_domingos_compensacao = feriados_domingos_compensacao
@@ -520,83 +519,6 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             else:
                 logger.info("No partial workers specified or partial_workers_complete is empty. Using full schedule.")
-
-            
-            # Log comprehensive optimization analysis
-            logger.info("\n=== OPTIMIZATION ANALYSIS ===")
-            if results is not None:
-                logger.info(f"Net objective value: {results['summary']['net_objective']}")
-                
-                logger.info("--- Point-by-point breakdown ---")
-                breakdown = results['summary']['point_breakdown']
-                
-                # Point 1: Pessimistic objective deviations
-                if breakdown['point_1_pessobj_deviations'] > 0:
-                    logger.info(f"Point 1 - PessObj deviations: {breakdown['point_1_pessobj_deviations']} penalty")
-                else:
-                    logger.info("Point 1 - PessObj deviations: 0 penalty (perfect worker allocation)")
-                
-                # Point 2: Consecutive free days bonus
-                if results['point_2_consecutive_free_days']['total_bonus'] > 0:
-                    logger.info(f"Point 2 - Consecutive free days: -{results['point_2_consecutive_free_days']['total_bonus']} bonus")
-                else:
-                    logger.info("Point 2 - Consecutive free days: 0 bonus (no consecutive free days)")
-                
-                # Point 3: No workers penalty
-                if breakdown['point_3_no_workers'] > 0:
-                    logger.info(f"Point 3 - No workers penalty: {breakdown['point_3_no_workers']} penalty")
-                else:
-                    logger.info("Point 3 - No workers penalty: 0 penalty (all shifts properly covered)")
-                
-                # Point 4: Minimum workers penalty
-                if breakdown['point_4_1_min_workers'] > 0:
-                    logger.info(f"Point 4.1 - Minimum workers penalty: {breakdown['point_4_1_min_workers']} penalty")
-                else:
-                    logger.info("Point 4.1 - Minimum workers penalty: 0 penalty (all minimum requirements met)")
-
-                if breakdown['point_4_2_min_workers'] > 0:
-                    logger.info(f"Point 4.2 - Minimum workers penalty: {breakdown['point_4_2_min_workers']} penalty")
-                else:
-                    logger.info("Point 4.2 - Minimum workers penalty: 0 penalty (all minimum requirements met)")
-                
-                # Point 5.1: Sunday balance penalty
-                if breakdown['point_5_1_sunday_balance'] > 0:
-                    logger.info(f"Point 5.1 - Sunday balance penalty: {breakdown['point_5_1_sunday_balance']} penalty")
-                else:
-                    logger.info("Point 5.1 - Sunday balance penalty: 0 penalty (even Sunday distribution per worker)")
-                
-                # Point 5.2: C2D balance penalty
-                if breakdown['point_5_2_c2d_balance'] > 0:
-                    logger.info(f"Point 5.2 - C2D balance penalty: {breakdown['point_5_2_c2d_balance']} penalty")
-                else:
-                    logger.info("Point 5.2 - C2D balance penalty: 0 penalty (even quality weekend distribution per worker)")
-                
-                # Point 6: Inconsistent shifts penalty
-                if breakdown['point_6_inconsistent_shifts'] > 0:
-                    logger.info(f"Point 6 - Inconsistent shifts penalty: {breakdown['point_6_inconsistent_shifts']} penalty")
-                else:
-                    logger.info("Point 6 - Inconsistent shifts penalty: 0 penalty (consistent shift types per worker per week)")
-                
-                # Point 7: Sunday balance across workers
-                if breakdown['point_7_sunday_balance_across_workers'] > 0:
-                    logger.info(f"Point 7.1 - Sunday balance across workers: {breakdown['point_7_sunday_balance_across_workers']} penalty")
-                else:
-                    logger.info("Point 7.1 - Sunday balance across workers: 0 penalty (proportional Sunday distribution)")
-                
-                # Point 7B: LQ balance across workers
-                if breakdown['point_7b_lq_balance_across_workers'] > 0:
-                    logger.info(f"Point 7.2 - LQ balance across workers: {breakdown['point_7b_lq_balance_across_workers']} penalty")
-                else:
-                    logger.info("Point 7.2 - LQ balance across workers: 0 penalty (proportional quality weekend distribution)")
-                
-                # Point 8: Manager/Keyholder conflicts
-                if breakdown['point_8_manager_keyholder_conflicts'] > 0:
-                    logger.info(f"Point 8 - Manager/Keyholder conflicts: {breakdown['point_8_manager_keyholder_conflicts']} penalty")
-                else:
-                    logger.info("Point 8 - Manager/Keyholder conflicts: 0 penalty (no scheduling conflicts)")
-                
-            logger.info("=== END OPTIMIZATION ANALYSIS ===\n")
-
             
     # Capture solver statistics if available
             if hasattr(model, 'solver_stats'):
@@ -611,7 +533,6 @@ class SalsaAlgorithm(BaseAlgorithm):
         except Exception as e:
             self.logger.error(f"Error in SALSA algorithm execution: {e}", exc_info=True)
             raise
-
    
 # Update the format_results method:
     def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame(), week_to_days_salsa : Dict[int, List[int]] = None) -> Dict[str, Any]:
