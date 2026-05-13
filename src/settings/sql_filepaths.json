@@ -25,8 +25,9 @@
         "df_calendario_passado": "queryGetCoreSchedule.sql",
         "df_granularidade": "queryGetEscEstimado.sql",
         "df_days_off": "queryGetDaysOff.sql",
-        "df_contratos": "queryGetCoreProEmpContract.sql",
         "df_core_pro_emp_horario_det": "queryGetCoreProEmpHorarioDet.sql",
+        "df_core_pro_work_shift": "queryGetCoreProWorkShift.sql",
+        "df_annual_variables": "queryGetCoreProEmpAnnualVariables.sql",
         "df_ciclos_completos_folgas_ciclos": "queryGetCiclosCompletosFolgasCiclos.sql",
         "df_disponibilidade": "queryGetDisponibilidade.sql",
         "df_eci_section_employees": "queryGetEciSectionEmployees.sql",
@@ -36,7 +37,7 @@
     },
     "available_entities_raw": {
         "df_calendario": "",
-        "df_colaborador": "qry_ma.sql",
+        "df_colaborador": "queryGetCoreProEmpContract.sql",
         "df_estimativas": ""
     }
 }

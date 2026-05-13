@@ -57,7 +57,7 @@ from src.data_models.functions.data_treatment_functions import (
     set_c2d_to_df_colaborador,
     set_c3d_to_df_colaborador,
     create_df_calendario,
-    add_seq_turno,
+    add_shift_info_from_ciclos,
     add_calendario_passado,
     add_ausencias_ferias,
     add_folgas_ciclos,
@@ -80,6 +80,7 @@ from src.data_models.functions.data_treatment_functions import (
     add_process_rules_to_df_contratos,
     treat_df_pro_emp_mov,
     build_compensatory_output,
+    apply_annual_dayoff_feasibility_cap,
 )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.validations.load_process_data_validations import (
@@ -132,7 +133,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 - params_lq: LQ parameters
                 - valid_emp: Valid employees filtered for processing
                 - colabs_id_list: List of collaborator IDs
-                - convenio: Convention information
+                - labor_union: Labor union code
                 - unit_id: Unit ID
                 - secao_id: Section ID
                 - posto_id_list: List of posto IDs
@@ -176,7 +177,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             'final': None, # TODO: change the name
             'num_fer_doms': 0, # number of feriados and Sundays in the year
             'algorithm_name': None, # algorithm name - now comes from query
-            'convenio': None, # convention information
+            'labor_union': None, # labor union code
             'current_posto_id': None, # current posto ID
             'df_ausencias_ferias': None, # holidays absences information dataframe
             'df_days_off': None, # days off information dataframe
@@ -875,38 +876,38 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error getting past employees id list: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # Load df_colaborador info from data manager
+            # Load df_colaborador info from data manager (wfm.core_pro_emp_contract)
             try:
-                # colaborador info
-                self.logger.info(f"Loading df_colaborador info from data manager")
+                self.logger.info("Loading df_colaborador info from data manager")
                 df_colaborador = data_manager.load_data(
-                    entity='df_colaborador', 
-                    query_file=self.config_manager.paths.sql_raw_paths.get('df_colaborador'), 
-                    colabs_id=create_employee_query_string(employee_id_list=past_employees_id_list)
+                    entity='df_colaborador',
+                    query_file=self.config_manager.paths.sql_raw_paths.get('df_colaborador'),
+                    colabs_id=create_employee_query_string(employee_id_list=past_employees_id_list),
+                    start_date="'" + str(first_date_passado) + "'",
+                    end_date="'" + str(last_date_passado) + "'",
+                    process_id=process_id,
                 )
                 self.logger.info(f"df_colaborador shape (rows {df_colaborador.shape[0]}, columns {df_colaborador.shape[1]}): {df_colaborador.columns.tolist()}")
-                
             except Exception as e:
                 self.logger.error(f"Error loading df_colaborador info from data source: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
-            
-            # Load df_contratos info from data manager
-            try:                                
-                self.logger.info(f"Loading df_contratos info from data manager")
-                df_contratos = data_manager.load_data(
-                    entity='df_contratos', 
-                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_contratos'), 
-                    colabs_id=create_employee_query_string(past_employees_id_list), 
-                    start_date=first_date_passado, 
-                    end_date=last_date_passado, 
-                    process_id=process_id
+
+            # df_contratos retired — consolidated into df_colaborador (wfm.core_pro_emp_contract)
+            df_contratos = pd.DataFrame()
+
+            # Load df_annual_variables from data manager (wfm.core_pro_emp_annual_variables)
+            df_annual_variables = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_annual_variables from data manager")
+                df_annual_variables = data_manager.load_data(
+                    entity='df_annual_variables',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_annual_variables', ''),
+                    colabs_id=create_employee_query_string(past_employees_id_list),
+                    process_id=process_id,
                 )
-                self.logger.info(f"df_contratos shape (rows {df_contratos.shape[0]}, columns {df_contratos.shape[1]}): {df_contratos.columns.tolist()}")
-                
-                
+                self.logger.info(f"df_annual_variables shape (rows {df_annual_variables.shape[0]}, columns {df_annual_variables.shape[1]}): {df_annual_variables.columns.tolist()}")
             except Exception as e:
-                self.logger.error(f"Error loading df_contratos: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+                self.logger.warning(f"Error loading df_annual_variables: {e} - proceeding without annual variables")
 
             # Load df_disponibilidade (employee availability restrictions)
             try:
@@ -930,12 +931,13 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Treat df_disponibilidade if not empty
             if not df_disponibilidade.empty:
                 try:
-                    # Extract employee limits from df_colaborador for availability treatment
-                    limit_columns = ['employee_id', 'matricula', 'limite_superior_manha', 'limite_inferior_tarde']
+                    # Retired columns (limite_superior_manha, limite_inferior_tarde) removed —
+                    # M/T classification now uses WORK_SHIFT from ciclos data
+                    limit_columns = ['employee_id', 'matricula']
                     available_limit_columns = [col for col in limit_columns if col in df_colaborador.columns]
-                    
+
                     if 'employee_id' in available_limit_columns:
-                        df_colaborador_limits = df_colaborador[available_limit_columns].copy()
+                        df_colaborador_limits = df_colaborador[available_limit_columns].drop_duplicates(subset=['employee_id']).copy()
                         self.logger.info(f"Extracted employee limits for df_disponibilidade treatment: {len(df_colaborador_limits)} employees")
                         
                         success, df_disponibilidade, error_msg = treat_df_disponibilidade(
@@ -957,19 +959,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Colaborador treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
 
-            # Get employees_id_90_list
-            try:
-                success, employees_id_90_list, error_msg = get_employees_id_90_list(
-                    employees_id_list_for_posto=employees_id_list_for_posto, 
-                    df_colaborador=df_colaborador,
-                )
-                if not success:
-                    self.logger.error(f"Error getting employees id 90 list: {error_msg}")
-                    return False, "errSubproc", error_msg
-
-            except Exception as e:
-                self.logger.error(f"Error creating employees_id_90_list from df_colaborador: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+            # employees_id_90_list is initialized empty here.
+            # It is derived from df_ciclos_completos_folgas_ciclos (TIPO_CICLO='Completo')
+            # after load_calendario_info() completes, when the ciclos dataframe is available.
+            # get_employees_id_90_list() will be called again in load_calendario_info with the ciclos data.
+            employees_id_90_list: list = []
+            self.logger.info("employees_id_90_list initialized as empty (will be set in load_calendario_info from ciclos data)")
 
             # Quick validations
             if not validate_past_employee_id_list(past_employees_id_list, case_type):
@@ -1055,7 +1050,9 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
                 self.auxiliary_data['df_pro_emp_mov_raw'] = df_pro_emp_mov_raw.copy()
-                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+                # df_contratos retired — kept as empty DataFrame for backward compatibility
+                self.auxiliary_data['df_contratos'] = df_contratos
+                self.auxiliary_data['df_annual_variables'] = df_annual_variables.copy() if not df_annual_variables.empty else pd.DataFrame()
                 self.auxiliary_data['df_disponibilidade'] = df_disponibilidade.copy() if not df_disponibilidade.empty else pd.DataFrame()
                 # TODO: Remove this, not used
                 self.auxiliary_data['num_fer_doms'] = 0
@@ -1258,20 +1255,37 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"df_ausencias_ferias not valid: {df_ausencias_ferias}")
                 return False, "errSubproc", "df_ausencias_ferias validation failed"
 
-            try: 
+            try:
                 self.logger.info("Loading df_ciclos_completos_folgas_ciclos from data manager")
                 df_ciclos_completos_folgas_ciclos = data_manager.load_data(
-                    'df_ciclos_completos_folgas_ciclos', 
-                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_ciclos_completos_folgas_ciclos'], 
-                    process_id=process_id, 
-                    start_date=start_date_str, 
+                    'df_ciclos_completos_folgas_ciclos',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_ciclos_completos_folgas_ciclos'],
+                    process_id=process_id,
+                    start_date=start_date_str,
                     end_date=end_date_str,
-                    colab90ciclo=create_employee_query_string(employees_id_90_list)
+                    colabs_id=create_employee_query_string(employees_id_list_for_posto),
                 )
                 self.logger.info(f"df_ciclos_completos_folgas_ciclos shape (rows {df_ciclos_completos_folgas_ciclos.shape[0]}, columns {df_ciclos_completos_folgas_ciclos.shape[1]}): {df_ciclos_completos_folgas_ciclos.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_ciclos_completos_folgas_ciclos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
+
+            # Derive employees_id_90_list from ciclos data (TIPO_CICLO='Completo')
+            # This resolves the circular dependency: the old approach required the list BEFORE loading ciclos.
+            try:
+                success, employees_id_90_list, error_msg = get_employees_id_90_list(
+                    employees_id_list_for_posto=employees_id_list_for_posto,
+                    df_ciclos_completos_folgas_ciclos=df_ciclos_completos_folgas_ciclos,
+                )
+                if not success:
+                    self.logger.warning(f"get_employees_id_90_list failed: {error_msg} — defaulting to empty")
+                    employees_id_90_list = []
+                self.auxiliary_data['employees_id_90_list'] = employees_id_90_list
+                self.algorithm_treatment_params['employees_id_90_list'] = employees_id_90_list
+                self.logger.info(f"employees_id_90_list derived from ciclos: {len(employees_id_90_list)} employees")
+            except Exception as e:
+                self.logger.warning(f"Error deriving employees_id_90_list: {e} — defaulting to empty")
+                employees_id_90_list = []
 
             # Separating initial df query into both dfs
             try:
@@ -1289,23 +1303,8 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             try:
                 self.logger.info("Treating ciclos completos")
-                
-                # Extract employee limits from df_colaborador
-                df_colaborador = self.raw_data.get('df_colaborador')
-                df_colaborador_limits = None
-                
-                if df_colaborador is not None and not df_colaborador.empty:
-                    limit_columns = ['matricula', 'limite_superior_manha', 'limite_inferior_tarde']
-                    available_columns = [col for col in limit_columns if col in df_colaborador.columns]
-                    
-                    if 'matricula' in available_columns:
-                        df_colaborador_limits = df_colaborador[available_columns].copy()
-                        self.logger.info(f"Extracted employee limits for {len(df_colaborador_limits)} employees")
-                    else:
-                        self.logger.warning("matricula column not found in df_colaborador - proceeding without limits")
-                else:
-                    self.logger.warning("df_colaborador not available - proceeding without employee limits")
-                
+                # M/T limits (limite_superior_manha / limite_inferior_tarde) removed —
+                # shift classification now uses WORK_SHIFT column from ciclos data directly.
                 success, df_ciclos_completos, error_msg = treat_df_ciclos_completos(
                     df_ciclos_completos=df_ciclos_completos,
                 )
@@ -1491,10 +1490,10 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                success, df_calendario, error_msg = add_seq_turno(df_calendario, df_colaborador)
+                success, df_calendario, error_msg = add_shift_info_from_ciclos(df_calendario, df_folgas_ciclos)
                 if not success:
-                    self.logger.error(f"Adding seq turno failed: {error_msg}")
-                    return False, "", error_msg
+                    self.logger.error(f"Adding shift info from ciclos failed: {error_msg}")
+                    return False, "errSubproc", error_msg
 
                 # Add df_ausencias_ferias to df_calendario
                 success, df_calendario, error_msg = add_ausencias_ferias(df_calendario, df_ausencias_ferias)
@@ -1623,7 +1622,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 # Variables
                 unit_id = self.auxiliary_data['unit_id']
-                convenio_bd  = self.auxiliary_data['GD_convenioBD']
+                labor_union_bd  = self.auxiliary_data['GD_convenioBD']
                 num_sundays_year = self.auxiliary_data['num_sundays_year']
                 num_feriados_abertos = self.auxiliary_data['num_feriados_abertos']
                 num_feriados_fechados = self.auxiliary_data['num_feriados_fechados']
@@ -1697,7 +1696,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Set C3D values based on convenio and use case
                 success, df_colaborador, error_msg = set_c3d_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     use_case=1
                 )
                 if not success:
@@ -1707,7 +1706,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Add L_D (working days) calculations
                 success, df_colaborador, error_msg = add_l_d_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     use_case=0,
                     ld_sunday_param=ld_sunday_param,
                     ld_holiday_param=ld_holiday_param,
@@ -1720,7 +1719,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_colaborador, error_msg = add_l_dom_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     df_feriados=df_feriados,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     num_fer_dom=num_sundays_year,
                     num_feriados=num_feriados_abertos+num_feriados_fechados,
                     num_feriados_fechados=num_feriados_fechados,
@@ -1736,7 +1735,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Add L_Q (quality leave) calculations
                 success, df_colaborador, error_msg = add_l_q_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     use_case=1
                 )
                 if not success:
@@ -1747,7 +1746,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_colaborador, error_msg = add_l_total_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     df_feriados=df_feriados,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     num_sundays=num_sundays_year,
                     num_fer_dom=num_sundays_year,
                     use_case=0
@@ -1892,6 +1891,38 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
                 return False, "errSubproc", error_msg
 
+
+            # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
+            # Runs here because all required data is available: df_annual_variables and df_feriados
+            # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
+            try:
+                df_annual_variables = self.auxiliary_data.get('df_annual_variables', pd.DataFrame())
+                df_feriados_cap = self.auxiliary_data.get('df_feriados', pd.DataFrame())
+                df_ausencias_cap = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
+                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
+
+                success_cap, df_colaborador, cap_events, error_cap = apply_annual_dayoff_feasibility_cap(
+                    df_colaborador=df_colaborador,
+                    df_annual_variables=df_annual_variables,
+                    df_feriados=df_feriados_cap,
+                    df_ausencias_ferias=df_ausencias_cap,
+                    num_dias_cons=num_dias_cons,
+                    main_year=main_year,
+                )
+                if not success_cap:
+                    self.logger.error(f"apply_annual_dayoff_feasibility_cap failed: {error_cap}")
+                    return False, "errSubproc", error_cap
+
+                for event in cap_events:
+                    self.logger.warning(
+                        f"FEASIBILITY_CAP_APPLIED: employee={event['employee_id']}"
+                        f" field={event['field']}"
+                        f" original={event['original_value']} cap={event['cap_value']}"
+                        f" period={event['period_begin']}–{event['period_end']}"
+                    )
+            except Exception as e:
+                self.logger.error(f"Error applying annual day-off feasibility cap: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
 
             # Final type coercion: ensure counters are stored as integers
             success, df_colaborador, error_msg = convert_fields_to_int(

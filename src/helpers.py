@@ -494,15 +494,12 @@ def create_m0_0t(reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
 
 def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
     """
-    Convert R create_MT_MTT_cycles function to Python.
-    Create MT or MTT cycles according to shift patterns.
-    
-    Args:
-        df_alg_variables_filtered: DataFrame with employee algorithm variables
-        reshaped_final_3: Schedule matrix DataFrame
-        
-    Returns:
-        Updated schedule matrix with MT/MTT cycles
+    RETIRED — sourced from core_algorithm_variables (seq_turno / semana_1) which is being retired.
+
+    Shift-cycle construction is now handled by add_shift_info_from_ciclos() in
+    data_treatment_functions.py using WORK_SHIFT from CORE_PRO_EMP_HORARIO_DET.
+
+    This function is kept for reference only and should not be called in new code.
     """
     try:
         logger.info(f"=== CALENDAR CREATION DEBUG START ===")
@@ -776,113 +773,101 @@ def assign_empty_days(df_tipo_contrato: pd.DataFrame, reshaped_final_3: pd.DataF
         logger.error(f"Error in assign_empty_days: {str(e)}")
         return reshaped_final_3
 
-def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str, lim_inf_tarde: str) -> pd.DataFrame:
+def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str = None, lim_inf_tarde: str = None) -> pd.DataFrame:
     """
     Convert R add_trads_code function to Python.
     Add TRADS codes to 90-day cycle information.
-    
+
+    M/T classification now uses the per-day WORK_SHIFT column from
+    CORE_PRO_EMP_HORARIO_DET (present in df_cycle90_info_filtered after the
+    queryGetCiclosCompletosFolgasCiclos migration).
+
+    The legacy lim_sup_manha / lim_inf_tarde parameters are retained in the
+    signature for backward compatibility but are ignored when work_shift is
+    available in the dataframe.
+
     Args:
-        df_cycle90_info_filtered: DataFrame with 90-day cycle information
-        lim_sup_manha: Morning limit time
-        lim_inf_tarde: Afternoon limit time
-        
+        df_cycle90_info_filtered: DataFrame with 90-day cycle information;
+            should contain 'work_shift' column (WORK_SHIFT from CORE_PRO_EMP_HORARIO_DET)
+        lim_sup_manha: Deprecated — ignored when work_shift column is present
+        lim_inf_tarde: Deprecated — ignored when work_shift column is present
+
     Returns:
         DataFrame with TRADS codes added
     """
     try:
-        # Convert time columns to datetime
+        use_work_shift = 'work_shift' in df_cycle90_info_filtered.columns
+
+        # Convert time columns to datetime (still needed for intervalo / P detection)
         time_cols = ['hora_ini_1', 'hora_ini_2', 'hora_fim_1', 'hora_fim_2']
         for col in time_cols:
             if col in df_cycle90_info_filtered.columns:
                 df_cycle90_info_filtered[col] = pd.to_datetime(
                     df_cycle90_info_filtered[col], format="%Y-%m-%d %H:%M:%S", errors='coerce'
                 )
-        
-        # Convert limit times
-        lim_sup_manha = pd.to_datetime(lim_sup_manha, format="%Y-%m-%d %H:%M:%S", errors='coerce')
-        
-        # Calculate interval and max exit time
+
+        if not use_work_shift and lim_sup_manha is not None:
+            lim_sup_manha = pd.to_datetime(lim_sup_manha, format="%Y-%m-%d %H:%M:%S", errors='coerce')
+
+        # Calculate interval (needed for split-shift 'P' detection)
         df_cycle90_info_filtered['intervalo'] = np.where(
-            df_cycle90_info_filtered['hora_ini_2'].isna(),
+            df_cycle90_info_filtered['hora_ini_2'].isna() if 'hora_ini_2' in df_cycle90_info_filtered.columns else True,
             0,
             (df_cycle90_info_filtered['hora_ini_2'] - df_cycle90_info_filtered['hora_fim_1']).dt.total_seconds() / 3600
-        )
-        
-        df_cycle90_info_filtered['max_exit'] = (
-            df_cycle90_info_filtered[['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']].max(axis=1) - 
-            pd.Timedelta(minutes=15)
+            if 'hora_ini_2' in df_cycle90_info_filtered.columns and 'hora_fim_1' in df_cycle90_info_filtered.columns
+            else 0
         )
 
-        # Calculate intervalo column
-        #df_cycle90_info_filtered['intervalo'] = df_cycle90_info_filtered.apply(
-        #    lambda row: 0 if pd.isna(row['hora_ini_2']) else 
-        #    (pd.to_datetime(row['hora_ini_2']) - pd.to_datetime(row['hora_fim_1'])).total_seconds() / 3600,
-        #    axis=1
-        #)
-#
-        # Calculate max_exit column
-        #time_columns = ['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']
-        #df_cycle90_info_filtered['max_exit'] = df_cycle90_info_filtered[time_columns].apply(
-        #    lambda row: pd.to_datetime(row.dropna()).max() - pd.Timedelta(minutes=15),
-        #    axis=1
-        #)
-        
-        # Apply TRADS code logic
+        if not use_work_shift:
+            time_cols_existing = [c for c in ['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']
+                                   if c in df_cycle90_info_filtered.columns]
+            if time_cols_existing:
+                df_cycle90_info_filtered['max_exit'] = (
+                    df_cycle90_info_filtered[time_cols_existing].max(axis=1) - pd.Timedelta(minutes=15)
+                )
+            else:
+                df_cycle90_info_filtered['max_exit'] = pd.NaT
+
         def get_trads_code(row):
-            tipo_dia = row['tipo_dia']
-            descanso = row['descanso']
-            horario_ind = row['horario_ind']
-            dia_semana = row['dia_semana']
-            intervalo = row['intervalo']
-            max_exit = row['max_exit']
-           
-            # Log every row to understand the mapping
-            #log_msg = f"[TRADS-MAP] tipo_dia='{tipo_dia}', descanso='{descanso}', horario_ind='{horario_ind}', dia_semana={dia_semana}, intervalo={intervalo}, max_exit={max_exit}"
-           
+            tipo_dia = row.get('tipo_dia', '')
+            descanso = row.get('descanso', '')
+            horario_ind = row.get('horario_ind', '')
+            dia_semana = row.get('dia_semana', 0)
+            intervalo = row.get('intervalo', 0)
+            work_shift = str(row.get('work_shift', '')).upper() if use_work_shift else ''
+
             if tipo_dia == 'F' and (dia_semana == 1 or dia_semana == 8):
-                #logger.info(f"{log_msg} → 'L_DOM' (tipo_dia='F' on Sunday/Monday)")
                 return 'L_DOM'
             elif tipo_dia == 'F':
-                #logger.info(f"{log_msg} → 'L' (tipo_dia='F': free/holiday)")
                 return 'L'
-            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'N':
-                #logger.info(f"{log_msg} → 'MoT' (Active + no rest + no individual schedule)")
-                return 'MoT'
-            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit >= lim_sup_manha:
-                #logger.info(f"{log_msg} → 'T' (Active + no rest + horario_ind='S' + max_exit >= {lim_sup_manha})")
-                return 'T'
-            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit < lim_sup_manha:
-                #logger.info(f"{log_msg} → 'M' (Active + no rest + horario_ind='S' + max_exit < {lim_sup_manha})")
-                return 'M'
             elif tipo_dia == 'S':
-                #logger.info(f"{log_msg} → '-' (tipo_dia='S': suspended/missing)")
                 return '-'
-            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo >= 1:
-                #logger.info(f"{log_msg} → 'P' (Active + rest/night + break >= 1h)")
-                return 'P'
-            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit >= lim_sup_manha:
-                #logger.info(f"{log_msg} → 'T' (Active + rest/night + break < 1h + max_exit >= {lim_sup_manha})")
-                return 'T'
-            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit < lim_sup_manha:
-                #logger.info(f"{log_msg} → 'M' (Active + rest/night + break < 1h + max_exit < {lim_sup_manha})")
-                return 'M'
-            elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit >= lim_sup_manha:
-                #logger.info(f"{log_msg} → 'T' (Active + no rest + individual='Y' + max_exit >= {lim_sup_manha})")
-                return 'T'
-            elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit < lim_sup_manha:
-                #logger.info(f"{log_msg} → 'M' (Active + no rest + individual='Y' + max_exit < {lim_sup_manha})")
-                return 'M'
             elif tipo_dia == 'N':
-                #logger.info(f"{log_msg} → 'NL' (tipo_dia='N': night shift)")
                 return 'NL'
+            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo >= 1:
+                return 'P'
+            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'N':
+                return 'MoT'
+            elif tipo_dia == 'A':
+                if use_work_shift:
+                    if work_shift == 'M':
+                        return 'M'
+                    elif work_shift == 'T':
+                        return 'T'
+                    else:
+                        return 'MoT'
+                else:
+                    max_exit = row.get('max_exit', pd.NaT)
+                    if pd.isna(max_exit) or lim_sup_manha is None:
+                        return 'MoT'
+                    return 'T' if max_exit >= lim_sup_manha else 'M'
             else:
-                #logger.warning(f"{log_msg} → '-' (NO CONDITION MATCHED - this is why you get '-'!)")
                 return '-'
-        
+
         df_cycle90_info_filtered['codigo_trads'] = df_cycle90_info_filtered.apply(get_trads_code, axis=1)
-        
+
         return df_cycle90_info_filtered
-        
+
     except Exception as e:
         logger.error(f"Error in add_trads_code: {str(e)}")
         return df_cycle90_info_filtered
@@ -1288,45 +1273,26 @@ def count_dates_per_year(start_date_str: str, end_date_str: str) -> str:
 
 def get_limit_mt(matricula: str, df_colaborador: pd.DataFrame) -> Tuple[str, str]:
     """
-    Get MT (Morning/Afternoon) time limits for a specific employee from df_colaborador.
-    
+    Get MT (Morning/Afternoon) time limits for a specific employee.
+
+    MIGRATION NOTE: limite_superior_manha / limite_inferior_tarde have been retired from
+    df_colaborador (they were sourced from core_algorithm_variables). This function now
+    returns the hardcoded section-level defaults (12:00 / 14:00) which are superseded by
+    the per-day WORK_SHIFT classification in add_trads_code().
+
+    Callers that depend on accurate per-employee limits should migrate to reading
+    WORK_SHIFT directly from df_ciclos_completos_folgas_ciclos instead of calling
+    this function.
+
     Args:
-        matricula: Employee matricula (ID)
-        df_colaborador: DataFrame containing employee data with limit columns
-        
+        matricula: Employee matricula — kept for API compatibility, no longer used
+        df_colaborador: Employee DataFrame — kept for API compatibility, no longer used
+
     Returns:
-        Tuple of (lim_sup_manha, lim_inf_tarde) as time strings
+        Tuple of (lim_sup_manha, lim_inf_tarde) — always returns section-level defaults
     """
-    try:
-        # Filter df_colaborador for this specific employee
-        employee_data = df_colaborador[df_colaborador['matricula'] == matricula]
-        
-        if len(employee_data) == 0:
-            logger.warning(f"No employee data found for matricula {matricula}")
-            # Return default values
-            return "12:00", "14:00"
-        
-        # Get the first matching record
-        emp_record = employee_data.iloc[0]
-        
-        # Extract the limit columns
-        lim_sup_manha = str(emp_record.get('limite_superior_manha', '12:00'))
-        lim_inf_tarde = str(emp_record.get('limite_inferior_tarde', '14:00'))
-        
-        # Handle potential None or NaN values
-        if pd.isna(lim_sup_manha) or lim_sup_manha == 'nan':
-            lim_sup_manha = "12:00"
-        if pd.isna(lim_inf_tarde) or lim_inf_tarde == 'nan':
-            lim_inf_tarde = "14:00"
-        
-        logger.debug(f"Retrieved MT limits for matricula {matricula}: morning={lim_sup_manha}, afternoon={lim_inf_tarde}")
-        
-        return lim_sup_manha, lim_inf_tarde
-        
-    except Exception as e:
-        logger.error(f"Error in get_limit_mt for matricula {matricula}: {str(e)}")
-        # Return default values in case of error
-        return "12:00", "14:00"
+    logger.debug(f"get_limit_mt called for matricula {matricula}: returning section defaults (12:00 / 14:00)")
+    return "12:00", "14:00"
 
 def pad_zeros(value: str, length: int = 10) -> str:
     """

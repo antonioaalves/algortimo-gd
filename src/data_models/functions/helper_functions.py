@@ -1496,62 +1496,78 @@ def get_past_employees_id_list(wfm_proc_colab: str, df_mpd_valid_employees: pd.D
         logger.error(f"Error creating colabs_passado list: {e}", exc_info=True)
         return False, [], "Error creating the colabs_passado_list"
 
-def get_employees_id_90_list(employees_id_list_for_posto: List[str], df_colaborador: pd.DataFrame) -> Tuple[bool, List[str], str]:
+def get_employees_id_90_list(
+    employees_id_list_for_posto: List[str],
+    df_colaborador: Optional[pd.DataFrame] = None,
+    df_ciclos_completos_folgas_ciclos: Optional[pd.DataFrame] = None,
+) -> Tuple[bool, List[str], str]:
     """
     Identify employees who follow 90-day complete rotation cycles (CICLO COMPLETO).
-    
-    Complete 90-day cycles are comprehensive schedules that define every working day
-    and rest day over a 3-month period. These employees have their schedules fully
-    predetermined and don't follow the standard weekly rotation patterns.
-    
-    Identification Logic:
-        1. Filter df_colaborador to only employees in employees_id_list_for_posto
-        2. Identify employees where seq_turno (upper case) equals 'CICLO'
-        3. Return list of their employee IDs (fk_colaborador)
-    
-    Business Context:
-        Employees with complete cycles:
-        - Have complex rotation patterns not suitable for weekly scheduling
-        - Require special handling in the algorithm
-    
-    Common Use Case:
-        In single-employee generation mode (wfm_proc_colab specified):
-        - employees_id_list_for_posto contains only the target employee
-        - Function checks if that employee uses complete cycles
-        - Enables algorithm to apply appropriate scheduling logic
-    
+
+    MIGRATION:
+        The legacy identification relied on seq_turno='CICLO' and ciclo='COMPLETO' columns
+        in df_colaborador (sourced from core_algorithm_variables, now retired).
+
+        The new source is the TIPO_CICLO column in CORE_PRO_EMP_HORARIO_DET, available in
+        df_ciclos_completos_folgas_ciclos after the queryGetCiclosCompletosFolgasCiclos
+        migration.  An employee is considered CICLO COMPLETO if ANY of their schedule-day
+        records has TIPO_CICLO = 'Completo'.
+
+        Priority:
+            1. When df_ciclos_completos_folgas_ciclos is provided and contains 'tipo_ciclo',
+               use it (new path).
+            2. When df_colaborador contains 'seq_turno' and 'ciclo', fall back to legacy logic.
+            3. Otherwise return an empty list with a warning.
+
     Args:
         employees_id_list_for_posto: List of employee IDs to check (scope filter)
-        df_colaborador: Employee master data with seq_turno column
-        
+        df_colaborador: Optional — legacy source with seq_turno / ciclo columns
+        df_ciclos_completos_folgas_ciclos: Optional — new source with tipo_ciclo column
+
     Returns:
-        Tuple containing:
-            - success (bool): True if operation succeeded, False on error
-            - employees_id_90_list (List[str]): Employee IDs using CICLO COMPLETO
-            - error_message (str): Error description if failed, empty string otherwise
-            
-    Example:
-        >>> success, ciclo_employees, err = get_employees_id_90_list(
-        ...     [101, 102, 103], df_colaborador
-        ... )
-        >>> print(ciclo_employees)
-        [102]  # Only employee 102 has seq_turno='CICLO'
-        
-    Note:
-        Returns empty list (not error) if no employees match CICLO criteria.
-        This is a valid scenario when all employees use standard rotations.
+        Tuple[bool, List[str], str]: (success, employees_id_90_list, error_message)
     """
     try:
-        df_colaborador = df_colaborador.copy()
-        # First mask is to ensure that for "geracao ao colaborador" we only consider for this list that employee (in this cases, employees_id_list_for_posto will only contain wfm_proc_colab)
-        mask = df_colaborador['employee_id'].isin(employees_id_list_for_posto)
-        df_colaborador = df_colaborador[mask]
+        employees_id_list_for_posto_str = [str(x) for x in employees_id_list_for_posto]
 
-        # Second mask is to get the employees that are considered CICLO COMPLETO
-        mask = (df_colaborador['seq_turno'].str.upper() == 'CICLO') & (df_colaborador['ciclo'].str.upper() == 'COMPLETO')
-        employees_id_90_list = df_colaborador[mask]['employee_id'].to_list()
+        # NEW PATH: use tipo_ciclo from cycles data
+        if df_ciclos_completos_folgas_ciclos is not None and \
+           not df_ciclos_completos_folgas_ciclos.empty and \
+           'tipo_ciclo' in df_ciclos_completos_folgas_ciclos.columns:
 
-        return True, employees_id_90_list, ""
+            df_ciclos = df_ciclos_completos_folgas_ciclos.copy()
+            df_ciclos['employee_id'] = df_ciclos['employee_id'].astype(str)
+            df_ciclos = df_ciclos[df_ciclos['employee_id'].isin(employees_id_list_for_posto_str)]
+
+            mask = df_ciclos['tipo_ciclo'].str.strip().str.capitalize() == 'Completo'
+            employees_id_90_list = df_ciclos[mask]['employee_id'].unique().tolist()
+            logger.info(f"get_employees_id_90_list (ciclos path): {len(employees_id_90_list)} CICLO COMPLETO employees")
+            return True, employees_id_90_list, ""
+
+        # LEGACY FALLBACK: use seq_turno / ciclo from df_colaborador
+        if df_colaborador is not None and not df_colaborador.empty and \
+           'seq_turno' in df_colaborador.columns and 'ciclo' in df_colaborador.columns:
+
+            df_colab = df_colaborador.copy()
+            df_colab['employee_id'] = df_colab['employee_id'].astype(str)
+            mask_posto = df_colab['employee_id'].isin(employees_id_list_for_posto_str)
+            df_colab = df_colab[mask_posto]
+
+            mask_ciclo = (
+                (df_colab['seq_turno'].str.upper() == 'CICLO') &
+                (df_colab['ciclo'].str.upper() == 'COMPLETO')
+            )
+            employees_id_90_list = df_colab[mask_ciclo]['employee_id'].tolist()
+            logger.info(f"get_employees_id_90_list (legacy path): {len(employees_id_90_list)} CICLO COMPLETO employees")
+            return True, employees_id_90_list, ""
+
+        # Neither source available
+        logger.warning(
+            "get_employees_id_90_list: neither df_ciclos_completos_folgas_ciclos "
+            "(with tipo_ciclo) nor df_colaborador (with seq_turno/ciclo) provided; "
+            "returning empty list"
+        )
+        return True, [], ""
 
     except Exception as e:
         logger.error(f"Error getting employees id 90 list: {e}", exc_info=True)
@@ -1926,107 +1942,84 @@ def _fill_faixa_fallback(
 
 def get_df_faixa_horario(
     df_orcamento: pd.DataFrame,
-    df_turnos: pd.DataFrame,
+    df_turnos: Optional[pd.DataFrame] = None,
     use_case: int = 0,
     df_faixa_secao: Optional[pd.DataFrame] = None,
+    df_core_pro_work_shift: Optional[pd.DataFrame] = None,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Function that gets the df_faixa_horario from the df_orcamento and df_turnos.
+    Compute df_faixa_horario (per-day shift boundary window) from workload and shift data.
 
     For use_case 1, if there are no rows with pessoas_min > 0, fallback is used:
     df_faixa_secao (long format with schedule_day, hora_inicio_faixa, hora_fim_faixa)
     if provided and non-empty; otherwise hardcoded 06:40 / 22:40.
 
     Args:
-        df_orcamento: DataFrame with the orcamento data
-        df_turnos: DataFrame with the turnos data
+        df_orcamento: DataFrame with the orcamento / workload data
+        df_turnos: Deprecated — no longer used for M/T limit derivation; kept for
+            signature compatibility with existing callers
         use_case: int with the use case
-        df_faixa_secao: Optional long-format faixa per day (schedule_day, hora_inicio_faixa, hora_fim_faixa); used as fallback in use_case 1
+            0: Derive M/T boundaries from df_core_pro_work_shift (section-level START/END
+               for M and T shifts per schedule_day).  Falls back to 12:00 / 14:00 defaults
+               when df_core_pro_work_shift is absent or empty.
+            1: Compute ponto_medio from df_orcamento pessoas_min > 0 entries.
+        df_faixa_secao: Optional long-format faixa per day; used as fallback in use_case 1
+        df_core_pro_work_shift: Optional DataFrame from queryGetCoreProWorkShift.sql with
+            columns [process_id, schedule_day, fk_secao, work_shift, start_time, end_time].
+            Used in use_case 0 to compute per-day limite_superior_manha / limite_inferior_tarde.
 
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, df_faixa_horario, error_message)
     """
     try:
         if use_case == 0:
-            # Get limite_superior_manha and limite_inferior_tarde from df_turnos
-            # Then create a DataFrame with one row per schedule_day
-            # hora_inicio_faixa = 00:00, hora_fim_faixa = 24:00 (next day 00:00)
-            
-            required_cols = ['limite_superior_manha', 'limite_inferior_tarde']
-            missing_cols = [col for col in required_cols if col not in df_turnos.columns]
-            if missing_cols:
-                raise ValueError(f"df_turnos missing required columns: {missing_cols}")
-            
-            if df_turnos.empty:
-                raise ValueError("df_turnos is empty")
-            
-            # Parse limite times from df_turnos (get mode or average)
-            limite_times = {}
-            for col in required_cols:
-                values = df_turnos[col].dropna()
-                if values.empty:
-                    raise ValueError(f"All values in '{col}' are null")
-                
-                # Vectorized time parsing: handle "HH:MM" or "HH:MM:SS" formats
-                parsed_times = pd.to_datetime(values.astype(str), format='%H:%M', errors='coerce')
-                mask_nat = parsed_times.isna()
-                if mask_nat.any():
-                    parsed_times_hms = pd.to_datetime(values[mask_nat].astype(str), format='%H:%M:%S', errors='coerce')
-                    parsed_times = parsed_times.fillna(parsed_times_hms)
-                
-                mask_nat = parsed_times.isna()
-                if mask_nat.any():
-                    parsed_times_general = pd.to_datetime(values[mask_nat], errors='coerce')
-                    parsed_times = parsed_times.fillna(parsed_times_general)
-                
-                parsed_times = parsed_times.dropna()
-                if parsed_times.empty:
-                    raise ValueError(f"Could not parse any time values from '{col}'")
-                
-                # Extract time as timedelta (hours + minutes + seconds)
-                time_deltas = pd.to_timedelta(
-                    parsed_times.dt.hour * 3600 + parsed_times.dt.minute * 60 + parsed_times.dt.second,
-                    unit='s'
-                )
-                
-                # Try to find mode (most common value)
-                mode_result = time_deltas.mode()
-                if len(mode_result) >= 1:
-                    limite_times[col] = mode_result.iloc[0]
-                    logger.info(f"get_df_faixa_horario: Using mode for {col}: {limite_times[col]}")
-                else:
-                    # No mode - use average
-                    avg_seconds = time_deltas.dt.total_seconds().mean()
-                    limite_times[col] = pd.Timedelta(seconds=avg_seconds)
-                    logger.info(f"get_df_faixa_horario: No mode for {col}, using average: {limite_times[col]}")
-            
-            # Get unique schedule_day values from df_orcamento
             if df_orcamento is None or df_orcamento.empty:
                 raise ValueError("df_orcamento is empty or None")
-            
+
             df_orc = df_orcamento.copy()
             df_orc['schedule_day'] = pd.to_datetime(df_orc['schedule_day']).dt.normalize()
             unique_days = df_orc['schedule_day'].unique()
-            
-            # Create DataFrame with one row per schedule_day
-            df_faixa = pd.DataFrame({'schedule_day': unique_days})
-            df_faixa['schedule_day'] = pd.to_datetime(df_faixa['schedule_day']).dt.normalize()
-            
-            # hora_inicio_faixa = schedule_day at 00:00 (same as schedule_day normalized)
+
+            df_faixa = pd.DataFrame({'schedule_day': pd.to_datetime(unique_days)})
+            df_faixa['schedule_day'] = df_faixa['schedule_day'].dt.normalize()
+
             df_faixa['hora_inicio_faixa'] = df_faixa['schedule_day']
-            
-            # hora_fim_faixa = schedule_day + 1 day at 00:00 (represents 24:00)
             df_faixa['hora_fim_faixa'] = df_faixa['schedule_day'] + pd.Timedelta(days=1)
-            
-            # limite_superior_manha = schedule_day + limite time
-            df_faixa['limite_superior_manha'] = df_faixa['schedule_day'] + limite_times['limite_superior_manha']
-            
-            # limite_inferior_tarde = schedule_day + limite time
-            df_faixa['limite_inferior_tarde'] = df_faixa['schedule_day'] + limite_times['limite_inferior_tarde']
-            
-            # Sort by schedule_day
+
+            # Derive M/T boundaries from core_pro_work_shift when available
+            if df_core_pro_work_shift is not None and not df_core_pro_work_shift.empty and \
+               all(c in df_core_pro_work_shift.columns for c in ['schedule_day', 'work_shift', 'start_time', 'end_time']):
+
+                ws = df_core_pro_work_shift.copy()
+                ws['schedule_day'] = pd.to_datetime(ws['schedule_day']).dt.normalize()
+                ws_m = ws[ws['work_shift'].str.upper() == 'M'].set_index('schedule_day')
+                ws_t = ws[ws['work_shift'].str.upper() == 'T'].set_index('schedule_day')
+
+                def _to_day_ts(series_start_times, base_days):
+                    """Combine base schedule_day date + time portion from start_time."""
+                    times = pd.to_datetime(series_start_times, errors='coerce')
+                    result = base_days + pd.to_timedelta(
+                        times.dt.hour * 3600 + times.dt.minute * 60, unit='s'
+                    )
+                    return result
+
+                if not ws_m.empty and 'end_time' in ws_m.columns:
+                    m_end = ws_m['end_time'].reindex(df_faixa['schedule_day'])
+                    df_faixa['limite_superior_manha'] = _to_day_ts(m_end.values, df_faixa['schedule_day'])
+                else:
+                    df_faixa['limite_superior_manha'] = df_faixa['schedule_day'] + pd.Timedelta(hours=12)
+
+                if not ws_t.empty and 'start_time' in ws_t.columns:
+                    t_start = ws_t['start_time'].reindex(df_faixa['schedule_day'])
+                    df_faixa['limite_inferior_tarde'] = _to_day_ts(t_start.values, df_faixa['schedule_day'])
+                else:
+                    df_faixa['limite_inferior_tarde'] = df_faixa['schedule_day'] + pd.Timedelta(hours=14)
+            else:
+                logger.info("get_df_faixa_horario (use_case=0): df_core_pro_work_shift not available; using defaults 12:00/14:00")
+                df_faixa['limite_superior_manha'] = df_faixa['schedule_day'] + pd.Timedelta(hours=12)
+                df_faixa['limite_inferior_tarde'] = df_faixa['schedule_day'] + pd.Timedelta(hours=14)
+
             df_faixa = df_faixa.sort_values('schedule_day').reset_index(drop=True)
-            
             logger.info(f"get_df_faixa_horario: Created df_faixa with {len(df_faixa)} rows")
             return True, df_faixa, ""
         

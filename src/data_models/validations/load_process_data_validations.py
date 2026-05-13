@@ -157,18 +157,22 @@ def validate_df_folgas_ciclos(df_folgas_ciclos: pd.DataFrame) -> bool:
 def validate_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[str]) -> bool:
     """
     Validate df_colaborador structure and employee IDs consistency.
-    
+
+    df_colaborador now has one row per (employee_id, contract_id, begin_date/end_date)
+    period from wfm.core_pro_emp_contract. Multiple rows per employee are expected
+    when an employee has more than one contract period in the process window.
+
     Args:
-        df_colaborador: Employee DataFrame with standardized fields
+        df_colaborador: Employee DataFrame with contract-period rows
         employees_id_list: List of valid employee IDs (as strings)
-        
+
     Returns:
         bool: True if validation passes, False otherwise
     """
     if df_colaborador.empty:
         return False
 
-    needed_columns = ['employee_id', 'loja', 'secao', 'fk_tipo_posto', 'convenio']
+    needed_columns = ['employee_id', 'contract_id', 'begin_date', 'end_date', 'fk_tipo_posto', 'labor_union']
     if not all(col in df_colaborador.columns for col in needed_columns):
         logger.error(f"df_colaborador columns: {df_colaborador.columns.tolist()}")
         logger.error(f"needed_columns not in df_colaborador columns: {needed_columns}")
