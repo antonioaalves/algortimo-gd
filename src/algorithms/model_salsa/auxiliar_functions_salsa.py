@@ -366,3 +366,16 @@ def legenda(data_array, range_bool):
         return 'L' + field_type
     else:
         return field_type
+ 
+ #solver
+
+def get_dummy(workers_with_dummy, w, d):
+    if w in workers_with_dummy:
+        for range, new_w in workers_with_dummy.get(w, {}).items():
+            if d in range:
+                if d == range[0]:
+                    logger.info(f"For worker {w}, day {d} is in beggining range of dummy worker {new_w}")
+                if d == range[-1]:
+                    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
+                return new_w
+    return w

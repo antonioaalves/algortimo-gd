@@ -6,6 +6,7 @@ from datetime import date, datetime
 import logging
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
+from collections import defaultdict
 from src.algorithms.model_salsa.auxiliar_functions_salsa import days_off_atributtion, populate_week_seed_5_6, populate_week_fixed_days_off, check_5_6_pattern_consistency, absences_to_empty
 
 
@@ -38,8 +39,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
-        matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
-        matriz_past_lds_gd = algorithm_treatment_params['df_pro_emp_mov'].copy()
+        #matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
+        #matriz_past_lds_gd = algorithm_treatment_params['df_pro_emp_mov'].copy()
+
+        matriz_process_rules_gd = pd.DataFrame()
+        matriz_past_lds_gd = pd.DataFrame() 
         
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
@@ -331,13 +335,21 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         c3d = {}
         l_d = {}
         cxx = {}
+        data_admissao = {}
+        data_demissao = {}
+        last_registered_day = {}
+        first_registered_day = {}
         first_week_5_6 = {}
         work_days_per_week = {}
         week_compensation_limit = {}
+        dummy_workers = {}
+        workers_with_dummy = defaultdict(dict)
+        workers_complete_with_dummy = workers_complete.copy()
+        workers_list_with_dummy = workers.copy()
 
         for w in workers_complete:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
-            
+            worker_calendar = matriz_calendario_gd[matriz_calendario_gd['employee_id'] == w]
             if worker_data.empty:
                 logger.warning(f"No contract data found for worker {w}")
                 # Set default values
@@ -361,20 +373,169 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
-
                 first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
                 week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
+                # MODIFIED: Fix date handling - don't convert Timestamp to datetime
+                admissao_value = worker_row.get('data_admissao', None)
+                logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
+                demissao_value = worker_row.get('data_demissao', None)
+                logger.info(f"Processing worker {w} with data_demissao: {demissao_value}")
+
+                # Convert data_admissao to day of year
+                data_admissao[w] = 0
+                if admissao_value is not None and not pd.isna(admissao_value):
+                    if isinstance(admissao_value, (datetime, pd.Timestamp)):
+                        admissao_date = admissao_value
+                    elif isinstance(admissao_value, str):
+                        admissao_date = pd.to_datetime(admissao_value)
+                    else:
+                        admissao_date = None
+
+                    if admissao_date is not None:
+                        # Check if admissao is within calendar date range (not day of year)
+                        if min_calendar_date <= admissao_date <= max_calendar_date:
+                            admissao_day_of_year = worker_calendar.loc[worker_calendar['schedule_day'] == admissao_date, 'index'].iloc[0]
+                            data_admissao[w] = int(admissao_day_of_year)
+                            logger.info(f"Worker {w} data_admissao: {admissao_date.date()} -> day of year {admissao_day_of_year}")
+                        else:
+                            logger.info(f"Worker {w} data_admissao {admissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
+
+                # Convert data_demissao to day of year
+                data_demissao[w] = max_day + 1
+                if demissao_value is not None and not pd.isna(demissao_value):
+                    if isinstance(demissao_value, (datetime, pd.Timestamp)):
+                        demissao_date = demissao_value
+                    elif isinstance(demissao_value, str):
+                        demissao_date = pd.to_datetime(demissao_value)
+                    else:
+                        demissao_date = None
+                    if demissao_date is not None:
+                        # Check if demissao is within calendar date range (not day of year)
+                        if min_calendar_date <= demissao_date <= max_calendar_date:
+                            demissao_day_of_year = worker_calendar.loc[worker_calendar['schedule_day'] == demissao_date, 'index'].iloc[0]
+                            data_demissao[w] = int(demissao_day_of_year)
+                            logger.info(f"Worker {w} data_demissao: {demissao_date.date()} -> day of year {demissao_day_of_year}")
+                        else:
+                            logger.info(f"Worker {w} data_demissao {demissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
+
+                # Track first and last registered days
+                if w in matriz_calendario_gd['employee_id'].values:
+                    first_registered_day[w] = worker_calendar['index'].min()
+                    if  first_registered_day[w] < data_admissao[w]:
+                        first_registered_day[w] = data_admissao[w]
+                    logger.info(f"Worker {w} first registered day: {first_registered_day[w]}")
+                else:
+                    first_registered_day[w] = 0
+
+                if w in matriz_calendario_gd['employee_id'].values:
+                    last_registered_day[w] = worker_calendar['index'].max()
+                    # Only adjust if there's an actual dismissal date (not 0)
+                    if data_demissao[w] > 0 and last_registered_day[w] > data_demissao[w]:
+                        last_registered_day[w] = data_demissao[w]
+                    logger.info(f"Worker {w} last registered day: {last_registered_day[w]}")
+                else:
+                    last_registered_day[w] = 0
+
+                nbr_of_contracts = len(worker_data)
+                if nbr_of_contracts > 1:
+                    logger.info(f"Worker {w} changes contract {nbr_of_contracts - 1} times")
+                    layer = 1
+                    while layer < nbr_of_contracts:
+                        new_w = max(workers_complete_with_dummy) + 1
+                        workers_complete_with_dummy.append(new_w)
+                        workers_list_with_dummy.append(new_w)
+                        if layer == nbr_of_contracts - 1:
+                            data_demissao[new_w] = data_demissao[w]
+
+                        worker_row = worker_data.iloc[layer]
+                        if layer == 1:
+                            data_demissao[w] = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0])
+                            last_registered_day[w] = data_demissao[w]
+
+                        # Extract contract information
+                        contract_type[new_w] = worker_row.get('tipo_contrato', 'Contract Error')
+                        total_l[new_w] = int(worker_row.get('l_total', 0))
+                        total_l_dom[new_w] = int(worker_row.get('l_dom', 0))
+                        c2d[new_w] = int(worker_row.get('c2d', 0))
+                        c3d[new_w] = int(worker_row.get('c3d', 0))
+                        l_d[new_w] = int(worker_row.get('l_d', 0))
+                        cxx[new_w] = int(worker_row.get('cxx', 0))
+
+                        first_week_5_6[new_w] = int(worker_row.get('seed_5_6', 0))
+                        week_compensation_limit[new_w] = int(worker_row.get('n_sem_a_folga', 0))
+                        admissao_value = worker_row.get('begin_date', None)
+                        logger.info(f"Processing worker {new_w} with data_admissao: {admissao_value}")
+                        demissao_value = worker_row.get('end_date', None)
+                        logger.info(f"Processing worker {new_w} with data_demissao: {demissao_value}")
+                        # Convert data_admissao to day of year
+                        data_admissao[new_w] = 0
+                        if admissao_value is not None and not pd.isna(admissao_value):
+                            if isinstance(admissao_value, (datetime, pd.Timestamp)):
+                                admissao_date = admissao_value
+                            elif isinstance(admissao_value, str):
+                                admissao_date = pd.to_datetime(admissao_value)
+                            else:
+                                admissao_date = None
+
+                            if admissao_date is not None:
+                                # Check if admissao is within calendar date range (not day of year)
+                                if min_calendar_date <= admissao_date <= max_calendar_date:
+                                    admissao_day_of_year = worker_calendar.loc[worker_calendar['schedule_day'] == admissao_date, 'index'].iloc[0]
+                                    data_admissao[new_w] = int(admissao_day_of_year)
+                                    logger.info(f"Worker {new_w} data_admissao: {admissao_date.date()} -> day of year {admissao_day_of_year}")
+                                else:
+                                    logger.info(f"Worker {new_w} data_admissao {admissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
+
+                        # Convert data_demissao to day of year
+                        data_demissao[new_w] = max_day + 1
+                        if demissao_value is not None and not pd.isna(demissao_value):
+                            if isinstance(demissao_value, (datetime, pd.Timestamp)):
+                                demissao_date = demissao_value
+                            elif isinstance(demissao_value, str):
+                                demissao_date = pd.to_datetime(demissao_value)
+                            else:
+                                demissao_date = None
+                            if demissao_date is not None:
+                                # Check if demissao is within calendar date range (not day of year)
+                                if min_calendar_date <= demissao_date <= max_calendar_date:
+                                    demissao_day_of_year = worker_calendar.loc[worker_calendar['schedule_day'] == demissao_date, 'index'].iloc[0]
+                                    data_demissao[new_w] = int(demissao_day_of_year)
+                                    logger.info(f"Worker {new_w} data_demissao: {demissao_date.date()} -> day of year {demissao_day_of_year}")
+                                else:
+                                    logger.info(f"Worker {new_w} data_demissao {demissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
+
+                        # Track first and last registered days
+                        if w in matriz_calendario_gd['employee_id'].values:
+                            first_registered_day[new_w] = worker_calendar['index'].min()
+                            if  first_registered_day[new_w] < data_admissao[new_w]:
+                                first_registered_day[new_w] = data_admissao[new_w]
+                            logger.info(f"Worker {new_w} first registered day: {first_registered_day[new_w]}")
+                        else:
+                            first_registered_day[new_w] = 0
+
+                        if w in matriz_calendario_gd['employee_id'].values:
+                            last_registered_day[new_w] = worker_calendar['index'].max()
+                            # Only adjust if there's an actual dismissal date (not 0)
+                            if data_demissao[new_w] > 0 and last_registered_day[new_w] > data_demissao[new_w]:
+                                last_registered_day[new_w] = data_demissao[new_w]
+                            logger.info(f"Worker {new_w} last registered day: {last_registered_day[new_w]}")
+                        else:
+                            last_registered_day[new_w] = 0
+                        workers_with_dummy[w][range(data_admissao[new_w], data_demissao[new_w] + 1)] = new_w
+                        dummy_workers[new_w] = {
+                            'parent': w,
+                            'layer': layer,
+                            'start_date': data_admissao[new_w],
+                            'end_date': data_demissao[new_w],
+                        }
+                        layer += 1
 
         # Initialize dictionaries for worker-specific information
         empty_days = {}
         worker_absences = {}
         vacation_days = {}
-        last_registered_day = {}
-        first_registered_day = {}
         working_days = {}
         free_day_complete_cycle = {}
-        data_admissao = {}
-        data_demissao = {}
         fixed_days_off = {}
         fixed_LQs = {}
         work_day_hours = {}
@@ -384,8 +545,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         locked_days = {}
         forced_work_days = {}
         dynamic_empty = {}
-        dummy_workers = {}
-        workers_with_dummy = {}
+
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
             #logger.info(worker_calendar.to_string(index=False))
@@ -449,87 +609,40 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
 
-            # MODIFIED: Fix date handling - don't convert Timestamp to datetime
-            admissao_value = worker_row.get('data_admissao', None)
-            logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
-            demissao_value = worker_row.get('data_demissao', None)
-            logger.info(f"Processing worker {w} with data_demissao: {demissao_value}")
 
-            # Convert data_admissao to day of year
-            if admissao_value is not None and not pd.isna(admissao_value):
-                try:
-                    if isinstance(admissao_value, (datetime, pd.Timestamp)):
-                        admissao_date = admissao_value
-                    elif isinstance(admissao_value, str):
-                        admissao_date = pd.to_datetime(admissao_value)
-                    else:
-                        data_admissao[w] = 0
-                        admissao_date = None
-                        
-                    if admissao_date is not None:
-                        # Check if admissao is within calendar date range (not day of year)
-                        if min_calendar_date <= admissao_date <= max_calendar_date:
-                            admissao_day_of_year = worker_calendar.loc[worker_calendar['schedule_day'] == admissao_date, 'index'].iloc[0]
-                            data_admissao[w] = int(admissao_day_of_year)
-                            logger.info(f"Worker {w} data_admissao: {admissao_date.date()} -> day of year {admissao_day_of_year}")
-                        else:
-                            data_admissao[w] = 0
-                            logger.info(f"Worker {w} data_admissao {admissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
-                    else:
-                        data_admissao[w] = 0
-                            
-                except Exception as e:
-                    logger.warning(f"Could not parse data_admissao '{admissao_value}' for worker {w}: {e}")
-                    data_admissao[w] = 0
-            else:
-                data_admissao[w] = 0
+        for dummy in dummy_workers:
+            original = dummy_workers[dummy]["parent"]
+            start = dummy_workers[dummy]["start_date"]
+            end = dummy_workers[dummy]["end_date"]
+            shift_M[dummy] = {d for d in shift_M[original] if start <= d <= end}
+            shift_T[dummy] = {d for d in shift_T[original] if start <= d <= end}
+            fixed_LQs[dummy] = {d for d in fixed_LQs[original] if start <= d <= end}
+            empty_days[dummy] = [d for d in empty_days[original] if start <= d <= end]
+            vacation_days[dummy] = {d for d in vacation_days[original] if start <= d <= end}
+            fixed_days_off[dummy] = {d for d in fixed_days_off[original] if start <= d <= end}
+            worker_absences[dummy] = {d for d in worker_absences[original] if start <= d <= end}
+            forced_work_days[dummy] = {d for d in forced_work_days[original] if start <= d <= end}
+            locked_days[dummy] = {d for d in locked_days[original] if start <= d <= end}
+            fixed_compensation_days[dummy] = {d for d in fixed_compensation_days[original] if start <= d <= end}
+            work_day_hours[dummy] = work_day_hours[original]
+            free_day_complete_cycle[dummy] = {d for d in free_day_complete_cycle[original] if start <= d <= end}
 
-            # Convert data_demissao to day of year
-            if demissao_value is not None and not pd.isna(demissao_value):
-                try:
-                    if isinstance(demissao_value, (datetime, pd.Timestamp)):
-                        demissao_date = demissao_value
-                    elif isinstance(demissao_value, str):
-                        demissao_date = pd.to_datetime(demissao_value)
-                    else:
-                        data_demissao[w] = max_day + 1
-                        demissao_date = None
-                        
-                    if demissao_date is not None:
-                        # Check if demissao is within calendar date range (not day of year)
-                        if min_calendar_date <= demissao_date <= max_calendar_date:
-                            demissao_day_of_year = worker_calendar.loc[worker_calendar['schedule_day'] == demissao_date, 'index'].iloc[0]
-                            data_demissao[w] = int(demissao_day_of_year)
-                            logger.info(f"Worker {w} data_demissao: {demissao_date.date()} -> day of year {demissao_day_of_year}")
-                        else:
-                            data_demissao[w] = max_day + 1
-                            logger.info(f"Worker {w} data_demissao {demissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
-                    else:
-                        data_demissao[w] = max_day + 1
-                            
-                except Exception as e:
-                    logger.warning(f"Could not parse data_demissao '{demissao_value}' for worker {w}: {e}")
-                    data_demissao[w] = max_day + 1
-            else:
-                data_demissao[w] = max_day + 1
+        for original in workers_with_dummy:
+            shift_M[original] = {d for d in shift_M[original] if d <= data_demissao[original]}
+            shift_T[original] = {d for d in shift_T[original] if d <= data_demissao[original]}
+            fixed_LQs[original] = {d for d in fixed_LQs[original] if d <= data_demissao[original]}
+            empty_days[original] = [d for d in empty_days[original] if d <= data_demissao[original]]
+            vacation_days[original] = {d for d in vacation_days[original] if d <= data_demissao[original]}
+            fixed_days_off[original] = {d for d in fixed_days_off[original] if d <= data_demissao[original]}
+            worker_absences[original] = {d for d in worker_absences[original] if d <= data_demissao[original]}
+            forced_work_days[original] = {d for d in forced_work_days[original] if d <= data_demissao[original]}
+            locked_days[original] = {d for d in locked_days[original] if d <= data_demissao[original]}
+            fixed_compensation_days[original] = {d for d in fixed_compensation_days[original] if d <= data_demissao[original]}
+            free_day_complete_cycle[original] = {d for d in free_day_complete_cycle[original] if d <= data_demissao[original]}
 
-            # Track first and last registered days
-            if w in matriz_calendario_gd['employee_id'].values:
-                first_registered_day[w] = worker_calendar['index'].min()
-                if  first_registered_day[w] < data_admissao[w]:
-                    first_registered_day[w] = data_admissao[w]
-                logger.info(f"Worker {w} first registered day: {first_registered_day[w]}")
-            else:
-                first_registered_day[w] = 0
 
-            if w in matriz_calendario_gd['employee_id'].values:
-                last_registered_day[w] = worker_calendar['index'].max()
-                # Only adjust if there's an actual dismissal date (not 0)
-                if data_demissao[w] > 0 and last_registered_day[w] > data_demissao[w]:
-                    last_registered_day[w] = data_demissao[w]
-                logger.info(f"Worker {w} last registered day: {last_registered_day[w]}")
-            else:
-                last_registered_day[w] = 0
+        workers = workers_list_with_dummy
+        workers_complete = workers_complete_with_dummy
 
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)
@@ -562,81 +675,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-
-            if w == 125: #random, so para escolher 1 colab
-                #como sei se no novo contrato será ciclo completo ou se antes do contrato era e para de ser
-                #se em vez do colaborador vier com troca de contrato, e vier com todas as novas informaçoes associadas,
-                #faz sentido receber o colab com novo contrato como um colab distinto do original,
-                #desde q o employee_id e a matricula seja o inverso do original (negativo) e que a data de contratação seja a data de troca do colab original 
-                new_contract = 5
-                change_date = "2026-03-29" #inicialmente assumir que só serão feitas trocas de contrato em domingos
-                result = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == change_date, "index"]
-                change_date = result.iloc[0]
-                new_w = w * -1
-                logger.info(f"worker escolhido: {w} com contrato {contract_type[w]}, foi criado {new_w} para ser contrato {new_contract} apartir de {change_date}")
-                shift_M[new_w] = {d for d in shift_M[w] if d > change_date}
-                shift_T[new_w] = {d for d in shift_T[w] if d > change_date}
-                fixed_LQs[new_w] = {d for d in fixed_LQs[w] if d > change_date}
-                empty_days[new_w] = [d for d in empty_days[w] if d > change_date]
-                vacation_days[new_w] = {d for d in vacation_days[w] if d > change_date}
-                fixed_days_off[new_w] = {d for d in fixed_days_off[w] if d > change_date}
-                worker_absences[new_w] = {d for d in worker_absences[w] if d > change_date}
-                fixed_compensation_days[new_w] = {d for d in fixed_compensation_days[w] if d > change_date}
-            
-                shift_M[w] = {d for d in shift_M[w] if d <= change_date}
-                shift_T[w] = {d for d in shift_T[w] if d <= change_date}
-                fixed_LQs[w] = {d for d in fixed_LQs[w] if d <= change_date}
-                empty_days[w] = {d for d in empty_days[w] if d <= change_date}
-                vacation_days[w] = {d for d in vacation_days[w] if d <= change_date}
-                fixed_days_off[w] = {d for d in fixed_days_off[w] if d <= change_date}
-                worker_absences[w] = {d for d in worker_absences[w] if d <= change_date}
-                fixed_compensation_days[w] = {d for d in fixed_compensation_days[w] if d <= change_date}
-                work_day_hours[new_w] = work_day_hours[w]
-                #work_day_hours[w] = {d for d in work_day_hours[w] if d <= change_date} #acho que aqui nao preciso de alterar nada
-            
-                data_admissao[new_w] = change_date + 1
-                data_demissao[new_w] = data_demissao[w]
-                first_registered_day[new_w] = data_admissao[new_w]
-                last_registered_day[new_w] = data_demissao[new_w]
-                empty_days[new_w].extend([d for d in range(1, data_admissao[new_w]) if d not in empty_days[new_w]])
-                empty_days[new_w].extend([d for d in range(data_demissao[new_w] + 1, max_day + 1) if d not in empty_days[new_w]])
-                empty_days[new_w] = set(empty_days[new_w])
-                
-                data_demissao[w] = change_date
-                last_registered_day[w] = data_demissao[w]
-                empty_days[w] = list(empty_days[w])
-                empty_days[w].extend([d for d in range(change_date + 1, max_day + 1) if d not in empty_days[w]])
-                empty_days[w] = set(empty_days[w])
-                working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays - fixed_compensation_days[w]
-                # IMPORTANTE : como recebo os contadores que agora sao diferentes?
-                c2d[new_w] = 3
-                c3d[new_w] = int(worker_row.get('c3d', 0))
-                l_d[new_w] = 0
-                c2d[w] = 0
-                l_d[w] = 0
-                # aqui em cima é tudo inventado
-                contract_type[new_w] = new_contract
-                first_week_5_6[new_w] = int(worker_row.get('seed_5_6', 0))
-                week_compensation_limit[new_w] = int(worker_row.get('n_sem_a_folga', 0))
-                if contract_type[new_w] == 8:
-                    if (first_week_5_6[new_w] != 0):
-                        work_days_per_week[new_w] = populate_week_seed_5_6(first_week_5_6[new_w], data_admissao[new_w], week_to_days_salsa)
-                    else:
-                        work_days_per_week[new_w] = populate_week_fixed_days_off(fixed_days_off[new_w], fixed_LQs[new_w], week_to_days_salsa)
-                    check_5_6_pattern_consistency(w, fixed_days_off[new_w], fixed_LQs[new_w], week_to_days_salsa, work_days_per_week[new_w])
-                    worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w] = days_off_atributtion(w, worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w], week_to_days_salsa, closed_holidays, work_days_per_week[new_w], year_range)
-                else:
-                    work_days_per_week[new_w] = [5] * 54
-                    worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w] = days_off_atributtion(w, worker_absences[new_w], vacation_days[new_w], fixed_days_off[new_w], fixed_LQs[new_w], week_to_days_salsa, closed_holidays, None, year_range)
-                working_days[new_w] = set(days_of_year) - empty_days[new_w] - worker_absences[new_w] - vacation_days[new_w] - closed_holidays - fixed_compensation_days[new_w]
-                dummy_workers[new_w] = {'original': w, 'change_date': change_date}
+       
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
-
-        if dummy_workers:
-            for w in dummy_workers:
-                workers.append(w)
-                workers_complete.append(w)
-        
         for w in workers:
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")

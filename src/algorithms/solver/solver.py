@@ -14,6 +14,8 @@ import os
 import psutil
 from src.algorithms.solver.solver_callback import SolutionCallback
 from src.algorithms.helpers_algorithm import analyze_optimization_results
+from src.algorithms.model_salsa.auxiliar_functions_salsa import get_dummy
+
 
 # Get project name and set up logger
 project_name = get_config_manager().system.project_name
@@ -367,10 +369,10 @@ def solve(
                 logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
                     day_assignment = None
-                    
+                    temp_w = get_dummy(worker_with_dummy, w, d)
                     # Check each shift type for this day
                     for s in shifts:
-                        if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
+                        if (temp_w, d, s) in shift and solver.Value(shift[(temp_w, d, s)]) == 1:
                             day_assignment = shift_mapping.get(s, s)
                             break
                     
