@@ -11,8 +11,7 @@ SELECT
     ec.MATRICULA             AS matricula,
     ec.NOME                  AS nome,
     ec.data_admissao,
-    ec.data_demissao,
-    ec.fk_tipo_posto
+    ec.data_demissao
 FROM wfm.core_pro_emp_contract cpec
 LEFT JOIN wfm.esc_colaborador ec ON ec.CODIGO = cpec.employee_id
 WHERE cpec.schedule_day BETWEEN to_date({start_date}, 'YYYY-MM-DD') AND to_date({end_date}, 'YYYY-MM-DD')
@@ -29,5 +28,4 @@ GROUP BY
     ec.MATRICULA,
     ec.NOME,
     ec.data_admissao,
-    ec.data_demissao,
-    ec.fk_tipo_posto
+    ec.data_demissao

@@ -173,9 +173,10 @@ def validate_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: Lis
         return False
 
     needed_columns = ['employee_id', 'contract_id', 'begin_date', 'end_date', 'fk_tipo_posto', 'labor_union']
-    if not all(col in df_colaborador.columns for col in needed_columns):
+    missing_columns = [c for c in needed_columns if c not in df_colaborador.columns]
+    if missing_columns:
         logger.error(f"df_colaborador columns: {df_colaborador.columns.tolist()}")
-        logger.error(f"needed_columns not in df_colaborador columns: {needed_columns}")
+        logger.error(f"Missing required columns in df_colaborador: {missing_columns}")
         return False
     if not df_colaborador['employee_id'].isin(employees_id_list).all():
         logger.error(f"employee_id not in employees_id_list: {df_colaborador['employee_id'].unique()}, employees_id_list: {employees_id_list}")

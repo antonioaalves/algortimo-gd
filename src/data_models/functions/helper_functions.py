@@ -497,7 +497,9 @@ def convert_fields_to_int(df: pd.DataFrame, fields: List[str]) -> Tuple[bool, pd
             return False, pd.DataFrame(), "Input validation failed: empty dataframe"
 
         logger.info(f"convert_fields_to_int: starting conversion for fields={fields}")
-        logger.info(f"convert_fields_to_int: dtypes BEFORE -> {df[fields].dtypes.to_dict()}")
+        present_fields = [f for f in fields if f in df.columns]
+        if present_fields:
+            logger.info(f"convert_fields_to_int: dtypes BEFORE -> {df[present_fields].dtypes.to_dict()}")
 
         for field in fields:
             if field not in df.columns:
@@ -517,7 +519,8 @@ def convert_fields_to_int(df: pd.DataFrame, fields: List[str]) -> Tuple[bool, pd
 
             df[field] = converted.astype(np.int64)
 
-        logger.info(f"convert_fields_to_int: dtypes AFTER  -> {df[fields].dtypes.to_dict()}")
+        if present_fields:
+            logger.info(f"convert_fields_to_int: dtypes AFTER  -> {df[present_fields].dtypes.to_dict()}")
         return True, df, ""
     except Exception as e:
         logger.error(f"Error in convert_fields_to_int: {str(e)}")

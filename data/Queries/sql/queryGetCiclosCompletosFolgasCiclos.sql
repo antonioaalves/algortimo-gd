@@ -24,8 +24,3 @@ LEFT JOIN wfm.esc_colaborador ec ON ec.CODIGO = cpehd.EMPLOYEE_ID
 WHERE cpehd.PROCESS_ID = {process_id}
     AND cpehd.SCHEDULE_DAY BETWEEN to_date({start_date}, 'YYYY-MM-DD') AND to_date({end_date}, 'YYYY-MM-DD')
     AND cpehd.EMPLOYEE_ID IN ({colabs_id})
-    AND (
-        cpehd.TIPO_CICLO = 'Completo'   -- All days for complete-cycle employees
-        OR
-        cpehd.TIPO_DIA IN ('F', 'S')    -- Day-off and skip days for all employees
-    )
