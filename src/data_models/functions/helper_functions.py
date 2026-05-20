@@ -1791,6 +1791,93 @@ def get_employee_id_matriculas_map_dict(df_employee_id_matriculas: pd.DataFrame)
         logger.error(error_msg, exc_info=True)
         return False, {}, error_msg
 
+
+def restrict_employee_lists_to_contract_holders(
+    past_employees_id_list: List[int],
+    employees_id_list_for_posto: List[str],
+    df_colaborador: pd.DataFrame,
+    employee_id_matriculas_map: Optional[Dict[int, str]] = None,
+    wfm_proc_colab: str = '',
+) -> Tuple[bool, List[int], List[str], str]:
+    """
+    Restrict posto execution lists to employees with at least one contract row in
+    df_colaborador (wfm.core_pro_emp_contract). Employees assigned to the posto in
+    df_valid_emp / df_mpd_valid_employees but without contract data for the process
+    window are excluded and logged.
+
+    Updates (per posto, in load_colaborador_info):
+        - past_employees_id_list
+        - employees_id_list_for_posto
+        - employees_id_by_posto_dict[posto_id]
+
+    Intentionally NOT updated (section-level lookups):
+        - section_employees_id_list
+        - employees_id_total_list
+        - employee_id_matriculas_map
+
+    Args:
+        past_employees_id_list: Posto-scoped list used for calendar / colaborador loads
+        employees_id_list_for_posto: Posto list from df_valid_emp (ciclos, days_off, …)
+        df_colaborador: Treated contract-period dataframe (may be empty)
+        employee_id_matriculas_map: Optional section map for matricula in log messages
+        wfm_proc_colab: Single-colaborador target ID (str); empty for section execution
+
+    Returns:
+        Tuple[bool, List[int], List[str], str]: success, filtered past list, filtered posto list, error
+    """
+    try:
+        if df_colaborador is None or df_colaborador.empty or 'employee_id' not in df_colaborador.columns:
+            contract_ids: set = set()
+        else:
+            contract_ids = {str(e) for e in df_colaborador['employee_id'].unique()}
+
+        def _matricula(emp_id) -> str:
+            if not employee_id_matriculas_map:
+                return 'n/a'
+            return str(employee_id_matriculas_map.get(int(emp_id), 'n/a'))
+
+        excluded_past = [e for e in past_employees_id_list if str(e) not in contract_ids]
+        filtered_past = [e for e in past_employees_id_list if str(e) in contract_ids]
+        filtered_posto = [e for e in employees_id_list_for_posto if str(e) in contract_ids]
+
+        if excluded_past:
+            excluded_detail = [
+                f"{e} (matricula={_matricula(e)})" for e in excluded_past
+            ]
+            logger.warning(
+                f"Excluding {len(excluded_past)} posto employee(s) with no contract in "
+                f"core_pro_emp_contract for this process/window: {excluded_detail}"
+            )
+
+        if wfm_proc_colab and str(wfm_proc_colab).strip():
+            target_id = str(int(wfm_proc_colab))
+            if target_id not in contract_ids:
+                return False, [], [], (
+                    f"Single-colaborador execution target employee_id={target_id} has no "
+                    f"contract row in core_pro_emp_contract for this process/window"
+                )
+
+        if not filtered_past:
+            return False, [], [], (
+                "No employees with contract data remain after filtering posto lists "
+                "(core_pro_emp_contract returned no rows for any posto employee)"
+            )
+
+        if len(filtered_past) < len(past_employees_id_list) or len(filtered_posto) < len(employees_id_list_for_posto):
+            logger.info(
+                f"Execution employee lists restricted to contract holders: "
+                f"past_employees {len(past_employees_id_list)} → {len(filtered_past)}, "
+                f"employees_id_list_for_posto {len(employees_id_list_for_posto)} → {len(filtered_posto)}"
+            )
+
+        return True, filtered_past, filtered_posto, ""
+
+    except Exception as e:
+        error_msg = f"Error restricting employee lists to contract holders: {e}"
+        logger.error(error_msg, exc_info=True)
+        return False, [], [], error_msg
+
+
 def treat_df_faixa_secao_to_long(df_faixa_secao_wide: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
     Transform wide esc_faixa_horario (aber_seg, fech_seg, ... per weekday) to long format

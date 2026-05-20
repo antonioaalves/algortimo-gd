@@ -2453,12 +2453,26 @@ def create_df_calendario(
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
     Create df_calendario dataframe with employee schedules for the specified date range using vectorized operations.
-    
+
+    Employee scope: only employees in ``past_employees_id_list`` receive calendar rows.
+    The full ``employee_id_matriculas_map`` (section-level) is filtered to that list so
+    matricula lookups stay consistent while the grid matches the current posto run:
+
+    - Section execution (``wfm_proc_colab`` empty): ``past_employees_id_list`` equals
+      ``employees_id_list_for_posto`` for the current ``fk_tipo_posto``.
+    - Single-colaborador execution: ``past_employees_id_list`` is all employees in the
+      posto from ``df_mpd_valid_employees`` (section context within the posto).
+
+    Date range: spans from the Monday before ``main_year``-01-01 through the Sunday after
+    ``main_year``-12-31 (extended grid for passado / week boundaries). Callers may
+    filter to ``start_date`` / ``end_date`` afterwards via ``filter_df_dates``.
+
     Args:
-        start_date: Start date as string (YYYY-MM-DD format)
-        end_date: End date as string (YYYY-MM-DD format)
-        employee_id_matriculas_map: Dictionary mapping employee_ids to matriculas
-        past_employees_id_list: List of past employees ids
+        start_date: Execution window start (YYYY-MM-DD); used by callers for downstream filters
+        end_date: Execution window end (YYYY-MM-DD)
+        main_year: Primary scheduling year — drives the extended calendar grid
+        employee_id_matriculas_map: Section-level employee_id → matricula map (filtered here)
+        past_employees_id_list: Posto-scoped employee IDs that get calendar rows
         df_feriados: Holiday DataFrame used to pre-fill closed days (tipo_feriado='F')
     Returns:
         Tuple[bool, DataFrame, str] with columns: employee_id, data, tipo_turno, horario, wday, dia_tipo, matricula, data_admissao, data_demissao
@@ -2470,8 +2484,36 @@ def create_df_calendario(
             
         if not employee_id_matriculas_map or len(employee_id_matriculas_map) == 0:
             return False, pd.DataFrame(), "Input validation failed: empty employee mapping"
-            
-        logger.info(f"Creating df_calendario from {start_date} to {end_date} for {len(employee_id_matriculas_map)} employees")
+
+        if not past_employees_id_list:
+            return False, pd.DataFrame(), "Input validation failed: empty past_employees_id_list"
+
+        # Scope calendar to posto employees — past_employees_id_list is already mode-aware:
+        # section run → employees_id_list_for_posto; single-colab → all posto mpd employees.
+        allowed_ids = {int(e) for e in past_employees_id_list}
+        section_size = len(employee_id_matriculas_map)
+        employee_id_matriculas_map = {
+            emp_id: matricula
+            for emp_id, matricula in employee_id_matriculas_map.items()
+            if int(emp_id) in allowed_ids
+        }
+        missing_matricula = allowed_ids - {int(k) for k in employee_id_matriculas_map}
+        if missing_matricula:
+            logger.warning(
+                f"create_df_calendario: {len(missing_matricula)} posto employee(s) have no matricula "
+                f"in section map: {sorted(missing_matricula)[:20]}"
+            )
+        if not employee_id_matriculas_map:
+            return False, pd.DataFrame(), (
+                "Input validation failed: no matricula mappings for past_employees_id_list"
+            )
+
+        logger.info(
+            f"Creating df_calendario from {start_date} to {end_date} for "
+            f"{len(employee_id_matriculas_map)} posto employee(s) "
+            f"(scoped from {section_size} section matricula entries, "
+            f"{len(allowed_ids)} in past_employees_id_list)"
+        )
         
         # TREATMENT LOGIC
         try:

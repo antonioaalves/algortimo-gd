@@ -24,6 +24,7 @@ from src.data_models.functions.helper_functions import (
     get_past_employees_id_list,
     get_matriculas_for_employee_id,
     get_employee_id_matriculas_map_dict,
+    restrict_employee_lists_to_contract_holders,
     get_df_estrutura_wfm_info,
     create_employee_query_string,
     count_holidays_in_period,
@@ -410,14 +411,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", str(e)
 
             # Extract all employee IDs from the section for matricula mapping
-            # NOTE: We use section_employees_id_list (from df_mpd_valid_employees) instead of 
-            # employees_id_total_list (from df_valid_emp) because in single-employee mode 
-            # (wfm_proc_colab set), df_valid_emp only contains 1 employee, but we need 
-            # employee_id_matriculas_map with ALL employees to create df_calendario with 
-            # full section context.
+            # Build section-level matricula map (all df_mpd_valid_employees) for lookups.
+            # df_calendario is scoped per posto inside create_df_calendario via past_employees_id_list.
+            # NOTE: In single-employee mode (wfm_proc_colab set), df_valid_emp may contain only
+            # one employee, but the section map still covers all posto mpd employees for matricula.
             # TODO: This logic will be abandoned after STRSOL-1180 is implemented.
-            #       After STRSOL-1180, df_valid_emp will have all section employees with a 
-            #       field indicating execution status, so we can use employees_id_total_list directly.
             try:
                 success, section_employees_id_list, error_msg = get_section_employees_id_list(df_mpd_valid_employees)
                 if not success:
@@ -904,7 +902,40 @@ class SalsaDataModel(BaseDescansosDataModel):
             # df_contratos retired — consolidated into df_colaborador (wfm.core_pro_emp_contract)
             df_contratos = pd.DataFrame()
 
-            # Load df_annual_variables from data manager (wfm.core_pro_emp_annual_variables)
+            # Load df_core_pro_work_shift (section-level M/T shift time boundaries)
+            df_core_pro_work_shift = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_core_pro_work_shift from data manager")
+                df_core_pro_work_shift = data_manager.load_data(
+                    entity='df_core_pro_work_shift',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_core_pro_work_shift', ''),
+                    process_id=process_id,
+                )
+                self.logger.info(f"df_core_pro_work_shift shape (rows {df_core_pro_work_shift.shape[0]}, columns {df_core_pro_work_shift.shape[1]}): {df_core_pro_work_shift.columns.tolist()}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_core_pro_work_shift: {e} - proceeding without shift boundaries")
+
+            success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador=df_colaborador, employees_id_list=past_employees_id_list)
+            if not success:
+                self.logger.error(f"Colaborador treatment failed: {error_msg}")
+                return False, "errSubproc", error_msg
+
+            # Restrict execution lists to employees with contract rows in core_pro_emp_contract
+            employee_id_matriculas_map = self.auxiliary_data.get('employee_id_matriculas_map', {})
+            success, past_employees_id_list, employees_id_list_for_posto, error_msg = (
+                restrict_employee_lists_to_contract_holders(
+                    past_employees_id_list=past_employees_id_list,
+                    employees_id_list_for_posto=employees_id_list_for_posto,
+                    df_colaborador=df_colaborador,
+                    employee_id_matriculas_map=employee_id_matriculas_map,
+                    wfm_proc_colab=wfm_proc_colab,
+                )
+            )
+            if not success:
+                self.logger.error(f"Contract-holder filtering failed: {error_msg}")
+                return False, "errSubproc", error_msg
+
+            # Load employee-scoped auxiliary data using filtered contract-holder lists
             df_annual_variables = pd.DataFrame()
             try:
                 self.logger.info("Loading df_annual_variables from data manager")
@@ -918,7 +949,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.warning(f"Error loading df_annual_variables: {e} - proceeding without annual variables")
 
-            # Load df_disponibilidade (employee availability restrictions)
+            df_disponibilidade = pd.DataFrame()
             try:
                 self.logger.info("Loading df_disponibilidade from data manager")
                 df_disponibilidade = data_manager.load_data(
@@ -937,20 +968,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.warning(f"Error loading df_disponibilidade: {e} - proceeding without availability restrictions")
                 df_disponibilidade = pd.DataFrame()
 
-            # Load df_core_pro_work_shift (section-level M/T shift time boundaries)
-            df_core_pro_work_shift = pd.DataFrame()
-            try:
-                self.logger.info("Loading df_core_pro_work_shift from data manager")
-                df_core_pro_work_shift = data_manager.load_data(
-                    entity='df_core_pro_work_shift',
-                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_core_pro_work_shift', ''),
-                    process_id=process_id,
-                )
-                self.logger.info(f"df_core_pro_work_shift shape (rows {df_core_pro_work_shift.shape[0]}, columns {df_core_pro_work_shift.shape[1]}): {df_core_pro_work_shift.columns.tolist()}")
-            except Exception as e:
-                self.logger.warning(f"Error loading df_core_pro_work_shift: {e} - proceeding without shift boundaries")
-
-            # Treat df_disponibilidade if not empty
             if not df_disponibilidade.empty:
                 try:
                     success, df_disponibilidade, error_msg = treat_df_disponibilidade(
@@ -964,11 +981,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 except Exception as e:
                     self.logger.warning(f"Error treating df_disponibilidade: {e} - proceeding without availability restrictions")
                     df_disponibilidade = pd.DataFrame()
-
-            success, df_colaborador, error_msg = treat_df_colaborador(df_colaborador=df_colaborador, employees_id_list=past_employees_id_list)
-            if not success:
-                self.logger.error(f"Colaborador treatment failed: {error_msg}")
-                return False, "errSubproc", error_msg
 
             # employees_id_90_list is initialized empty here.
             # It is derived from df_ciclos_completos_folgas_ciclos (TIPO_CICLO='Completo')
@@ -1071,6 +1083,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['employees_id_list_for_posto'] = employees_id_list_for_posto
                 self.auxiliary_data['employees_id_90_list'] = employees_id_90_list
                 self.auxiliary_data['past_employees_id_list'] = past_employees_id_list
+                employees_id_by_posto_dict = dict(
+                    self.auxiliary_data.get('employees_id_by_posto_dict', {})
+                )
+                employees_id_by_posto_dict[posto_id] = employees_id_list_for_posto
+                self.auxiliary_data['employees_id_by_posto_dict'] = employees_id_by_posto_dict
 
                 # Save important information in algorithm_treatment_params
                 self.algorithm_treatment_params['employees_id_list_for_posto'] = employees_id_list_for_posto
@@ -1423,7 +1440,10 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", str(e)
 
             try:
-                # Create df_calendario
+                # Create df_calendario scoped to past_employees_id_list (posto employees).
+                # Section map is full-section for matricula lookup; create_df_calendario filters it.
+                # past_employees_id_list == employees_id_list_for_posto in section mode, and all
+                # posto mpd employees in single-colaborador mode — same list used for ciclos/colaborador.
                 success, df_calendario, error_msg = create_df_calendario(
                     start_date=start_date, 
                     end_date=end_date,
