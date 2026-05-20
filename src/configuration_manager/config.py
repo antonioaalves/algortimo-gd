@@ -131,7 +131,7 @@ CONFIG = {
 
     'available_entities_raw': {
         'df_calendario': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
-        'df_colaborador': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_ma.sql'),
+        'df_colaborador': os.path.join(ROOT_DIR, '..', 'data', 'Queries', 'sql', 'queryGetCoreProEmpContract.sql'),
         'df_estimativas': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
     },
 

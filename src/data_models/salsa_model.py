@@ -22,7 +22,6 @@ from src.data_models.functions.helper_functions import (
     get_first_and_last_day_passado_arguments,
     get_section_employees_id_list,
     get_past_employees_id_list,
-    get_employees_id_90_list,
     get_matriculas_for_employee_id,
     get_employee_id_matriculas_map_dict,
     get_df_estrutura_wfm_info,
@@ -36,7 +35,6 @@ from src.data_models.functions.helper_functions import (
     treat_df_faixa_secao_to_long,
 )
 from src.data_models.functions.data_treatment_functions import (
-    separate_df_ciclos_completos_folgas_ciclos,
     treat_df_valid_emp, 
     treat_df_closed_days, 
     treat_df_feriados,
@@ -44,12 +42,10 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_calendario_passado,
     treat_df_ausencias_ferias,
     treat_df_ciclos_completos,
-    treat_df_folgas_ciclos,
     treat_df_colaborador,
     add_lqs_to_df_colaborador,
     set_tipo_contrato_to_df_colaborador,
     add_prioridade_folgas_to_df_colaborador,
-    date_adjustments_to_df_colaborador,
     add_l_d_to_df_colaborador,
     add_l_dom_to_df_colaborador,
     add_l_q_to_df_colaborador, 
@@ -57,10 +53,9 @@ from src.data_models.functions.data_treatment_functions import (
     set_c2d_to_df_colaborador,
     set_c3d_to_df_colaborador,
     create_df_calendario,
-    add_seq_turno,
+    add_shift_info_from_ciclos,
     add_calendario_passado,
     add_ausencias_ferias,
-    add_folgas_ciclos,
     add_ciclos_completos,
     add_days_off,
     adjust_estimativas_special_days,
@@ -69,8 +64,6 @@ from src.data_models.functions.data_treatment_functions import (
     process_special_shift_types,
     add_date_related_columns,
     define_dia_tipo,
-    merge_contract_data,
-    adjust_counters_for_contract_types,
     handle_employee_edge_cases,
     adjust_horario_for_admission_date,
     calculate_and_merge_allocated_employees,
@@ -80,6 +73,7 @@ from src.data_models.functions.data_treatment_functions import (
     add_process_rules_to_df_contratos,
     treat_df_pro_emp_mov,
     build_compensatory_output,
+    apply_annual_dayoff_feasibility_cap,
 )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.validations.load_process_data_validations import (
@@ -93,7 +87,6 @@ from src.data_models.validations.load_process_data_validations import (
     validate_df_feriados,
     validate_df_ausencias_ferias,
     validate_df_ciclos_completos,
-    validate_df_folgas_ciclos,
     validate_valid_emp_info,
     validate_num_sundays_year,
     validate_df_estrutura_wfm,
@@ -132,7 +125,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 - params_lq: LQ parameters
                 - valid_emp: Valid employees filtered for processing
                 - colabs_id_list: List of collaborator IDs
-                - convenio: Convention information
+                - labor_union: Labor union code
                 - unit_id: Unit ID
                 - secao_id: Section ID
                 - posto_id_list: List of posto IDs
@@ -176,7 +169,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             'final': None, # TODO: change the name
             'num_fer_doms': 0, # number of feriados and Sundays in the year
             'algorithm_name': None, # algorithm name - now comes from query
-            'convenio': None, # convention information
+            'labor_union': None, # labor union code
             'current_posto_id': None, # current posto ID
             'df_ausencias_ferias': None, # holidays absences information dataframe
             'df_days_off': None, # days off information dataframe
@@ -875,38 +868,55 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error getting past employees id list: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # Load df_colaborador info from data manager
+            # Load df_colaborador info from data manager (wfm.core_pro_emp_contract)
             try:
-                # colaborador info
-                self.logger.info(f"Loading df_colaborador info from data manager")
+                self.logger.info("Loading df_colaborador info from data manager")
                 df_colaborador = data_manager.load_data(
-                    entity='df_colaborador', 
-                    query_file=self.config_manager.paths.sql_raw_paths.get('df_colaborador'), 
-                    colabs_id=create_employee_query_string(employee_id_list=past_employees_id_list)
+                    entity='df_colaborador',
+                    query_file=self.config_manager.paths.sql_raw_paths.get('df_colaborador'),
+                    colabs_id=create_employee_query_string(employee_id_list=past_employees_id_list),
+                    start_date="'" + str(first_date_passado) + "'",
+                    end_date="'" + str(last_date_passado) + "'",
+                    process_id=process_id,
                 )
                 self.logger.info(f"df_colaborador shape (rows {df_colaborador.shape[0]}, columns {df_colaborador.shape[1]}): {df_colaborador.columns.tolist()}")
-                
             except Exception as e:
                 self.logger.error(f"Error loading df_colaborador info from data source: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
-            
-            # Load df_contratos info from data manager
-            try:                                
-                self.logger.info(f"Loading df_contratos info from data manager")
-                df_contratos = data_manager.load_data(
-                    entity='df_contratos', 
-                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_contratos'), 
-                    colabs_id=create_employee_query_string(past_employees_id_list), 
-                    start_date=first_date_passado, 
-                    end_date=last_date_passado, 
-                    process_id=process_id
+
+            # fk_tipo_posto is not a column in core_pro_emp_contract or esc_colaborador.
+            # Merge it from df_valid_emp which holds the authoritative employee_id → fk_tipo_posto mapping.
+            try:
+                df_valid_emp = self.auxiliary_data['df_valid_emp']
+                df_emp_posto_map = (
+                    df_valid_emp[['employee_id', 'fk_tipo_posto']]
+                    .drop_duplicates(subset=['employee_id'])
+                    .copy()
                 )
-                self.logger.info(f"df_contratos shape (rows {df_contratos.shape[0]}, columns {df_contratos.shape[1]}): {df_contratos.columns.tolist()}")
-                
-                
+                # Normalise employee_id to str on both sides to avoid int64/object merge failure
+                df_colaborador['employee_id'] = df_colaborador['employee_id'].astype(str)
+                df_emp_posto_map['employee_id'] = df_emp_posto_map['employee_id'].astype(str)
+                df_colaborador = df_colaborador.merge(df_emp_posto_map, on='employee_id', how='left')
+                self.logger.info(f"Merged fk_tipo_posto from df_valid_emp: {df_colaborador['fk_tipo_posto'].unique().tolist()}")
             except Exception as e:
-                self.logger.error(f"Error loading df_contratos: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+                self.logger.warning(f"Could not merge fk_tipo_posto from df_valid_emp: {e}")
+
+            # df_contratos retired — consolidated into df_colaborador (wfm.core_pro_emp_contract)
+            df_contratos = pd.DataFrame()
+
+            # Load df_annual_variables from data manager (wfm.core_pro_emp_annual_variables)
+            df_annual_variables = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_annual_variables from data manager")
+                df_annual_variables = data_manager.load_data(
+                    entity='df_annual_variables',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_annual_variables', ''),
+                    colabs_id=create_employee_query_string(past_employees_id_list),
+                    process_id=process_id,
+                )
+                self.logger.info(f"df_annual_variables shape (rows {df_annual_variables.shape[0]}, columns {df_annual_variables.shape[1]}): {df_annual_variables.columns.tolist()}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_annual_variables: {e} - proceeding without annual variables")
 
             # Load df_disponibilidade (employee availability restrictions)
             try:
@@ -927,26 +937,29 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.warning(f"Error loading df_disponibilidade: {e} - proceeding without availability restrictions")
                 df_disponibilidade = pd.DataFrame()
 
+            # Load df_core_pro_work_shift (section-level M/T shift time boundaries)
+            df_core_pro_work_shift = pd.DataFrame()
+            try:
+                self.logger.info("Loading df_core_pro_work_shift from data manager")
+                df_core_pro_work_shift = data_manager.load_data(
+                    entity='df_core_pro_work_shift',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_core_pro_work_shift', ''),
+                    process_id=process_id,
+                )
+                self.logger.info(f"df_core_pro_work_shift shape (rows {df_core_pro_work_shift.shape[0]}, columns {df_core_pro_work_shift.shape[1]}): {df_core_pro_work_shift.columns.tolist()}")
+            except Exception as e:
+                self.logger.warning(f"Error loading df_core_pro_work_shift: {e} - proceeding without shift boundaries")
+
             # Treat df_disponibilidade if not empty
             if not df_disponibilidade.empty:
                 try:
-                    # Extract employee limits from df_colaborador for availability treatment
-                    limit_columns = ['employee_id', 'matricula', 'limite_superior_manha', 'limite_inferior_tarde']
-                    available_limit_columns = [col for col in limit_columns if col in df_colaborador.columns]
-                    
-                    if 'employee_id' in available_limit_columns:
-                        df_colaborador_limits = df_colaborador[available_limit_columns].copy()
-                        self.logger.info(f"Extracted employee limits for df_disponibilidade treatment: {len(df_colaborador_limits)} employees")
-                        
-                        success, df_disponibilidade, error_msg = treat_df_disponibilidade(
-                            df_disponibilidade=df_disponibilidade,
-                            df_colaborador_limits=df_colaborador_limits
-                        )
-                        if not success:
-                            self.logger.warning(f"df_disponibilidade treatment failed: {error_msg} - proceeding without availability restrictions")
-                            df_disponibilidade = pd.DataFrame()
-                    else:
-                        self.logger.warning("employee_id column not found in df_colaborador - skipping df_disponibilidade treatment")
+                    success, df_disponibilidade, error_msg = treat_df_disponibilidade(
+                        df_disponibilidade=df_disponibilidade,
+                        df_core_pro_work_shift=df_core_pro_work_shift,
+                        section_id=posto_id,
+                    )
+                    if not success:
+                        self.logger.warning(f"df_disponibilidade treatment failed: {error_msg} - proceeding without availability restrictions")
                         df_disponibilidade = pd.DataFrame()
                 except Exception as e:
                     self.logger.warning(f"Error treating df_disponibilidade: {e} - proceeding without availability restrictions")
@@ -957,19 +970,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Colaborador treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg
 
-            # Get employees_id_90_list
-            try:
-                success, employees_id_90_list, error_msg = get_employees_id_90_list(
-                    employees_id_list_for_posto=employees_id_list_for_posto, 
-                    df_colaborador=df_colaborador,
-                )
-                if not success:
-                    self.logger.error(f"Error getting employees id 90 list: {error_msg}")
-                    return False, "errSubproc", error_msg
-
-            except Exception as e:
-                self.logger.error(f"Error creating employees_id_90_list from df_colaborador: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+            # employees_id_90_list is initialized empty here.
+            # It is derived from df_ciclos_completos_folgas_ciclos (TIPO_CICLO='Completo')
+            # after load_calendario_info() completes, when the ciclos dataframe is available.
+            # get_employees_id_90_list() will be called again in load_calendario_info with the ciclos data.
+            employees_id_90_list: list = []
+            self.logger.info("employees_id_90_list initialized as empty (will be set in load_calendario_info from ciclos data)")
 
             # Quick validations
             if not validate_past_employee_id_list(past_employees_id_list, case_type):
@@ -1055,7 +1061,9 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
                 self.auxiliary_data['df_pro_emp_mov_raw'] = df_pro_emp_mov_raw.copy()
-                self.auxiliary_data['df_contratos'] = df_contratos.copy()
+                # df_contratos retired — kept as empty DataFrame for backward compatibility
+                self.auxiliary_data['df_contratos'] = df_contratos
+                self.auxiliary_data['df_annual_variables'] = df_annual_variables.copy() if not df_annual_variables.empty else pd.DataFrame()
                 self.auxiliary_data['df_disponibilidade'] = df_disponibilidade.copy() if not df_disponibilidade.empty else pd.DataFrame()
                 # TODO: Remove this, not used
                 self.auxiliary_data['num_fer_doms'] = 0
@@ -1258,83 +1266,36 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"df_ausencias_ferias not valid: {df_ausencias_ferias}")
                 return False, "errSubproc", "df_ausencias_ferias validation failed"
 
-            try: 
+            try:
                 self.logger.info("Loading df_ciclos_completos_folgas_ciclos from data manager")
                 df_ciclos_completos_folgas_ciclos = data_manager.load_data(
-                    'df_ciclos_completos_folgas_ciclos', 
-                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_ciclos_completos_folgas_ciclos'], 
-                    process_id=process_id, 
-                    start_date=start_date_str, 
+                    'df_ciclos_completos_folgas_ciclos',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths['df_ciclos_completos_folgas_ciclos'],
+                    process_id=process_id,
+                    start_date=start_date_str,
                     end_date=end_date_str,
-                    colab90ciclo=create_employee_query_string(employees_id_90_list)
+                    colabs_id=create_employee_query_string(employees_id_list_for_posto),
                 )
                 self.logger.info(f"df_ciclos_completos_folgas_ciclos shape (rows {df_ciclos_completos_folgas_ciclos.shape[0]}, columns {df_ciclos_completos_folgas_ciclos.shape[1]}): {df_ciclos_completos_folgas_ciclos.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_ciclos_completos_folgas_ciclos: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # Separating initial df query into both dfs
             try:
-                success, df_ciclos_completos, df_folgas_ciclos, error_msg = separate_df_ciclos_completos_folgas_ciclos(
-                    df_ciclos_completos_folgas_ciclos=df_ciclos_completos_folgas_ciclos,
-                    employees_id_90_list=employees_id_90_list
+                self.logger.info("Treating df_ciclos")
+                success, df_ciclos, error_msg = treat_df_ciclos_completos(
+                    df_ciclos_completos=df_ciclos_completos_folgas_ciclos,
                 )
                 if not success:
-                    self.logger.error(f"Error separating initial df query into both dfs: {error_msg}")
+                    self.logger.error(f"df_ciclos treatment failed: {error_msg}")
                     return False, "errSubproc", error_msg
             except Exception as e:
-                self.logger.error(f"Error separating initial df query into both dfs: {e}", exc_info=True)
-                return False, "errSubproc", str(e)
+                self.logger.error(f"Error treating df_ciclos: {e}", exc_info=True)
+                return False, "errSubproc", "Error treating df_ciclos"
 
-
-            try:
-                self.logger.info("Treating ciclos completos")
-                
-                # Extract employee limits from df_colaborador
-                df_colaborador = self.raw_data.get('df_colaborador')
-                df_colaborador_limits = None
-                
-                if df_colaborador is not None and not df_colaborador.empty:
-                    limit_columns = ['matricula', 'limite_superior_manha', 'limite_inferior_tarde']
-                    available_columns = [col for col in limit_columns if col in df_colaborador.columns]
-                    
-                    if 'matricula' in available_columns:
-                        df_colaborador_limits = df_colaborador[available_columns].copy()
-                        self.logger.info(f"Extracted employee limits for {len(df_colaborador_limits)} employees")
-                    else:
-                        self.logger.warning("matricula column not found in df_colaborador - proceeding without limits")
-                else:
-                    self.logger.warning("df_colaborador not available - proceeding without employee limits")
-                
-                success, df_ciclos_completos, error_msg = treat_df_ciclos_completos(
-                    df_ciclos_completos=df_ciclos_completos,
-                )
-                if not success:
-                    self.logger.error(f"Ciclos completos treatment failed: {error_msg}")
-                    return False, "errSubproc", error_msg
-            except Exception as e:
-                self.logger.error(f"Error treating ciclos 90: {e}", exc_info=True)
-                return False, "errSubproc", "Error treating ciclos 90"
-
-            if not validate_df_ciclos_completos(df_ciclos_completos):
-                self.logger.error("df_folgas_ciclos validation failed")
-                return False, "errSubproc", "df_folgas_ciclos validation failed"
-
-            try:
-                self.logger.info("Treating folgas ciclos")
-                success, df_folgas_ciclos, error_msg = treat_df_folgas_ciclos(
-                    df_folgas_ciclos=df_folgas_ciclos,
-                )
-                if not success:
-                    self.logger.error(f"Folgas ciclos treatment failed: {error_msg}")
-                    return False, "errSubproc", error_msg
-            except Exception as e:
-                self.logger.error(f"Error treating folgas ciclos: {e}", exc_info=True)
-                return False, "errSubproc", "Error treating folgas ciclos"
-
-            if not validate_df_folgas_ciclos(df_folgas_ciclos):
-                self.logger.error("df_folgas_ciclos validation failed")
-                return False, "errSubproc", "df_folgas_ciclos validation failed"
+            if not validate_df_ciclos_completos(df_ciclos):
+                self.logger.error("df_ciclos validation failed")
+                return False, "errSubproc", "df_ciclos validation failed"
 
             try:
                 self.logger.info("Loading df_days_off from data manager")
@@ -1371,8 +1332,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['df_calendario_passado'] = df_calendario_passado.copy() if not df_calendario_passado.empty else pd.DataFrame()
                 self.auxiliary_data['df_ausencias_ferias'] = df_ausencias_ferias.copy()
                 self.auxiliary_data['df_days_off'] = df_days_off.copy()
-                self.auxiliary_data['df_ciclos_completos'] = df_ciclos_completos.copy()
-                self.auxiliary_data['df_folgas_ciclos'] = df_folgas_ciclos.copy()
+                self.auxiliary_data['df_ciclos'] = df_ciclos.copy()
                 
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
@@ -1450,8 +1410,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Dataframe
                 df_calendario_passado = self.auxiliary_data['df_calendario_passado'].copy()
                 df_ausencias_ferias = self.auxiliary_data['df_ausencias_ferias'].copy()
-                df_folgas_ciclos = self.auxiliary_data['df_folgas_ciclos'].copy()
-                df_ciclos_completos = self.auxiliary_data['df_ciclos_completos'].copy()
+                df_ciclos = self.auxiliary_data['df_ciclos'].copy()
                 df_days_off = self.auxiliary_data['df_days_off'].copy()
                 df_feriados = self.auxiliary_data['df_feriados'].copy()
                 df_colaborador = self.raw_data['df_colaborador'].copy()
@@ -1491,10 +1450,10 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                success, df_calendario, error_msg = add_seq_turno(df_calendario, df_colaborador)
+                success, df_calendario, error_msg = add_shift_info_from_ciclos(df_calendario, df_ciclos)
                 if not success:
-                    self.logger.error(f"Adding seq turno failed: {error_msg}")
-                    return False, "", error_msg
+                    self.logger.error(f"Adding shift info from ciclos failed: {error_msg}")
+                    return False, "errSubproc", error_msg
 
                 # Add df_ausencias_ferias to df_calendario
                 success, df_calendario, error_msg = add_ausencias_ferias(df_calendario, df_ausencias_ferias)
@@ -1502,12 +1461,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding ausencias ferias failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # Add df_ciclos_90 to df_calendario
-                success, df_calendario, error_msg = add_ciclos_completos(df_calendario, df_ciclos_completos)
+                # Apply all cycle day-type horario codes to df_calendario
+                success, df_calendario, error_msg = add_ciclos_completos(df_calendario, df_ciclos)
                 if not success:
-                    self.logger.error(f"Adding ciclos 90 failed: {error_msg}")
+                    self.logger.error(f"Adding ciclos failed: {error_msg}")
                     return False, "errSubproc", error_msg
-                
+
                 # Add df_days_off to df_calendario
                 success, df_calendario, error_msg = add_days_off(df_calendario, df_days_off)
                 if not success:
@@ -1518,12 +1477,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_calendario, error_msg = add_calendario_passado(df_calendario, df_calendario_passado)
                 if not success:
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
-                    return False, "errSubproc", error_msg
-
-                # Add df_folgas_ciclos to df_calendario
-                success, df_calendario, error_msg = add_folgas_ciclos(df_calendario, df_folgas_ciclos)
-                if not success:
-                    self.logger.error(f"Adding folgas ciclos failed: {error_msg}")
                     return False, "errSubproc", error_msg
                 
                 # Filter by date range (Step 3B from func_inicializa guide)
@@ -1623,7 +1576,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 # Variables
                 unit_id = self.auxiliary_data['unit_id']
-                convenio_bd  = self.auxiliary_data['GD_convenioBD']
+                labor_union_bd  = self.auxiliary_data['GD_convenioBD']
                 num_sundays_year = self.auxiliary_data['num_sundays_year']
                 num_feriados_abertos = self.auxiliary_data['num_feriados_abertos']
                 num_feriados_fechados = self.auxiliary_data['num_feriados_fechados']
@@ -1647,8 +1600,9 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # Define which columns are going to be added:
             try:
-                # Treat df_contratos if it exists
-                if 'df_contratos' in self.auxiliary_data:
+                # df_contratos is retired (STRSOL-1279) — kept as an empty placeholder for
+                # backward compatibility. Skip treatment when empty to avoid blocking the chain.
+                if 'df_contratos' in self.auxiliary_data and not self.auxiliary_data['df_contratos'].empty:
                     df_contratos = self.auxiliary_data['df_contratos'].copy()
                     success, df_contratos, error_msg = treat_df_contratos(df_contratos=df_contratos)
                     if not success:
@@ -1686,19 +1640,22 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False, "errSubproc", error_msg
 
                 # Set C2D values based on use case
+                # use_case=0: initialise c2d=0; real values come from apply_annual_dayoff_feasibility_cap
+                # (CAV-sourced c2d/c3d columns no longer exist in df_colaborador — STRSOL-1279)
                 success, df_colaborador, error_msg = set_c2d_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    use_case=1
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Setting c2d failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
                 # Set C3D values based on convenio and use case
+                # use_case=0: initialise c3d=0; real values come from apply_annual_dayoff_feasibility_cap
                 success, df_colaborador, error_msg = set_c3d_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    convenio_bd=convenio_bd,
-                    use_case=1
+                    labor_union_bd=labor_union_bd,
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Setting c3d failed: {error_msg}")
@@ -1707,7 +1664,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # Add L_D (working days) calculations
                 success, df_colaborador, error_msg = add_l_d_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     use_case=0,
                     ld_sunday_param=ld_sunday_param,
                     ld_holiday_param=ld_holiday_param,
@@ -1716,28 +1673,30 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding l_d failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # Add L_DOM (weekend/holiday days) calculations
+                # Add L_DOM / L_SAB / L_DOM_OR_SAB (annual rule columns)
+                # use_case=0: initialise to 0; real values set by apply_annual_dayoff_feasibility_cap
                 success, df_colaborador, error_msg = add_l_dom_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     df_feriados=df_feriados,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     num_fer_dom=num_sundays_year,
                     num_feriados=num_feriados_abertos+num_feriados_fechados,
                     num_feriados_fechados=num_feriados_fechados,
                     num_sundays=num_sundays_year,
                     start_date_str=start_date_str,
                     end_date_str=end_date_str,
-                    use_case=1
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Adding l_dom failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
                 # Add L_Q (quality leave) calculations
+                # use_case=0: initialise lq=0; c2d/c3d are 0 at this stage anyway
                 success, df_colaborador, error_msg = add_l_q_to_df_colaborador(
                     df_colaborador=df_colaborador,
-                    convenio_bd=convenio_bd,
-                    use_case=1
+                    labor_union_bd=labor_union_bd,
+                    use_case=0
                 )
                 if not success:
                     self.logger.error(f"Adding l_q failed: {error_msg}")
@@ -1747,7 +1706,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 success, df_colaborador, error_msg = add_l_total_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     df_feriados=df_feriados,
-                    convenio_bd=convenio_bd,
+                    labor_union_bd=labor_union_bd,
                     num_sundays=num_sundays_year,
                     num_fer_dom=num_sundays_year,
                     use_case=0
@@ -1756,23 +1715,10 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding l_total failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
-                # TODO: Add totals adjustments for admission date
-                success, df_colaborador, error_msg = date_adjustments_to_df_colaborador(
-                    df_colaborador=df_colaborador,
-                    main_year=self.auxiliary_data['main_year']
-                )
-                if not success:
-                    self.logger.error(f"Adding admission date adjustments failed: {error_msg}")
-                    return False, "errSubproc", error_msg
-
-                # Adjust contract type 3 employees (Step 5B from func_inicializa guide)
-                success, df_colaborador, error_msg = adjust_counters_for_contract_types(
-                    df_colaborador=df_colaborador,
-                    tipo_contrato_col='tipo_contrato'
-                )
-                if not success:
-                    self.logger.error(f"Contract type 3 adjustment failed: {error_msg}")
-                    return False, "errSubproc", error_msg
+                # STRSOL-1279: date_adjustments_to_df_colaborador and
+                # adjust_counters_for_contract_types are retired — counters are initialised to 0
+                # above and populated (with period-aware feasibility caps) by
+                # apply_annual_dayoff_feasibility_cap in func_inicializa.
 
                 try:
                     self.raw_data['df_colaborador'] = df_colaborador.copy()
@@ -1808,9 +1754,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_colaborador = self.raw_data['df_colaborador'].copy()
                 df_estimativas = self.raw_data['df_estimativas'].copy()
                 
-                # Load df_contratos for merging (needed for Step 3I)
-                df_contratos = self.auxiliary_data['df_contratos'].copy()
-
                 # Load ECI sibling section results (empty df if non-ECI)
                 df_eci_section_results = self.auxiliary_data.get('df_eci_section_results', pd.DataFrame()).copy()
 
@@ -1844,18 +1787,55 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error validating core dataframes: {e}", exc_info=True)
                 return False, "errValidation", str(e)
 
-            # Merge contract data into calendario (Step 3I - cross-dataframe operation)
-            success, df_calendario, error_msg = merge_contract_data(
-                df_calendario=df_calendario,
-                df_contratos=df_contratos,
-                employee_col='employee_id',
-                date_col='schedule_day'
-            )
-            if not success:
-                self.logger.error(f"Failed to merge contract data: {error_msg}")
-                return False, "errSubproc", error_msg
+            # Merge contract_id and carga_diaria from df_colaborador into df_calendario.
+            # df_contratos was retired (STRSOL-1279); df_colaborador now holds one row per
+            # (employee_id, contract_id) period with begin_date / end_date, so we range-join.
+            try:
+                col_cols = ['employee_id', 'contract_id', 'carga_diaria', 'begin_date', 'end_date']
+                df_colab_contracts = df_colaborador[col_cols].copy()
+                df_colab_contracts['employee_id'] = df_colab_contracts['employee_id'].astype(str)
+                df_colab_contracts['begin_date'] = pd.to_datetime(df_colab_contracts['begin_date'], errors='coerce')
+                df_colab_contracts['end_date'] = pd.to_datetime(df_colab_contracts['end_date'], errors='coerce')
 
-            # Handle employee edge cases (Step 5H - cross-dataframe operation)
+                df_calendario['employee_id'] = df_calendario['employee_id'].astype(str)
+                df_calendario['schedule_day'] = pd.to_datetime(df_calendario['schedule_day'], errors='coerce')
+
+                df_calendario = df_calendario.merge(df_colab_contracts, on='employee_id', how='left')
+                in_range = (
+                    df_calendario['schedule_day'] >= df_calendario['begin_date']
+                ) & (
+                    df_calendario['schedule_day'] <= df_calendario['end_date']
+                )
+                no_contract = df_calendario['begin_date'].isna()
+                df_calendario = df_calendario[in_range | no_contract].copy()
+                df_calendario = df_calendario.drop(columns=['begin_date', 'end_date'], errors='ignore')
+
+                null_count = df_calendario['contract_id'].isna().sum() if 'contract_id' in df_calendario.columns else 0
+                if null_count:
+                    # Employees absent from df_colaborador (no contract row in core_pro_emp_contract)
+                    # will always produce null contract_id — this is expected and not an error.
+                    no_data_emps = (
+                        set(df_calendario['employee_id'].unique())
+                        - set(df_colab_contracts['employee_id'].unique())
+                    )
+                    expected_null = df_calendario['employee_id'].isin(no_data_emps).sum()
+                    unexpected_null = null_count - expected_null
+                    self.logger.info(
+                        f"merge_contract_data: {null_count} null contract_id rows "
+                        f"({expected_null} expected — employees with no contract data; "
+                        f"{unexpected_null} unexpected — may be date range gaps)"
+                    )
+                    if unexpected_null > 0:
+                        self.logger.warning(
+                            f"merge_contract_data: {unexpected_null} rows for employees WITH contract data "
+                            f"have no matching contract period — check begin_date/end_date coverage"
+                        )
+                self.logger.info(f"Merged contract data from df_colaborador: {df_calendario.shape}")
+            except Exception as e:
+                self.logger.error(f"Failed to merge contract data from df_colaborador: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            # handle_employee_edge_cases is a no-op (STRSOL-1279); entitlements come from rules
             success, df_colaborador, df_calendario, error_msg = handle_employee_edge_cases(
                 df_colaborador=df_colaborador,
                 df_calendario=df_calendario,
@@ -1893,10 +1873,42 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", error_msg
 
 
-            # Final type coercion: ensure counters are stored as integers
+            # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
+            # Runs here because all required data is available: df_annual_variables and df_feriados
+            # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
+            try:
+                df_annual_variables = self.auxiliary_data.get('df_annual_variables', pd.DataFrame())
+                df_feriados_cap = self.auxiliary_data.get('df_feriados', pd.DataFrame())
+                df_ausencias_cap = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
+                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
+
+                success_cap, df_colaborador, cap_events, error_cap = apply_annual_dayoff_feasibility_cap(
+                    df_colaborador=df_colaborador,
+                    df_annual_variables=df_annual_variables,
+                    df_feriados=df_feriados_cap,
+                    df_ausencias_ferias=df_ausencias_cap,
+                    num_dias_cons=num_dias_cons,
+                    main_year=main_year,
+                )
+                if not success_cap:
+                    self.logger.error(f"apply_annual_dayoff_feasibility_cap failed: {error_cap}")
+                    return False, "errSubproc", error_cap
+
+                for event in cap_events:
+                    self.logger.warning(
+                        f"FEASIBILITY_CAP_APPLIED: employee={event['employee_id']}"
+                        f" field={event['field']}"
+                        f" original={event['original_value']} cap={event['cap_value']}"
+                        f" period={event['period_begin']}–{event['period_end']}"
+                    )
+            except Exception as e:
+                self.logger.error(f"Error applying annual day-off feasibility cap: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            # Final type coercion: ensure rule-sourced counters are stored as integers
             success, df_colaborador, error_msg = convert_fields_to_int(
                 df=df_colaborador,
-                fields=['ld', 'l_dom', 'lq', 'l_total', 'c2d', 'c3d', 'cxx']
+                fields=['ld', 'l_dom', 'lq', 'l_total', 'c2d', 'c3d', 'l_sab', 'l_dom_or_sab']
             )
             if not success:
                 self.logger.error(f"Final conversion of fields to int failed: {error_msg}")

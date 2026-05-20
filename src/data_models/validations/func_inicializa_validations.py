@@ -95,7 +95,7 @@ def validate_df_calendario_structure(df_calendario: pd.DataFrame, start_date: st
         
         # Check horario values are valid (if column exists)
         if 'horario' in df_calendario.columns:
-            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'LQ','F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D', '', 'M', 'T', 'MoT', 'P', '0''-' 'A-' 'V-']
+            valid_horario = ['H', 'L', 'L_', 'L_DOM', 'LQ', 'F', 'V', 'NL', 'A', 'DFS', 'OUT', 'NL2D', 'NL3D', '', 'M', 'T', 'MoT', 'P', '0', '-', 'A-', 'V-']
             invalid_horarios = df_calendario[~df_calendario['horario'].isin(valid_horario)]['horario'].unique()
             if len(invalid_horarios) > 0:
                 logger.warning(f"df_calendario contains unexpected horario values: {invalid_horarios}")
@@ -253,12 +253,14 @@ def validate_df_estimativas_structure(df_estimativas: pd.DataFrame, start_date: 
 def validate_df_colaborador_structure(df_colaborador: pd.DataFrame) -> Tuple[bool, str]:
     """
     Validate df_colaborador structure and content before func_inicializa cross-dataframe operations.
-    
-    Validates employee data is complete and consistent for the allocation cycle.
-    
+
+    df_colaborador now has one row per (employee_id, contract_id, begin_date/end_date)
+    period sourced from wfm.core_pro_emp_contract. Multiple rows per employee are
+    expected and valid when an employee has more than one contract period in the window.
+
     Args:
         df_colaborador: Employee/collaborator dataframe
-        
+
     Returns:
         Tuple[bool, str]: (is_valid, error_message)
     """
@@ -266,80 +268,74 @@ def validate_df_colaborador_structure(df_colaborador: pd.DataFrame) -> Tuple[boo
         # BASIC STRUCTURE VALIDATION
         if df_colaborador is None:
             return False, "df_colaborador is None"
-        
+
         if df_colaborador.empty:
             return False, "df_colaborador is empty"
-        
+
         if len(df_colaborador) == 0:
             return False, "df_colaborador has 0 rows"
-        
+
         # REQUIRED COLUMNS CHECK
         required_columns = [
-            'matricula',        # Employee ID
-            'tipo_contrato',    # Contract type (2, 3, 4, 5, 6)
-            'l_total',          # Total days off owed
+            'employee_id',   # Numeric employee identifier
+            'contract_id',   # Contract period identifier
+            'begin_date',    # Contract period start date
+            'end_date',      # Contract period end date
+            'matricula',     # Employee badge number
+            'min_dia_trab',  # Minimum working days per week
+            'max_dia_trab',  # Maximum working days per week
         ]
-        
+
         missing_columns = [col for col in required_columns if col not in df_colaborador.columns]
         if missing_columns:
             return False, f"df_colaborador missing required columns: {missing_columns}"
-        
+
         # RECOMMENDED COLUMNS CHECK (warn if missing)
         recommended_columns = [
-            'l_dom',            # Sunday/holiday days off
-            'ld', 'lq',         # Specific day off types
-            'c2d', 'c3d', 'cxx',  # Consecutive day patterns
-            'ciclo',            # Work cycle
-            'data_admissao',    # Admission date
-            'data_demissao',    # Dismissal date (if applicable)
+            'nome',           # Employee display name
+            'labor_union',    # Labor agreement / union code
+            'maximumworkload',# Maximum weekly workload (hours)
+            'maximumworkday', # Maximum daily workload (hours)
+            'carga_diaria',   # Derived daily workload cap
+            'data_admissao',  # Admission date
+            'data_demissao',  # Dismissal date (may be null)
+            'fk_tipo_posto',  # Job position type
         ]
-        
+
         missing_recommended = [col for col in recommended_columns if col not in df_colaborador.columns]
         if missing_recommended:
             logger.warning(f"df_colaborador missing recommended columns: {missing_recommended}")
-        
+
         # DATA TYPE VALIDATION
-        # Check matricula is not null
         null_matriculas = df_colaborador['matricula'].isnull().sum()
         if null_matriculas > 0:
             return False, f"df_colaborador has {null_matriculas} rows with null matricula"
-        
-        # Check for duplicate matriculas
-        duplicates = df_colaborador['matricula'].duplicated().sum()
-        if duplicates > 0:
-            logger.warning(f"df_colaborador has {duplicates} duplicate matriculas")
-        
-        # CONTENT VALIDATION
-        # Check tipo_contrato values are valid
-        valid_tipos_contrato = [2, 3, 4, 5, 6]
-        invalid_tipos = df_colaborador[~df_colaborador['tipo_contrato'].isin(valid_tipos_contrato)]['tipo_contrato'].unique()
-        if len(invalid_tipos) > 0:
-            logger.warning(f"df_colaborador contains unexpected tipo_contrato values: {invalid_tipos}")
-        
-        # Check l_total values (should be >= 0)
-        if 'l_total' in df_colaborador.columns:
-            negative_l_total = (df_colaborador['l_total'] < 0).sum()
-            if negative_l_total > 0:
-                logger.warning(f"df_colaborador has {negative_l_total} employees with negative l_total")
-        
-        # Check date columns if they exist
-        date_columns = ['data_admissao', 'data_demissao']
-        for col in date_columns:
-            if col in df_colaborador.columns:
-                if not pd.api.types.is_datetime64_any_dtype(df_colaborador[col]):
-                    logger.warning(f"df_colaborador['{col}'] is not datetime type")
-        
-        # CONTRACT TYPE DISTRIBUTION
-        if 'tipo_contrato' in df_colaborador.columns:
-            tipo_contrato_dist = df_colaborador['tipo_contrato'].value_counts().to_dict()
-            logger.info(f"Contract type distribution: {tipo_contrato_dist}")
-        
-        # EMPLOYEE COUNT
-        unique_employees = df_colaborador['matricula'].nunique()
+
+        # Multiple rows per employee are expected; uniqueness is (employee_id, contract_id)
+        duplicate_periods = df_colaborador.duplicated(subset=['employee_id', 'contract_id']).sum()
+        if duplicate_periods > 0:
+            logger.warning(f"df_colaborador has {duplicate_periods} duplicate (employee_id, contract_id) pairs")
+
+        # DATE RANGE VALIDATION
+        if 'begin_date' in df_colaborador.columns and 'end_date' in df_colaborador.columns:
+            if pd.api.types.is_datetime64_any_dtype(df_colaborador['begin_date']) and \
+               pd.api.types.is_datetime64_any_dtype(df_colaborador['end_date']):
+                invalid_ranges = (df_colaborador['begin_date'] > df_colaborador['end_date']).sum()
+                if invalid_ranges > 0:
+                    return False, f"df_colaborador has {invalid_ranges} rows where begin_date > end_date"
+
+        # WORKING DAY LIMITS
+        if 'min_dia_trab' in df_colaborador.columns and 'max_dia_trab' in df_colaborador.columns:
+            invalid_limits = (df_colaborador['min_dia_trab'] > df_colaborador['max_dia_trab']).sum()
+            if invalid_limits > 0:
+                logger.warning(f"df_colaborador has {invalid_limits} rows where min_dia_trab > max_dia_trab")
+
+        # EMPLOYEE / PERIOD COUNT
+        unique_employees = df_colaborador['employee_id'].nunique()
         logger.info(f"df_colaborador validation passed: {len(df_colaborador)} rows, {unique_employees} unique employees")
-        
+
         return True, ""
-        
+
     except Exception as e:
         error_msg = f"Error validating df_colaborador: {str(e)}"
         logger.error(error_msg, exc_info=True)

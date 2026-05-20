@@ -199,6 +199,9 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     weekly_diff_min_worst_scenario= 52*4 #number of weeks*hours
     percentage_of_importance_weekly_diff=1 
     weekly_diff_weight=int(scale*percentage_of_importance_weekly_diff/weekly_diff_min_worst_scenario)
+    weekly_diff_min_worst_scenario_per_day= 52*4 #number of weeks*hours
+    percentage_of_importance_weekly_diff_per_day=1
+    weekly_diff_weight_per_day=int(scale*percentage_of_importance_weekly_diff_per_day/weekly_diff_min_worst_scenario_per_day)
 
     no_key_shift_min_worst_scenario=1
     percentage_of_importance_key=4 
@@ -491,6 +494,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
 
     weekly_diff_vars = []
+    weekly_diff_vars_per_day=[]
     sorted_weeks = sorted(week_to_days.keys())
     safe_limit = len(all_workers) * 80 * len(real_working_shift)  # same as before
 
@@ -500,6 +504,16 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         # collect excess and deficit variables for this week
         excess_vars = [ex for (d, s, ex) in excess_diff_vars if d in days and d not in closed_holidays]
         deficit_vars = [df for (d, s, df) in deficit_diff_vars if d in days and d not in closed_holidays]
+
+        excess_vars_per_day = [
+            sum(ex for (dd, s, ex) in excess_diff_vars if dd == d)
+            for d in days if d not in closed_holidays
+        ]
+
+        deficit_vars_per_day = [
+            sum(df for (dd, s, df) in deficit_diff_vars if dd == d)
+            for d in days if d not in closed_holidays
+        ]
 
         if not excess_vars and not deficit_vars:
             continue  # nothing to analyze this week
@@ -512,17 +526,35 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         else:
             window_vars = excess_vars + [-df for df in deficit_vars]
 
+        if excess_vars_per_day and not deficit_vars_per_day:
+            window_vars_per_day = excess_vars_per_day
+        elif not excess_vars_per_day and deficit_vars_per_day:
+            window_vars_per_day = [-df for df in deficit_vars_per_day]
+        else:
+            window_vars_per_day = excess_vars_per_day + [-df for df in deficit_vars_per_day]
+
         # max and min of the week
         max_var = model.NewIntVar(-safe_limit, safe_limit, f'week_{w}_max')
         min_var = model.NewIntVar(-safe_limit, safe_limit, f'week_{w}_min')
         model.AddMaxEquality(max_var, window_vars)
         model.AddMinEquality(min_var, window_vars)
 
+        # max and min of the week
+        max_var_per_day = model.NewIntVar(-2*safe_limit, 2*safe_limit, f'week_{w}_max_per_day')
+        min_var_per_day = model.NewIntVar(-2*safe_limit, 2*safe_limit, f'week_{w}_min_per_day')
+        model.AddMaxEquality(max_var_per_day, window_vars_per_day)
+        model.AddMinEquality(min_var_per_day, window_vars_per_day)
+
         # difference
         diff_var = model.NewIntVar(0, 2 * safe_limit, f'week_{w}_diff')
         model.Add(diff_var == max_var - min_var)
 
+        # difference
+        diff_var_per_day = model.NewIntVar(0, 4 * safe_limit, f'week_{w}_diff')
+        model.Add(diff_var_per_day == max_var_per_day - min_var_per_day)
+
         weekly_diff_vars.append(diff_var)
+        weekly_diff_vars_per_day.append(diff_var_per_day)
 
         if weekly_diff_vars:
             total_weekly_diff = model.NewIntVar(
@@ -534,7 +566,15 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             if percentage_of_importance_weekly_diff > 0:
                 objective_terms.append(total_weekly_diff * weekly_diff_weight)
 
-
+        if weekly_diff_vars_per_day:
+            total_weekly_diff_per_day = model.NewIntVar(
+                0,
+                len(weekly_diff_vars_per_day) * 4 * safe_limit,
+                'total_weekly_diff_per_day'
+            )
+            model.Add(total_weekly_diff_per_day == sum(weekly_diff_vars_per_day))
+            if percentage_of_importance_weekly_diff_per_day > 0:
+                objective_terms.append(total_weekly_diff_per_day * weekly_diff_weight_per_day)
 
     # ===============================
     # 3.6. Diferença absoluta por semanas consecutivas

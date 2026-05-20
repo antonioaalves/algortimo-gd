@@ -70,7 +70,7 @@ class DescansosDataModel(BaseDataModel):
                 - params_lq: LQ parameters
                 - valid_emp: Valid employees filtered for processing
                 - colabs_id_list: List of collaborator IDs
-                - convenio: Convention information
+                - labor_union: Labor union code
                 - unit_id: Unit ID
                 - secao_id: Section ID
                 - posto_id_list: List of posto IDs
@@ -105,7 +105,7 @@ class DescansosDataModel(BaseDataModel):
             'params_lq': None, # LQ parameters
             'valid_emp': None, # valid employees filtered for processing
             'colabs_id_list': None, # list of collaborator IDs
-            'convenio': None, # convention information
+            'labor_union': None, # labor union code
             'unit_id': None, # unit ID
             'secao_id': None, # section ID
             'posto_id_list': None, # list of posto IDs
@@ -651,7 +651,10 @@ class DescansosDataModel(BaseDataModel):
                 # df_estimativas borns as an empty dataframe
                 df_estimativas = pd.DataFrame()
 
-                columns_select = ['nome', 'emp', 'fk_tipo_posto', 'loja', 'secao', 'h_tm_in', 'h_tm_out', 'h_tt_in', 'h_tt_out', 'h_seg_in', 'h_seg_out', 'h_ter_in', 'h_ter_out', 'h_qua_in', 'h_qua_out', 'h_qui_in', 'h_qui_out', 'h_sex_in', 'h_sex_out', 'h_sab_in', 'h_sab_out', 'h_dom_in', 'h_dom_out', 'h_fer_in', 'h_fer_out'] # TODO: define what columns to select
+                # Legacy per-hour columns (emp, loja, secao, h_*_in/_out) removed —
+                # df_colaborador is now sourced from wfm.core_pro_emp_contract and no longer
+                # carries those fields.  Only identity + posto columns are safe to select.
+                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto']
                 self.logger.info(f"Columns to select: {columns_select}")
             except Exception as e:
                 self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
@@ -1748,13 +1751,13 @@ class DescansosDataModel(BaseDataModel):
                 self.logger.info("Setting up global variables and configuration")
                 # Global variables that would be passed from external context
                 # TODO: These should be configured in your config or passed as parameters
-                #convenio_bd = 'ALCAMPO'  # You may need to set this appropriately
-                convenio_bd = self.auxiliary_data.get('GD_convenioBD', 'ALCAMPO')
+                #labor_union_bd = 'ALCAMPO'  # You may need to set this appropriately
+                labor_union_bd = self.auxiliary_data.get('GD_convenioBD', 'ALCAMPO')
                 wfm_user = self.external_call_data.get('wfm_user', 'WFM')
                 wfm_proc_id = self.external_call_data.get('wfm_proc_id', 0)
                 path_ficheiros_global = ''  # Configure as needed
                 
-                self.logger.info(f"Global variables set - convenio_bd: {convenio_bd}, wfm_user: {wfm_user}, wfm_proc_id: {wfm_proc_id}")
+                self.logger.info(f"Global variables set - labor_union_bd: {labor_union_bd}, wfm_user: {wfm_user}, wfm_proc_id: {wfm_proc_id}")
             except Exception as e:
                 self.logger.error(f"Error setting up global variables: {e}", exc_info=True)
                 return False
@@ -1818,7 +1821,7 @@ class DescansosDataModel(BaseDataModel):
             self.logger.info(f"DEBUG: matriz_ma columns: {matriz_ma.columns}")
             # Rename columns to ensure compatibility
             expected_columns = [
-                "fk_colaborador", "unidade", "secao", "posto", "convenio", "nome", "matricula",
+                "fk_colaborador", "unidade", "secao", "posto", "labor_union", "nome", "matricula",
                 "min_dia_trab", "max_dia_trab", "tipo_turno", "seq_turno", "t_total", "l_total",
                 "dyf_max_t", "lqs", "q", "c2d", "c3d", "cxx", "semana_1", "out", "ciclo", 
                 "data_admissao", "data_demissao", "dofhc", "seed_5_6", "n_sem_a_folga"
@@ -1832,7 +1835,7 @@ class DescansosDataModel(BaseDataModel):
                     'loja': 'unidade', 
                     'secao': 'secao',
                     'puesto': 'posto',
-                    'convenio': 'convenio',
+                    'labor_union': 'labor_union',
                     'nome': 'nome',
                     'emp': 'matricula',
                     'min_dias_trabalhados': 'min_dia_trab',
@@ -1861,7 +1864,7 @@ class DescansosDataModel(BaseDataModel):
                         matriz_ma = matriz_ma.rename(columns={old_col: new_col})
             
             # Transform data types
-            matriz_ma['convenio'] = matriz_ma['convenio'].str.upper()
+            matriz_ma['labor_union'] = matriz_ma['labor_union'].str.upper()
             matriz_ma['min_dia_trab'] = pd.to_numeric(matriz_ma['min_dia_trab'], errors='coerce')
             matriz_ma['max_dia_trab'] = pd.to_numeric(matriz_ma['max_dia_trab'], errors='coerce')
             matriz_ma['dyf_max_t'] = pd.to_numeric(matriz_ma['dyf_max_t'], errors='coerce')
@@ -1973,10 +1976,10 @@ class DescansosDataModel(BaseDataModel):
                 cc['c2d'] = cc['c2d'] + cc['c3d']
                 
                 tipo_contrato = cc['tipo_contrato'].iloc[0]
-                convenio = cc['convenio'].iloc[0]
+                labor_union = cc['labor_union'].iloc[0]
                 
                 # Process based on contract type and convention
-                if tipo_contrato == 6 and convenio == convenio_bd:
+                if tipo_contrato == 6 and labor_union == labor_union_bd:
                     cc['ld'] = cc['dyf_max_t']
                     cc['l_dom'] = num_fer_dom - cc['dyf_max_t'] - fer_fechados
                     cc['lq_og'] = cc['lq'].copy()
@@ -1992,8 +1995,7 @@ class DescansosDataModel(BaseDataModel):
                         #cc['l_total'] = cc['lq'] + cc['c2d'] + cc['c3d']
                         self.logger.warning(f"Empleado {cc['matricula'].iloc[0]} sin suficiente LQ para fines de semana de calidad. Recalculated l_total: {cc['l_total'].iloc[0]}")
                 
-                elif tipo_contrato in [5, 4] and convenio == convenio_bd:
-                    self.logger.info("teste entre novo convenio")
+                elif tipo_contrato in [5, 4] and labor_union == labor_union_bd:
                     cc['ld'] = cc['dyf_max_t']
                     cc['l_dom'] = num_fer_dom - cc['dyf_max_t'] - fer_fechados
                     cc['lq_og'] = 0
@@ -2002,7 +2004,7 @@ class DescansosDataModel(BaseDataModel):
                     cc['l_dom_salsa'] = num_sundays * div - cc['dyf_max_t']
                     self.logger.info(f"colaborador: {cc['matricula'].iloc[0]}, l_dom_salsa: {cc['l_dom_salsa'].iloc[0]}")
                 
-                elif tipo_contrato in [3, 2] and convenio == convenio_bd:
+                elif tipo_contrato in [3, 2] and labor_union == labor_union_bd:
                     if len(matriz_festivos) > 0:
                         coh = count_open_holidays(matriz_festivos, tipo_contrato)
                         cc['dyf_max_t'] = 0
@@ -2031,7 +2033,7 @@ class DescansosDataModel(BaseDataModel):
                         cc['l_total'] = 0
                 
                 # Nota: não está a atualizar l_total para lq's negativos
-                elif tipo_contrato == 6 and convenio == 'SABECO':
+                elif tipo_contrato == 6 and labor_union == 'SABECO':
                     cc['ld'] = cc['dyf_max_t']
                     cc['l_dom'] = num_fer_dom - cc['dyf_max_t'] - fer_fechados
                     cc['c3d'] = 0
@@ -2039,7 +2041,7 @@ class DescansosDataModel(BaseDataModel):
                     cc['lq_og'] = 0
                     cc['l_total'] = num_fer_dom + cc['c2d']
                 
-                elif tipo_contrato in [5, 4] and convenio == 'SABECO':
+                elif tipo_contrato in [5, 4] and labor_union == 'SABECO':
                     cc['ld'] = cc['dyf_max_t']
                     cc['l_dom'] = num_fer_dom - cc['dyf_max_t'] - fer_fechados
                     cc['c3d'] = 0
@@ -2047,7 +2049,7 @@ class DescansosDataModel(BaseDataModel):
                     cc['lq_og'] = 0
                     cc['l_total'] = num_sundays * (7 - tipo_contrato) + 8  # 8 is hardcoded per business rule
                 
-                elif tipo_contrato in [3, 2] and convenio == 'SABECO':
+                elif tipo_contrato in [3, 2] and labor_union == 'SABECO':
                     coh = count_open_holidays(matriz_festivos, tipo_contrato)
                     cc['dyf_max_t'] = 0
                     cc['q'] = 0
@@ -2874,8 +2876,7 @@ class DescansosDataModel(BaseDataModel):
             df_merge_count_fes = []
             df_merge_count_holidays = []
             
-            # Get convenio from external data or config
-            convenio_bd = self.external_call_data.get('convenio_bd', 'BD')  # You may need to adjust this
+            labor_union_bd = self.external_call_data.get('labor_union_bd', 'BD')
             
             # Process each employee
             for matricula in matrizA_og['matricula'].unique():
@@ -2887,7 +2888,7 @@ class DescansosDataModel(BaseDataModel):
                 tipo_contrato = matrizA_og[matrizA_og['matricula'] == matricula]['tipo_contrato'].iloc[0]
                 matriz_temp = pd.DataFrame(matriz_temp)
                 
-                if convenio_bd == 'BD':  # Assuming BD convention
+                if labor_union_bd == 'BD':  # Assuming BD convention
                     if tipo_contrato in [4, 5]:
                         # Count occurrences for 4/5 day contracts
                         count_occurrences = len(matriz_temp[

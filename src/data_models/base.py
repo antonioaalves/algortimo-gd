@@ -151,7 +151,9 @@ class BaseDescansosDataModel(ABC):
                 # df_estimativas borns as an empty dataframe
                 df_estimativas = pd.DataFrame()
 
-                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto', 'loja', 'secao', 'limite_superior_manha', 'limite_inferior_tarde']
+                # Retired columns removed: loja, secao, limite_superior_manha, limite_inferior_tarde
+                # (sourced from core_algorithm_variables, now retired — use WORK_SHIFT from ciclos instead)
+                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto']
                 self.logger.info(f"Columns to select: {columns_select}")
             except Exception as e:
                 self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
