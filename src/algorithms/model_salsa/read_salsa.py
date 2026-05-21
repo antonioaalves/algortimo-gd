@@ -122,7 +122,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             partial_workers_complete = set()
         
 
-        workers_colaborador = set(matriz_colaborador_gd[matriz_colaborador_gd['ciclo'] != 'Completo']['employee_id'].dropna().astype(int))
+        workers_colaborador = set(matriz_colaborador_gd['employee_id'].dropna().astype(int))
         
         logger.info(f"  - In matriz_colaborador (ciclo != 'Completo'): {len(workers_colaborador)} workers")
 
@@ -134,7 +134,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             workers = sorted(valid_workers)
             workers_complete = workers
-            complete = matriz_colaborador_gd[(matriz_colaborador_gd['ciclo'] == 'Completo') & (matriz_colaborador_gd['employee_id'] == w)]
+            complete = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             workers_complete_cycle = [] if complete.empty else workers
             if not complete.empty:
                 workers = []
