@@ -134,7 +134,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             workers = sorted(valid_workers)
             workers_complete = workers
-            complete = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
+            complete = pd.DataFrame()
             workers_complete_cycle = [] if complete.empty else workers
             if not complete.empty:
                 workers = []
