@@ -1,6 +1,6 @@
 from math import floor, ceil
 from base_data_project.log_config import get_logger
-from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_days_calc
+from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_days_calc, compensation_days_calc_with_contract_changes
 
 logger = get_logger('algoritmo_GD')
 
@@ -71,14 +71,28 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                 if special_day_week is None:
                     continue
                 # Store possible compensation days for this special day
-                possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
-                                                                          special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d)
-                ammount = len(possible_compensation_days[w][d])
-                if ammount <= 2:
-                    logger.warning(f"For {w}: day {d} got {ammount} possible_compensation_days!! Changing possible days to after year ends")
-                    possible_compensation_days[w][d].extend(compensation_days_calc(max(week_to_days), off, LQs, worker_absences[w], vacation_days[w], week_to_days,
-                                                                          special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d))
-                logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {possible_compensation_days[w][d]}")
+                if w not in dummy_workers and w not in workers_with_dummy:
+                    possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
+                                                                              special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d)
+                    ammount = len(possible_compensation_days[w][d])
+                    if ammount <= 2:
+                        logger.warning(f"For {w}: day {d} got {ammount} possible_compensation_days!! Changing possible days to after year ends")
+                        possible_compensation_days[w][d].extend(compensation_days_calc(max(week_to_days), off, LQs, worker_absences[w], vacation_days[w], week_to_days,
+                                                                              special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d))
+                    logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {possible_compensation_days[w][d]}")
+                else:
+                    if w in workers_with_dummy:
+                        parent = w
+                    elif w in dummy_workers:
+                        parent = dummy_workers[w]['parent']
+                    possible_compensation_days[w][d] = compensation_days_calc_with_contract_changes(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
+                                                                              special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d, workers_with_dummy, parent)
+                    ammount = len(possible_compensation_days[w][d])
+                    if ammount <= 2:
+                        logger.warning(f"For {w}: day {d} got {ammount} possible_compensation_days!! Changing possible days to after year ends")
+                        possible_compensation_days[w][d].extend(compensation_days_calc_with_contract_changes(max(week_to_days), off, LQs, worker_absences[w], vacation_days[w], week_to_days,
+                                                                              special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d, workers_with_dummy, parent))
+                    logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {possible_compensation_days[w][d]}")
 
         if w in past_special_days_worked:
             logger.info(f"past special days {w} worked: {past_special_days_worked[w]}")
@@ -89,8 +103,17 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                     continue
                 else:
                     special_day_week = next((wk for wk, days in week_to_days.items() if period[0] in days), 1) - 1
-                    possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
-                                                                              past_special_days_worked[w]["days_&_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d)
+                    if w not in dummy_workers and w not in workers_with_dummy:
+                        possible_compensation_days[w][d] = compensation_days_calc(special_day_week, off, LQs, worker_absences[w], vacation_days[w], week_to_days,
+                                                                                  past_special_days_worked[w]["days_&_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d)
+                    else:
+                        if w in workers_with_dummy:
+                            parent = w
+                        elif w in dummy_workers:
+                            parent = dummy_workers[w]['parent']
+                        possible_compensation_days[w][d] = compensation_days_calc_with_contract_changes(special_day_week, fixed_days_off, fixed_LQs, worker_absences[w], vacation_days[w],
+                                                                                                         week_to_days, past_special_days_worked[w]["days_&_limit"][d], working_days[w],
+                                                                                                         shift, w, fixed_lds, closed_days, period, d, workers_with_dummy, parent)
                     if len(possible_compensation_days[w][d]) != 0:
                         worked_special_day = model.NewConstant(1)
                     else:
