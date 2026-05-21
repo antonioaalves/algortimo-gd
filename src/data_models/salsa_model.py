@@ -1504,7 +1504,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df=df_calendario,
                     first_date_str=start_date,
                     last_date_str=end_date,
-                    date_col_name='schedule_day'  # Calendario uses schedule_day for schedule dates
+                    date_col_name='schedule_day', # Calendario uses schedule_day for schedule dates
+                    use_case=0,  
                 )
                 if not success:
                     self.logger.error(f"Failed to filter calendario by dates: {error_msg}")
@@ -1810,6 +1811,12 @@ class SalsaDataModel(BaseDescansosDataModel):
             # Merge contract_id and carga_diaria from df_colaborador into df_calendario.
             # df_contratos was retired (STRSOL-1279); df_colaborador now holds one row per
             # (employee_id, contract_id) period with begin_date / end_date, so we range-join.
+            #
+            # Important: contract fields are SECONDARY enrichment — they inform carga_diaria
+            # for demand capacity calculations but must never cause calendar rows to be dropped.
+            # Transition-week rows (Dec 27–31 and Jan 1–5 week boundaries) lie outside the
+            # execution-year contract window by design; they must be preserved with null
+            # contract fields rather than silently removed.
             try:
                 col_cols = ['employee_id', 'contract_id', 'carga_diaria', 'begin_date', 'end_date']
                 df_colab_contracts = df_colaborador[col_cols].copy()
@@ -1820,36 +1827,44 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_calendario['employee_id'] = df_calendario['employee_id'].astype(str)
                 df_calendario['schedule_day'] = pd.to_datetime(df_calendario['schedule_day'], errors='coerce')
 
-                df_calendario = df_calendario.merge(df_colab_contracts, on='employee_id', how='left')
+                df_merged = df_calendario.merge(df_colab_contracts, on='employee_id', how='left')
                 in_range = (
-                    df_calendario['schedule_day'] >= df_calendario['begin_date']
+                    df_merged['schedule_day'] >= df_merged['begin_date']
                 ) & (
-                    df_calendario['schedule_day'] <= df_calendario['end_date']
+                    df_merged['schedule_day'] <= df_merged['end_date']
                 )
-                no_contract = df_calendario['begin_date'].isna()
-                df_calendario = df_calendario[in_range | no_contract].copy()
-                df_calendario = df_calendario.drop(columns=['begin_date', 'end_date'], errors='ignore')
+                no_contract = df_merged['begin_date'].isna()
+
+                # Rows outside every contract window (transition weeks, boundary days) must be
+                # kept — only nullify the contract fields, do NOT drop the row.
+                out_of_range = ~in_range & ~no_contract
+                df_merged.loc[out_of_range, ['contract_id', 'carga_diaria']] = pd.NA
+
+                # Deduplicate: when an employee has multiple contract periods the left join
+                # produces N copies per calendar row. Keep the in-range match first; fall back
+                # to the null-contract copy for days outside all contract windows.
+                df_merged['_contract_rank'] = in_range.astype(int)
+                df_merged = df_merged.sort_values('_contract_rank', ascending=False)
+                df_merged = df_merged.drop_duplicates(
+                    subset=['employee_id', 'schedule_day', 'tipo_turno'], keep='first'
+                )
+                df_merged = df_merged.drop(columns=['begin_date', 'end_date', '_contract_rank'], errors='ignore')
+                df_calendario = df_merged.copy()
 
                 null_count = df_calendario['contract_id'].isna().sum() if 'contract_id' in df_calendario.columns else 0
                 if null_count:
-                    # Employees absent from df_colaborador (no contract row in core_pro_emp_contract)
-                    # will always produce null contract_id — this is expected and not an error.
                     no_data_emps = (
                         set(df_calendario['employee_id'].unique())
                         - set(df_colab_contracts['employee_id'].unique())
                     )
                     expected_null = df_calendario['employee_id'].isin(no_data_emps).sum()
-                    unexpected_null = null_count - expected_null
+                    # Transition-week rows for employees with contracts are also expected nulls
+                    transition_null = null_count - expected_null
                     self.logger.info(
                         f"merge_contract_data: {null_count} null contract_id rows "
-                        f"({expected_null} expected — employees with no contract data; "
-                        f"{unexpected_null} unexpected — may be date range gaps)"
+                        f"({expected_null} employees with no contract data; "
+                        f"{transition_null} days outside contract window — preserved with null contract)"
                     )
-                    if unexpected_null > 0:
-                        self.logger.warning(
-                            f"merge_contract_data: {unexpected_null} rows for employees WITH contract data "
-                            f"have no matching contract period — check begin_date/end_date coverage"
-                        )
                 self.logger.info(f"Merged contract data from df_colaborador: {df_calendario.shape}")
             except Exception as e:
                 self.logger.error(f"Failed to merge contract data from df_colaborador: {e}", exc_info=True)
