@@ -290,6 +290,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             holiday_past_lds = adapted_data["holiday_past_lds"]
             sunday_past_lds = adapted_data["sunday_past_lds"]
             dynamic_empty = adapted_data["dynamic_empty"]
+            dummy_workers = adapted_data["dummy_workers"]
+            workers_with_dummy = adapted_data["workers_with_dummy"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -348,7 +350,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             model = cp_model.CpModel()
             self.model = model
-            
+
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences, vacation_days, 
                                        empty_days, closed_holidays, fixed_days_off, fixed_LQs, shift_M, shift_T, workers_past,
@@ -381,7 +383,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "Espanha":
                 self.logger.info("Applying constraint: holiday_compensation_days (Espanha-specific)")
                 contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
-                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds, sunday_past_lds, closed_holidays)
+                                                                        fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
+                                                                        sunday_past_lds, closed_holidays, dummy_workers, workers_with_dummy)
             elif country != "Espanha":
                 self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Espanha)")
             else:
@@ -398,7 +401,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Maximum continuous working days constraint
                 if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: maximum_continuous_working_days")
-                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period)
+                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period, dummy_workers, workers_with_dummy)
                 else:
                     self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
                 
@@ -446,7 +449,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")
-                    one_colab_min_constraint(model, shift, workers, real_working_shift, days_of_year, shift_M, shift_T, period)
+                    one_colab_min_constraint(model, shift, workers, real_working_shift, days_of_year, shift_M, shift_T, period, closed_holidays)
                 else:
                     self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
 
@@ -470,8 +473,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
+            print(workers)
+            print("00000000000000000000")
             schedule_df, results, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date,
+                                         workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'), 
                                          optimization_details=optimization_details)

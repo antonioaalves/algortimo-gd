@@ -14,6 +14,8 @@ import os
 import psutil
 from src.algorithms.solver.solver_callback import SolutionCallback
 from src.algorithms.helpers_algorithm import analyze_optimization_results
+from src.algorithms.model_salsa.auxiliar_functions_salsa import get_dummy
+
 
 # Get project name and set up logger
 project_name = get_config_manager().system.project_name
@@ -37,6 +39,8 @@ def solve(
     eci_sibling_results_flag: bool,
     period: List[int],
     index_to_date: Dict[int, str],
+    dummy_workers: Dict[int, Dict[str, int]],
+    worker_with_dummy: Dict[int, tuple[int, int]],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -333,6 +337,12 @@ def solve(
         time_worked_day_T_after = time_worked_day_T.copy()
         for w in workers:
             try:
+                if dummy_workers:
+                    if w in dummy_workers:
+                        logger.info(f"{w} is a dummy worker, skiping")
+                        continue
+                    if w in worker_with_dummy:
+                        logger.info(f"{w} changes contract  {len(worker_with_dummy[w])} times.")
                 worker_row = [w]  # Start with the worker's name
                 l_count = 0
                 lq_count = 0
@@ -359,10 +369,10 @@ def solve(
                 logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
                     day_assignment = None
-                    
+                    temp_w = get_dummy(worker_with_dummy, w, d)
                     # Check each shift type for this day
                     for s in shifts:
-                        if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
+                        if (temp_w, d, s) in shift and solver.Value(shift[(temp_w, d, s)]) == 1:
                             day_assignment = shift_mapping.get(s, s)
                             break
                     
