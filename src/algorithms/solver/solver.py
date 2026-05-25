@@ -304,12 +304,14 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        time_worked_day_T[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_T:
+                            time_worked_day_T[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
                             special_days_worked[w].append(d)
-                        time_worked_day_M[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_M:
+                            time_worked_day_M[d - 1] += work_day_hours[w].get(d, 8)
 
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
@@ -399,7 +401,8 @@ def solve(
                                 special_days_count += 1
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
-                        time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_T:
+                            time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if 12 <= d <= period[1]:
                             if d in special_days:
@@ -407,7 +410,8 @@ def solve(
                                 special_days_count += 1
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
-                        time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_M:
+                            time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
 
                 if contingente_feriados:
                     if w in contingente_feriados and len(contingente_feriados[w]) > 0:
