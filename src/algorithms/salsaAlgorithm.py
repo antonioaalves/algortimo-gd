@@ -473,8 +473,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            print(workers)
-            print("00000000000000000000")
             schedule_df, results, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
                                          workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
                                          pd.Series(['Worker'] + (unique_dates)),
