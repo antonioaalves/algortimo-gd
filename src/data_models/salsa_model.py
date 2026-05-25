@@ -1969,6 +1969,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df_ausencias_ferias=df_ausencias_cap,
                     num_dias_cons=num_dias_cons,
                     main_year=main_year,
+                    df_calendario=df_calendario,
                 )
                 if not success_cap:
                     self.logger.error(f"apply_annual_dayoff_feasibility_cap failed: {error_cap}")
