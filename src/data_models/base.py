@@ -36,6 +36,7 @@ from src.data_models.functions.data_treatment_functions import (
     add_date_related_columns,
     create_df_estimativas,
     add_pessoa_obj_whole_day,
+    fill_estimativas_passado_grid,
     treat_df_orcamento,
     apply_compensatory_sched_types,
     build_compensatory_output,
@@ -466,6 +467,20 @@ class BaseDescansosDataModel(ABC):
             except Exception as e:
                 self.logger.error(f"Error filtering estimativas by dates: {e}", exc_info=True)
                 return False
+
+            # Pad missing passado days (transition weeks without orçamento) with zero numerics
+            try:
+                success, df_estimativas, error_msg = fill_estimativas_passado_grid(
+                    df_estimativas=df_estimativas,
+                    first_date_passado=first_date_passado,
+                    last_date_passado=last_date_passado,
+                )
+                if not success:
+                    self.logger.error(f"Failed to fill estimativas passado grid: {error_msg}")
+                    return False, "", error_msg
+            except Exception as e:
+                self.logger.error(f"Error filling estimativas passado grid: {e}", exc_info=True)
+                return False, "", str(e)
 
             # Adjust for special dates (Step 2 from func_inicializa guide)
             try:

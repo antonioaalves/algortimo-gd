@@ -10,6 +10,8 @@ Data treatment functions:
 - create_df_calendario
 - adjust_estimativas_special_days
 - filter_df_dates
+- fill_calendario_passado_defaults
+- fill_estimativas_passado_grid
 - extract_tipos_turno
 - process_special_shift_types
 - add_date_related_columns
@@ -4181,6 +4183,112 @@ def filter_df_dates(df: pd.DataFrame, first_date_str: str, last_date_str: str, d
         return False, pd.DataFrame(), str(e)
 
 
+def fill_calendario_passado_defaults(
+    df_calendario: pd.DataFrame,
+    first_date_passado: str,
+    last_date_passado: str,
+    date_col: str = 'schedule_day',
+    horario_col: str = 'horario',
+    default_horario: str = 'MoT',
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Ensure transition-week / passado calendar rows have a working horario when no
+    upstream entity (ciclos, passado, ausencias, days_off, etc.) populated one.
+
+    Only blank horario values inside [first_date_passado, last_date_passado] are
+    set to ``default_horario`` (MoT). Existing codes (F, V, L, M, T, MoT, …) are kept.
+    contract_id / carga_diaria are not modified here.
+    """
+    try:
+        if df_calendario is None or df_calendario.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_calendario"
+        if horario_col not in df_calendario.columns:
+            return False, pd.DataFrame(), f"df_calendario missing column: {horario_col}"
+        if not first_date_passado or not last_date_passado:
+            return False, pd.DataFrame(), "first_date_passado and last_date_passado are required"
+
+        df_result = df_calendario.copy()
+        df_result[date_col] = pd.to_datetime(df_result[date_col], errors='coerce')
+        first_dt = pd.to_datetime(first_date_passado, format='%Y-%m-%d')
+        last_dt = pd.to_datetime(last_date_passado, format='%Y-%m-%d')
+
+        in_passado = (df_result[date_col] >= first_dt) & (df_result[date_col] <= last_dt)
+        horario_str = df_result[horario_col].fillna('').astype(str).str.strip()
+        needs_default = in_passado & horario_str.eq('')
+
+        filled_count = int(needs_default.sum())
+        if filled_count:
+            df_result.loc[needs_default, horario_col] = default_horario
+            logger.info(
+                f"fill_calendario_passado_defaults: set horario='{default_horario}' on "
+                f"{filled_count} rows in passado range {first_date_passado}–{last_date_passado}"
+            )
+
+        return True, df_result, ""
+    except Exception as e:
+        error_msg = f"Error in fill_calendario_passado_defaults: {e}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
+def fill_estimativas_passado_grid(
+    df_estimativas: pd.DataFrame,
+    first_date_passado: str,
+    last_date_passado: str,
+    date_col: str = 'schedule_day',
+    shift_col: str = 'turno',
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Ensure df_estimativas has one M and one T row for every day in the passado window.
+
+    Days without orçamento (transition weeks) are padded; numeric fields default to 0.
+    """
+    try:
+        if not first_date_passado or not last_date_passado:
+            return False, pd.DataFrame(), "first_date_passado and last_date_passado are required"
+
+        first_dt = pd.to_datetime(first_date_passado, format='%Y-%m-%d')
+        last_dt = pd.to_datetime(last_date_passado, format='%Y-%m-%d')
+        full_dates = pd.date_range(start=first_dt, end=last_dt, freq='D')
+
+        grid = pd.MultiIndex.from_product(
+            [full_dates, ['M', 'T']], names=[date_col, shift_col]
+        ).to_frame(index=False)
+
+        if df_estimativas is None or df_estimativas.empty:
+            df_result = grid.copy()
+            padded_rows = len(df_result)
+        else:
+            df_work = df_estimativas.copy()
+            df_work[date_col] = pd.to_datetime(df_work[date_col], errors='coerce').dt.normalize()
+            if shift_col in df_work.columns:
+                df_work[shift_col] = df_work[shift_col].astype(str).str.upper().str.strip()
+
+            merge_cols = [date_col, shift_col]
+            df_result = grid.merge(
+                df_work, on=merge_cols, how='left', indicator='_grid_merge'
+            )
+            padded_rows = int((df_result['_grid_merge'] == 'left_only').sum())
+            df_result = df_result.drop(columns=['_grid_merge'], errors='ignore')
+
+        numeric_cols = df_result.select_dtypes(include=[np.number]).columns.tolist()
+        for col in numeric_cols:
+            df_result[col] = pd.to_numeric(df_result[col], errors='coerce').fillna(0)
+
+        if padded_rows:
+            logger.info(
+                f"fill_estimativas_passado_grid: padded {padded_rows} rows with numeric defaults=0 "
+                f"for passado range {first_date_passado}–{last_date_passado} "
+                f"({len(full_dates)} days, {len(df_result)} total rows)"
+            )
+
+        return True, df_result, ""
+    except Exception as e:
+        error_msg = f"Error in fill_estimativas_passado_grid: {e}"
+        logger.error(error_msg, exc_info=True)
+        return False, pd.DataFrame(), error_msg
+
+
 def extract_tipos_turno(df_calendario: pd.DataFrame, tipo_turno_col: str = 'TIPO_TURNO') -> Tuple[bool, List[str], str]:
     """
     Extract unique shift types (tipos de turno) from calendario dataframe.
@@ -4981,7 +5089,14 @@ def calculate_and_merge_allocated_employees(
             np.ceil(df_est_result['media_turno']),
             np.round(df_est_result['media_turno'])
         )
-        
+        # Fractional shift averages (e.g. media_turno=0.47 with max_turno=1) round to 0;
+        # when there is demand, staff at least 1 (aligned with min_turno floor below).
+        df_est_result['pess_obj'] = np.where(
+            (df_est_result['media_turno'] > 0) & (df_est_result['pess_obj'] == 0),
+            1,
+            df_est_result['pess_obj'],
+        )
+
         # Drop temporary aux column
         df_est_result = df_est_result.drop(columns=['aux'], errors='ignore')
         
@@ -5808,7 +5923,12 @@ def create_df_estimativas(
             ),
             0  # If media_turno is 0, pess_obj is 0
         )
-        
+        df_estimativas['pess_obj'] = np.where(
+            (df_estimativas['media_turno'] > 0) & (df_estimativas['pess_obj'] == 0),
+            1,
+            df_estimativas['pess_obj'],
+        )
+
         # Select and order final columns
         df_estimativas = df_estimativas[['schedule_day', 'turno', 'media_turno', 'max_turno', 'min_turno', 'sd_turno', 'pess_obj']]
         df_estimativas = df_estimativas.sort_values(['schedule_day', 'turno']).reset_index(drop=True)

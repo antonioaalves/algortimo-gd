@@ -61,6 +61,8 @@ from src.data_models.functions.data_treatment_functions import (
     add_days_off,
     adjust_estimativas_special_days,
     filter_df_dates,
+    fill_calendario_passado_defaults,
+    fill_estimativas_passado_grid,
     extract_tipos_turno,
     process_special_shift_types,
     add_date_related_columns,
@@ -1499,13 +1501,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
                     return False, "errSubproc", error_msg
                 
-                # Filter by date range (Step 3B from func_inicializa guide)
+                # Filter to extended passado window (aligned with df_estimativas / solver index range)
                 success, df_calendario, error_msg = filter_df_dates(
                     df=df_calendario,
-                    first_date_str=start_date,
-                    last_date_str=end_date,
-                    date_col_name='schedule_day', # Calendario uses schedule_day for schedule dates
-                    use_case=0,  
+                    first_date_str=first_date_passado,
+                    last_date_str=last_date_passado,
+                    date_col_name='schedule_day',
+                    use_case=1,
                 )
                 if not success:
                     self.logger.error(f"Failed to filter calendario by dates: {error_msg}")
@@ -1550,8 +1552,16 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df_calendario = df_calendario_restricted
                 else:
                     self.logger.warning(f"Failed to apply availability restrictions: {msg} - proceeding without restrictions")
+
+                success, df_calendario, error_msg = fill_calendario_passado_defaults(
+                    df_calendario=df_calendario,
+                    first_date_passado=first_date_passado,
+                    last_date_passado=last_date_passado,
+                )
+                if not success:
+                    self.logger.error(f"Failed to fill calendario passado defaults: {error_msg}")
+                    return False, "errSubproc", error_msg
                 
-                # TODO: Save df_calendario to appropriate location and return success
                 self.logger.info("Calendar transformations completed successfully")
 
                 # Save df_calendario to raw_data
@@ -1894,6 +1904,42 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to adjust HORARIO for admission dates: {error_msg}")
                 return False, "errSubproc", error_msg
 
+            # Passado coverage: MoT on blank calendar horario; zero-padded estimativas grid
+            first_date_passado = self.auxiliary_data.get('first_date_passado')
+            last_date_passado = self.auxiliary_data.get('last_date_passado')
+            if first_date_passado and last_date_passado:
+                success, df_calendario, error_msg = fill_calendario_passado_defaults(
+                    df_calendario=df_calendario,
+                    first_date_passado=first_date_passado,
+                    last_date_passado=last_date_passado,
+                )
+                if not success:
+                    self.logger.error(f"Failed to fill calendario passado defaults in func_inicializa: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                success, df_estimativas, error_msg = fill_estimativas_passado_grid(
+                    df_estimativas=df_estimativas,
+                    first_date_passado=first_date_passado,
+                    last_date_passado=last_date_passado,
+                )
+                if not success:
+                    self.logger.error(f"Failed to fill estimativas passado grid in func_inicializa: {error_msg}")
+                    return False, "errSubproc", error_msg
+
+                if 'index' not in df_estimativas.columns or df_estimativas['index'].isna().any():
+                    success, df_estimativas, error_msg = add_date_related_columns(
+                        df=df_estimativas,
+                        date_col='schedule_day',
+                        add_id_col=False,
+                        use_case=1,
+                        main_year=main_year,
+                        first_date=first_date_passado,
+                        last_date=last_date_passado,
+                    )
+                    if not success:
+                        self.logger.error(f"Failed to refresh estimativas date columns after passado fill: {error_msg}")
+                        return False, "errSubproc", error_msg
+
             # Calculate pess_obj, merge ECI allocated employees, and compute diff
             param_pess_obj = self.external_call_data.get('param_pessoas_objetivo', 0.5)
             success, df_estimativas, error_msg = calculate_and_merge_allocated_employees(
@@ -1906,7 +1952,6 @@ class SalsaDataModel(BaseDescansosDataModel):
             if not success:
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
                 return False, "errSubproc", error_msg
-
 
             # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
             # Runs here because all required data is available: df_annual_variables and df_feriados
