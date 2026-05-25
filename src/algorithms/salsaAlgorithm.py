@@ -340,7 +340,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             #         for worker_id in DROP_WORKERS:
             #             dct.pop(worker_id, None)
 
-            # # 3) mapas (w, week, ...) → limpar chaves desses workers
+            # # 3) mapas (w, week, ...) -> limpar chaves desses workers
             # worker_day_shift = {k: v for k, v in worker_day_shift.items() if k[0] not in DROP_WORKERS}
 
             # =================================================================
@@ -455,7 +455,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("dynamic_empty_day", {}).get("enabled", True):
                     self.logger.info("Applying constraint: dynamic_empty_day")
-                    dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional)
+                    dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_holidays)
                 else:
                     self.logger.warning("Skipping constraint: dynamic_empty_day (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")

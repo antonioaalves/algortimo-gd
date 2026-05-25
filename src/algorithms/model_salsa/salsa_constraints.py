@@ -784,7 +784,7 @@ def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year,
                 model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)
 
 def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_set, dynamic_empty_days,
-                      fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional):
+                      fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_days):
     for w in workers:
         empty_days_week = 5 - contract_type.get(w, 0)
         if empty_days_week > 0:
@@ -795,6 +795,7 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, workin
                 empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
                 if max(days) < period[0] or min(days) > period[1]:
                     continue
+                holidays_in_week = closed_days.intersection(days)
                 is_admissao_week = (worker_admissao > 0 and worker_admissao in days)
                 is_demissao_week = (worker_demissao in days)
                 if is_admissao_week or is_demissao_week:
@@ -837,7 +838,7 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, workin
                                 model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
 
                 elif worker_admissao < min(days) < worker_demissao:
-                    model.Add(empty_shifts == empty_days_week)
+                    model.Add(empty_shifts == empty_days_week - len(holidays_in_week))
                     
                     ordered_days = sorted(days)
                     for i in range(len(ordered_days)):
