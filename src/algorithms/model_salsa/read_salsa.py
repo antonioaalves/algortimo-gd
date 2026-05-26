@@ -711,7 +711,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             else:
                 raw = row.iloc[0].get(role_col)
                 # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
-                # 1 → manager ; 2 → keyholder ; vazio/outros → normal
+                # 1 -> manager ; 2 -> keyholder ; vazio/outros -> normal
                 if pd.isna(raw):
                     role = "normal"
                 else:
@@ -740,7 +740,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 raw = row.iloc[0].get(role_col)
 
                 # Mapear 1/2/NaN e também aceitar 'manager'/'keyholder' como texto
-                # 1 → manager ; 2 → keyholder ; vazio/outros → normal
+                # 1 -> manager ; 2 -> keyholder ; vazio/outros -> normal
                 if pd.isna(raw):
                     role = "normal"
                 else:
