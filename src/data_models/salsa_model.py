@@ -14,6 +14,7 @@ from base_data_project.log_config import get_logger
 from src.data_models.base import BaseDescansosDataModel
 from src.configuration_manager.base import BaseConfig
 from src.configuration_manager.instance import get_config
+from src.helpers import log_feasibility_cap_events
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
     get_param_for_posto, 
@@ -55,6 +56,7 @@ from src.data_models.functions.data_treatment_functions import (
     set_c3d_to_df_colaborador,
     create_df_calendario,
     add_shift_info_from_ciclos,
+    add_tipo_ciclo_to_calendario,
     add_calendario_passado,
     add_ausencias_ferias,
     add_ciclos_completos,
@@ -693,6 +695,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 
                 # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
+                self.auxiliary_data['messages_df'] = df_messages.copy()
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
                 self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
@@ -1491,6 +1494,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"Adding shift info from ciclos failed: {error_msg}")
                     return False, "errSubproc", error_msg
 
+                success, df_calendario, error_msg = add_tipo_ciclo_to_calendario(df_calendario, df_ciclos)
+                if not success:
+                    self.logger.error(f"Adding tipo_ciclo to calendario failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+
                 # Add df_ausencias_ferias to df_calendario
                 success, df_calendario, error_msg = add_ausencias_ferias(df_calendario, df_ausencias_ferias)
                 if not success:
@@ -1989,6 +1997,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                     self.logger.error(f"apply_annual_dayoff_feasibility_cap failed: {error_cap}")
                     return False, "errSubproc", error_cap
 
+                self.auxiliary_data['feasibility_cap_events'] = cap_events
+
                 for event in cap_events:
                     self.logger.warning(
                         f"FEASIBILITY_CAP_APPLIED: employee={event['employee_id']}"
@@ -1996,6 +2006,33 @@ class SalsaDataModel(BaseDescansosDataModel):
                         f" original={event['original_value']} cap={event['cap_value']}"
                         f" period={event['period_begin']}–{event['period_end']}"
                     )
+
+                if cap_events:
+                    messages_df = self.auxiliary_data.get('messages_df')
+                    if messages_df is None or (isinstance(messages_df, pd.DataFrame) and messages_df.empty):
+                        messages_df = self.auxiliary_data.get('df_messages', pd.DataFrame())
+                    if messages_df is None:
+                        messages_df = pd.DataFrame()
+                    connection = self.auxiliary_data.get('raw_connection')
+                    if connection is not None and not messages_df.empty:
+                        n_logged = log_feasibility_cap_events(
+                            connection=connection,
+                            path_os=self.config_manager.system.project_root_dir,
+                            fk_process=self.external_call_data.get('current_process_id'),
+                            process_type='func_inicializa',
+                            messages_df=messages_df,
+                            cap_events=cap_events,
+                            child_num=str(self.external_call_data.get('child_number', 1)),
+                            posto_id=self.auxiliary_data.get('current_posto_id'),
+                        )
+                        self.logger.info(
+                            f"Logged {n_logged}/{len(cap_events)} feasibility cap event(s) to esc_processo_erros"
+                        )
+                    elif cap_events:
+                        self.logger.warning(
+                            f"{len(cap_events)} feasibility cap(s) applied but not written to DB "
+                            f"(connection={connection is not None}, messages={not messages_df.empty})"
+                        )
             except Exception as e:
                 self.logger.error(f"Error applying annual day-off feasibility cap: {e}", exc_info=True)
                 return False, "errSubproc", str(e)

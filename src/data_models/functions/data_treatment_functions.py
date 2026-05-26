@@ -8,6 +8,7 @@ Data treatment functions:
 - treat_calendario_passado
 - treat_employee_id_matriculas_map
 - create_df_calendario
+- add_tipo_ciclo_to_calendario
 - adjust_estimativas_special_days
 - filter_df_dates
 - fill_calendario_passado_defaults
@@ -66,6 +67,7 @@ from src.helpers import count_open_holidays
 
 # Set up logger
 logger = get_logger(PROJECT_NAME)
+
 
 def separate_df_ciclos_completos_folgas_ciclos(
     df_ciclos_completos_folgas_ciclos: pd.DataFrame,
@@ -2568,6 +2570,8 @@ def create_df_calendario(
         df_calendario['horario'] = ''
         df_calendario['dia_tipo'] = ''
         df_calendario['fixed'] = False
+        df_calendario['tipo_ciclo'] = False
+        df_calendario['tipo_ciclo'] = df_calendario['tipo_ciclo'].astype(bool)
 
         # Flag closed holidays (tipo_feriado == 'F') upfront so later steps preserve them
         try:
@@ -2588,7 +2592,10 @@ def create_df_calendario(
             logger.warning(f"Failed to pre-fill closed holidays in df_calendario: {e}")
         
         # Reorder columns
-        column_order = ['employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo', 'matricula', 'fixed']
+        column_order = [
+            'employee_id', 'schedule_day', 'tipo_turno', 'horario', 'wd', 'dia_tipo',
+            'matricula', 'fixed', 'tipo_ciclo',
+        ]
         df_calendario = df_calendario[column_order]
         
         # Sort by employee_id, date, and shift type for consistent ordering
@@ -2836,6 +2843,75 @@ def add_shift_info_from_ciclos(
 
     except Exception as e:
         logger.error(f"Error in add_shift_info_from_ciclos: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def add_tipo_ciclo_to_calendario(
+    df_calendario: pd.DataFrame,
+    df_ciclos: pd.DataFrame,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Populate df_calendario.tipo_ciclo from CORE_PRO_EMP_HORARIO_DET (via treated df_ciclos).
+
+    Salsa path: df_ciclos comes from queryGetCiclosCompletosFolgasCiclos.sql →
+    treat_df_ciclos_completos(), without splitting by tipo_ciclo.
+
+    TIPO_CICLO is per employee-day (both M/T rows get the same value):
+        True  — DB value 'S' (ciclo completo)
+        False — DB value 'N', or no horario_det row for that day
+    """
+    def _db_tipo_ciclo_to_bool(raw) -> bool:
+        if isinstance(raw, (bool, np.bool_)):
+            return bool(raw)
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            return False
+        return str(raw).strip().upper() == 'S'
+
+    try:
+        if df_calendario.empty:
+            return False, pd.DataFrame(), "df_calendario is empty"
+
+        required_cal_cols = ['employee_id', 'schedule_day', 'tipo_turno']
+        missing = [c for c in required_cal_cols if c not in df_calendario.columns]
+        if missing:
+            return False, pd.DataFrame(), f"df_calendario missing required columns: {missing}"
+
+        df_result = df_calendario.copy()
+        if 'tipo_ciclo' not in df_result.columns:
+            df_result['tipo_ciclo'] = False
+        df_result['tipo_ciclo'] = df_result['tipo_ciclo'].astype(bool)
+
+        if df_ciclos is None or df_ciclos.empty or 'tipo_ciclo' not in df_ciclos.columns:
+            logger.warning(
+                "add_tipo_ciclo_to_calendario: no tipo_ciclo in df_ciclos; "
+                "leaving default False on all calendar rows"
+            )
+            return True, df_result, ""
+
+        ciclos = df_ciclos[['employee_id', 'schedule_day', 'tipo_ciclo']].copy()
+        ciclos['employee_id'] = ciclos['employee_id'].astype(str)
+        ciclos['schedule_day'] = pd.to_datetime(ciclos['schedule_day']).dt.normalize()
+        ciclos['tipo_ciclo'] = ciclos['tipo_ciclo'].apply(_db_tipo_ciclo_to_bool)
+        ciclos = ciclos.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='first')
+        tipo_ciclo_lookup = ciclos.set_index(['employee_id', 'schedule_day'])['tipo_ciclo']
+
+        df_result['employee_id'] = df_result['employee_id'].astype(str)
+        df_result['schedule_day_dt'] = pd.to_datetime(df_result['schedule_day']).dt.normalize()
+        idx = pd.MultiIndex.from_arrays([df_result['employee_id'], df_result['schedule_day_dt']])
+        mapped_values = tipo_ciclo_lookup.reindex(idx).values
+        has_match = pd.notna(mapped_values)
+        df_result.loc[has_match, 'tipo_ciclo'] = mapped_values[has_match].astype(bool)
+        df_result = df_result.drop(columns=['schedule_day_dt'], errors='ignore')
+
+        n_true = int(df_result['tipo_ciclo'].sum())
+        logger.info(
+            f"add_tipo_ciclo_to_calendario: {has_match.sum()} / {len(df_result)} rows matched; "
+            f"{n_true} rows with tipo_ciclo=True"
+        )
+        return True, df_result, ""
+
+    except Exception as e:
+        logger.error(f"Error in add_tipo_ciclo_to_calendario: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), str(e)
 
 

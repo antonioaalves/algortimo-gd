@@ -1506,6 +1506,9 @@ class AlgoritmoGDService(BaseService):
             if not isinstance(start_date, str) or not isinstance(end_date, str):
                 self.logger.error("Invalid start_date or end_date")
                 return False
+
+            self._refresh_raw_connection()
+            self.data_model.auxiliary_data['raw_connection'] = self.raw_connection
                 
             # Unpack the return tuple from func_inicializa
             success, error_code, error_msg = self.data_model.func_inicializa()
