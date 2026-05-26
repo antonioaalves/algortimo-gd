@@ -40,11 +40,16 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
-        #matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
-        #matriz_past_lds_gd = algorithm_treatment_params['df_pro_emp_mov'].copy()
-
-        matriz_process_rules_gd = pd.DataFrame()
-        matriz_past_lds_gd = pd.DataFrame() 
+        matriz_process_rules_gd = algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
+        matriz_past_lds_gd = algorithm_treatment_params.get('df_pro_emp_mov', pd.DataFrame())
+        if matriz_process_rules_gd is None:
+            matriz_process_rules_gd = pd.DataFrame()
+        else:
+            matriz_process_rules_gd = matriz_process_rules_gd.copy()
+        if matriz_past_lds_gd is None:
+            matriz_past_lds_gd = pd.DataFrame()
+        else:
+            matriz_past_lds_gd = matriz_past_lds_gd.copy()
         
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
@@ -74,6 +79,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"  - matriz_colaborador: {matriz_colaborador_gd.shape}")
         logger.info(f"  - matriz_estimativas: {matriz_estimativas_gd.shape}")
         logger.info(f"  - matriz_calendario: {matriz_calendario_gd.shape}")
+        logger.info(f"  - matriz_process_rules (merged): {matriz_process_rules_gd.shape}")
+        logger.info(f"  - matriz_past_lds (pending LD): {matriz_past_lds_gd.shape}")
 
         logger.info("Parameters:")
         logger.info(f"  - admissao_proportional: {admissao_proporcional}")

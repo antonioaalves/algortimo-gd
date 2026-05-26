@@ -324,6 +324,13 @@ def validate_df_colaborador_structure(df_colaborador: pd.DataFrame) -> Tuple[boo
                 if invalid_ranges > 0:
                     return False, f"df_colaborador has {invalid_ranges} rows where begin_date > end_date"
 
+                for emp_id, grp in df_colaborador.groupby('employee_id', sort=False):
+                    if not grp['begin_date'].is_monotonic_increasing:
+                        return False, (
+                            f"df_colaborador: employee {emp_id} contract periods "
+                            f"are not ordered by begin_date (required for solver dummy-worker split)"
+                        )
+
         # WORKING DAY LIMITS
         if 'min_dia_trab' in df_colaborador.columns and 'max_dia_trab' in df_colaborador.columns:
             invalid_limits = (df_colaborador['min_dia_trab'] > df_colaborador['max_dia_trab']).sum()

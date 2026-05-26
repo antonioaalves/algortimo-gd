@@ -849,6 +849,28 @@ def treat_df_folgas_ciclos(df_folgas_ciclos: pd.DataFrame) -> Tuple[bool, pd.Dat
         logger.error(f"Error in treat_df_folgas_ciclos: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), ""
 
+
+def sort_df_colaborador_by_contract_period(df_colaborador: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return df_colaborador with contract periods ordered chronologically per employee.
+
+    read_salsa splits multi-contract employees using iloc[0], iloc[1], … — row order
+    must be ascending begin_date within each employee_id group.
+    """
+    if df_colaborador is None or df_colaborador.empty:
+        return df_colaborador
+    if 'begin_date' not in df_colaborador.columns:
+        return df_colaborador
+
+    sort_cols = ['employee_id', 'begin_date']
+    if 'end_date' in df_colaborador.columns:
+        sort_cols.append('end_date')
+    if 'contract_id' in df_colaborador.columns:
+        sort_cols.append('contract_id')
+
+    return df_colaborador.sort_values(sort_cols).reset_index(drop=True)
+
+
 def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[str]) -> Tuple[bool, pd.DataFrame, str]:
     """
     Process and validate core employee contract-period data from wfm.core_pro_emp_contract.
@@ -999,6 +1021,8 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
 
         if df_colaborador.empty:
             return False, pd.DataFrame(), "treat_df_colaborador: treatment resulted in empty DataFrame"
+
+        df_colaborador = sort_df_colaborador_by_contract_period(df_colaborador)
 
         logger.info(f"treat_df_colaborador: {len(df_colaborador)} contract-period rows for {df_colaborador['employee_id'].nunique()} employees")
         return True, df_colaborador, ""
@@ -6292,6 +6316,45 @@ def add_pessoa_obj_whole_day(
 # STRSOL-1372: Folgas compensatórias - process labor rules functions
 # =============================================================================
 
+# Annual day-off rules (l_dom, c2d, …) come from core_pro_emp_annual_variables (STRSOL-1279).
+# core_process_labor_rules must only carry compensatory LD rules for STRSOL-1372.
+COMPENSATORY_LABOR_RULE_CODES = frozenset({
+    'COMPENSATORY_TIME_OFF_SUNDAYS',
+    'COMPENSATORY_TIME_OFF_HOLIDAYS',
+})
+COMPENSATORY_LABOR_RULE_CODE_MAP = {
+    'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
+    'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
+}
+
+
+def filter_compensatory_labor_rules(df_process_rules: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keep only STRSOL-1372 compensatory rule rows; drop annual/other RULE_CODE values.
+
+    Applied after SQL load and before pivot/treatment as a defence-in-depth guard.
+    """
+    if df_process_rules is None or df_process_rules.empty:
+        return df_process_rules
+
+    df = df_process_rules.copy()
+    rule_col = next((c for c in df.columns if str(c).strip().lower() == 'rule_code'), None)
+    if rule_col is None:
+        logger.warning("filter_compensatory_labor_rules: no rule_code column — returning empty")
+        return pd.DataFrame(columns=df.columns)
+
+    normalized = df[rule_col].astype(str).str.strip().str.upper()
+    mask = normalized.isin(COMPENSATORY_LABOR_RULE_CODES)
+    dropped = int((~mask).sum())
+    if dropped:
+        unknown = sorted(normalized[~mask].unique().tolist())
+        logger.warning(
+            f"filter_compensatory_labor_rules: dropping {dropped} row(s) with "
+            f"non-compensatory RULE_CODE: {unknown[:10]}"
+        )
+    return df[mask].copy()
+
+
 def treat_df_process_rules(
     df_process_rules: pd.DataFrame,
     first_date: str = None,
@@ -6344,14 +6407,18 @@ def treat_df_process_rules(
         if missing_cols:
             return False, pd.DataFrame(), f"Input validation failed: missing columns {missing_cols}"
 
+        df_result = filter_compensatory_labor_rules(df_result)
+        if df_result.empty:
+            return False, pd.DataFrame(), "No compensatory labor rules after RULE_CODE filter"
+
         # Normalize field codes used for pivot-generated parameter columns.
         df_result['field_code'] = df_result['field_code'].astype(str).str.strip().str.upper()
 
-        RULE_CODE_MAP = {
-            'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
-            'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
-        }
-        df_result['rule_code'] = df_result['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df_result['rule_code'])
+        df_result['rule_code'] = (
+            df_result['rule_code']
+            .astype(str).str.strip().str.upper()
+            .map(COMPENSATORY_LABOR_RULE_CODE_MAP)
+        )
 
         # NORMALIZE DATES
         df_result['begin_date'] = pd.to_datetime(df_result['begin_date'], errors='coerce')
@@ -6481,7 +6548,9 @@ def build_day_level_contract_lookup(
         if union_col not in df_colaborador.columns:
             return False, pd.DataFrame(), "Input validation failed: df_colaborador missing labor_union/labor_union_id"
 
-        df = df_colaborador[required_cols + [union_col]].copy()
+        df = sort_df_colaborador_by_contract_period(
+            df_colaborador[required_cols + [union_col]].copy()
+        )
         df['begin_date'] = pd.to_datetime(df['begin_date'], errors='coerce').dt.normalize()
         df['end_date'] = pd.to_datetime(df['end_date'], errors='coerce').dt.normalize()
 
@@ -6696,23 +6765,21 @@ def build_rule_head_param_lookup(df_process_rules_raw: pd.DataFrame) -> pd.DataF
     if df_process_rules_raw is None or df_process_rules_raw.empty:
         return pd.DataFrame()
 
-    df = df_process_rules_raw.copy()
+    df = filter_compensatory_labor_rules(df_process_rules_raw.copy())
     df.columns = [str(c).strip().lower() for c in df.columns]
     required = [
         'process_id', 'labor_union_id', 'contract_id', 'begin_date', 'end_date',
         'rule_code', 'rule_id', 'rule_head_id', 'field_code', 'value',
     ]
-    if any(c not in df.columns for c in required):
-        logger.warning("build_rule_head_param_lookup: missing columns in raw labor rules")
+    if df.empty or any(c not in df.columns for c in required):
+        logger.warning("build_rule_head_param_lookup: missing columns or no compensatory rules in raw labor rules")
         return pd.DataFrame()
 
     df['field_code'] = df['field_code'].astype(str).str.strip().str.upper()
-    RULE_CODE_MAP = {
-        'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
-        'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
-    }
     df['rule_code'] = (
-        df['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df['rule_code'])
+        df['rule_code']
+        .astype(str).str.strip().str.upper()
+        .map(COMPENSATORY_LABOR_RULE_CODE_MAP)
     )
     df['begin_date'] = pd.to_datetime(df['begin_date'], errors='coerce')
     df['end_date'] = pd.to_datetime(df['end_date'], errors='coerce')

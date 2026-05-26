@@ -75,11 +75,13 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_disponibilidade,
     restrict_turnos_by_disponibilidade,
     treat_df_process_rules,
+    filter_compensatory_labor_rules,
     build_day_level_contract_lookup,
     add_process_rules_to_df_contratos,
     treat_df_pro_emp_mov,
     build_compensatory_output,
     apply_annual_dayoff_feasibility_cap,
+    sort_df_colaborador_by_contract_period,
 )
 from src.data_models.functions.loading_functions import load_valid_emp_csv
 from src.data_models.validations.load_process_data_validations import (
@@ -659,6 +661,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     process_id="'" + str(self.external_call_data['current_process_id']) + "'"
                 )
                 self.logger.info(f"df_process_rules shape (rows {df_process_rules.shape[0]}, columns {df_process_rules.shape[1]}): {df_process_rules.columns.tolist()}")
+                df_process_rules = filter_compensatory_labor_rules(df_process_rules)
                 df_process_rules_raw = df_process_rules.copy()
 
                 success, df_process_rules, error_msg = treat_df_process_rules(
@@ -1027,7 +1030,12 @@ class SalsaDataModel(BaseDescansosDataModel):
                             )
                             df_process_rules_merged = pd.DataFrame()
                         else:
-                            self.logger.info(f"df_process_rules_merged shape: {df_process_rules_merged.shape}")
+                            n_employees = df_process_rules_merged['employee_id'].nunique()
+                            n_rules = df_process_rules_merged['rule_code'].nunique() if 'rule_code' in df_process_rules_merged.columns else 0
+                            self.logger.info(
+                                f"df_process_rules_merged shape: {df_process_rules_merged.shape} "
+                                f"({n_employees} employees, {n_rules} rule codes)"
+                            )
                 else:
                     self.logger.info("df_process_rules is empty - skipping rules merge")
             except Exception as e:
@@ -2055,6 +2063,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # Store processed dataframes in raw_data
             try:
+                df_colaborador = sort_df_colaborador_by_contract_period(df_colaborador)
                 self.medium_data['df_colaborador'] = df_colaborador.copy()
                 self.medium_data['df_calendario'] = df_calendario.copy()
                 self.medium_data['df_estimativas'] = df_estimativas.copy()
