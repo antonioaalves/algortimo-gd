@@ -40,11 +40,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
-        #matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
-        #matriz_past_lds_gd = algorithm_treatment_params['df_pro_emp_mov'].copy()
+        matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
+        matriz_past_lds_gd = algorithm_treatment_params['df_pro_emp_mov'].copy()
 
-        matriz_process_rules_gd = pd.DataFrame()
-        matriz_past_lds_gd = pd.DataFrame() 
         
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
@@ -816,28 +814,35 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         if not matriz_process_rules_gd.empty:
             #logger.info(matriz_process_rules_gd.to_string())
             matriz_process_rules_gd.columns = matriz_process_rules_gd.columns.str.lower()
-            holiday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_holiday"]
-            sunday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_sunday"]
-            for w in workers_complete:
-                holiday_df_w = holiday_df[holiday_df["employee_id"] == w].drop_duplicates(subset="index").set_index('index')
-                holiday_rules[w] = {
-                    "amount": holiday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
-                    "compensation_limit": holiday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
-                }
-                if not holiday_rules[w]["amount"]:
-                    holiday_rules.pop(w, None)
+            required_cols_rules = {"rule_code", "employee_id", "index", "time_off_additional", "time_off_deadline"}
+            if not required_cols_rules.issubset(matriz_process_rules_gd.columns):
+                logger.warning("Missing required columns for holiday rules")
+                holiday_rules = pd.DataFrame()
+                sunday_rules = pd.DataFrame()
+                override_holiday_sunday = pd.DataFrame()
+            else:
+                holiday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_holiday"]
+                sunday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_sunday"]
+                for w in workers_complete:
+                    holiday_df_w = holiday_df[holiday_df["employee_id"] == w].drop_duplicates(subset="index").set_index('index')
+                    holiday_rules[w] = {
+                        "amount": holiday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
+                        "compensation_limit": holiday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
+                    }
+                    if not holiday_rules[w]["amount"]:
+                        holiday_rules.pop(w, None)
 
-                sunday_df_w = sunday_df[sunday_df["employee_id"] == w].drop_duplicates(subset="index").set_index('index')
-                sunday_rules[w] = {
-                    "amount": sunday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
-                    "compensation_limit": sunday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
-                }
-                if not sunday_rules[w]["amount"]:
-                    sunday_rules.pop(w, None)
+                    sunday_df_w = sunday_df[sunday_df["employee_id"] == w].drop_duplicates(subset="index").set_index('index')
+                    sunday_rules[w] = {
+                        "amount": sunday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
+                        "compensation_limit": sunday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
+                    }
+                    if not sunday_rules[w]["amount"]:
+                        sunday_rules.pop(w, None)
 
-                override_holiday_sunday[w] = holiday_df_w['overlap_sunday_holiday'].fillna('N').to_dict()
-                if not override_holiday_sunday[w]:
-                    override_holiday_sunday.pop(w, None)
+                    override_holiday_sunday[w] = holiday_df_w['overlap_sunday_holiday'].fillna('N').to_dict()
+                    if not override_holiday_sunday[w]:
+                        override_holiday_sunday.pop(w, None)
 
         logger.info(f"holiday rules: {holiday_rules}")
         logger.info(f"sunday rules: {sunday_rules}")
@@ -849,33 +854,39 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
 
             logger.info(matriz_past_lds_gd.to_string())
             matriz_past_lds_gd.columns = matriz_past_lds_gd.columns.str.lower()
-            
-            only_dates = matriz_past_lds_gd['schedule_day'].drop_duplicates()
-            day_of_year_dict = dict(zip(only_dates.dt.dayofyear - 400, only_dates.dt.strftime('%Y-%m-%d')))
-            day_of_year_dict_inverted = dict(zip(only_dates.dt.strftime('%Y-%m-%d'), only_dates.dt.dayofyear - 400))
-            index_to_date.update(day_of_year_dict)
+            required_cols_past = {"rule_code","employee_id","schedule_day","time_off_deadline","n_lds_pending"}
 
-            holiday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_holiday"]
-            sunday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_sunday"]
-            for w in workers_complete:
-                holiday_ld_w = holiday_lds[holiday_lds["employee_id"] == w].set_index('schedule_day')
-                holiday_ld_w.index = holiday_ld_w.index.map(lambda d: day_of_year_dict_inverted[d.strftime('%Y-%m-%d')])
-                holiday_past_lds[w] = {
-                    "days_&_limit": holiday_ld_w['time_off_deadline'].astype(int).to_dict(),
-                    "days_&_amount": holiday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
-                }
-                sunday_ld_w = sunday_lds[sunday_lds["employee_id"] == w].set_index('schedule_day')
-                sunday_ld_w.index = sunday_ld_w.index.map(lambda d: day_of_year_dict_inverted[d.strftime('%Y-%m-%d')])
-                sunday_past_lds[w] = {
-                    "days_&_limit": sunday_ld_w['time_off_deadline'].astype(int).to_dict(),
-                    "days_&_amount": sunday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
-                }
-                if w in holiday_past_lds:
-                    for d in holiday_past_lds[w]["days_&_limit"]:
-                        holiday_past_lds[w]["days_&_limit"][d] = holiday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
-                if w in sunday_past_lds:
-                    for d in sunday_past_lds[w]["days_&_limit"]:
-                        sunday_past_lds[w]["days_&_limit"][d] = sunday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
+            if not required_cols_past.issubset(matriz_past_lds_gd.columns):
+                logger.warning("Missing required columns for past LDS data")
+                holiday_past_lds = pd.DataFrame()
+                sunday_past_lds = pd.DataFrame()
+            else:
+                only_dates = matriz_past_lds_gd['schedule_day'].drop_duplicates()
+                day_of_year_dict = dict(zip(only_dates.dt.dayofyear - 400, only_dates.dt.strftime('%Y-%m-%d')))
+                day_of_year_dict_inverted = dict(zip(only_dates.dt.strftime('%Y-%m-%d'), only_dates.dt.dayofyear - 400))
+                index_to_date.update(day_of_year_dict)
+
+                holiday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_holiday"]
+                sunday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_sunday"]
+                for w in workers_complete:
+                    holiday_ld_w = holiday_lds[holiday_lds["employee_id"] == w].set_index('schedule_day')
+                    holiday_ld_w.index = holiday_ld_w.index.map(lambda d: day_of_year_dict_inverted[d.strftime('%Y-%m-%d')])
+                    holiday_past_lds[w] = {
+                        "days_&_limit": holiday_ld_w['time_off_deadline'].astype(int).to_dict(),
+                        "days_&_amount": holiday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
+                    }
+                    sunday_ld_w = sunday_lds[sunday_lds["employee_id"] == w].set_index('schedule_day')
+                    sunday_ld_w.index = sunday_ld_w.index.map(lambda d: day_of_year_dict_inverted[d.strftime('%Y-%m-%d')])
+                    sunday_past_lds[w] = {
+                        "days_&_limit": sunday_ld_w['time_off_deadline'].astype(int).to_dict(),
+                        "days_&_amount": sunday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
+                    }
+                    if w in holiday_past_lds:
+                        for d in holiday_past_lds[w]["days_&_limit"]:
+                            holiday_past_lds[w]["days_&_limit"][d] = holiday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
+                    if w in sunday_past_lds:
+                        for d in sunday_past_lds[w]["days_&_limit"]:
+                            sunday_past_lds[w]["days_&_limit"][d] = sunday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
 
             logger.info(f"past holiday : {holiday_past_lds}")
             logger.info(f"past sunday : {sunday_past_lds}")
