@@ -73,6 +73,7 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_disponibilidade,
     restrict_turnos_by_disponibilidade,
     treat_df_process_rules,
+    build_day_level_contract_lookup,
     add_process_rules_to_df_contratos,
     treat_df_pro_emp_mov,
     build_compensatory_output,
@@ -901,9 +902,6 @@ class SalsaDataModel(BaseDescansosDataModel):
             except Exception as e:
                 self.logger.warning(f"Could not merge fk_tipo_posto from df_valid_emp: {e}")
 
-            # df_contratos retired — consolidated into df_colaborador (wfm.core_pro_emp_contract)
-            df_contratos = pd.DataFrame()
-
             # Load df_core_pro_work_shift (section-level M/T shift time boundaries)
             df_core_pro_work_shift = pd.DataFrame()
             try:
@@ -996,21 +994,37 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"past_employees_id_list is empty: {past_employees_id_list}")
                 return False, "errSubproc", "past_employees_id_list is empty"
 
-            # STRSOL-1372: Merge process rules with contracts for algorithm consumption
+            # STRSOL-1372: Merge process rules with contracts for algorithm consumption.
+            # df_contratos is retired (STRSOL-1279); explode df_colaborador periods to day-level.
             df_process_rules = self.auxiliary_data.get('df_process_rules', pd.DataFrame())
             df_process_rules_merged = pd.DataFrame()
             try:
                 if not df_process_rules.empty:
-                    self.logger.info("Merging process rules with df_contratos")
-                    success, df_process_rules_merged, error_msg = add_process_rules_to_df_contratos(
-                        df_process_rules=df_process_rules,
-                        df_contratos=df_contratos
+                    success, df_contratos_day_level, error_msg = build_day_level_contract_lookup(
+                        df_colaborador=df_colaborador,
+                        start_date=first_date_passado,
+                        end_date=last_date_passado,
                     )
                     if not success:
-                        self.logger.warning(f"add_process_rules_to_df_contratos failed: {error_msg} - proceeding with empty DataFrame")
-                        df_process_rules_merged = pd.DataFrame()
+                        self.logger.warning(
+                            f"build_day_level_contract_lookup failed: {error_msg} - skipping rules merge"
+                        )
                     else:
-                        self.logger.info(f"df_process_rules_merged shape: {df_process_rules_merged.shape}")
+                        self.logger.info(
+                            f"Merging process rules with day-level contract lookup "
+                            f"({len(df_contratos_day_level)} rows)"
+                        )
+                        success, df_process_rules_merged, error_msg = add_process_rules_to_df_contratos(
+                            df_process_rules=df_process_rules,
+                            df_contratos=df_contratos_day_level,
+                        )
+                        if not success:
+                            self.logger.warning(
+                                f"add_process_rules_to_df_contratos failed: {error_msg} - proceeding with empty DataFrame"
+                            )
+                            df_process_rules_merged = pd.DataFrame()
+                        else:
+                            self.logger.info(f"df_process_rules_merged shape: {df_process_rules_merged.shape}")
                 else:
                     self.logger.info("df_process_rules is empty - skipping rules merge")
             except Exception as e:
@@ -1076,7 +1090,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
                 self.auxiliary_data['df_pro_emp_mov_raw'] = df_pro_emp_mov_raw.copy()
                 # df_contratos retired — kept as empty DataFrame for backward compatibility
-                self.auxiliary_data['df_contratos'] = df_contratos
+                self.auxiliary_data['df_contratos'] = pd.DataFrame()
                 self.auxiliary_data['df_annual_variables'] = df_annual_variables.copy() if not df_annual_variables.empty else pd.DataFrame()
                 self.auxiliary_data['df_disponibilidade'] = df_disponibilidade.copy() if not df_disponibilidade.empty else pd.DataFrame()
                 # TODO: Remove this, not used

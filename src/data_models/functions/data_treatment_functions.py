@@ -22,6 +22,7 @@ Data treatment functions:
 - adjust_horario_for_admission_date
 - calculate_and_merge_allocated_employees
 - treat_df_process_rules
+- build_day_level_contract_lookup
 - add_process_rules_to_df_contratos
 - build_rule_head_param_lookup
 - treat_df_pro_emp_mov
@@ -5131,7 +5132,19 @@ def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborado
             merge_cols.append('data_demissao')
         admission_data = df_colaborador[merge_cols].copy()
         admission_data[employee_col] = admission_data[employee_col].astype(str).str.strip()
-        
+        # df_colaborador is period-level (one row per contract stretch); admission/demission
+        # are employee-level — collapse before merge to avoid calendar row duplication.
+        agg = {'data_admissao': 'min'}
+        if demission_available:
+            agg['data_demissao'] = 'max'
+        n_period_rows = len(admission_data)
+        admission_data = admission_data.groupby(employee_col, as_index=False).agg(agg)
+        if len(admission_data) < n_period_rows:
+            logger.info(
+                f"adjust_horario_for_admission_date: {n_period_rows} contract-period rows → "
+                f"{len(admission_data)} employee-level rows for admission merge"
+            )
+
         # Merge admission date into calendario
         df_result = df_result.merge(admission_data, on=employee_col, how='left')
         
@@ -6356,6 +6369,91 @@ def treat_df_process_rules(
 
     except Exception as e:
         logger.error(f"Error in treat_df_process_rules: {str(e)}", exc_info=True)
+        return False, pd.DataFrame(), str(e)
+
+
+def build_day_level_contract_lookup(
+    df_colaborador: pd.DataFrame,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Tuple[bool, pd.DataFrame, str]:
+    """
+    Explode period-level df_colaborador rows into a day-level contract lookup.
+
+    Produces one row per (employee_id, schedule_day) with contract_id and
+    labor_union_id — the shape expected by add_process_rules_to_df_contratos.
+
+    Args:
+        df_colaborador: Treated contract-period DataFrame with begin_date, end_date,
+            employee_id, contract_id, and labor_union (or labor_union_id).
+        start_date: Optional execution-window start; clips explosion range.
+        end_date: Optional execution-window end; clips explosion range.
+
+    Returns:
+        Tuple of (success, day-level lookup DataFrame, error_message).
+    """
+    try:
+        if df_colaborador is None or df_colaborador.empty:
+            return False, pd.DataFrame(), "Input validation failed: empty df_colaborador"
+
+        required_cols = ['employee_id', 'contract_id', 'begin_date', 'end_date']
+        missing_cols = [col for col in required_cols if col not in df_colaborador.columns]
+        if missing_cols:
+            return False, pd.DataFrame(), f"Input validation failed: df_colaborador missing columns {missing_cols}"
+
+        union_col = 'labor_union_id' if 'labor_union_id' in df_colaborador.columns else 'labor_union'
+        if union_col not in df_colaborador.columns:
+            return False, pd.DataFrame(), "Input validation failed: df_colaborador missing labor_union/labor_union_id"
+
+        df = df_colaborador[required_cols + [union_col]].copy()
+        df['begin_date'] = pd.to_datetime(df['begin_date'], errors='coerce').dt.normalize()
+        df['end_date'] = pd.to_datetime(df['end_date'], errors='coerce').dt.normalize()
+
+        if start_date is not None:
+            clip_start = pd.to_datetime(start_date).normalize()
+            df['begin_date'] = df['begin_date'].clip(lower=clip_start)
+        if end_date is not None:
+            clip_end = pd.to_datetime(end_date).normalize()
+            df['end_date'] = df['end_date'].clip(upper=clip_end)
+
+        invalid_dates = df['begin_date'].isna() | df['end_date'].isna()
+        if invalid_dates.any():
+            logger.warning(
+                f"build_day_level_contract_lookup: dropping {invalid_dates.sum()} rows with invalid dates"
+            )
+            df = df[~invalid_dates].copy()
+
+        df = df[df['begin_date'] <= df['end_date']].copy()
+        if df.empty:
+            return False, pd.DataFrame(), "Input validation failed: no valid contract periods after date clipping"
+
+        df['_period_idx'] = np.arange(len(df))
+        df['_n_days'] = (df['end_date'] - df['begin_date']).dt.days + 1
+        df_exploded = df.loc[df.index.repeat(df['_n_days'])].reset_index(drop=True)
+        df_exploded['schedule_day'] = df_exploded['begin_date'] + pd.to_timedelta(
+            df_exploded.groupby('_period_idx').cumcount(), unit='D'
+        )
+
+        df_result = df_exploded[['employee_id', 'schedule_day', 'contract_id', union_col]].copy()
+        df_result = df_result.rename(columns={union_col: 'labor_union_id'})
+        df_result['labor_union_id'] = pd.to_numeric(df_result['labor_union_id'], errors='coerce')
+        df_result['contract_id'] = pd.to_numeric(df_result['contract_id'], errors='coerce')
+
+        dupes = df_result.duplicated(subset=['employee_id', 'schedule_day'], keep=False)
+        if dupes.any():
+            n_dupes = dupes.sum()
+            logger.warning(
+                f"build_day_level_contract_lookup: {n_dupes} duplicate employee-day rows; keeping last"
+            )
+            df_result = df_result.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='last')
+
+        logger.info(
+            f"build_day_level_contract_lookup: {len(df)} contract periods → {len(df_result)} employee-days"
+        )
+        return True, df_result, ""
+
+    except Exception as e:
+        logger.error(f"Error in build_day_level_contract_lookup: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), str(e)
 
 
