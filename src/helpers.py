@@ -16,6 +16,8 @@ from src.orquestrador_functions.Classes.Connection.connect import ensure_connect
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
 
+from src.orquestrador_functions.Logs.message_loader import set_messages
+
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
 
@@ -122,6 +124,70 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
     except Exception as e:
         logger.error(f"Error in set_process_errors: {e}", exc_info=True)
         return 0
+
+
+def log_feasibility_cap_events(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    messages_df: pd.DataFrame,
+    cap_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist feasibility cap adjustments to wfm.esc_processo_erros (via set_process_errors).
+
+    Each cap event becomes one WARNING row so WFM users can see entitlement reductions.
+    """
+    if connection is None or not cap_events or messages_df is None or messages_df.empty:
+        return 0
+
+    logged = 0
+    for event in cap_events:
+        description = set_messages(messages_df, 'WARN_FEASIBILITY_CAP', {
+            '1': child_num,
+            '2': str(event.get('employee_id', '')),
+            '3': str(event.get('field', '')),
+            '4': str(event.get('original_value', '')),
+            '5': str(event.get('cap_value', '')),
+            '6': str(event.get('period_begin', '')),
+            '7': str(event.get('period_end', '')),
+            '8': str(posto_id or ''),
+        })
+        if not description:
+            description = (
+                f"Subproceso {child_num}: folgas {event.get('field')} empleado "
+                f"{event.get('employee_id')} ajustadas {event.get('original_value')}→"
+                f"{event.get('cap_value')} ({event.get('period_begin')}–{event.get('period_end')}) "
+                f"puesto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='W',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(event.get('period_begin')) if event.get('period_begin') else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
 
 def replace_placeholders(template, values_dict):
     """
