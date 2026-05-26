@@ -2162,6 +2162,47 @@ def get_df_estrutura_wfm_info(df_estrutura_wfm: pd.DataFrame) -> str:
 
     return nome_pais
 
+
+def collapse_df_colaborador_to_employee_level(
+    df_colaborador: pd.DataFrame,
+    employee_col: str = 'employee_id',
+) -> pd.DataFrame:
+    """
+    Collapse period-level df_colaborador to one row per employee.
+
+    STRSOL-1279: df_colaborador carries one row per contract period. Fields such as
+    matricula, data_admissao and data_demissao are employee-level; merging the full
+    period-level frame into one-row-per-day results duplicates rows.
+    """
+    if df_colaborador.empty:
+        return df_colaborador.copy()
+
+    required_cols = {employee_col, 'matricula', 'data_admissao'}
+    missing_cols = required_cols - set(df_colaborador.columns)
+    if missing_cols:
+        raise ValueError(
+            f"collapse_df_colaborador_to_employee_level: missing columns {sorted(missing_cols)}"
+        )
+
+    cols = [employee_col, 'matricula', 'data_admissao']
+    if 'data_demissao' in df_colaborador.columns:
+        cols.append('data_demissao')
+
+    data = df_colaborador[cols].copy()
+    n_period_rows = len(data)
+    agg: Dict[str, str] = {'matricula': 'first', 'data_admissao': 'min'}
+    if 'data_demissao' in data.columns:
+        agg['data_demissao'] = 'max'
+
+    collapsed = data.groupby(employee_col, as_index=False).agg(agg)
+    if len(collapsed) < n_period_rows:
+        logger.info(
+            f"collapse_df_colaborador_to_employee_level: {n_period_rows} contract-period rows -> "
+            f"{len(collapsed)} employee-level rows"
+        )
+    return collapsed
+
+
 def filter_insert_results(df: pd.DataFrame, start_date: str, end_date: str, wfm_proc_colab: str = '') -> pd.DataFrame:
     """
     Filter the results dataframe by date range and optionally by a specific employee.

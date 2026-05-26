@@ -27,6 +27,7 @@ from src.helpers import (
     get_colabs_passado
 )
 from src.load_csv_functions.load_valid_emp import load_valid_emp_csv
+from src.data_models.functions.helper_functions import collapse_df_colaborador_to_employee_level
 from src.algorithms.factory import AlgorithmFactory
 from src.configuration_manager.base import BaseConfig 
 from base_data_project.data_manager.managers.base import BaseDataManager
@@ -4127,7 +4128,10 @@ class DescansosDataModel(BaseDataModel):
             final_df = self.rare_data['df_results'].copy()
             df_colaborador = self.medium_data['df_colaborador'].copy()
             self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
-            df_colaborador = df_colaborador[['fk_colaborador', 'matricula', 'data_admissao', 'data_demissao']]
+            df_colaborador = collapse_df_colaborador_to_employee_level(
+                df_colaborador[['fk_colaborador', 'matricula', 'data_admissao', 'data_demissao']],
+                employee_col='fk_colaborador',
+            )
 
             # Adding validation to fall gracefully
             if final_df.empty:
