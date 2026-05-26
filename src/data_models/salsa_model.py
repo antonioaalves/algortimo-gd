@@ -892,7 +892,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", str(e)
 
             # fk_tipo_posto is not a column in core_pro_emp_contract or esc_colaborador.
-            # Merge it from df_valid_emp which holds the authoritative employee_id → fk_tipo_posto mapping.
+            # Merge it from df_valid_emp which holds the authoritative employee_id -> fk_tipo_posto mapping.
             try:
                 df_valid_emp = self.auxiliary_data['df_valid_emp']
                 df_emp_posto_map = (

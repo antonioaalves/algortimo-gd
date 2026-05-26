@@ -149,9 +149,9 @@ def treat_df_valid_emp(df_valid_emp: pd.DataFrame) -> Tuple[bool, pd.DataFrame, 
     the order in which employees receive preferred rest days.
     
     Business Logic:
-        - Priority 1 → 'manager': Highest priority for day-off preferences
-        - Priority 2 → 'keyholder': Medium priority for key-holding staff
-        - Priority 0 or null → 'normal': Standard priority for all other employees
+        - Priority 1 -> 'manager': Highest priority for day-off preferences
+        - Priority 2 -> 'keyholder': Medium priority for key-holding staff
+        - Priority 0 or null -> 'normal': Standard priority for all other employees
     
     Data Quality:
         - Handles missing values by defaulting to priority 0
@@ -880,11 +880,11 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
     employee has more than one contract period in the schedule window.
 
     Key Operations:
-        1. Identifier normalisation (employee_id, contract_id, matricula → str)
-        2. labor_union → uppercase
-        3. maximumworkday timedelta → hours  (absorbed from retired treat_df_contratos)
+        1. Identifier normalisation (employee_id, contract_id, matricula -> str)
+        2. labor_union -> uppercase
+        3. maximumworkday timedelta -> hours  (absorbed from retired treat_df_contratos)
         4. carga_diaria derivation (min of avg-daily-workload vs maximumworkday)
-        5. begin_date / end_date → datetime
+        5. begin_date / end_date -> datetime
         6. Validate min_dia_trab / max_dia_trab business rules
         7. Initialise runtime-computed columns (total_dom_fes, total_fes, total_holidays)
 
@@ -938,7 +938,7 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
             return False, pd.DataFrame(), error_msg
 
         # NULL FILL FOR CONTRACT LIMITS
-        # Both null → log and drop the row; one null → copy from the other.
+        # Both null -> log and drop the row; one null -> copy from the other.
         both_null = df_colaborador['min_dia_trab'].isna() & df_colaborador['max_dia_trab'].isna()
         if both_null.any():
             bad = df_colaborador.loc[both_null, 'employee_id'].tolist()
@@ -957,7 +957,7 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
         # Derive maximumdaysperweek after nulls are resolved
         df_colaborador['maximumdaysperweek'] = df_colaborador['max_dia_trab'].astype(float)
 
-        # MAXIMUMWORKDAY: timedelta → hours  (mirrors retired treat_df_contratos logic)
+        # MAXIMUMWORKDAY: timedelta -> hours  (mirrors retired treat_df_contratos logic)
         try:
             if pd.api.types.is_timedelta64_dtype(df_colaborador['maximumworkday']):
                 df_colaborador['maximumworkday'] = df_colaborador['maximumworkday'].dt.total_seconds() / 3600
@@ -1117,8 +1117,8 @@ def treat_df_orcamento(df_orcamento: pd.DataFrame) -> Tuple[bool, pd.DataFrame, 
     day offset for times after midnight.
     
     Example:
-        - schedule_day=2025-07-28, hora_ini=2000-01-01 08:00:00 → 2025-07-28 08:00:00
-        - schedule_day=2025-07-28, hora_ini=2000-01-02 00:15:00 → 2025-07-29 00:15:00
+        - schedule_day=2025-07-28, hora_ini=2000-01-01 08:00:00 -> 2025-07-28 08:00:00
+        - schedule_day=2025-07-28, hora_ini=2000-01-02 00:15:00 -> 2025-07-29 00:15:00
     
     Args:
         df_orcamento: Budget/forecast data with columns:
@@ -2500,7 +2500,7 @@ def create_df_calendario(
         start_date: Execution window start (YYYY-MM-DD); used by callers for downstream filters
         end_date: Execution window end (YYYY-MM-DD)
         main_year: Primary scheduling year — drives the extended calendar grid
-        employee_id_matriculas_map: Section-level employee_id → matricula map (filtered here)
+        employee_id_matriculas_map: Section-level employee_id -> matricula map (filtered here)
         past_employees_id_list: Posto-scoped employee IDs that get calendar rows
         df_feriados: Holiday DataFrame used to pre-fill closed days (tipo_feriado='F')
     Returns:
@@ -2518,7 +2518,7 @@ def create_df_calendario(
             return False, pd.DataFrame(), "Input validation failed: empty past_employees_id_list"
 
         # Scope calendar to posto employees — past_employees_id_list is already mode-aware:
-        # section run → employees_id_list_for_posto; single-colab → all posto mpd employees.
+        # section run -> employees_id_list_for_posto; single-colab -> all posto mpd employees.
         allowed_ids = {int(e) for e in past_employees_id_list}
         section_size = len(employee_id_matriculas_map)
         employee_id_matriculas_map = {
@@ -2791,10 +2791,10 @@ def add_shift_info_from_ciclos(
     the queryGetCiclosCompletosFolgasCiclos migration).
 
     Mapping:
-        WORK_SHIFT = 'M'  →  tipo_turno='M' row gets horario='M', tipo_turno='T' row gets '0'
-        WORK_SHIFT = 'T'  →  tipo_turno='T' row gets horario='T', tipo_turno='M' row gets '0'
-        WORK_SHIFT = 'A'  →  both tipo_turno rows get 'MoT'
-        missing           →  keep existing horario (row untouched)
+        WORK_SHIFT = 'M'  ->  tipo_turno='M' row gets horario='M', tipo_turno='T' row gets '0'
+        WORK_SHIFT = 'T'  ->  tipo_turno='T' row gets horario='T', tipo_turno='M' row gets '0'
+        WORK_SHIFT = 'A'  ->  both tipo_turno rows get 'MoT'
+        missing           ->  keep existing horario (row untouched)
 
     Args:
         df_calendario: Calendar DataFrame with columns [employee_id, schedule_day, tipo_turno, horario, ...]
@@ -2823,7 +2823,7 @@ def add_shift_info_from_ciclos(
             logger.warning("add_shift_info_from_ciclos: work_shift column not found in ciclos data; horario unchanged")
             return True, df_result, ""
 
-        # Build a lookup: (employee_id, schedule_day) → work_shift
+        # Build a lookup: (employee_id, schedule_day) -> work_shift
         ciclos = df_ciclos_completos_folgas_ciclos[['employee_id', 'schedule_day', 'work_shift']].copy()
         ciclos['employee_id'] = ciclos['employee_id'].astype(str)
         ciclos['schedule_day'] = pd.to_datetime(ciclos['schedule_day']).dt.normalize()
@@ -3353,7 +3353,7 @@ def apply_annual_dayoff_feasibility_cap(
             'non_working': frozenset(),
         }
 
-        # WFM core_pro_emp_annual_variables.rule_field_code → df_colaborador column
+        # WFM core_pro_emp_annual_variables.rule_field_code -> df_colaborador column
         RULE_CODE_TO_COLUMN = {
             'NUM_DAYS_OFF_SUNDAY_YEAR': 'l_dom',
             'NUM_DAYS_OFF_WEEKEND_YEAR': 'c2d',
@@ -3591,7 +3591,7 @@ def apply_annual_dayoff_feasibility_cap(
                 if value > eligible:
                     logger.info(
                         f"apply_annual_dayoff_feasibility_cap: capping employee={emp_id} "
-                        f"field={field} {int(value)}→{eligible} "
+                        f"field={field} {int(value)}->{eligible} "
                         f"(weekly_rest={len(weekly_rest)}, working_days={len(working_days)})"
                     )
                     df_result.at[idx, field] = eligible
@@ -3881,14 +3881,14 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
     
     Day-Off Logic:
         - Source: tipo_dia = 'F' (folga/day-off) or 'S' (no-work) in cycle definition
-        - After treatment: 'F' → 'L', 'S' → '-'
+        - After treatment: 'F' -> 'L', 'S' -> '-'
         - For 'L' values: Target horario = 'L' (libre/rest day) - OVERRIDE mode
           * Preserves F's, A's and V's (does not override these)
         - For '-' values (no-work days): Special handling:
-          * If current horario is 'A' → sets to 'A-'
-          * If current horario is 'V' → sets to 'V-'
-          * If current horario is 'F' → preserved as 'F'
-          * Otherwise → sets to '-'
+          * If current horario is 'A' -> sets to 'A-'
+          * If current horario is 'V' -> sets to 'V-'
+          * If current horario is 'F' -> preserved as 'F'
+          * Otherwise -> sets to '-'
         - Mode: OVERRIDE - replaces existing horario values (except F's, A's, V's)
     
     Business Context:
@@ -3907,10 +3907,10 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
           * A's (absences): Preserved from 'L' overrides, but '-' converts to 'A-'
           * V's (vacations): Preserved from 'L' overrides, but '-' converts to 'V-'
         - Special handling for '-' values (no-work days):
-          * If current horario is 'A' → sets to 'A-'
-          * If current horario is 'V' → sets to 'V-'
-          * If current horario is 'F' → preserved as 'F'
-          * Otherwise → sets to '-'
+          * If current horario is 'A' -> sets to 'A-'
+          * If current horario is 'V' -> sets to 'V-'
+          * If current horario is 'F' -> preserved as 'F'
+          * Otherwise -> sets to '-'
     
     Use Cases:
         - Case 0: No processing (return calendar as-is)
@@ -3957,7 +3957,7 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
             df_result = df_calendario.copy()
             
             # Filter for both day-offs (tipo_dia = 'L' after treatment) and no-work days (tipo_dia = '-' after treatment)
-            # Note: treat_df_folgas_ciclos converts 'F' → 'L' and 'S' → '-'
+            # Note: treat_df_folgas_ciclos converts 'F' -> 'L' and 'S' -> '-'
             df_dayoffs = df_core_pro_emp_horario_det[
                 df_core_pro_emp_horario_det['tipo_dia'].isin(['L', '-'])
             ].copy()
@@ -3997,14 +3997,14 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
                 df_result.loc[dayoff_l_mask, 'horario'] = 'L'
             
             # Process '-' values (no-work days): check if current horario is 'A' or 'V'
-            # If inserting '-' and current is 'A' → 'A-', if current is 'V' → 'V-', otherwise '-'
+            # If inserting '-' and current is 'A' -> 'A-', if current is 'V' -> 'V-', otherwise '-'
             # Note: F's should never be overridden, even by '-'
             dash_mask = (mapped_values == '-') & ~preserve_f_mask
             if dash_mask.any():
                 # Get current horario values for rows where we're inserting '-'
                 current_horario = df_result.loc[dash_mask, 'horario']
                 
-                # Vectorized conditional assignment: A → A-, V → V-, otherwise -
+                # Vectorized conditional assignment: A -> A-, V -> V-, otherwise -
                 df_result.loc[dash_mask, 'horario'] = np.where(
                     current_horario == 'A',
                     'A-',
@@ -4058,10 +4058,10 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
         - Special handling for 'L' values (day-offs):
           * Can override A's and V's (but not F's)
         - Special handling for '-' values (no-work days from tipo_dia='S'):
-          * If current horario is 'A' → sets to 'A-'
-          * If current horario is 'V' → sets to 'V-'
-          * If current horario is 'F' → preserved as 'F'
-          * Otherwise → sets to '-'
+          * If current horario is 'A' -> sets to 'A-'
+          * If current horario is 'V' -> sets to 'V-'
+          * If current horario is 'F' -> preserved as 'F'
+          * Otherwise -> sets to '-'
     
     Use Cases:
         - Case 0: No processing (return calendar as-is)
@@ -4148,14 +4148,14 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             preserve_av_mask = df_result['horario'].isin(['A', 'V'])
             
             # Special handling for '-' values: check if current horario is 'A' or 'V'
-            # If inserting '-' and current is 'A' → 'A-', if current is 'V' → 'V-', otherwise '-'
+            # If inserting '-' and current is 'A' -> 'A-', if current is 'V' -> 'V-', otherwise '-'
             # Note: F's should never be overridden, even by '-'
             dash_mask = valid_ciclos_mask & ~preserve_f_mask & (mapped_values == '-')
             if dash_mask.any():
                 # Get current horario values for rows where we're inserting '-'
                 current_horario = df_result.loc[dash_mask, 'horario']
                 
-                # Vectorized conditional assignment: A → A-, V → V-, otherwise -
+                # Vectorized conditional assignment: A -> A-, V -> V-, otherwise -
                 df_result.loc[dash_mask, 'horario'] = np.where(
                     current_horario == 'A',
                     'A-',
@@ -4623,19 +4623,19 @@ def process_special_shift_types(df_calendario: pd.DataFrame, shift_type: str, em
     
     1. **'MoT'** (Morning or Tarde): Employee can work either morning OR afternoon
        - Ambiguous assignment that needs to be resolved
-       - First occurrence → 'M' (morning)
-       - Second occurrence → 'T' (afternoon)
+       - First occurrence -> 'M' (morning)
+       - Second occurrence -> 'T' (afternoon)
     
     2. **'P'** (Partida/Split shift): Employee works BOTH morning AND afternoon
        - Creates two separate shift entries
-       - First occurrence → 'M' (morning shift)
-       - Second occurrence → 'T' (afternoon shift)
+       - First occurrence -> 'M' (morning shift)
+       - Second occurrence -> 'T' (afternoon shift)
     
     Algorithm:
     - Groups rows by employee and date
     - For each group with the special shift type:
-      - 1st row → converts to 'M'
-      - 2nd row → converts to 'T'
+      - 1st row -> converts to 'M'
+      - 2nd row -> converts to 'T'
     - Combines processed rows back with unprocessed rows
     
     Args:
@@ -5241,7 +5241,7 @@ def adjust_horario_for_admission_date(df_calendario: pd.DataFrame, df_colaborado
         admission_data = admission_data.groupby(employee_col, as_index=False).agg(agg)
         if len(admission_data) < n_period_rows:
             logger.info(
-                f"adjust_horario_for_admission_date: {n_period_rows} contract-period rows → "
+                f"adjust_horario_for_admission_date: {n_period_rows} contract-period rows -> "
                 f"{len(admission_data)} employee-level rows for admission merge"
             )
 
@@ -5513,16 +5513,16 @@ def _compute_restricao_turno(
         - dfim = hora_fim (employee availability end)
     
     Logic:
-        - S1: dini < T1 AND dfim < M1 → Morning only ('M')
-        - S3: dini > T1 AND dfim > M1 → Afternoon only ('T')
+        - S1: dini < T1 AND dfim < M1 -> Morning only ('M')
+        - S3: dini > T1 AND dfim > M1 -> Afternoon only ('T')
         - S2: Otherwise (overlapping cases):
             - If use_case = 0: No restriction ('' - can be M or T)
             - If use_case = 1: Compare margins:
                 - margin_morning = T1 - dini (time available before afternoon starts)
                 - margin_afternoon = dfim - M1 (time available after morning ends)
-                - If margin_morning > margin_afternoon → 'M'
-                - If margin_morning < margin_afternoon → 'T'
-                - If equal → '' (no restriction, will be filtered out)
+                - If margin_morning > margin_afternoon -> 'M'
+                - If margin_morning < margin_afternoon -> 'T'
+                - If equal -> '' (no restriction, will be filtered out)
     
     Note:
         Handles midnight crossing: when hora_fim date > hora_ini date (e.g., availability
@@ -5568,11 +5568,11 @@ def _compute_restricao_turno(
     # Initialize result with empty strings
     result = pd.Series([''] * len(hora_ini), index=hora_ini.index)
     
-    # S1: dini < T1 AND dfim < M1 → Morning only
+    # S1: dini < T1 AND dfim < M1 -> Morning only
     s1_mask = (dini < T1) & (dfim < M1)
     result.loc[s1_mask] = 'M'
     
-    # S3: dini > T1 AND dfim > M1 → Afternoon only
+    # S3: dini > T1 AND dfim > M1 -> Afternoon only
     s3_mask = (dini > T1) & (dfim > M1)
     result.loc[s3_mask] = 'T'
     
@@ -5589,7 +5589,7 @@ def _compute_restricao_turno(
             # S2 sub-conditions
             s2_morning_mask = s2_mask & (margin_morning > margin_afternoon)
             s2_afternoon_mask = s2_mask & (margin_morning < margin_afternoon)
-            # s2_equal_mask = s2_mask & (margin_morning == margin_afternoon) → stays as '' (no restriction)
+            # s2_equal_mask = s2_mask & (margin_morning == margin_afternoon) -> stays as '' (no restriction)
             
             result.loc[s2_morning_mask] = 'M'
             result.loc[s2_afternoon_mask] = 'T'
@@ -5781,11 +5781,11 @@ def restrict_turnos_by_disponibilidade(
     
     Restriction Logic:
         - If restricao_turno == 'M' (morning only):
-            - tipo_turno == 'M' → horario = 'M'
-            - tipo_turno == 'T' → horario = '0'
+            - tipo_turno == 'M' -> horario = 'M'
+            - tipo_turno == 'T' -> horario = '0'
         - If restricao_turno == 'T' (afternoon only):
-            - tipo_turno == 'M' → horario = '0'
-            - tipo_turno == 'T' → horario = 'T'
+            - tipo_turno == 'M' -> horario = '0'
+            - tipo_turno == 'T' -> horario = 'T'
     
     Preservation Rules:
         - Only modifies horario values that are 'M', 'T', or 'MoT' (working shifts)
@@ -5873,22 +5873,22 @@ def restrict_turnos_by_disponibilidade(
         
         # Case 1: restricao_turno == 'M' (morning only)
         restricao_m_mask = can_modify_mask & (mapped_restricao == 'M')
-        # For tipo_turno == 'M' → horario = 'M'
+        # For tipo_turno == 'M' -> horario = 'M'
         morning_m_mask = restricao_m_mask & (df_result['tipo_turno'] == 'M')
         df_result.loc[morning_m_mask, 'horario'] = 'M'
         modified_count += morning_m_mask.sum()
-        # For tipo_turno == 'T' → horario = '0'
+        # For tipo_turno == 'T' -> horario = '0'
         afternoon_m_mask = restricao_m_mask & (df_result['tipo_turno'] == 'T')
         df_result.loc[afternoon_m_mask, 'horario'] = '0'
         modified_count += afternoon_m_mask.sum()
         
         # Case 2: restricao_turno == 'T' (afternoon only)
         restricao_t_mask = can_modify_mask & (mapped_restricao == 'T')
-        # For tipo_turno == 'M' → horario = '0'
+        # For tipo_turno == 'M' -> horario = '0'
         morning_t_mask = restricao_t_mask & (df_result['tipo_turno'] == 'M')
         df_result.loc[morning_t_mask, 'horario'] = '0'
         modified_count += morning_t_mask.sum()
-        # For tipo_turno == 'T' → horario = 'T'
+        # For tipo_turno == 'T' -> horario = 'T'
         afternoon_t_mask = restricao_t_mask & (df_result['tipo_turno'] == 'T')
         df_result.loc[afternoon_t_mask, 'horario'] = 'T'
         modified_count += afternoon_t_mask.sum()
@@ -6593,7 +6593,7 @@ def build_day_level_contract_lookup(
             df_result = df_result.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='last')
 
         logger.info(
-            f"build_day_level_contract_lookup: {len(df)} contract periods → {len(df_result)} employee-days"
+            f"build_day_level_contract_lookup: {len(df)} contract periods -> {len(df_result)} employee-days"
         )
         return True, df_result, ""
 
@@ -6758,7 +6758,7 @@ def add_process_rules_to_df_contratos(
 
 def build_rule_head_param_lookup(df_process_rules_raw: pd.DataFrame) -> pd.DataFrame:
     """
-    Tall CORE_PROCESS_LABOR_RULES → one wide row per rule_head_id (no date explosion,
+    Tall CORE_PROCESS_LABOR_RULES -> one wide row per rule_head_id (no date explosion,
     no execution-year clip). Used to attach TIME_OFF_DEADLINE and related params to
     pending CORE_PRO_EMP_MOV rows even when treated df_process_rules omits that head.
     """
@@ -6969,7 +6969,7 @@ def build_compensatory_output(
         }
 
         # --- Step 1: explode compensatory_dict into a flat DataFrame ---
-        # The loop is only responsible for shape transformation (nested dict → rows).
+        # The loop is only responsible for shape transformation (nested dict -> rows).
         # No ID lookups happen here; those are all deferred to the merges below.
         records = []
         for worker_id, groups in compensatory_dict.items():
@@ -6993,8 +6993,8 @@ def build_compensatory_output(
         df_output['SCHEDULE_DAY_REF'] = pd.to_datetime(df_output['SCHEDULE_DAY_REF'], errors='coerce')
 
         # The merge key for RULE_HEAD_ID is always the *worked day*:
-        #   'O' rows  → SCHEDULE_DAY is already the worked day
-        #   'D' rows  → SCHEDULE_DAY is the day off; SCHEDULE_DAY_REF is the worked day
+        #   'O' rows  -> SCHEDULE_DAY is already the worked day
+        #   'D' rows  -> SCHEDULE_DAY is the day off; SCHEDULE_DAY_REF is the worked day
         df_output['_worked_day'] = df_output['SCHEDULE_DAY_REF'].fillna(df_output['SCHEDULE_DAY'])
 
         # --- Step 2: merge RULE_HEAD_ID from df_pro_emp_mov (per-entry, most precise) ---

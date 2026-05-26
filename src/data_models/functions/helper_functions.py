@@ -404,14 +404,14 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
     Simplified version focusing on P (split shift) and MoT (continuous shift).
     
     Mapping logic:
-    - tipo_dia == 'F' + dia_semana in [1,8] → 'L_DOM'
-    - tipo_dia == 'F' → 'L'
-    - tipo_dia == 'S' → '-'
-    - tipo_dia == 'N' → 'NL'
+    - tipo_dia == 'F' + dia_semana in [1,8] -> 'L_DOM'
+    - tipo_dia == 'F' -> 'L'
+    - tipo_dia == 'S' -> '-'
+    - tipo_dia == 'N' -> 'NL'
     - tipo_dia == 'A':
-        - intervalo >= 1 hour → 'P' (split shift)
-        - intervalo < 1 hour → 'MoT' (continuous shift)
-    - Default → '-'
+        - intervalo >= 1 hour -> 'P' (split shift)
+        - intervalo < 1 hour -> 'MoT' (continuous shift)
+    - Default -> '-'
     
     Args:
         df: DataFrame with columns: tipo_dia, dia_semana, hora_ini_1, hora_fim_1, hora_ini_2, hora_fim_2
@@ -1031,30 +1031,30 @@ def convert_types_out(df: pd.DataFrame) -> pd.DataFrame:
     algorithm-generated schedule codes back to WFM (Workforce Management) system
     format for export and integration.
     
-    Transformation: HORARIO → (sched_type, sched_subtype)
+    Transformation: HORARIO -> (sched_type, sched_subtype)
     
     Schedule Type Mappings (sched_type):
         - T (Trabajo): Work shifts
-          - M, T, MoT, ToM, P, V, A, DFS → 'T'
+          - M, T, MoT, ToM, P, V, A, DFS -> 'T'
         - F (Folga/Free): Rest days
-          - L, LD, LQ, C → 'F'
+          - L, LD, LQ, C -> 'F'
         - R (Rotativo): Holiday work
-          - F → 'R'
+          - F -> 'R'
         - N (No definido): Not scheduled
-          - '-' → 'N'
+          - '-' -> 'N'
     
     Schedule Subtype Mappings (sched_subtype):
         - Shift specifics:
-          - M → 'M' (Morning), T → 'T' (Afternoon)
-          - MoT/ToM → 'H' (Hours/flexible)
-          - P → 'P' (Split shift/Partido)
+          - M -> 'M' (Morning), T -> 'T' (Afternoon)
+          - MoT/ToM -> 'H' (Hours/flexible)
+          - P -> 'P' (Split shift/Partido)
         - Rest day specifics:
-          - LD → 'D' (Sunday/Domingo)
-          - LQ → 'Q' (Quality/Quincenal)
-          - C → 'C' (Compensatory)
+          - LD -> 'D' (Sunday/Domingo)
+          - LQ -> 'Q' (Quality/Quincenal)
+          - C -> 'C' (Compensatory)
         - Absence codes:
-          - V, A → 'A' (Absence/Ausencia)
-          - DFS → 'C' (Compensatory for special days)
+          - V, A -> 'A' (Absence/Ausencia)
+          - DFS -> 'C' (Compensatory for special days)
     
     Business Context:
         Essential for:
@@ -1665,7 +1665,7 @@ def get_valid_emp_info(df_valid_emp: pd.DataFrame) -> Tuple[Union[int, str], int
             - unit_id (str): Unique unit ID as string (first value from unique set; supports numeric or string IDs)
             - secao_id (int): Unique section ID (first value from unique set)
             - posto_id_list (List[int]): List of all job position types
-            - employees_by_posto_dict (Dict[int, List[str]]): Map of posto_id → employee_id_list
+            - employees_by_posto_dict (Dict[int, List[str]]): Map of posto_id -> employee_id_list
             - employees_id_total_list (List[str]): All unique employee IDs as strings
             
     Example Output:
@@ -1866,8 +1866,8 @@ def restrict_employee_lists_to_contract_holders(
         if len(filtered_past) < len(past_employees_id_list) or len(filtered_posto) < len(employees_id_list_for_posto):
             logger.info(
                 f"Execution employee lists restricted to contract holders: "
-                f"past_employees {len(past_employees_id_list)} → {len(filtered_past)}, "
-                f"employees_id_list_for_posto {len(employees_id_list_for_posto)} → {len(filtered_posto)}"
+                f"past_employees {len(past_employees_id_list)} -> {len(filtered_past)}, "
+                f"employees_id_list_for_posto {len(employees_id_list_for_posto)} -> {len(filtered_posto)}"
             )
 
         return True, filtered_past, filtered_posto, ""
