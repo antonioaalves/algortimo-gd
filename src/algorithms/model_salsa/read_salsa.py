@@ -30,20 +30,27 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
     """
     try:
         logger.info("Starting enhanced data reading for salsa algorithm")
-        
+
         # =================================================================
         # 1. VALIDATE INPUT data
         # =================================================================
         logger.info(f"algorithm_treatment_params: {algorithm_treatment_params}")
         
         matriz_colaborador_gd = medium_dataframes['df_colaborador'].copy()
-        matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy() 
+        matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy()
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
-        matriz_process_rules_gd = algorithm_treatment_params['df_process_rules'].copy()
-        matriz_past_lds_gd = algorithm_treatment_params['df_pro_emp_mov'].copy()
-
-        
+        matriz_process_rules_gd = algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
+        matriz_past_lds_gd = algorithm_treatment_params.get('df_pro_emp_mov', pd.DataFrame())
+        if matriz_process_rules_gd is None:
+            matriz_process_rules_gd = pd.DataFrame()
+        else:
+            matriz_process_rules_gd = matriz_process_rules_gd.copy()
+        if matriz_past_lds_gd is None:
+            matriz_past_lds_gd = pd.DataFrame()
+        else:
+            matriz_past_lds_gd = matriz_past_lds_gd.copy()
+       
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
@@ -54,10 +61,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Period Start and end Time:")
         logger.info(f"Start: {start_date}")
         logger.info(f"End: {end_date}")
-        
+
         wfm_proc = algorithm_treatment_params['wfm_proc_colab']
         if wfm_proc not in (None, 'None', ''):
-            partial_generation = True 
+            partial_generation = True
             partial_workers = algorithm_treatment_params['employees_id_list_for_posto']
             logger.debug(f"wfm_proc {wfm_proc}, {type(wfm_proc)}")
         else:
@@ -72,6 +79,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"  - matriz_colaborador: {matriz_colaborador_gd.shape}")
         logger.info(f"  - matriz_estimativas: {matriz_estimativas_gd.shape}")
         logger.info(f"  - matriz_calendario: {matriz_calendario_gd.shape}")
+        logger.info(f"  - matriz_process_rules (merged): {matriz_process_rules_gd.shape}")
+        logger.info(f"  - matriz_past_lds (pending LD): {matriz_past_lds_gd.shape}")
 
         logger.info("Parameters:")
         logger.info(f"  - admissao_proportional: {admissao_proporcional}")
@@ -79,7 +88,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"  - wfm_proc_colab: {wfm_proc}, if it has value, its a partial generation -> {partial_generation}.")
         if partial_generation == True:
             logger.info(f"  - partial_workers: {partial_workers} workers")
-
 
         # =================================================================
         # 3. PROCESS CALENDARIO data
