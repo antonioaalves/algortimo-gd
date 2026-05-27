@@ -2012,7 +2012,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                         f"FEASIBILITY_CAP_APPLIED: employee={event['employee_id']}"
                         f" field={event['field']}"
                         f" original={event['original_value']} cap={event['cap_value']}"
-                        f" period={event['period_begin']}–{event['period_end']}"
+                        f" period={event['period_begin']}-{event['period_end']}"
                     )
 
                 if cap_events:
