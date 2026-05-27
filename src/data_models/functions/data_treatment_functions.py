@@ -6989,6 +6989,7 @@ def build_compensatory_output(
         df_output = pd.DataFrame(records, columns=['EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY', 'SCHEDULE_DAY_REF', 'VALUE_OPT1'])
         df_output['PROCESS_ID'] = process_id
         df_output['FIELD_CODE'] = 'TIME_OFF_ADDITIONAL'
+        df_output['EMPLOYEE_ID'] = pd.to_numeric(df_output['EMPLOYEE_ID'], errors='coerce')
         df_output['SCHEDULE_DAY']     = pd.to_datetime(df_output['SCHEDULE_DAY'])
         df_output['SCHEDULE_DAY_REF'] = pd.to_datetime(df_output['SCHEDULE_DAY_REF'], errors='coerce')
 
@@ -7011,6 +7012,7 @@ def build_compensatory_output(
             if needed.issubset(mov.columns):
                 if 'VALUE_OPT1' in mov.columns:
                     mov = mov[mov['VALUE_OPT1'].astype(str).str.strip() == 'O']
+                mov['EMPLOYEE_ID'] = pd.to_numeric(mov['EMPLOYEE_ID'], errors='coerce')
                 mov = (
                     mov[['EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY', 'RULE_HEAD_ID']]
                     .assign(SCHEDULE_DAY=lambda x: pd.to_datetime(x['SCHEDULE_DAY']))
@@ -7041,12 +7043,25 @@ def build_compensatory_output(
             _rc_upper = perm['RULE_CODE'].astype(str).str.strip().str.upper()
             perm['RULE_CODE'] = _rc_upper.map(_RULE_CODE_REVERSE).fillna(_rc_upper)
             if {'EMPLOYEE_ID', 'RULE_CODE', 'RULE_HEAD_ID'}.issubset(perm.columns):
-                rh_per_employee = (
-                    perm[['EMPLOYEE_ID', 'RULE_CODE', 'RULE_HEAD_ID']]
-                    .drop_duplicates(subset=['EMPLOYEE_ID', 'RULE_CODE'])
-                    .rename(columns={'RULE_HEAD_ID': '_RULE_HEAD_ID_pm'})
-                )
-                df_output = df_output.merge(rh_per_employee, on=['EMPLOYEE_ID', 'RULE_CODE'], how='left')
+                perm['EMPLOYEE_ID'] = pd.to_numeric(perm['EMPLOYEE_ID'], errors='coerce')
+                if 'SCHEDULE_DAY' in perm.columns:
+                    perm['SCHEDULE_DAY'] = pd.to_datetime(perm['SCHEDULE_DAY']).dt.normalize()
+                    df_output['_worked_day'] = pd.to_datetime(df_output['_worked_day']).dt.normalize()
+                    rh_per_day = (
+                        perm[['EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY', 'RULE_HEAD_ID']]
+                        .drop_duplicates(subset=['EMPLOYEE_ID', 'RULE_CODE', 'SCHEDULE_DAY'])
+                        .rename(columns={'SCHEDULE_DAY': '_worked_day', 'RULE_HEAD_ID': '_RULE_HEAD_ID_pm'})
+                    )
+                    df_output = df_output.merge(
+                        rh_per_day, on=['EMPLOYEE_ID', 'RULE_CODE', '_worked_day'], how='left'
+                    )
+                else:
+                    rh_per_employee = (
+                        perm[['EMPLOYEE_ID', 'RULE_CODE', 'RULE_HEAD_ID']]
+                        .drop_duplicates(subset=['EMPLOYEE_ID', 'RULE_CODE'])
+                        .rename(columns={'RULE_HEAD_ID': '_RULE_HEAD_ID_pm'})
+                    )
+                    df_output = df_output.merge(rh_per_employee, on=['EMPLOYEE_ID', 'RULE_CODE'], how='left')
                 df_output['RULE_HEAD_ID'] = df_output['RULE_HEAD_ID'].where(
                     df_output['RULE_HEAD_ID'].notna(), df_output['_RULE_HEAD_ID_pm']
                 )
@@ -7162,8 +7177,10 @@ def apply_compensatory_sched_types(
             'domingos': 'ld_sunday',
         }
 
-        # Build lookup: (employee_id, RULE_CODE) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
-        type_lookup = {}
+        # Day-level lookup: (employee_id, rule_code, day) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
+        # Employee-level fallback when day is missing from merged rules.
+        type_lookup_by_day = {}
+        type_lookup_employee = {}
         if df_process_rules is not None and not df_process_rules.empty:
             rules_normalized = df_process_rules.copy()
             rules_normalized.columns = [str(col).strip().lower() for col in rules_normalized.columns]
@@ -7173,15 +7190,27 @@ def apply_compensatory_sched_types(
                 and 'rest_day_type' in rules_normalized.columns
                 and 'rest_day_subtype' in rules_normalized.columns
             ):
-                for _, row in rules_normalized.drop_duplicates(
-                    subset=['employee_id', 'rule_code']
-                ).iterrows():
-                    key = (int(row['employee_id']), row['rule_code'])
-                    type_lookup[key] = (row['rest_day_type'], row['rest_day_subtype'])
+                rules_normalized['employee_id'] = pd.to_numeric(
+                    rules_normalized['employee_id'], errors='coerce'
+                )
+                dedupe_cols = ['employee_id', 'rule_code']
+                if 'schedule_day' in rules_normalized.columns:
+                    rules_normalized['schedule_day'] = pd.to_datetime(
+                        rules_normalized['schedule_day'], errors='coerce'
+                    ).dt.normalize()
+                    dedupe_cols.append('schedule_day')
+                for _, row in rules_normalized.drop_duplicates(subset=dedupe_cols).iterrows():
+                    emp_key = int(row['employee_id'])
+                    rule_code = row['rule_code']
+                    types = (row['rest_day_type'], row['rest_day_subtype'])
+                    if 'schedule_day' in dedupe_cols and pd.notna(row['schedule_day']):
+                        type_lookup_by_day[(emp_key, rule_code, row['schedule_day'])] = types
+                    if (emp_key, rule_code) not in type_lookup_employee:
+                        type_lookup_employee[(emp_key, rule_code)] = types
 
         # If merged employee-day rules are empty, adapt equivalent info from pending
         # movements (already enriched with rule params) to preserve prior behavior.
-        if not type_lookup and df_pro_emp_mov is not None and not df_pro_emp_mov.empty:
+        if not type_lookup_by_day and not type_lookup_employee and df_pro_emp_mov is not None and not df_pro_emp_mov.empty:
             mov_rules = df_pro_emp_mov.copy()
             mov_rules.columns = [str(col).strip().lower() for col in mov_rules.columns]
             if (
@@ -7191,11 +7220,23 @@ def apply_compensatory_sched_types(
                 and 'rest_day_subtype' in mov_rules.columns
             ):
                 mov_rules = mov_rules.dropna(subset=['rest_day_type', 'rest_day_subtype'])
-                for _, row in mov_rules.drop_duplicates(subset=['employee_id', 'rule_code']).iterrows():
-                    key = (int(row['employee_id']), row['rule_code'])
-                    type_lookup[key] = (row['rest_day_type'], row['rest_day_subtype'])
+                mov_rules['employee_id'] = pd.to_numeric(mov_rules['employee_id'], errors='coerce')
+                dedupe_cols = ['employee_id', 'rule_code']
+                if 'schedule_day' in mov_rules.columns:
+                    mov_rules['schedule_day'] = pd.to_datetime(
+                        mov_rules['schedule_day'], errors='coerce'
+                    ).dt.normalize()
+                    dedupe_cols.append('schedule_day')
+                for _, row in mov_rules.drop_duplicates(subset=dedupe_cols).iterrows():
+                    emp_key = int(row['employee_id'])
+                    rule_code = row['rule_code']
+                    types = (row['rest_day_type'], row['rest_day_subtype'])
+                    if 'schedule_day' in dedupe_cols and pd.notna(row['schedule_day']):
+                        type_lookup_by_day[(emp_key, rule_code, row['schedule_day'])] = types
+                    if (emp_key, rule_code) not in type_lookup_employee:
+                        type_lookup_employee[(emp_key, rule_code)] = types
 
-        if not type_lookup:
+        if not type_lookup_by_day and not type_lookup_employee:
             logger.warning("apply_compensatory_sched_types: no type lookup available - skipping")
             return final_df
 
@@ -7205,13 +7246,15 @@ def apply_compensatory_sched_types(
             worker_int = int(worker_id)
             for group_key, rule_code in rule_code_map.items():
                 group_data = groups.get(group_key, {})
-                rule_types = type_lookup.get((worker_int, rule_code))
-                if not rule_types:
-                    continue
 
                 for worked_day, day_off in group_data.get('ld_given', []):
                     if day_off is not None:
                         day_off_normalized = pd.Timestamp(day_off).normalize()
+                        rule_types = type_lookup_by_day.get((worker_int, rule_code, day_off_normalized))
+                        if not rule_types:
+                            rule_types = type_lookup_employee.get((worker_int, rule_code))
+                        if not rule_types:
+                            continue
                         overrides[(worker_int, day_off_normalized)] = rule_types
 
         if not overrides:
