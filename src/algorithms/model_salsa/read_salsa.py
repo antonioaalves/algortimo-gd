@@ -829,6 +829,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 sunday_rules = pd.DataFrame()
                 override_holiday_sunday = pd.DataFrame()
             else:
+                # employee_id is str in merged rules (treat_df_colaborador); workers_complete is int
+                matriz_process_rules_gd['employee_id'] = pd.to_numeric(
+                    matriz_process_rules_gd['employee_id'], errors='coerce'
+                )
                 holiday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_holiday"]
                 sunday_df = matriz_process_rules_gd[matriz_process_rules_gd["rule_code"] == "ld_sunday"]
                 for w in workers_complete:
@@ -852,6 +856,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     if not override_holiday_sunday[w]:
                         override_holiday_sunday.pop(w, None)
 
+        logger.info(
+            f"Compensatory rules loaded for {len(holiday_rules)} employee(s) (holidays), "
+            f"{len(sunday_rules)} employee(s) (sundays)"
+        )
         logger.info(f"holiday rules: {holiday_rules}")
         logger.info(f"sunday rules: {sunday_rules}")
         logger.info(f"override rules: {override_holiday_sunday}")
@@ -869,6 +877,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 holiday_past_lds = pd.DataFrame()
                 sunday_past_lds = pd.DataFrame()
             else:
+                matriz_past_lds_gd['employee_id'] = pd.to_numeric(
+                    matriz_past_lds_gd['employee_id'], errors='coerce'
+                )
                 only_dates = matriz_past_lds_gd['schedule_day'].drop_duplicates()
                 day_of_year_dict = dict(zip(only_dates.dt.dayofyear - 400, only_dates.dt.strftime('%Y-%m-%d')))
                 day_of_year_dict_inverted = dict(zip(only_dates.dt.strftime('%Y-%m-%d'), only_dates.dt.dayofyear - 400))
