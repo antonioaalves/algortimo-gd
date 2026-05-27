@@ -451,14 +451,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         new_w = max(workers_complete_with_dummy) + 1
                         workers_complete_with_dummy.append(new_w)
                         workers_list_with_dummy.append(new_w)
-                        if layer == nbr_of_contracts - 1:
-                            data_demissao[new_w] = data_demissao[w]
+
 
                         worker_row = worker_data.iloc[layer]
-                        if layer == 1:
-                            data_demissao[w] = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0])
-                            last_registered_day[w] = data_demissao[w]
-
+                        if layer == 1 and layer != nbr_of_contracts - 1:
+                            original_end_date = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0]) - 1
                         # Extract contract information
                         contract_type[new_w] = worker_row.get('tipo_contrato', 'Contract Error')
                         total_l[new_w] = int(worker_row.get('l_total', 0))
@@ -511,6 +508,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                                 else:
                                     logger.info(f"Worker {new_w} data_demissao {demissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
 
+                        if layer == nbr_of_contracts - 1:
+                            data_demissao[new_w] = data_demissao[w]
+                            if layer == 1:
+                                original_end_date = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0]) - 1
+                            else:
+                                data_demissao[w] = original_end_date
+                            last_registered_day[w] = data_demissao[w]
                         # Track first and last registered days
                         if w in matriz_calendario_gd['employee_id'].values:
                             first_registered_day[new_w] = worker_calendar['index'].min()
@@ -552,6 +556,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         locked_days = {}
         forced_work_days = {}
         dynamic_empty = {}
+        complete_cycle_days = {}
 
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -595,6 +600,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 locked_days[w] = []
                 forced_work_days[w] = []
                 dynamic_empty[w] = []
+                complete_cycle_days[w] = []
 
                 continue
             
@@ -612,6 +618,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL')]['index'].tolist()
             forced_work_days[w] = worker_calendar[(worker_calendar['horario'] == 'NL')]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
+            complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
     
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
@@ -630,6 +637,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_absences[dummy] = {d for d in worker_absences[original] if start <= d <= end}
             forced_work_days[dummy] = {d for d in forced_work_days[original] if start <= d <= end}
             locked_days[dummy] = {d for d in locked_days[original] if start <= d <= end}
+            complete_cycle_days[dummy] = {d for d in complete_cycle_days[original] if start <= d <= end}
             fixed_compensation_days[dummy] = {d for d in fixed_compensation_days[original] if start <= d <= end}
             work_day_hours[dummy] = work_day_hours[original]
             free_day_complete_cycle[dummy] = {d for d in free_day_complete_cycle[original] if start <= d <= end}
@@ -644,6 +652,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_absences[original] = {d for d in worker_absences[original] if d <= data_demissao[original]}
             forced_work_days[original] = {d for d in forced_work_days[original] if d <= data_demissao[original]}
             locked_days[original] = {d for d in locked_days[original] if d <= data_demissao[original]}
+            complete_cycle_days[original] = {d for d in complete_cycle_days[original] if d <= data_demissao[original]}
             fixed_compensation_days[original] = {d for d in fixed_compensation_days[original] if d <= data_demissao[original]}
             free_day_complete_cycle[original] = {d for d in free_day_complete_cycle[original] if d <= data_demissao[original]}
 
@@ -968,6 +977,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "dynamic_empty": dynamic_empty,
             "dummy_workers": dummy_workers,
             "workers_with_dummy": workers_with_dummy,
+            "complete_cycle_days": complete_cycle_days,
             }
         
     except Exception as e:
