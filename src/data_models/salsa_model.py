@@ -1377,7 +1377,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['df_ausencias_ferias'] = df_ausencias_ferias.copy()
                 self.auxiliary_data['df_days_off'] = df_days_off.copy()
                 self.auxiliary_data['df_ciclos'] = df_ciclos.copy()
-                
+
                 if not self.auxiliary_data:
                     self.logger.warning("No data was loaded into auxiliary_data")
                     return False
