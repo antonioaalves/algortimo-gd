@@ -344,13 +344,13 @@ def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
             if (total_shifts):
                 model.add_exactly_one(total_shifts)
 
-def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type, work_days_per_week, period):
+def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type, work_days_per_week, period, complete_cycle_days):
     # Define working shifts
     # Add constraint to limit working days in a week to contract type
     for w in workers:
         for week in week_to_days.keys():
             days_in_week = week_to_days[week]
-            if days_in_week[-1] < period[0] or days_in_week[0] > period[1]:
+            if days_in_week[-1] < period[0] or days_in_week[0] > period[1] or any(d in complete_cycle_days[w] for d in days_in_week):
                 continue
             # Sum shifts across days and shift types
             total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift if (w, d, s) in shift)
@@ -359,12 +359,15 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
                 max_days = work_days_per_week[w][week - 1]
             model.Add(total_shifts <= max_days)
 
-def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days, period, dummy_workers, workers_with_dummy):
+def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days, period, dummy_workers, workers_with_dummy, complete_cycle_days):
     #limits maximum continuous working days
     for w in workers:
         for d in range(1, max(days_of_year) - max_days + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
             if d + max_days < period[0] or d > period[1]:
+                continue
+            if len([days_comp for days_comp in range(max_days + 1) if days_comp + d not in complete_cycle_days[w]]) == 0:
+                #logger.info(f"skipping max consec work days for {w} around day {d}")
                 continue
             consecutive_days = sum(
                 shift[(w, d + i, s)] 
@@ -377,82 +380,81 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
     if dummy_workers:
         for w in workers_with_dummy:
             dummies = sorted(workers_with_dummy.get(w, {}).values())
-            for k in range(1, max_days + 1):
-                consecutive_days = sum(
-                    shift[(w, dummy_workers[dummies[0]]["start_date"] - i, s)]
-                    for i in range(k)
-                    for s in working_shift
-                    if (w, dummy_workers[dummies[0]]["start_date"] - i, s) in shift
-                ) + sum(
-                    shift[(dummies[0], dummy_workers[dummies[0]]["start_date"] + j, s)]
-                    for j in range(max_days + 1 - k)
-                    for s in working_shift
-                    if (dummies[0], dummy_workers[dummies[0]]["start_date"] + j, s) in shift)
-                model.Add(consecutive_days <= max_days)
+            change_date = dummy_workers[dummies[0]]["start_date"]
+            if len([days_comp for days_comp in range(max_days // 2 + 1) if change_date - days_comp not in complete_cycle_days[w]]) == 0 and \
+               len([days_comp for days_comp in range(max_days // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummies[0]]]) == 0:
+                continue
+            consecutive_days = sum(
+                shift[(w, change_date - i, s)]
+                for i in range(max_days // 2 + 1)
+                for s in working_shift
+                if (w, change_date - i, s) in shift
+            ) + sum(
+                shift[(dummies[0], change_date + j, s)]
+                for j in range(max_days // 2 + 1)
+                for s in working_shift
+                if (dummies[0], change_date + j, s) in shift)
+            print(w, dummies[0], consecutive_days)
+            model.Add(consecutive_days <= max_days)
             length_dummies = len(dummies)
-            if length_dummies < 2:
+            if length_dummies < 1:
                 continue
             for a in range(length_dummies - 1):
                 dummy = dummies[a]
                 dummy_second = dummies[a + 1]
-                if dummy_workers[dummy]["end_date"] == dummy_workers[dummy_second]["start_date"]:
+                if dummy_workers[dummy]["end_date"] + 1 == dummy_workers[dummy_second]["start_date"]:
                     change_date = dummy_workers[dummy]["end_date"]
                     # We check windows that cross the change boundary:
                     # some days before change_date (original)
                     # and some days after (dummy)
-                    for k in range(1, max_days + 1):
-                        consecutive_days = sum(
-                            shift[(dummy, change_date - i, s)]
-                            for i in range(k)
-                            for s in working_shift
-                            if (dummy, change_date - i, s) in shift
-                        ) + sum(
-                            shift[(dummy_second, change_date + j, s)]
-                            for j in range(max_days + 1 - k)
-                            for s in working_shift
-                            if (dummy_second, change_date + j, s) in shift)
-                        model.Add(consecutive_days <= max_days)
+                    if len([days_comp for days_comp in range(max_days // 2 + 1) if change_date - days_comp not in complete_cycle_days[dummy]]) == 0 and \
+                       len([days_comp for days_comp in range(max_days // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummy_second]]) == 0:
+                        continue
+                    consecutive_days = sum(
+                        shift[(dummy, change_date - i, s)]
+                        for i in range(max_days // 2 + 1)
+                        for s in working_shift
+                        if (dummy, change_date - i, s) in shift
+                    ) + sum(
+                        shift[(dummy_second, change_date + j, s)]
+                        for j in range(max_days // 2 + 1)
+                        for s in working_shift
+                        if (dummy_second, change_date + j, s) in shift)
+                    print(dummy, dummy_second, consecutive_days)
+                    model.Add(consecutive_days <= max_days)
 
 def LQ_attribution(model, shift, workers, working_days, c2d, year_range):
     # #constraint for maximum of LD days in a year
     for w in workers:
         model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if year_range[0] <= d < year_range[1] and (w, d, "LQ") in shift) >= c2d.get(w, 0))
 
-def working_day_shifts(model, shift, workers, working_days, check_shift, workers_complete_cycle, working_shift, period, contract_type):
+def working_day_shifts(model, shift, workers, working_days, check_shift, working_shift, period, contract_type, complete_cycle_days):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
     #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
     check_shift_with_empty = check_shift + ["-"]
-    if workers:
-        for w in workers:
-            for d in working_days[w]:
-                if not (period[0] < d < period[1]):
-                    continue
-                total_shifts = []
+    for w in workers:
+        for d in working_days[w]:
+            if not (period[0] < d < period[1]):
+                continue
+            total_shifts = []
+            if d not in complete_cycle_days[w]:
                 if contract_type.get(w, 0) > 4:
                     check = check_shift
                 else:
                     check = check_shift_with_empty
-                for s in check:
-                    if (w, d, s) in shift:
-                        total_shifts.append(shift[(w, d, s)])
-                if total_shifts:
-                    model.add_exactly_one(total_shifts)
-    if workers_complete_cycle:
-        for w in workers_complete_cycle:
-            for d in working_days[w]:
-                if not (period[0] < d < period[1]):
-                    continue
-                total_shifts = []
-                for s in working_shift:
-                    if (w, d, s) in shift:
-                        total_shifts.append(shift[(w, d, s)])
-                if total_shifts:
-                    model.add_exactly_one(total_shifts)
+            else:
+                check = working_shift
 
-def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days, fixed_LQs, period):
+            for s in check:
+                if (w, d, s) in shift:
+                    total_shifts.append(shift[(w, d, s)])
+            if total_shifts:
+                model.add_exactly_one(total_shifts)
+
+def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_type, fixed_days, fixed_LQs, period, complete_cycle_days):
     for w in workers:
         all_days_off = set(fixed_days[w].union(fixed_LQs[w]))
-        all_work_days = [d for d in working_days[w] if period[0] - 3 < d < period[1]]
+        all_work_days = [d for d in working_days[w] if period[0] - 3 < d < period[1] and d not in complete_cycle_days[w]]
         if contract_type.get(w, 0) == 8:
             max_continuous_free_days = 2
         else:
@@ -638,7 +640,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, period):
                         model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao,
-                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period):
+                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -658,7 +660,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
             # Skip if no working days for this worker in this week
             if not week_work_days:
                 continue
-            if week_work_days[-1] < period[0] or week_work_days[0] > period[1]:
+            if week_work_days[-1] < period[0] or week_work_days[0] > period[1] or any(d in complete_cycle_days[w] for d in week_work_days):
                 continue
             week_work_days_set = set(week_work_days)
 
@@ -783,8 +785,8 @@ def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year,
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)
 
-def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, working_days, empty_set, dynamic_empty_days,
-                      fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_days):
+def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_set, dynamic_empty_days, fixed_days_off, 
+                      fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_days, complete_cycle_days):
     for w in workers:
         empty_days_week = 5 - contract_type.get(w, 0)
         if empty_days_week > 0:
@@ -793,7 +795,7 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, workin
             worker_demissao = data_demissao.get(w, 0)
             for week, days in week_to_days.items():
                 empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
-                if max(days) < period[0] or min(days) > period[1]:
+                if max(days) < period[0] or min(days) > period[1] or days[0] in complete_cycle_days[w]:
                     continue
                 holidays_in_week = closed_days.intersection(days)
                 is_admissao_week = (worker_admissao > 0 and worker_admissao in days)

@@ -619,7 +619,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             forced_work_days[w] = worker_calendar[(worker_calendar['horario'] == 'NL')]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
-    
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
 
@@ -637,7 +636,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_absences[dummy] = {d for d in worker_absences[original] if start <= d <= end}
             forced_work_days[dummy] = {d for d in forced_work_days[original] if start <= d <= end}
             locked_days[dummy] = {d for d in locked_days[original] if start <= d <= end}
-            complete_cycle_days[dummy] = {d for d in complete_cycle_days[original] if start <= d <= end}
+            #if dummy in [ 5547, 5549]:
+            #    complete_cycle_days[dummy] = set()
+            #else:
+            #    complete_cycle_days[dummy] = {d for d in complete_cycle_days[original] if start <= d <= end}
             fixed_compensation_days[dummy] = {d for d in fixed_compensation_days[original] if start <= d <= end}
             work_day_hours[dummy] = work_day_hours[original]
             free_day_complete_cycle[dummy] = {d for d in free_day_complete_cycle[original] if start <= d <= end}
