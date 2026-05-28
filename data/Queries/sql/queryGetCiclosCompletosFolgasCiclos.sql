@@ -18,7 +18,8 @@ SELECT DISTINCT
     cpehd.WORK_SHIFT_START as work_shift_start,
     cpehd.WORK_SHIFT_END as work_shift_end,
     cpehd.MINIMUMWORKDAY as minimumworkday,
-    cpehd.MAXIMUMWORKDAY as maximumworkday
+    cpehd.MAXIMUMWORKDAY as maximumworkday,
+    cpehd.WORKLOAD_TEMPLATE as workload_template
 FROM wfm.CORE_PRO_EMP_HORARIO_DET cpehd
 LEFT JOIN wfm.esc_colaborador ec ON ec.CODIGO = cpehd.EMPLOYEE_ID
 WHERE cpehd.PROCESS_ID = {process_id}

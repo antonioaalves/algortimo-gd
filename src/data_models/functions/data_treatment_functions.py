@@ -788,7 +788,26 @@ def treat_df_ciclos_completos(df_ciclos_completos: pd.DataFrame, df_colaborador_
         else:
             logger.warning("dia_semana column not found - skipping transformation")
         
-        # Step 3: Convert WFM types to algorithm 'horario' codes
+        # Step 3: Normalise workload_template — 5/6 fixed weeks; A = algorithm decides (replaces seed_5_6)
+        _VALID_WORKLOAD_TEMPLATES = frozenset({'5', '6', 'A'})
+        if 'workload_template' in df_ciclos_completos.columns:
+            wt_raw = df_ciclos_completos['workload_template']
+            wt = pd.Series(np.nan, index=wt_raw.index, dtype=object)
+            present = wt_raw.notna()
+            if present.any():
+                wt_str = wt_raw.loc[present].astype(str).str.strip().str.upper()
+                wt_str = wt_str.replace({'5.0': '5', '6.0': '6'})
+                wt.loc[present] = wt_str.where(wt_str.isin(_VALID_WORKLOAD_TEMPLATES), np.nan)
+            df_ciclos_completos['workload_template'] = wt
+            n_valid = int(df_ciclos_completos['workload_template'].notna().sum())
+            logger.info(
+                f"workload_template: {n_valid}/{len(df_ciclos_completos)} rows with value 5, 6 or A "
+                f"(other values set to NaN)"
+            )
+        else:
+            logger.warning("workload_template column not found in df_ciclos_completos — skipping normalisation")
+
+        # Step 4: Convert WFM types to algorithm 'horario' codes
         logger.info("Converting WFM types to horario codes")
         l_dom_days = _config.parameters.get_parameter_default('l_dom_days')
         df_ciclos_completos = convert_ciclos_to_horario(df_ciclos_completos, l_dom_days)
@@ -2875,7 +2894,8 @@ def add_tipo_ciclo_to_calendario(
     df_ciclos: pd.DataFrame,
 ) -> Tuple[bool, pd.DataFrame, str]:
     """
-    Populate df_calendario.tipo_ciclo from CORE_PRO_EMP_HORARIO_DET (via treated df_ciclos).
+    Populate df_calendario.tipo_ciclo and workload_template from CORE_PRO_EMP_HORARIO_DET
+    (via treated df_ciclos).
 
     Salsa path: df_ciclos comes from queryGetCiclosCompletosFolgasCiclos.sql ->
     treat_df_ciclos_completos(), without splitting by tipo_ciclo.
@@ -2883,6 +2903,10 @@ def add_tipo_ciclo_to_calendario(
     TIPO_CICLO is per employee-day (both M/T rows get the same value):
         True  — DB value 'S' (ciclo completo)
         False — DB value 'N', or no horario_det row for that day
+
+    workload_template is per employee-day ('5', '6', or 'A'; NaN otherwise), pre-normalised in
+    treat_df_ciclos_completos — replaces legacy seed_5_6 from df_colaborador. 'A' means the
+    algorithm decides the weekly working-day count from demand.
     """
     def _db_tipo_ciclo_to_bool(raw) -> bool:
         if isinstance(raw, (bool, np.bool_)):
@@ -2905,33 +2929,52 @@ def add_tipo_ciclo_to_calendario(
             df_result['tipo_ciclo'] = False
         df_result['tipo_ciclo'] = df_result['tipo_ciclo'].astype(bool)
 
-        if df_ciclos is None or df_ciclos.empty or 'tipo_ciclo' not in df_ciclos.columns:
+        if df_ciclos is None or df_ciclos.empty:
             logger.warning(
-                "add_tipo_ciclo_to_calendario: no tipo_ciclo in df_ciclos; "
-                "leaving default False on all calendar rows"
+                "add_tipo_ciclo_to_calendario: df_ciclos is empty; "
+                "leaving default tipo_ciclo and no workload_template"
             )
             return True, df_result, ""
-
-        ciclos = df_ciclos[['employee_id', 'schedule_day', 'tipo_ciclo']].copy()
-        ciclos['employee_id'] = ciclos['employee_id'].astype(str)
-        ciclos['schedule_day'] = pd.to_datetime(ciclos['schedule_day']).dt.normalize()
-        ciclos['tipo_ciclo'] = ciclos['tipo_ciclo'].apply(_db_tipo_ciclo_to_bool)
-        ciclos = ciclos.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='first')
-        tipo_ciclo_lookup = ciclos.set_index(['employee_id', 'schedule_day'])['tipo_ciclo']
 
         df_result['employee_id'] = df_result['employee_id'].astype(str)
         df_result['schedule_day_dt'] = pd.to_datetime(df_result['schedule_day']).dt.normalize()
         idx = pd.MultiIndex.from_arrays([df_result['employee_id'], df_result['schedule_day_dt']])
-        mapped_values = tipo_ciclo_lookup.reindex(idx).values
-        has_match = pd.notna(mapped_values)
-        df_result.loc[has_match, 'tipo_ciclo'] = mapped_values[has_match].astype(bool)
-        df_result = df_result.drop(columns=['schedule_day_dt'], errors='ignore')
 
-        n_true = int(df_result['tipo_ciclo'].sum())
-        logger.info(
-            f"add_tipo_ciclo_to_calendario: {has_match.sum()} / {len(df_result)} rows matched; "
-            f"{n_true} rows with tipo_ciclo=True"
-        )
+        if 'tipo_ciclo' in df_ciclos.columns:
+            ciclos = df_ciclos[['employee_id', 'schedule_day', 'tipo_ciclo']].copy()
+            ciclos['employee_id'] = ciclos['employee_id'].astype(str)
+            ciclos['schedule_day'] = pd.to_datetime(ciclos['schedule_day']).dt.normalize()
+            ciclos['tipo_ciclo'] = ciclos['tipo_ciclo'].apply(_db_tipo_ciclo_to_bool)
+            ciclos = ciclos.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='first')
+            tipo_ciclo_lookup = ciclos.set_index(['employee_id', 'schedule_day'])['tipo_ciclo']
+            mapped_values = tipo_ciclo_lookup.reindex(idx).values
+            has_match = pd.notna(mapped_values)
+            df_result.loc[has_match, 'tipo_ciclo'] = mapped_values[has_match].astype(bool)
+            n_true = int(df_result['tipo_ciclo'].sum())
+            logger.info(
+                f"add_tipo_ciclo_to_calendario: {has_match.sum()} / {len(df_result)} rows matched; "
+                f"{n_true} rows with tipo_ciclo=True"
+            )
+        else:
+            logger.warning(
+                "add_tipo_ciclo_to_calendario: no tipo_ciclo in df_ciclos; "
+                "leaving default False on all calendar rows"
+            )
+
+        if 'workload_template' in df_ciclos.columns:
+            wt_ciclos = df_ciclos[['employee_id', 'schedule_day', 'workload_template']].copy()
+            wt_ciclos['employee_id'] = wt_ciclos['employee_id'].astype(str)
+            wt_ciclos['schedule_day'] = pd.to_datetime(wt_ciclos['schedule_day']).dt.normalize()
+            wt_ciclos = wt_ciclos.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='first')
+            wt_lookup = wt_ciclos.set_index(['employee_id', 'schedule_day'])['workload_template']
+            df_result['workload_template'] = wt_lookup.reindex(idx).values
+            n_valid = int(df_result['workload_template'].notna().sum())
+            logger.info(
+                f"add_tipo_ciclo_to_calendario: workload_template merged — "
+                f"{n_valid}/{len(df_result)} rows with value 5, 6 or A"
+            )
+
+        df_result = df_result.drop(columns=['schedule_day_dt'], errors='ignore')
         return True, df_result, ""
 
     except Exception as e:
