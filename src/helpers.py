@@ -161,8 +161,8 @@ def log_feasibility_cap_events(
         if not description:
             description = (
                 f"Subproceso {child_num}: folgas {event.get('field')} empleado "
-                f"{event.get('employee_id')} ajustadas {event.get('original_value')}→"
-                f"{event.get('cap_value')} ({event.get('period_begin')}–{event.get('period_end')}) "
+                f"{event.get('employee_id')} ajustadas {event.get('original_value')}->"
+                f"{event.get('cap_value')} ({event.get('period_begin')}-{event.get('period_end')}) "
                 f"puesto {posto_id or ''}"
             )
 

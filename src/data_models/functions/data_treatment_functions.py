@@ -2877,7 +2877,7 @@ def add_tipo_ciclo_to_calendario(
     """
     Populate df_calendario.tipo_ciclo from CORE_PRO_EMP_HORARIO_DET (via treated df_ciclos).
 
-    Salsa path: df_ciclos comes from queryGetCiclosCompletosFolgasCiclos.sql →
+    Salsa path: df_ciclos comes from queryGetCiclosCompletosFolgasCiclos.sql ->
     treat_df_ciclos_completos(), without splitting by tipo_ciclo.
 
     TIPO_CICLO is per employee-day (both M/T rows get the same value):
