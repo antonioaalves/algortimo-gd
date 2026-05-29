@@ -2,7 +2,7 @@
   "hierarchy": ["data", "Queries", "sql"],
   "entities": {
     "valid_emp": "queryGetValidEmployees_v2.sql",
-    "df_messages": "",
+    "df_messages": "df_messages.csv",
     "params_algo": "",
     "params_lq": "qry_params_LQ.sql",
     "df_festivos": "qry_festivos.sql",

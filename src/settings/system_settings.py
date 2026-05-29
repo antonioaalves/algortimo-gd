@@ -31,10 +31,13 @@ system_configs = {
     "logging": {
         'environment': 'server',  # or 'local' for development
         'db_logging_enabled': True,
-        'df_messages_path': 'data/csvs/messages.csv',
+
         'log_errors_db': True,  # Enable/disable database error logging with set_process_errors
         'log_level': 'INFO',
         'log_dir': 'logs',
+
+        'message_lang': 'PT',  # ES or PT — all process/DB messages use this language for now
+
     },
 
     "available_algorithms": [

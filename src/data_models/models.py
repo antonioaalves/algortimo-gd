@@ -64,7 +64,7 @@ class DescansosDataModel(BaseDataModel):
                 - df_estimativas: Workload estimates from database
                 
             auxiliary_data: Dictionary containing processed/intermediate dataframes
-                - messages_df: DataFrame for messages
+                - df_messages: DataFrame for messages
                 - final: Final data (TODO: rename)
                 - num_fer_doms: Number of holidays and Sundays
                 - params_df: Algorithm parameters
@@ -98,7 +98,7 @@ class DescansosDataModel(BaseDataModel):
         super().__init__(data_container=data_container, project_name=project_name)
         # Static data, doesn't change during the process run but are essential for data model treatments - See data lifecycle to understand what this data is
         self.auxiliary_data = {
-            'messages_df': pd.DataFrame(), # df containing messages to set process errors
+            'df_messages': pd.DataFrame(), # df containing messages to set process errors
             'final': None, # TODO: change the name
             'num_fer_doms': 0, # number of feriados and Sundays in the year
             'params_df': None, # algorithm parameters
@@ -180,25 +180,21 @@ class DescansosDataModel(BaseDataModel):
         Returns:
             True if successful, False otherwise
         """
-        # Load messages df - CRITICAL for set_process_errors to work
-        messages_df = pd.DataFrame()
-        # This variable is only initialized because of the type checker
-        # In the future it should contain the error message to add to the log
+        # Load df_messages — CRITICAL for set_process_errors to work
+        df_messages = pd.DataFrame()
         error_message = None
         try:
-            self.logger.info(f"DEBUGGING: Loading messages_df from CSV file")
-            #messages_path = os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv')
-            messages_path = self.config_manager.paths.dummy_data_filepaths.get('df_messages', '')
-            messages_df = pd.read_csv(messages_path)
-            self.logger.info(f"DEBUGGING: messages_df loaded successfully with {len(messages_df)} rows")
+            from src.orquestrador_functions.Logs.message_loader import load_df_messages
+            self.logger.info("Loading df_messages from configured path")
+            df_messages = load_df_messages(self.config_manager.system.project_root_dir)
+            self.logger.info(f"df_messages loaded successfully with {len(df_messages)} rows")
         except Exception as e:
-            self.logger.error(f"Error loading messages_df: {e}")
-            # Don't return False - continue without messages_df for now
-            
-        if messages_df.empty:
-            self.logger.warning("DEBUGGING: messages_df is empty - set_process_errors will be skipped")
+            self.logger.error(f"Error loading df_messages: {e}")
+
+        if df_messages.empty:
+            self.logger.warning("DEBUGGING: df_messages is empty - set_process_errors will be skipped")
         else:
-            self.logger.info(f"DEBUGGING: messages_df has {len(messages_df)} rows - set_process_errors will work")
+            self.logger.info(f"DEBUGGING: df_messages has {len(df_messages)} rows - set_process_errors will work")
 
         try:
             self.logger.info("Loading process data from data manager")
@@ -415,7 +411,7 @@ class DescansosDataModel(BaseDataModel):
                 self.auxiliary_data['start_date2'] = start_date2
                 self.auxiliary_data['end_date2'] = end_date2
                 self.auxiliary_data['colabs_id_list'] = colabs_id_list
-                self.auxiliary_data['messages_df'] = messages_df
+                self.auxiliary_data['df_messages'] = df_messages
                 
                 # ALGORITHM TREATMENT PARAMS
                 # TODO: remove comment from query line
