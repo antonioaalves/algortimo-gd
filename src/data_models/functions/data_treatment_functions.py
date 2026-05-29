@@ -3207,7 +3207,7 @@ def _count_fixed_free_in_iso_week(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
 ) -> int:
-    """Count preallocated free days (cycle, holidays, absences) in the ISO week of day."""
+    """Count fixed weekly-rest days (L, L_DOM, LQ, C) in the ISO week of day."""
     week_start = day - pd.Timedelta(days=day.weekday())
     week_end = week_start + pd.Timedelta(days=6)
     one_day = pd.Timedelta(days=1)
@@ -3218,6 +3218,24 @@ def _count_fixed_free_in_iso_week(
             count += 1
         d += one_day
     return count
+
+
+def _remaining_weekly_free_day_slots(
+    day: pd.Timestamp,
+    weekly_rest: frozenset,
+    begin: pd.Timestamp,
+    effective_end: pd.Timestamp,
+    tipo_contrato: int,
+) -> int:
+    """
+    Additional L/LQ slots still assignable in the ISO week of day.
+
+    Mirrors salsa_2_free_days_week: fixed weekly rest on seed calendar (L, L_DOM,
+    LQ, C) consumes the weekly quota; MoT/M/T placeholders do not.
+    """
+    budget = _weekly_free_day_budget(tipo_contrato)
+    fixed = _count_fixed_free_in_iso_week(weekly_rest, day, begin, effective_end)
+    return max(0, budget - fixed)
 
 
 def _count_eligible_sundays(
@@ -3237,9 +3255,11 @@ def _count_eligible_sundays(
 
     Non-ciclo weeks: every Sunday in the period is an L_DOM assignment slot (domYf),
     matching free_days_special_days in the solver. Seed horario values (MoT, M, T)
-    are placeholders — they must not be treated as fixed working streaks. Only
-    pre-fixed non-working days (e.g. closed F) are excluded, plus l_dom Rule 1+2
-    when both Saturday and Monday are in adjacent_free_days (holidays + absences).
+    are placeholders — they must not be treated as fixed working streaks. A Sunday
+    is excluded when fixed weekly rest (L/LQ/L_DOM/C) already fills the
+    salsa_2_free_days_week quota in that ISO week. Also excluded: pre-fixed
+    non-working days (e.g. closed F) and l_dom Rule 1+2 when both Saturday and
+    Monday are in adjacent_free_days (holidays + absences).
     """
     max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sun = (6 - begin.weekday()) % 7
@@ -3258,6 +3278,10 @@ def _count_eligible_sundays(
         elif _violates_l_dom_consecutive_free_adjacent_rule(
             sunday, adjacent_free, max_consec_free
         ):
+            pass
+        elif _remaining_weekly_free_day_slots(
+            sunday, weekly_rest, begin, effective_end, tipo_contrato
+        ) < 1:
             pass
         else:
             count += 1
@@ -3279,7 +3303,8 @@ def _count_eligible_saturdays(
 
     Ciclo completo weeks: only Saturdays already at weekly rest count.
     Non-ciclo weeks: every Saturday in the period except pre-fixed non-working days,
-    subject to l_sab Rule 1+2 (Friday and Sunday both in adjacent_free_days).
+    weeks where fixed weekly rest already fills the salsa_2_free_days_week quota,
+    and l_sab Rule 1+2 (Friday and Sunday both in adjacent_free_days).
     """
     max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sat = (5 - begin.weekday()) % 7
@@ -3298,6 +3323,10 @@ def _count_eligible_saturdays(
         elif _violates_l_sab_consecutive_free_adjacent_rule(
             saturday, adjacent_free, max_consec_free
         ):
+            pass
+        elif _remaining_weekly_free_day_slots(
+            saturday, weekly_rest, begin, effective_end, tipo_contrato
+        ) < 1:
             pass
         else:
             count += 1
@@ -3321,6 +3350,7 @@ def _count_eligible_weekends_c2d(
     Ciclo completo weeks: both weekend days must already be at weekly rest (not F).
     Non-ciclo weeks: each weekend pair is assignable unless Rule 3 (public holiday on
     Sat/Sun), either day is pre-fixed non-working, either day already has weekly rest,
+    fixed weekly rest leaves fewer than two free-day slots in the ISO week,
     or c2d Rules 1+2 fire on adjacent_free_days.
     """
     max_consec_free = _max_continuous_free_days(tipo_contrato)
@@ -3349,6 +3379,10 @@ def _count_eligible_weekends_c2d(
         elif _violates_c2d_consecutive_free_adjacent_rule(
             saturday, adjacent_free, max_consec_free
         ):
+            pass
+        elif _remaining_weekly_free_day_slots(
+            saturday, weekly_rest, begin, effective_end, tipo_contrato
+        ) < 2:
             pass
         else:
             count += 1
@@ -3398,8 +3432,11 @@ def apply_annual_dayoff_feasibility_cap(
                c2d: both Sat and Sun at weekly rest (neither a public holiday) → eligible.
            Non-ciclo weeks: Sundays/Saturdays in the contract period are L_DOM/L_SAB
            assignment slots (aligned with free_days_special_days). Seed horario (MoT)
-           must not be treated as fixed work for Rule 4. Only pre-fixed non-working
-           days and adjacent_free_days Rule 1+2 (holidays + absences) may exclude a slot.
+           must not be treated as fixed work for Rule 4. Fixed weekly rest (L/LQ/L_DOM/C)
+           consumes the salsa_2_free_days_week quota per ISO week; when the quota is
+           full, no additional weekend day-off can be assigned. Pre-fixed non-working
+           days and adjacent_free_days Rule 1+2 (holidays + absences) may also exclude
+           a slot. c2d requires two remaining weekly free-day slots in the ISO week.
            Eligibility reads the full df_calendario horario field (L, LQ, -, MoT, F, …)
            aggregated per schedule_day, mirroring read_salsa variable creation.
            Only days within [begin_date, effective_end] are evaluated (partial weeks at
