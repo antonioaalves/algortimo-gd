@@ -1054,10 +1054,10 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                         terms.append(shift[(w, d, 'L')])
                     if (w, d, 'LQ') in shift:
                         terms.append(shift[(w, d, 'LQ')])
-                    if terms.empty:
+                    if len(terms) == 0:
                         free = model.NewIntVar(0, 0, f"missing_L_{w}_{d}")
                     else:
-                        free = terms
+                        free = sum(terms)
 
                     free_saturdays.append(free)
 
