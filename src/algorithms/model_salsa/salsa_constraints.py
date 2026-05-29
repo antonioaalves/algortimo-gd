@@ -113,7 +113,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                     if len(possible_compensation_days[w][d]) != 0:
                         worked_special_day = model.NewConstant(1)
                     else:
-                        logger.warning(f"Worker {w} wont receive compensation for this day because no possible compensation days were available")
+                        logger.error(f"Worker {w} wont receive compensation for this day because no possible compensation days were available")
                         worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
                     worked_special_days[w][d] = worked_special_day
                     amount_lds[w][d] = past_special_days_worked[w]["days_&_amount"][d]       
