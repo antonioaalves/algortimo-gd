@@ -16,21 +16,38 @@ from src.orquestrador_functions.Classes.Connection.connect import ensure_connect
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
 
-from src.orquestrador_functions.Logs.message_loader import set_messages
+from src.orquestrador_functions.Logs.message_loader import set_messages, get_message_lang
+
+_FEASIBILITY_CAP_DAYOFF_LABELS = {
+    'l_dom': {'ES': 'domingos', 'PT': 'domingos'},
+    'l_sab': {'ES': 'sabados', 'PT': 'sabados'},
+    'l_dom_or_sab': {
+        'ES': 'descansos (sabado o domingo)',
+        'PT': 'descansos (sabado ou domingo)',
+    },
+    'c2d': {
+        'ES': 'fines de semana de calidad',
+        'PT': 'fins de semana de qualidade',
+    },
+}
+
+
+def _feasibility_cap_dayoff_label(field: str, lang: str) -> str:
+    labels = _FEASIBILITY_CAP_DAYOFF_LABELS.get(field, {})
+    return labels.get(lang.upper(), labels.get('ES', field))
 
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
 
-def log_process_event(message_key:str, messages_df: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
+def log_process_event(message_key: str, df_messages: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
     """
-    Log a process event with a message key and a message dataframe.
+    Log a process event with a message key and df_messages.
     """
-    message = pd.DataFrame(messages_df[messages_df['VAR'] == message_key])
+    message = pd.DataFrame(df_messages[df_messages['VAR'] == message_key])
     if message.empty:
-        logger.error(f"Message key {message_key} not found in messages_df")
+        logger.error(f"Message key {message_key} not found in df_messages")
         return
-    message_str = message['ES'].values[0]
-    message_str = replace_placeholders(message_str, values_replace_dict)
+    message_str = set_messages(df_messages, message_key, values_replace_dict)
     logger.info(f"DEBUG: message_str: {message_str}")
     data_manager.set_process_errors(message_key=message_key, rendered_message=message_str, values_replace_dict=external_call_data, error_type=level)
 
@@ -131,7 +148,7 @@ def log_feasibility_cap_events(
     path_os: str,
     fk_process,
     process_type: str,
-    messages_df: pd.DataFrame,
+    df_messages: pd.DataFrame,
     cap_events: List[dict],
     *,
     user: str = 'WFM',
@@ -143,24 +160,27 @@ def log_feasibility_cap_events(
 
     Each cap event becomes one WARNING row so WFM users can see entitlement reductions.
     """
-    if connection is None or not cap_events or messages_df is None or messages_df.empty:
+    if connection is None or not cap_events or df_messages is None or df_messages.empty:
         return 0
 
+    lang = get_message_lang()
     logged = 0
     for event in cap_events:
-        description = set_messages(messages_df, 'WARN_FEASIBILITY_CAP', {
+        field = str(event.get('field', ''))
+        placeholder_values = {
             '1': child_num,
             '2': str(event.get('employee_id', '')),
-            '3': str(event.get('field', '')),
+            '3': _feasibility_cap_dayoff_label(field, lang),
             '4': str(event.get('original_value', '')),
             '5': str(event.get('cap_value', '')),
             '6': str(event.get('period_begin', '')),
             '7': str(event.get('period_end', '')),
             '8': str(posto_id or ''),
-        })
+        }
+        description = set_messages(df_messages, 'WARN_FEASIBILITY_CAP', placeholder_values)
         if not description:
             description = (
-                f"Subproceso {child_num}: folgas {event.get('field')} empleado "
+                f"Subproceso {child_num}: folgas {field} empleado "
                 f"{event.get('employee_id')} ajustadas {event.get('original_value')}->"
                 f"{event.get('cap_value')} ({event.get('period_begin')}-{event.get('period_end')}) "
                 f"puesto {posto_id or ''}"

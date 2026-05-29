@@ -248,7 +248,7 @@ class AlgoritmoGDService(BaseService):
             )
             
             # Declare the messages dataframe
-            messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
+            df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
             child_num = str(self.external_data.get('child_number', 1))
             # Progress update
             if self.stage_handler:
@@ -269,7 +269,7 @@ class AlgoritmoGDService(BaseService):
                         "Failed to load raw data.",
                         {"valid_process_loading": valid_process_loading}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -280,7 +280,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type='data_loading',
                         error_code=None,
-                        description=set_messages(messages_df, error_code, {'1': child_num, '2': error_message}),
+                        description=set_messages(df_messages, error_code, {'1': child_num, '2': error_message}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -305,7 +305,7 @@ class AlgoritmoGDService(BaseService):
                         "Failed to validate raw data.",
                         {'valid_raw_data': valid_raw_data}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -315,7 +315,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type='data_loading',
                         error_code=None,
-                        description=set_messages(messages_df, error_code, {'1': child_num, '2': error_message}),
+                        description=set_messages(df_messages, error_code, {'1': child_num, '2': error_message}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -345,7 +345,7 @@ class AlgoritmoGDService(BaseService):
                 )
             
             # Set process errors completition for process data loading
-            if self.raw_connection and not messages_df.empty:
+            if self.raw_connection and not df_messages.empty:
                 self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
@@ -355,7 +355,7 @@ class AlgoritmoGDService(BaseService):
                     type_error='I',
                     process_type='data_loading',
                     error_code=None,
-                    description=set_messages(messages_df, error_code, {'1': child_num, '2': error_message}),
+                    description=set_messages(df_messages, error_code, {'1': child_num, '2': error_message}),
                     employee_id=None,
                     schedule_day=None
                 )
@@ -372,7 +372,7 @@ class AlgoritmoGDService(BaseService):
                     progress=0.0,
                     message=error_msg
                 )
-            if self.raw_connection and not messages_df.empty:
+            if self.raw_connection and not df_messages.empty:
                 self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
@@ -382,7 +382,7 @@ class AlgoritmoGDService(BaseService):
                     type_error='E',
                     process_type='data_loading',
                     error_code=None,
-                    description=set_messages(messages_df, error_code, {'1': child_num, '2': str(e)}),
+                    description=set_messages(df_messages, error_code, {'1': child_num, '2': str(e)}),
                     employee_id=None,
                     schedule_day=None
                 )
@@ -411,7 +411,7 @@ class AlgoritmoGDService(BaseService):
             stage_name = 'processing'
             process_type = 'processing_stage'
             decisions = {}
-            messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
+            df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
             child_num = str(self.external_data.get('child_number', 1))
             # TODO: check if it should exit the loop if anything fails or continue
             if self.stage_handler and self.process_manager:
@@ -450,16 +450,16 @@ class AlgoritmoGDService(BaseService):
                 #assert isinstance(algorithm_params, dict)
 
             # Log start of the process to database
-            #self.logger.info(f"DEBUG set_process_errors condition BEFORE LOOP: raw_connection={self.raw_connection is not None}, messages_df_empty={messages_df.empty}, messages_df_len={len(messages_df)}")
+            #self.logger.info(f"DEBUG set_process_errors condition BEFORE LOOP: raw_connection={self.raw_connection is not None}, df_messages_empty={df_messages.empty}, df_messages_len={len(df_messages)}")
             
             # Check condition step by step
             #conn_check = self.raw_connection is not None
-            #df_check = not messages_df.empty
+            #df_check = not df_messages.empty
             #self.logger.info(f"DEBUG CONDITION: conn_check={conn_check}, df_check={df_check}, combined={conn_check and df_check}")
             
-            #if self.raw_connection and not messages_df.empty:
+            #if self.raw_connection and not df_messages.empty:
             #    #self.logger.info(f"DEBUG SERVICE: INSIDE THE IF CONDITION!")
-            #    description = set_messages(messages_df, 'iniProc', {'1': child_num})
+            #    description = set_messages(df_messages, 'iniProc', {'1': child_num})
             #    #self.logger.info(f"DEBUG SERVICE: About to call set_process_errors with description: {description}")
             #    set_process_errors(
             #        connection=self.raw_connection,
@@ -485,8 +485,8 @@ class AlgoritmoGDService(BaseService):
                 self.logger.info(f"Current posto_id: {posto_id}")
                 progress = 0.0
                 # Log messages to database
-                #self.logger.info(f"DEBUG set_process_errors condition: raw_connection={self.raw_connection is not None}, messages_df_empty={messages_df.empty}, messages_df_len={len(messages_df)}")
-                if self.raw_connection and not messages_df.empty:
+                #self.logger.info(f"DEBUG set_process_errors condition: raw_connection={self.raw_connection is not None}, df_messages_empty={df_messages.empty}, df_messages_len={len(df_messages)}")
+                if self.raw_connection and not df_messages.empty:
                     #self.logger.info(f"DEBUG SERVICE: INSIDE IF CONDITION for posto {posto_id}!")
                     set_process_errors(
                         connection=self.raw_connection,
@@ -496,7 +496,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='I',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'iniSubprocPosto', {'1': child_num, '2': str(posto_id)}),
+                        description=set_messages(df_messages, 'iniSubprocPosto', {'1': child_num, '2': str(posto_id)}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -518,7 +518,7 @@ class AlgoritmoGDService(BaseService):
                             progress=0.0,
                             message="Error treating parameters, returning False"
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -527,7 +527,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidParamsTreat', {'1': child_num, '2': ''}),
+                            description=set_messages(df_messages, 'invalidParamsTreat', {'1': child_num, '2': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -550,7 +550,7 @@ class AlgoritmoGDService(BaseService):
                             progress=0.0,
                             message="Invalid matrices loading substage, returning False"
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -559,7 +559,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidLoadMatrices', {'1': child_num, '2': ''}),
+                            description=set_messages(df_messages, 'invalidLoadMatrices', {'1': child_num, '2': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -582,7 +582,7 @@ class AlgoritmoGDService(BaseService):
                             progress=0.0,
                             message="Invalid result in func_inicializa substage, returning False"
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -591,7 +591,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidFuncInicializa', {'1': child_num, '2': ''}),
+                            description=set_messages(df_messages, 'invalidFuncInicializa', {'1': child_num, '2': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -621,7 +621,7 @@ class AlgoritmoGDService(BaseService):
                             progress=0.0,
                             message="Invalid result in allocation_cycle substage, returning False"
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -630,7 +630,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidAllocationCycle', {'1': child_num, '2': ''}),
+                            description=set_messages(df_messages, 'invalidAllocationCycle', {'1': child_num, '2': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -653,7 +653,7 @@ class AlgoritmoGDService(BaseService):
                             progress=0.0,
                             message="Invalid result in format_results substage, returning False"
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -662,7 +662,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidFormatResults', {'1': child_num, '2': ''}),
+                            description=set_messages(df_messages, 'invalidFormatResults', {'1': child_num, '2': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -686,7 +686,7 @@ class AlgoritmoGDService(BaseService):
                                 progress=0.0,
                                 message="Invalid result in insert_results substage, returning False"
                             )
-                        if self.raw_connection and not messages_df.empty:
+                        if self.raw_connection and not df_messages.empty:
                             set_process_errors(
                                 connection=self.raw_connection,
                                 pathOS=self.config_manager.system.project_root_dir,
@@ -695,7 +695,7 @@ class AlgoritmoGDService(BaseService):
                                 type_error='E',
                                 process_type=process_type,
                                 error_code=None,
-                                description=set_messages(messages_df, 'invalidInsertResults', {'1': child_num}),
+                                description=set_messages(df_messages, 'invalidInsertResults', {'1': child_num}),
                                 employee_id=None,
                                 schedule_day=None
                             )
@@ -715,7 +715,7 @@ class AlgoritmoGDService(BaseService):
                     progress=1.0,
                     message="Finnished processing stage with success. Returnig True."
                 )
-            if self.raw_connection and not messages_df.empty:
+            if self.raw_connection and not df_messages.empty:
                 self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
@@ -725,7 +725,7 @@ class AlgoritmoGDService(BaseService):
                     type_error='I',
                     process_type=process_type,
                     error_code=None,
-                    description=set_messages(messages_df, 'okSubprocPosto', {'1': child_num, '2': str(posto_id), '3': ''}),
+                    description=set_messages(df_messages, 'okSubprocPosto', {'1': child_num, '2': str(posto_id), '3': ''}),
                     employee_id=None,
                     schedule_day=None
                 )
@@ -734,7 +734,7 @@ class AlgoritmoGDService(BaseService):
         except Exception as e:
             self.logger.error(f"Error in processing stage: {str(e)}", exc_info=True)
             # TODO: add progress tracking
-            if self.raw_connection and not messages_df.empty:
+            if self.raw_connection and not df_messages.empty:
                 self._refresh_raw_connection()
                 set_process_errors(
                     connection=self.raw_connection,
@@ -744,7 +744,7 @@ class AlgoritmoGDService(BaseService):
                     type_error='E',
                     process_type=process_type,
                     error_code=None,
-                    description=set_messages(messages_df, 'errSubprocPosto', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                    description=set_messages(df_messages, 'errSubprocPosto', {'1': child_num, '2': str(posto_id), '3': str(e)}),
                     employee_id=None,
                     schedule_day=None
                 )
@@ -778,12 +778,12 @@ class AlgoritmoGDService(BaseService):
                 return False
             
             # Log start of parameter treatment to database
-            messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
+            df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
             child_num = str(self.external_data.get('child_number', 1))
-            self.logger.info(f"DEBUG SUBSTAGE: messages_df.empty = {messages_df.empty}, raw_connection = {self.raw_connection is not None}")
-            if self.raw_connection and not messages_df.empty:
+            self.logger.info(f"DEBUG SUBSTAGE: df_messages.empty = {df_messages.empty}, raw_connection = {self.raw_connection is not None}")
+            if self.raw_connection and not df_messages.empty:
                 self.logger.info(f"DEBUG SUBSTAGE: About to call set_process_errors for param treatment")
-                description = set_messages(messages_df, 'iniSubprocPosto', {'1': child_num, '2': 'param_treatment'})
+                description = set_messages(df_messages, 'iniSubprocPosto', {'1': child_num, '2': 'param_treatment'})
                 set_process_errors(
                     connection=self.raw_connection,
                     pathOS=self.config_manager.system.project_root_dir,
@@ -888,7 +888,7 @@ class AlgoritmoGDService(BaseService):
         try:
             substage_name = "load_matrices"
             process_type = 'load_matrices_substage'
-            messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
+            df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
             child_num = str(self.external_data.get('child_number', 1))
             secao_id = str(self.external_data.get('secao_id', ''))
             # Checkpoint for posto_id
@@ -918,7 +918,7 @@ class AlgoritmoGDService(BaseService):
                 )
                 if not valid_load_colaborador_info:
                     # Set process error for colaborador loading failure
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         self._refresh_raw_connection()
                         set_process_errors(
                             connection=self.raw_connection,
@@ -928,7 +928,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'noMColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            description=set_messages(df_messages, 'noMColab', {'1': child_num, '2': str(posto_id), '3': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -952,7 +952,7 @@ class AlgoritmoGDService(BaseService):
                 valid_colaborador_info_data = self.data_model.validate_colaborador_info()
                 if not valid_colaborador_info_data:
                     # Set process error for colaborador validation failure
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         self._refresh_raw_connection()
                         set_process_errors(
                             connection=self.raw_connection,
@@ -962,7 +962,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            description=set_messages(df_messages, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -984,7 +984,7 @@ class AlgoritmoGDService(BaseService):
                         progress=0.2,
                         message="Valid colaborador info data"
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -994,7 +994,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='I',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'okColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        description=set_messages(df_messages, 'okColab', {'1': child_num, '2': str(posto_id), '3': ''}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1014,7 +1014,7 @@ class AlgoritmoGDService(BaseService):
                         success=False, 
                         result_data={"error": str(e)}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1024,7 +1024,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'errColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        description=set_messages(df_messages, 'errColab', {'1': child_num, '2': str(posto_id), '3': ''}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1052,7 +1052,7 @@ class AlgoritmoGDService(BaseService):
                                 "valid_load_estimativas_info": valid_load_estimativas_info
                             }
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -1061,7 +1061,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'noMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            description=set_messages(df_messages, 'noMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -1071,20 +1071,20 @@ class AlgoritmoGDService(BaseService):
                 valid_estimativas_validation, invalid_entities = self.data_model.validate_estimativas_info()
                 if not valid_estimativas_validation:
                     # Set process error based on invalid entities
-                    messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
-                    if self.raw_connection and not messages_df.empty:
+                    df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
+                    if self.raw_connection and not df_messages.empty:
                         child_num = str(self.external_data.get('child_number', 1))
                         description_list = []
                         # Choose appropriate message key based on invalid entities
                         if 'df_faixa_horario' in invalid_entities:
                             message_key = 'errFaixaSec'
-                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(secao_id), '3': ''}))
+                            description_list.append(set_messages(df_messages, message_key, {'1': child_num, '2': str(secao_id), '3': ''}))
                         if 'df_granularidade' in invalid_entities:
                             message_key = 'errGran'
-                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                            description_list.append(set_messages(df_messages, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
                         if 'df_estimativas' in invalid_entities:
                             message_key = 'errAllInfo'
-                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                            description_list.append(set_messages(df_messages, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
                         for description in description_list:
                             set_process_errors(
                                 connection=self.raw_connection,
@@ -1111,7 +1111,7 @@ class AlgoritmoGDService(BaseService):
                             }
                         )
                     return False
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1121,7 +1121,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='I',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'okMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        description=set_messages(df_messages, 'okMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1135,7 +1135,7 @@ class AlgoritmoGDService(BaseService):
                         success=False, 
                         result_data={"error": str(e)}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1145,7 +1145,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'errMinIdeal', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        description=set_messages(df_messages, 'errMinIdeal', {'1': child_num, '2': str(posto_id), '3': str(e)}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1173,7 +1173,7 @@ class AlgoritmoGDService(BaseService):
                                 "valid_load_calendario_info": valid_load_calendario_info
                             }
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -1182,7 +1182,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'noCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            description=set_messages(df_messages, 'noCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -1190,16 +1190,16 @@ class AlgoritmoGDService(BaseService):
                 valid_calendario_validation, invalid_entities = self.data_model.validate_calendario_info()
                 if not valid_calendario_validation:
                     # Set process error based on invalid entities
-                    messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
-                    if self.raw_connection and not messages_df.empty:
+                    df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
+                    if self.raw_connection and not df_messages.empty:
                         child_num = str(self.external_data.get('child_number', 1))
                         description_list = []
                         if 'df_calendario_empty' in invalid_entities:
                             message_key = 'noCalendar'
-                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                            description_list.append(set_messages(df_messages, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
                         if 'df_calendario_missing' in invalid_entities:
                             message_key = 'errCalendar'
-                            description_list.append(set_messages(messages_df, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
+                            description_list.append(set_messages(df_messages, message_key, {'1': child_num, '2': str(posto_id), '3': ''}))
                         for description in description_list:
                             set_process_errors(
                                 connection=self.raw_connection,
@@ -1227,7 +1227,7 @@ class AlgoritmoGDService(BaseService):
                             }
                         )
                     return False
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1237,7 +1237,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='I',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'okCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
+                        description=set_messages(df_messages, 'okCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1251,7 +1251,7 @@ class AlgoritmoGDService(BaseService):
                         success=False, 
                         result_data={"error": str(e)}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1261,7 +1261,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'errCalendar', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        description=set_messages(df_messages, 'errCalendar', {'1': child_num, '2': str(posto_id), '3': str(e)}),
                         employee_id=None,
                         schedule_day=None
                 )
@@ -1284,7 +1284,7 @@ class AlgoritmoGDService(BaseService):
                                 "valid_estimativas_transformations": valid_estimativas_transformations                            
                             }
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -1293,7 +1293,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            description=set_messages(df_messages, 'invalidMinIdeal', {'1': child_num, '2': str(posto_id), '3': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -1308,7 +1308,7 @@ class AlgoritmoGDService(BaseService):
                         success=False, 
                         result_data={"error": str(e)}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1318,7 +1318,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'invalidMinIdeal', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        description=set_messages(df_messages, 'invalidMinIdeal', {'1': child_num, '2': str(posto_id), '3': str(e)}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1341,7 +1341,7 @@ class AlgoritmoGDService(BaseService):
                                 "valid_colaborador_transformations": valid_colaborador_transformations                
                             }
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -1350,7 +1350,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            description=set_messages(df_messages, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -1365,7 +1365,7 @@ class AlgoritmoGDService(BaseService):
                         success=False, 
                         result_data={"error": str(e)}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1375,7 +1375,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        description=set_messages(df_messages, 'invalidColab', {'1': child_num, '2': str(posto_id), '3': str(e)}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1399,7 +1399,7 @@ class AlgoritmoGDService(BaseService):
                                 "valid_calendario_transformations": valid_calendario_transformations                   
                             }
                         )
-                    if self.raw_connection and not messages_df.empty:
+                    if self.raw_connection and not df_messages.empty:
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -1408,7 +1408,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(messages_df, 'invalidCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
+                            description=set_messages(df_messages, 'invalidCalendar', {'1': child_num, '2': str(posto_id), '3': ''}),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -1422,7 +1422,7 @@ class AlgoritmoGDService(BaseService):
                         success=False, 
                         result_data={"error": str(e)}
                     )
-                if self.raw_connection and not messages_df.empty:
+                if self.raw_connection and not df_messages.empty:
                     self._refresh_raw_connection()
                     set_process_errors(
                         connection=self.raw_connection,
@@ -1432,7 +1432,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'invalidCalendar', {'1': child_num, '2': str(posto_id), '3': str(e)}),
+                        description=set_messages(df_messages, 'invalidCalendar', {'1': child_num, '2': str(posto_id), '3': str(e)}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1580,10 +1580,10 @@ class AlgoritmoGDService(BaseService):
             self.logger.info(f"DEBUG SUBSTAGE: Inside _execute_allocation_cycle_substage")
             
             # Log start of algorithm execution to database
-            #messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
+            #df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
             #child_num = str(self.external_data.get('child_number', 1))
-            #self.logger.info(f"DEBUG SUBSTAGE ALLOC: messages_df.empty = {messages_df.empty}, raw_connection = {self.raw_connection is not None}")
-            #if self.raw_connection and not messages_df.empty:
+            #self.logger.info(f"DEBUG SUBSTAGE ALLOC: df_messages.empty = {df_messages.empty}, raw_connection = {self.raw_connection is not None}")
+            #if self.raw_connection and not df_messages.empty:
             #    self.logger.info(f"DEBUG SUBSTAGE ALLOC: About to call set_process_errors for allocation_cycle")
             #    set_process_errors(
             #        connection=self.raw_connection,
@@ -1593,7 +1593,7 @@ class AlgoritmoGDService(BaseService):
             #        type_error='I',
             #        process_type='allocation_cycle',
             #        error_code=None,
-            #        description=set_messages(messages_df, 'iniSubprocPosto', {'1': child_num, '2': 'allocation_cycle'}),
+            #        description=set_messages(df_messages, 'iniSubprocPosto', {'1': child_num, '2': 'allocation_cycle'}),
             #        employee_id=None,
             #        schedule_day=None
             #    )
@@ -1713,7 +1713,7 @@ class AlgoritmoGDService(BaseService):
         """
         try:
             self.logger.info(f"Starting insert_results substage for stage: {stage_name}")
-            messages_df = self.data_model.auxiliary_data.get('messages_df', pd.DataFrame())
+            df_messages = self.data_model.auxiliary_data.get('df_messages', pd.DataFrame())
             child_num = str(self.external_data.get('child_number', 1))
             posto_id = self.data_model.auxiliary_data.get('current_posto_id', None)
             process_type = self.external_data.get('process_type', None)
@@ -1735,7 +1735,7 @@ class AlgoritmoGDService(BaseService):
                     type_error='E',
                     process_type=process_type,
                     error_code=None,
-                    description=set_messages(messages_df, 'errInsertWFM', {'1': child_num, '2': str(posto_id)}),
+                    description=set_messages(df_messages, 'errInsertWFM', {'1': child_num, '2': str(posto_id)}),
                     employee_id=None,
                     schedule_day=None
                 )
@@ -1765,7 +1765,7 @@ class AlgoritmoGDService(BaseService):
                         type_error='E',
                         process_type=process_type,
                         error_code=None,
-                        description=set_messages(messages_df, 'errInsertWFM', {'1': child_num, '2': str(posto_id)}),
+                        description=set_messages(df_messages, 'errInsertWFM', {'1': child_num, '2': str(posto_id)}),
                         employee_id=None,
                         schedule_day=None
                     )
@@ -1789,7 +1789,7 @@ class AlgoritmoGDService(BaseService):
                 type_error='I',
                 process_type=process_type,
                 error_code=None,
-                description=set_messages(messages_df, 'okInsertWFM', {'1': child_num, '2': str(posto_id)}),
+                description=set_messages(df_messages, 'okInsertWFM', {'1': child_num, '2': str(posto_id)}),
                 employee_id=None,
                 schedule_day=None
             )

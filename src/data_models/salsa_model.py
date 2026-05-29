@@ -245,7 +245,8 @@ class SalsaDataModel(BaseDescansosDataModel):
         # In the future it should contain the error message to add to the log
         error_message = None
         try:
-            df_messages = pd.read_csv(os.path.join(self.config_manager.system.project_root_dir, 'data', 'csvs', 'df_messages.csv'))
+            from src.orquestrador_functions.Logs.message_loader import load_df_messages
+            df_messages = load_df_messages(self.config_manager.system.project_root_dir)
         except Exception as e:
             self.logger.error(f"Error loading df_messages: {e}")
             # Don't return False - continue without df_messages for now
@@ -698,7 +699,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 
                 # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
-                self.auxiliary_data['messages_df'] = df_messages.copy()
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
                 self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
@@ -2016,19 +2016,17 @@ class SalsaDataModel(BaseDescansosDataModel):
                     )
 
                 if cap_events:
-                    messages_df = self.auxiliary_data.get('messages_df')
-                    if messages_df is None or (isinstance(messages_df, pd.DataFrame) and messages_df.empty):
-                        messages_df = self.auxiliary_data.get('df_messages', pd.DataFrame())
-                    if messages_df is None:
-                        messages_df = pd.DataFrame()
+                    df_messages = self.auxiliary_data.get('df_messages', pd.DataFrame())
+                    if df_messages is None:
+                        df_messages = pd.DataFrame()
                     connection = self.auxiliary_data.get('raw_connection')
-                    if connection is not None and not messages_df.empty:
+                    if connection is not None and not df_messages.empty:
                         n_logged = log_feasibility_cap_events(
                             connection=connection,
                             path_os=self.config_manager.system.project_root_dir,
                             fk_process=self.external_call_data.get('current_process_id'),
                             process_type='func_inicializa',
-                            messages_df=messages_df,
+                            df_messages=df_messages,
                             cap_events=cap_events,
                             child_num=str(self.external_call_data.get('child_number', 1)),
                             posto_id=self.auxiliary_data.get('current_posto_id'),
@@ -2039,7 +2037,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     elif cap_events:
                         self.logger.warning(
                             f"{len(cap_events)} feasibility cap(s) applied but not written to DB "
-                            f"(connection={connection is not None}, messages={not messages_df.empty})"
+                            f"(connection={connection is not None}, messages={not df_messages.empty})"
                         )
             except Exception as e:
                 self.logger.error(f"Error applying annual day-off feasibility cap: {e}", exc_info=True)

@@ -3068,6 +3068,55 @@ def _filter_days_to_period(days: frozenset, begin: pd.Timestamp, effective_end: 
     return frozenset(d for d in days if begin <= d <= effective_end)
 
 
+def _violates_l_dom_consecutive_free_adjacent_rule(
+    sunday: pd.Timestamp,
+    adjacent_free: frozenset,
+    max_consec_free: int,
+) -> bool:
+    """
+    l_dom Rule 1+2 (STRSOL-1279): placing L_DOM on Sunday creates a 3-day free block
+    when both Saturday and Monday are already in adjacent_free_days.
+    """
+    one_day = pd.Timedelta(days=1)
+    saturday = sunday - one_day
+    monday = sunday + one_day
+    if saturday in adjacent_free and monday in adjacent_free:
+        return 3 > max_consec_free
+    return False
+
+
+def _violates_l_sab_consecutive_free_adjacent_rule(
+    saturday: pd.Timestamp,
+    adjacent_free: frozenset,
+    max_consec_free: int,
+) -> bool:
+    """l_sab Rule 1+2: Fri+Sat+Sun block when Friday and Sunday are in adjacent_free_days."""
+    one_day = pd.Timedelta(days=1)
+    friday = saturday - one_day
+    sunday = saturday + one_day
+    if friday in adjacent_free and sunday in adjacent_free:
+        return 3 > max_consec_free
+    return False
+
+
+def _violates_c2d_consecutive_free_adjacent_rule(
+    saturday: pd.Timestamp,
+    adjacent_free: frozenset,
+    max_consec_free: int,
+) -> bool:
+    """c2d Rules 1+2: Fri/Sat/Sun/Mon adjacent-free combinations exceeding the free-day limit."""
+    one_day = pd.Timedelta(days=1)
+    friday = saturday - one_day
+    sunday = saturday + one_day
+    monday = saturday + 2 * one_day
+    consecutive = 2  # Sat LQ + Sun L
+    if friday in adjacent_free:
+        consecutive += 1
+    if monday in adjacent_free:
+        consecutive += 1
+    return consecutive > max_consec_free
+
+
 def _iso_week_key(day: pd.Timestamp) -> tuple[int, int]:
     cal = day.isocalendar()
     return (int(cal.year), int(cal.week))
@@ -3175,20 +3224,24 @@ def _count_eligible_sundays(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
     weekly_rest: frozenset,
-    consecutive_rest: frozenset,
-    working_days: frozenset,
+    adjacent_free: frozenset,
+    non_working: frozenset,
     tipo_contrato: int,
-    num_dias_cons: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
 ) -> int:
     """
-    Count Sundays eligible for l_dom: pre-satisfied L/L_DOM on calendar plus working
-    Sundays where an additional L fits weekly budget and consecutive-free-day rules.
+    Count Sundays eligible for l_dom within [begin, effective_end].
 
     Ciclo completo weeks (tipo_ciclo=True): only Sundays already at weekly rest
     (L, L_DOM, LQ, C — not F) count; working Sundays are not assignable.
+
+    Non-ciclo weeks: every Sunday in the period is an L_DOM assignment slot (domYf),
+    matching free_days_special_days in the solver. Seed horario values (MoT, M, T)
+    are placeholders — they must not be treated as fixed working streaks. Only
+    pre-fixed non-working days (e.g. closed F) are excluded, plus l_dom Rule 1+2
+    when both Saturday and Monday are in adjacent_free_days (holidays + absences).
     """
-    max_consec = _max_continuous_free_days(tipo_contrato)
+    max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sun = (6 - begin.weekday()) % 7
     sunday = begin + pd.Timedelta(days=days_to_sun)
     one_day = pd.Timedelta(days=1)
@@ -3198,51 +3251,17 @@ def _count_eligible_sundays(
         if _is_tipo_ciclo_week(sunday, tipo_ciclo_weeks):
             if sunday in weekly_rest:
                 count += 1
-            sunday += pd.Timedelta(days=7)
-            continue
-
-        if sunday in weekly_rest:
+        elif sunday in weekly_rest:
             count += 1
-            sunday += pd.Timedelta(days=7)
-            continue
-        if sunday not in working_days:
-            sunday += pd.Timedelta(days=7)
-            continue
-
-        weekly_budget = _weekly_free_day_budget(tipo_contrato)
-        fixed_in_week = _count_fixed_free_in_iso_week(weekly_rest, sunday, begin, effective_end)
-        if fixed_in_week + 1 > weekly_budget:
-            sunday += pd.Timedelta(days=7)
-            continue
-
-        if _violates_consecutive_free_day_limit(
-            consecutive_rest, frozenset({sunday}), begin, effective_end, max_consec
+        elif sunday in non_working:
+            pass
+        elif _violates_l_dom_consecutive_free_adjacent_rule(
+            sunday, adjacent_free, max_consec_free
         ):
-            sunday += pd.Timedelta(days=7)
-            continue
-
-        run, d = 0, sunday - one_day
-        while d >= begin and d not in consecutive_rest:
-            run += 1
-            if run > num_dias_cons:
-                break
-            d -= one_day
-        if run > num_dias_cons:
-            sunday += pd.Timedelta(days=7)
-            continue
-
-        run, d = 0, sunday + one_day
-        while d <= effective_end and d not in consecutive_rest:
-            run += 1
-            if run > num_dias_cons:
-                break
-            d += one_day
-        if run > num_dias_cons:
-            sunday += pd.Timedelta(days=7)
-            continue
-
-        count += 1
-        sunday += pd.Timedelta(days=7)
+            pass
+        else:
+            count += 1
+        sunday += one_day * 7
     return count
 
 
@@ -3250,18 +3269,19 @@ def _count_eligible_saturdays(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
     weekly_rest: frozenset,
-    consecutive_rest: frozenset,
-    working_days: frozenset,
+    adjacent_free: frozenset,
+    non_working: frozenset,
     tipo_contrato: int,
-    num_dias_cons: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
 ) -> int:
     """
     Count Saturdays eligible for l_sab (and l_dom_or_sab pool contribution).
 
     Ciclo completo weeks: only Saturdays already at weekly rest count.
+    Non-ciclo weeks: every Saturday in the period except pre-fixed non-working days,
+    subject to l_sab Rule 1+2 (Friday and Sunday both in adjacent_free_days).
     """
-    max_consec = _max_continuous_free_days(tipo_contrato)
+    max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sat = (5 - begin.weekday()) % 7
     saturday = begin + pd.Timedelta(days=days_to_sat)
     one_day = pd.Timedelta(days=1)
@@ -3271,47 +3291,17 @@ def _count_eligible_saturdays(
         if _is_tipo_ciclo_week(saturday, tipo_ciclo_weeks):
             if saturday in weekly_rest:
                 count += 1
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        if saturday in weekly_rest or saturday not in working_days:
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        weekly_budget = _weekly_free_day_budget(tipo_contrato)
-        fixed_in_week = _count_fixed_free_in_iso_week(weekly_rest, saturday, begin, effective_end)
-        if fixed_in_week + 1 > weekly_budget:
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        if _violates_consecutive_free_day_limit(
-            consecutive_rest, frozenset({saturday}), begin, effective_end, max_consec
+        elif saturday in weekly_rest:
+            count += 1
+        elif saturday in non_working:
+            pass
+        elif _violates_l_sab_consecutive_free_adjacent_rule(
+            saturday, adjacent_free, max_consec_free
         ):
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        run, d = 0, saturday - one_day
-        while d >= begin and d not in consecutive_rest:
-            run += 1
-            if run > num_dias_cons:
-                break
-            d -= one_day
-        if run > num_dias_cons:
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        run, d = 0, saturday + one_day
-        while d <= effective_end and d not in consecutive_rest:
-            run += 1
-            if run > num_dias_cons:
-                break
-            d += one_day
-        if run > num_dias_cons:
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        count += 1
-        saturday += pd.Timedelta(days=7)
+            pass
+        else:
+            count += 1
+        saturday += one_day * 7
     return count
 
 
@@ -3319,19 +3309,21 @@ def _count_eligible_weekends_c2d(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
     weekly_rest: frozenset,
-    consecutive_rest: frozenset,
-    working_days: frozenset,
+    adjacent_free: frozenset,
+    non_working: frozenset,
     holiday_set: frozenset,
     tipo_contrato: int,
-    num_dias_cons: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
 ) -> int:
     """
     Count Sat+Sun pairs eligible for c2d quality weekends.
 
     Ciclo completo weeks: both weekend days must already be at weekly rest (not F).
+    Non-ciclo weeks: each weekend pair is assignable unless Rule 3 (public holiday on
+    Sat/Sun), either day is pre-fixed non-working, either day already has weekly rest,
+    or c2d Rules 1+2 fire on adjacent_free_days.
     """
-    max_consec = _max_continuous_free_days(tipo_contrato)
+    max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sat = (5 - begin.weekday()) % 7
     saturday = begin + pd.Timedelta(days=days_to_sat)
     one_day = pd.Timedelta(days=1)
@@ -3348,51 +3340,19 @@ def _count_eligible_weekends_c2d(
                 and saturday not in holiday_set and sunday not in holiday_set
             ):
                 count += 1
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        if (
+        elif (
             saturday in holiday_set or sunday in holiday_set
             or saturday in weekly_rest or sunday in weekly_rest
-            or saturday not in working_days or sunday not in working_days
+            or saturday in non_working or sunday in non_working
         ):
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        weekly_budget = _weekly_free_day_budget(tipo_contrato)
-        fixed_in_week = _count_fixed_free_in_iso_week(weekly_rest, saturday, begin, effective_end)
-        if fixed_in_week + 2 > weekly_budget:
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        if _violates_consecutive_free_day_limit(
-            consecutive_rest, frozenset({saturday, sunday}), begin, effective_end, max_consec
+            pass
+        elif _violates_c2d_consecutive_free_adjacent_rule(
+            saturday, adjacent_free, max_consec_free
         ):
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        run, d = 0, saturday - one_day
-        while d >= begin and d not in consecutive_rest:
-            run += 1
-            if run > num_dias_cons:
-                break
-            d -= one_day
-        if run > num_dias_cons:
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        run, d = 0, sunday + one_day
-        while d <= effective_end and d not in consecutive_rest:
-            run += 1
-            if run > num_dias_cons:
-                break
-            d += one_day
-        if run > num_dias_cons:
-            saturday += pd.Timedelta(days=7)
-            continue
-
-        count += 1
-        saturday += pd.Timedelta(days=7)
+            pass
+        else:
+            count += 1
+        saturday += one_day * 7
     return count
 
 
@@ -3436,7 +3396,10 @@ def apply_annual_dayoff_feasibility_cap(
            counts toward the cap from existing weekly rest (L, L_DOM, LQ, C — not F):
                l_dom / l_sab / l_dom_or_sab: rest on that weekend day → eligible; working → not.
                c2d: both Sat and Sun at weekly rest (neither a public holiday) → eligible.
-           Non-ciclo weeks use the full solver-aligned constraint checks above.
+           Non-ciclo weeks: Sundays/Saturdays in the contract period are L_DOM/L_SAB
+           assignment slots (aligned with free_days_special_days). Seed horario (MoT)
+           must not be treated as fixed work for Rule 4. Only pre-fixed non-working
+           days and adjacent_free_days Rule 1+2 (holidays + absences) may exclude a slot.
            Eligibility reads the full df_calendario horario field (L, LQ, -, MoT, F, …)
            aggregated per schedule_day, mirroring read_salsa variable creation.
            Only days within [begin_date, effective_end] are evaluated (partial weeks at
@@ -3677,9 +3640,10 @@ def apply_annual_dayoff_feasibility_cap(
             tipo_ciclo_weeks = tipo_ciclo_weeks_by_employee.get(emp_id, frozenset())
 
             weekly_rest = _filter_days_to_period(cal_state['weekly_rest'], begin, effective_end)
-            calendar_consecutive = _filter_days_to_period(cal_state['consecutive_rest'], begin, effective_end)
-            working_days = _filter_days_to_period(cal_state['working'], begin, effective_end)
-            consecutive_rest = holiday_set | emp_ausencias | calendar_consecutive
+            non_working = _filter_days_to_period(cal_state['non_working'], begin, effective_end)
+            adjacent_free = _filter_days_to_period(
+                holiday_set | emp_ausencias, begin, effective_end
+            )
 
             # Resolve tipo_contrato for the consecutive free-day threshold
             tipo_contrato_val = int(row.get('tipo_contrato', 5)) if has_tipo_contrato else 5
@@ -3693,31 +3657,31 @@ def apply_annual_dayoff_feasibility_cap(
 
                 if field == 'l_dom':
                     eligible = _count_eligible_sundays(
-                        begin, effective_end, weekly_rest, consecutive_rest, working_days,
-                        tipo_contrato_val, num_dias_cons, tipo_ciclo_weeks,
+                        begin, effective_end, weekly_rest, adjacent_free, non_working,
+                        tipo_contrato_val, tipo_ciclo_weeks,
                     )
                 elif field == 'l_sab':
                     eligible = _count_eligible_saturdays(
-                        begin, effective_end, weekly_rest, consecutive_rest, working_days,
-                        tipo_contrato_val, num_dias_cons, tipo_ciclo_weeks,
+                        begin, effective_end, weekly_rest, adjacent_free, non_working,
+                        tipo_contrato_val, tipo_ciclo_weeks,
                     )
                 elif field == 'l_dom_or_sab':
                     eligible = (
                         _count_eligible_sundays(
-                            begin, effective_end, weekly_rest, consecutive_rest, working_days,
-                            tipo_contrato_val, num_dias_cons, tipo_ciclo_weeks,
+                            begin, effective_end, weekly_rest, adjacent_free, non_working,
+                            tipo_contrato_val, tipo_ciclo_weeks,
                         )
                         + _count_eligible_saturdays(
-                            begin, effective_end, weekly_rest, consecutive_rest, working_days,
-                            tipo_contrato_val, num_dias_cons, tipo_ciclo_weeks,
+                            begin, effective_end, weekly_rest, adjacent_free, non_working,
+                            tipo_contrato_val, tipo_ciclo_weeks,
                         )
                     )
                 elif field == 'c2d':
                     if has_tipo_contrato and int(row.get('tipo_contrato', 0)) == 6:
                         continue
                     eligible = _count_eligible_weekends_c2d(
-                        begin, effective_end, weekly_rest, consecutive_rest, working_days,
-                        holiday_set, tipo_contrato_val, num_dias_cons, tipo_ciclo_weeks,
+                        begin, effective_end, weekly_rest, adjacent_free, non_working,
+                        holiday_set, tipo_contrato_val, tipo_ciclo_weeks,
                     )
                 else:
                     continue
@@ -3726,7 +3690,7 @@ def apply_annual_dayoff_feasibility_cap(
                     logger.info(
                         f"apply_annual_dayoff_feasibility_cap: capping employee={emp_id} "
                         f"field={field} {int(value)}->{eligible} "
-                        f"(weekly_rest={len(weekly_rest)}, working_days={len(working_days)})"
+                        f"(weekly_rest={len(weekly_rest)}, non_working={len(non_working)})"
                     )
                     df_result.at[idx, field] = eligible
                     cap_events.append({
