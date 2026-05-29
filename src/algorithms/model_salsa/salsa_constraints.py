@@ -380,9 +380,10 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
     if dummy_workers:
         for w in workers_with_dummy:
             dummies = sorted(workers_with_dummy.get(w, {}).values())
-            change_date = dummy_workers[dummies[0]]["start_date"]
+            change_date = dummy_workers[dummies[0]]["start_date"] - 1
             if len([days_comp for days_comp in range(max_days // 2 + 1) if change_date - days_comp not in complete_cycle_days[w]]) == 0 and \
-               len([days_comp for days_comp in range(max_days // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummies[0]]]) == 0:
+               len([days_comp for days_comp in range(1, max_days // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummies[0]]]) == 0:
+                logger.info(f"worker {w} and dummie {dummies[0]} skipped restriction on day {change_date}")
                 continue
             consecutive_days = sum(
                 shift[(w, change_date - i, s)]
@@ -394,7 +395,6 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
                 for j in range(max_days // 2 + 1)
                 for s in working_shift
                 if (dummies[0], change_date + j, s) in shift)
-            print(w, dummies[0], consecutive_days)
             model.Add(consecutive_days <= max_days)
             length_dummies = len(dummies)
             if length_dummies < 1:
@@ -408,7 +408,7 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
                     # some days before change_date (original)
                     # and some days after (dummy)
                     if len([days_comp for days_comp in range(max_days // 2 + 1) if change_date - days_comp not in complete_cycle_days[dummy]]) == 0 and \
-                       len([days_comp for days_comp in range(max_days // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummy_second]]) == 0:
+                       len([days_comp for days_comp in range(1, max_days // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummy_second]]) == 0:
                         continue
                     consecutive_days = sum(
                         shift[(dummy, change_date - i, s)]
@@ -420,7 +420,6 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
                         for j in range(max_days // 2 + 1)
                         for s in working_shift
                         if (dummy_second, change_date + j, s) in shift)
-                    print(dummy, dummy_second, consecutive_days)
                     model.Add(consecutive_days <= max_days)
 
 def LQ_attribution(model, shift, workers, working_days, c2d, year_range):
