@@ -338,6 +338,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         contract_type = {}
         total_l = {}
         total_l_dom = {}
+        total_l_sab = {}
+        total_l_dom_or_sab = {}
         c2d = {}
         c3d = {}
         l_d = {}
@@ -363,6 +365,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 contract_type[w] = 'Contract Error'  # Default contract type
                 total_l[w] = 0
                 total_l_dom[w] = 0
+                total_l_sab[w] = 0
+                total_l_dom_or_sab[w] = 0
                 c2d[w] = 0
                 c3d[w] = 0
                 l_d[w] = 0
@@ -376,6 +380,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
                 total_l_dom[w] = int(worker_row.get('l_dom', 0))
+                total_l_sab[w] = int(worker_row.get('l_sab', 0))
+                total_l_dom_or_sab[w] = int(worker_row.get('l_dom_or_sab', 0))
                 c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
@@ -921,54 +927,56 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         # 14. RETURN ALL PROCESSED data
         # =================================================================
         return {
-            "matriz_calendario_gd": matriz_calendario_gd,        
-            "days_of_year": days_of_year,                        
-            "sundays": sundays,                                  
-            "holidays": holidays,                                
-            "special_days": special_days,                        
-            "closed_holidays": closed_holidays,                  
-            "empty_days": empty_days,                            
+            "matriz_calendario_gd": matriz_calendario_gd,
+            "days_of_year": days_of_year,
+            "sundays": sundays,
+            "holidays": holidays,
+            "special_days": special_days,
+            "closed_holidays": closed_holidays, 
+            "empty_days": empty_days,
             "worker_absences": worker_absences,
             "vacation_days": vacation_days,
-            "working_days": working_days,                        
-            "non_holidays": non_holidays,                        
-            "start_weekday": start_weekday,                      
-            "week_to_days": week_to_days,                        
-            "matriz_colaborador_gd": matriz_colaborador_gd,      
-            "workers": workers,                                  
-            "contract_type": contract_type,                      
-            "total_l": total_l,                                  
-            "total_l_dom": total_l_dom,                          
-            "c2d": c2d,                                          
-            "c3d": c3d,                                          
-            "l_d": l_d,                                          
-            "cxx": cxx,                                          
-            "matriz_estimativas_gd": matriz_estimativas_gd,      
-            "pess_obj": pess_obj,                                
-            "min_workers": min_workers,                          
-            "max_workers": max_workers,                          
-            "workers_complete": workers_complete,                
-            "workers_complete_cycle": workers_complete_cycle,    
-            "free_day_complete_cycle": free_day_complete_cycle,  
-            "week_to_days_salsa": week_to_days_salsa,            
-            "first_registered_day": first_registered_day,        
-            "admissao_proporcional": admissao_proporcional,      
-            "role_by_worker": role_by_worker,                    
-            "data_admissao": data_admissao,                      
-            "data_demissao": data_demissao,                      
-            "last_registered_day": last_registered_day,          
-            "fixed_days_off": fixed_days_off,                    
-            "fixed_LQs": fixed_LQs,                              
-            "work_day_hours": work_day_hours,                    
-            "work_days_per_week": work_days_per_week,            
-            "week_compensation_limit": week_compensation_limit,  
-            "num_dias_cons": num_dias_cons,                      
-            "country": country,                                  
-            "shift_M": shift_M,                                  
-            "shift_T": shift_T,                                  
+            "working_days": working_days,
+            "non_holidays": non_holidays,
+            "start_weekday": start_weekday,
+            "week_to_days": week_to_days,
+            "matriz_colaborador_gd": matriz_colaborador_gd,
+            "workers": workers,
+            "contract_type": contract_type,
+            "total_l": total_l,
+            "total_l_dom": total_l_dom,
+            "total_l_sab": total_l_sab,
+            "total_l_dom_or_sab": total_l_dom_or_sab,
+            "c2d": c2d,
+            "c3d": c3d,
+            "l_d": l_d,
+            "cxx": cxx,
+            "matriz_estimativas_gd": matriz_estimativas_gd,
+            "pess_obj": pess_obj,
+            "min_workers": min_workers,
+            "max_workers": max_workers, 
+            "workers_complete": workers_complete,
+            "workers_complete_cycle": workers_complete_cycle,
+            "free_day_complete_cycle": free_day_complete_cycle,
+            "week_to_days_salsa": week_to_days_salsa,
+            "first_registered_day": first_registered_day,
+            "admissao_proporcional": admissao_proporcional,
+            "role_by_worker": role_by_worker,
+            "data_admissao": data_admissao,
+            "data_demissao": data_demissao,
+            "last_registered_day": last_registered_day,
+            "fixed_days_off": fixed_days_off,
+            "fixed_LQs": fixed_LQs,
+            "work_day_hours": work_day_hours,
+            "work_days_per_week": work_days_per_week,
+            "week_compensation_limit": week_compensation_limit,
+            "num_dias_cons": num_dias_cons,
+            "country": country,
+            "shift_M": shift_M,
+            "shift_T": shift_T,
             "partial_workers_complete": partial_workers_complete,
-            "workers_past": workers_past,                        
-            "fixed_compensation_days": fixed_compensation_days,  
+            "workers_past": workers_past,
+            "fixed_compensation_days": fixed_compensation_days, 
             "year_range": year_range,
             "unique_dates": unique_dates,
             "period": period,

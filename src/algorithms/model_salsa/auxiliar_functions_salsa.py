@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
+from collections import defaultdict
 
 logger = get_logger(get_config_manager().system.project_name)
 
@@ -373,6 +374,17 @@ def legenda(data_array, range_bool):
         return 'L' + field_type
     else:
         return field_type
+
+
+# optimization salsa
+
+def group_creator(workers, grouper):
+    groups = defaultdict(list)
+
+    for w in workers:
+        groups[grouper.get(w, 0)].append(w)
+
+    return list(groups.values())
  
  #solver
 

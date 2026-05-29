@@ -765,12 +765,28 @@ def first_day_not_free(model, shift, workers, working_days, first_registered_day
             model.Add(sum(shift.get((w, first, shift_type), 0) for shift_type in working_shift) == 1)
             
 #-------------------------------------------------------------------------------------------------------------------------------------
-def free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom, year_range):
+def free_days_sundays(model, shift, sundays, workers, working_days, total_l_dom, year_range):
     for w in workers:
         # Only consider special days that are in this worker's working days
         worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
         logger.info(f"Worker {w}, Sundays {worker_sundays}, total {total_l_dom.get(w, 0)}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays if (w, d, 'L') in shift) >= total_l_dom.get(w, 0))
+
+def free_days_saturdays(model, shift, sundays, workers, working_days, total_l_sab, year_range):
+    for w in workers:
+        # Only consider special days that are in this worker's working days
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[w] and year_range[0] <= d - 1 <= year_range[1]]
+        logger.info(f"Worker {w}, saturdays {worker_saturdays}, total {total_l_sab.get(w, 0)}")
+        model.Add(sum(shift[(w, d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (w, d, s) in shift) >= total_l_sab.get(w, 0))
+
+def free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom_or_sab, year_range):
+    for w in workers:
+        # Only consider special days that are in this worker's working days
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[w] and year_range[0] <= d - 1 <= year_range[1]]
+        worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
+        worker_special = worker_saturdays.extend(worker_sundays)
+        logger.info(f"Worker {w}, saturdays and sundays {worker_special}, total {total_l_dom_or_sab.get(w, 0)}")
+        model.Add(sum(shift[(w, d, s)] for d in worker_special for s in ["L", "LQ"] if (w, d, s) in shift) >= total_l_dom_or_sab.get(w, 0))
 
 def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T, period, closed_days):
     if len(workers) > 1:

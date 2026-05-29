@@ -49,7 +49,6 @@ def solve(
     log_callback: Optional[Callable[[str], None]] = None,
     output_filename: str = os.path.join(get_config_manager().paths.get_output_dir(), 'working_schedule.xlsx'),
     debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter
-    optimization_details: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
@@ -165,8 +164,6 @@ def solve(
 
 
         status = solver.Solve(model, solution_callback)
-        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            results = analyze_optimization_results(solver, optimization_details)
     
 
         solve_end = time.time()
@@ -523,7 +520,7 @@ def solve(
         
         logger.info("[OK] Solver completed successfully")
         df.columns = unique_dates_row
-        return df , results, feriados_domingos_compensacao
+        return df , feriados_domingos_compensacao
         
     except Exception as e:
         logger.error(f"Error in solver: {str(e)}", exc_info=True)
