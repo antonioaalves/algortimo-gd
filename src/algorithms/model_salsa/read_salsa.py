@@ -466,6 +466,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         contract_type[new_w] = worker_row.get('tipo_contrato', 'Contract Error')
                         total_l[new_w] = int(worker_row.get('l_total', 0))
                         total_l_dom[new_w] = int(worker_row.get('l_dom', 0))
+                        total_l_sab[w] = int(worker_row.get('l_sab', 0))
+                        total_l_dom_or_sab[w] = int(worker_row.get('l_dom_or_sab', 0))
                         c2d[new_w] = int(worker_row.get('c2d', 0))
                         c3d[new_w] = int(worker_row.get('c3d', 0))
                         l_d[new_w] = int(worker_row.get('l_d', 0))
@@ -563,6 +565,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         forced_work_days = {}
         dynamic_empty = {}
         complete_cycle_days = {}
+        week_template_temp = {}
+        week_template = {}
 
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -607,6 +611,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 forced_work_days[w] = []
                 dynamic_empty[w] = []
                 complete_cycle_days[w] = []
+                week_template_temp[w] = []
 
                 continue
             
@@ -617,6 +622,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L') | (worker_calendar['horario'] == 'C') | (worker_calendar['horario'] == 'L_DOM')]['index'].tolist()
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
+            week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
@@ -628,6 +634,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
 
+        for w in week_template_temp:
+            week_template[w] = {}
+            for week, days in week_to_days_salsa.items():
+                week_template[w][week] = week_template_temp[w][days[1]]
 
         for dummy in dummy_workers:
             original = dummy_workers[dummy]["parent"]
@@ -684,10 +694,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 else:
                     work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period)
                 check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
-            elif contract_type[w] != 6:
-                work_days_per_week[w] = [5] * 54
             else:
-                work_days_per_week[w] = [6] * 54
+                work_days_per_week[w] = [contract_type[w]] * 54
 
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays

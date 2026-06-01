@@ -169,8 +169,8 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                     # Constraint: If assignment is true, this day must be a valid day off (LD)
                     if w in dummy_workers or w in workers_with_dummy:
                         current = get_dummy(workers_with_dummy, w, comp_day)
-                        if w != current:
-                            logger.info(f"Worker {w} contract changes to {current} for LD {comp_day} and special work day {d}")
+                        #if w != current:
+                        #    logger.info(f"Worker {w} contract changes to {current} for LD {comp_day} and special work day {d}")
                         model.AddImplication(assignment_var, shift[(current, comp_day, 'LD')])
                     else:
                         model.AddImplication(assignment_var, shift[(w, comp_day, 'LD')])
