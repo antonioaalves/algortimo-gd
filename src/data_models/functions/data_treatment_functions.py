@@ -3390,6 +3390,185 @@ def _count_eligible_weekends_c2d(
     return count
 
 
+def _merge_annual_dayoff_into_colaborador(
+    df_colaborador: pd.DataFrame,
+    df_sorted: pd.DataFrame,
+    field_codes: List[str],
+) -> pd.DataFrame:
+    """
+    Merge annual day-off rule values into df_colaborador (long -> wide per row).
+
+    Tier 1a — period-aware: (employee_id, contract_id, begin_date, end_date) when both
+        sides carry contract-period dates (core_pro_emp_annual_variables.begin_date/end_date).
+    Tier 1b — contract-only: (employee_id, contract_id) for rows still unmatched after 1a,
+        only when exactly one annual row exists per (employee, contract, rule); skipped
+        when multiple period rows would make keep='first' ambiguous.
+    Tier 2 — employee_id-only fallback for rows still without a match.
+    """
+    df_rules = df_sorted[df_sorted['_internal_rule'].isin(field_codes)].copy()
+    if df_rules.empty:
+        return df_colaborador
+
+    df_out = df_colaborador.copy()
+    df_out['employee_id'] = df_out['employee_id'].astype(str)
+    df_out['contract_id'] = df_out['contract_id'].astype(str)
+
+    for field in field_codes:
+        if field not in df_out.columns:
+            df_out[field] = np.nan
+        else:
+            df_out[field] = np.nan
+
+    merge_keys: List[str] = ['employee_id', 'contract_id']
+    has_colab_period = (
+        'begin_date' in df_out.columns
+        and 'end_date' in df_out.columns
+    )
+    has_annual_period = (
+        'begin_date' in df_rules.columns
+        and 'end_date' in df_rules.columns
+    )
+
+    if has_colab_period:
+        df_out['_merge_begin'] = pd.to_datetime(df_out['begin_date'], errors='coerce').dt.normalize()
+        df_out['_merge_end'] = pd.to_datetime(df_out['end_date'], errors='coerce').dt.normalize()
+        merge_keys = merge_keys + ['_merge_begin', '_merge_end']
+
+    period_merge_cols = merge_keys.copy()
+    n_period_matched = 0
+
+    if has_colab_period and has_annual_period:
+        rules_period = df_rules.copy()
+        rules_period['_merge_begin'] = pd.to_datetime(
+            rules_period['begin_date'], errors='coerce'
+        ).dt.normalize()
+        rules_period['_merge_end'] = pd.to_datetime(
+            rules_period['end_date'], errors='coerce'
+        ).dt.normalize()
+        rules_period = rules_period[
+            rules_period['_merge_begin'].notna() & rules_period['_merge_end'].notna()
+        ]
+
+        if not rules_period.empty:
+            rules_period = rules_period.drop_duplicates(
+                subset=['employee_id', 'contract_id', '_merge_begin', '_merge_end', '_internal_rule'],
+                keep='first',
+            )
+            wide_period = (
+                rules_period.pivot_table(
+                    index=['employee_id', 'contract_id', '_merge_begin', '_merge_end'],
+                    columns='_internal_rule',
+                    values='value',
+                    aggfunc='first',
+                )
+                .reset_index()
+            )
+            wide_period.columns.name = None
+            ann_cols = [c for c in field_codes if c in wide_period.columns]
+            if ann_cols:
+                wide_subset = wide_period[period_merge_cols + ann_cols].rename(
+                    columns={f: f'_ann_{f}' for f in ann_cols}
+                )
+                merged = df_out.merge(wide_subset, on=period_merge_cols, how='left')
+                for field in ann_cols:
+                    ann_col = f'_ann_{field}'
+                    matched = merged[ann_col].notna()
+                    n_period_matched += int(matched.sum())
+                    if matched.any():
+                        df_out.loc[matched, field] = merged.loc[matched, ann_col].values
+
+    # Tier 1b: contract-only when unambiguous (single annual row per emp/contract/rule)
+    contract_merge_keys = ['employee_id', 'contract_id']
+    rule_counts = (
+        df_rules.groupby(['employee_id', 'contract_id', '_internal_rule'], observed=True)
+        .size()
+    )
+    unambiguous_rules = rule_counts[rule_counts == 1].reset_index()[
+        ['employee_id', 'contract_id', '_internal_rule']
+    ]
+    if not unambiguous_rules.empty:
+        df_single = df_rules.merge(
+            unambiguous_rules,
+            on=['employee_id', 'contract_id', '_internal_rule'],
+            how='inner',
+        )
+        wide_contract = (
+            df_single.pivot_table(
+                index=contract_merge_keys,
+                columns='_internal_rule',
+                values='value',
+                aggfunc='first',
+            )
+            .reset_index()
+        )
+        wide_contract.columns.name = None
+        ann_cols = [c for c in field_codes if c in wide_contract.columns]
+        if ann_cols:
+            wide_subset = wide_contract[contract_merge_keys + ann_cols].rename(
+                columns={f: f'_ann_{f}' for f in ann_cols}
+            )
+            merged = df_out.merge(wide_subset, on=contract_merge_keys, how='left')
+            for field in ann_cols:
+                ann_col = f'_ann_{field}'
+                still_missing = df_out[field].isna()
+                matched = still_missing & merged[ann_col].notna()
+                if matched.any():
+                    df_out.loc[matched, field] = merged.loc[matched, ann_col].values
+                    logger.warning(
+                        f"apply_annual_dayoff_feasibility_cap: {field} — {matched.sum()} row(s) used "
+                        f"contract_id-only merge (no period match; single annual row for contract)"
+                    )
+
+    ambiguous = rule_counts[rule_counts > 1]
+    if not ambiguous.empty and has_colab_period and has_annual_period:
+        n_ambiguous = int(
+            ambiguous.reset_index().groupby(['employee_id', 'contract_id']).ngroups
+        )
+        if n_ambiguous:
+            logger.info(
+                f"apply_annual_dayoff_feasibility_cap: {n_ambiguous} employee/contract pair(s) "
+                f"have multiple annual period rows — contract-only fallback skipped for those"
+            )
+
+    if n_period_matched:
+        logger.info(
+            f"apply_annual_dayoff_feasibility_cap: period-aware merge applied to "
+            f"{n_period_matched} field slot(s) across contract-period rows"
+        )
+
+    # Tier 2: employee_id-only fallback
+    df_wide_emp = (
+        df_rules.drop_duplicates(subset=['employee_id', '_internal_rule'], keep='first')
+        .pivot_table(
+            index=['employee_id'],
+            columns='_internal_rule',
+            values='value',
+            aggfunc='first',
+        )
+        .reset_index()
+    )
+    df_wide_emp.columns.name = None
+    emp_lookup = df_wide_emp.set_index('employee_id') if not df_wide_emp.empty else pd.DataFrame()
+    for field in field_codes:
+        if field not in emp_lookup.columns:
+            continue
+        missing_mask = df_out[field].isna()
+        if not missing_mask.any():
+            continue
+        fallback_vals = emp_lookup[field].reindex(df_out.loc[missing_mask, 'employee_id']).values
+        has_fallback = ~pd.isna(fallback_vals)
+        if has_fallback.any():
+            target_idx = df_out.index[missing_mask][has_fallback]
+            df_out.loc[target_idx, field] = fallback_vals[has_fallback]
+            logger.warning(
+                f"apply_annual_dayoff_feasibility_cap: {field} — {has_fallback.sum()} row(s) used "
+                f"employee_id-only fallback (no period or contract match in df_annual_variables)"
+            )
+
+    df_out = df_out.drop(columns=['_merge_begin', '_merge_end'], errors='ignore')
+    return df_out
+
+
 def apply_annual_dayoff_feasibility_cap(
     df_colaborador: pd.DataFrame,
     df_annual_variables: pd.DataFrame,
@@ -3410,14 +3589,15 @@ def apply_annual_dayoff_feasibility_cap(
     Business Rules:
         1. For each (employee_id, contract_id, year) combination read the pre-calculated
            `value` for each `rule_field_code` from df_annual_variables.
-        2. Merge values into df_colaborador using a two-tier join:
-               Tier 1 (exact)    — (employee_id, contract_id) match.  Used when the
-                                   execution-window contract appears in df_annual_variables.
-               Tier 2 (fallback) — employee_id-only match.  Used for rows where no
-                                   contract_id match is found.  In this case the most recent
-                                   matching year entry is used and a warning is logged.
-           Year preference for both tiers: main_year first, then nearest year.
-           Both tiers are additive: NaN lookups never overwrite pre-existing values.
+        2. Merge values into df_colaborador using a three-tier join (see
+           _merge_annual_dayoff_into_colaborador):
+               Tier 1a (period)  — (employee_id, contract_id, begin_date, end_date) when
+                                   annual variables carry contract-period dates.
+               Tier 1b (contract)— (employee_id, contract_id) only when Tier 1a missed and
+                                   exactly one annual row exists for that rule (ambiguous
+                                   multi-period contracts are not deduped with keep='first').
+               Tier 2 (employee) — employee_id-only fallback when no contract match exists.
+           Year preference: main_year first, then nearest year (descending).
         3. Feasibility cap — per rule type the eligible pool counts slots that remain
            assignable after fixed cycle rest on df_calendario, public holidays, absences,
            and the same consecutive-free-day / max-working-day rules enforced by the solver:
@@ -3451,7 +3631,8 @@ def apply_annual_dayoff_feasibility_cap(
             Must contain: employee_id, contract_id, begin_date, end_date.
             Optional but consumed when present: data_demissao, tipo_contrato.
         df_annual_variables: Annual variables DataFrame from queryGetCoreProEmpAnnualVariables.sql.
-            Columns: employee_id, contract_id, year, rule_field_code, value
+            Columns: employee_id, contract_id, year, rule_field_code, value; begin_date and
+            end_date are used for period-aware matching when present.
             (rule_field_code uses WFM codes such as NUM_DAYS_OFF_SUNDAY_YEAR, mapped internally
             to l_dom, c2d, l_sab, l_dom_or_sab).
         df_feriados: Holiday calendar DataFrame (post-treatment). Must contain schedule_day
@@ -3538,77 +3719,13 @@ def apply_annual_dayoff_feasibility_cap(
             df_vars[df_vars['year'] != main_year].sort_values('year', ascending=False),
         ], ignore_index=True)
 
-        # --- TIER 1: exact (employee_id, contract_id) wide table ---
-        df_wide_exact = (
-            df_sorted[df_sorted['_internal_rule'].isin(FIELD_CODES)]
-            .drop_duplicates(subset=['employee_id', 'contract_id', '_internal_rule'], keep='first')
-            .pivot_table(
-                index=['employee_id', 'contract_id'],
-                columns='_internal_rule',
-                values='value',
-                aggfunc='first',
-            )
-            .reset_index()
+        df_result = _merge_annual_dayoff_into_colaborador(
+            df_colaborador=df_result,
+            df_sorted=df_sorted,
+            field_codes=FIELD_CODES,
         )
-        df_wide_exact.columns.name = None
 
-        # --- TIER 2: employee_id-only wide table (fallback for contract_id mismatches) ---
-        # Deduplicate so each (employee_id, rule_field_code) yields one value
-        df_wide_emp = (
-            df_sorted[df_sorted['_internal_rule'].isin(FIELD_CODES)]
-            .drop_duplicates(subset=['employee_id', '_internal_rule'], keep='first')
-            .pivot_table(
-                index=['employee_id'],
-                columns='_internal_rule',
-                values='value',
-                aggfunc='first',
-            )
-            .reset_index()
-        )
-        df_wide_emp.columns.name = None
-
-        df_result['employee_id'] = df_result['employee_id'].astype(str)
-        df_result['contract_id'] = df_result['contract_id'].astype(str)
-
-        # Merge annual variables — two-tier approach.
-        # Both tiers are ADDITIVE: only rows where the lookup returns a non-NaN value are
-        # updated. Rows with no match in df_annual_variables keep any pre-existing field
-        # values (e.g. values set by legacy computation before this function was called).
-
-        exact_idx = pd.MultiIndex.from_arrays([df_result['employee_id'], df_result['contract_id']])
-        exact_lookup = df_wide_exact.set_index(['employee_id', 'contract_id'])
-
-        # Tier 1: exact (employee_id, contract_id) match
-        for field in FIELD_CODES:
-            if field not in exact_lookup.columns:
-                continue
-            new_vals = exact_lookup[field].reindex(exact_idx).values
-            has_value = ~pd.isna(new_vals)
-            if has_value.any():
-                df_result.loc[has_value, field] = new_vals[has_value]
-
-        # Tier 2: employee_id-only fallback for rows that are still NaN after Tier 1.
-        # Best-effort: when an employee has multiple contracts in df_annual_variables, the
-        # dedup keeps the main_year entry that sorts first — this may not be the correct
-        # contract for the execution window. A warning is logged so mismatches are detectable.
-        emp_lookup = df_wide_emp.set_index('employee_id') if not df_wide_emp.empty else pd.DataFrame()
-        for field in FIELD_CODES:
-            if field not in emp_lookup.columns:
-                continue
-            # Only apply fallback where Tier 1 left a NaN (no match found at all)
-            missing_mask = pd.isna(df_result.get(field, pd.Series(dtype=float)))
-            if missing_mask.any():
-                fallback_vals = emp_lookup[field].reindex(df_result.loc[missing_mask, 'employee_id']).values
-                has_fallback = ~pd.isna(fallback_vals)
-                if has_fallback.any():
-                    target_idx = df_result.index[missing_mask][has_fallback]
-                    df_result.loc[target_idx, field] = fallback_vals[has_fallback]
-                    logger.warning(
-                        f"apply_annual_dayoff_feasibility_cap: {field} — {has_fallback.sum()} row(s) used "
-                        f"employee_id-only fallback (no exact contract_id match in df_annual_variables)"
-                    )
-
-        # Rows with no annual-variable match keep the default 0; normalise any residual NaN.
+        # Rows with no annual-variable match default to 0.
         for field in FIELD_CODES:
             df_result[field] = pd.to_numeric(df_result[field], errors='coerce').fillna(0)
 
