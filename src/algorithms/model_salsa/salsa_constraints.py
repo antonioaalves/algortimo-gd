@@ -354,9 +354,7 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
                 continue
             # Sum shifts across days and shift types
             total_shifts = sum(shift[(w, d, s)] for d in days_in_week for s in working_shift if (w, d, s) in shift)
-            max_days = contract_type.get(w, 0)
-            if max_days == 8:
-                max_days = work_days_per_week[w][week - 1]
+            max_days = work_days_per_week[w][week - 1]
             model.Add(total_shifts <= max_days)
 
 def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_days, period, dummy_workers, workers_with_dummy, complete_cycle_days):
@@ -806,80 +804,76 @@ def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year,
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)
 
-def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_set, dynamic_empty_days, fixed_days_off, 
-                      fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_days, complete_cycle_days):
+def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_set, dynamic_empty_days, fixed_days_off, fixed_LQs,
+                      data_admissao, data_demissao, period, admissao_proporcional, closed_days, complete_cycle_days, work_days_per_week):
     for w in workers:
-        empty_days_week = 5 - contract_type.get(w, 0)
-        if empty_days_week > 0:
-            days_off = fixed_days_off[w].union(fixed_LQs[w])
-            worker_admissao = data_admissao.get(w, 0)
-            worker_demissao = data_demissao.get(w, 0)
-            for week, days in week_to_days.items():
-                empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
-                if max(days) < period[0] or min(days) > period[1] or days[0] in complete_cycle_days[w]:
-                    continue
-                holidays_in_week = closed_days.intersection(days)
-                is_admissao_week = (worker_admissao > 0 and worker_admissao in days)
-                is_demissao_week = (worker_demissao in days)
-                if is_admissao_week or is_demissao_week:
-                    if is_admissao_week:
-                        week_limit = set(d for d in days if d >= worker_admissao)
-                    else:
-                        week_limit = set(d for d in days if d <= worker_demissao)
-                    size_week = len(week_limit)
-
-                    proportion = size_week / 7.0
-                    proportion_days = proportion * 2
-                    if admissao_proporcional == 'floor':
-                        required_free_days = max(0, int(floor(proportion_days)))
-                    elif admissao_proporcional == 'ceil':
-                        required_free_days = max(0, int(ceil(proportion_days)))
-                    else:
-                        required_free_days = max(0, int(floor(proportion_days)))
-                    empty_days_smaller_week = size_week - contract_type.get(w, 0) - required_free_days
-                    if empty_days_smaller_week <= 0:
-                        continue
-                    empty_out_of_contract = empty_days_smaller_week + len(empty_set[w].intersection(days))
-                    logger.info(f"{w} will have {empty_out_of_contract} empty days instead of {empty_days_week} in special week {week}, size {size_week}")
-
-                    model.Add(empty_shifts == empty_out_of_contract)
-                    
-                    ordered_days = sorted(week_limit - empty_set[w])
-                    for i in range(len(ordered_days)):
-                        for j in range(i + 1, len(ordered_days)):
-                            d1 = ordered_days[i]
-                            if d1 in days_off:
-                                continue
-                            d2 = ordered_days[j]
-                            terms = []
-
-                            if (w, d1, 'L') in shift:
-                                terms.append(shift[(w, d1, 'L')])
-                            if (w, d1, 'LD') in shift:
-                                terms.append(shift[(w, d1, 'LD')])
-                            if len(terms) >= 1 and (w, d2, '-') in shift:
-                                model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
-
-                elif worker_admissao < min(days) < worker_demissao:
-                    model.Add(empty_shifts == empty_days_week - len(holidays_in_week))
-                    
-                    ordered_days = sorted(days)
-                    for i in range(len(ordered_days)):
-                        for j in range(i + 1, len(ordered_days)):
-                            d1 = ordered_days[i]
-                            if d1 in days_off:
-                                continue
-                            d2 = ordered_days[j]
-                            if d2 in dynamic_empty_days[w]:
-                                continue
-                            terms = []
-
-                            if (w, d1, 'L') in shift:
-                                terms.append(shift[(w, d1, 'L')])
-                            if (w, d1, 'LD') in shift:
-                                terms.append(shift[(w, d1, 'LD')])
-                            if len(terms) >= 1 and (w, d2, '-') in shift:
-                                model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
+        days_off = fixed_days_off[w].union(fixed_LQs[w])
+        worker_admissao = data_admissao.get(w, 0)
+        worker_demissao = data_demissao.get(w, 0)
+        for week, days in week_to_days.items():
+            empty_days_week = 5 - work_days_per_week[w][week - 1]
+            if empty_days_week <= 0:
+                continue
+            empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
+            if max(days) < period[0] or min(days) > period[1] or days[0] in complete_cycle_days[w]:
+                continue
+            holidays_in_week = closed_days.intersection(days)
+            is_admissao_week = (worker_admissao > 0 and worker_admissao in days)
+            is_demissao_week = (worker_demissao in days)
+            if is_admissao_week or is_demissao_week:
+                if is_admissao_week:
+                    week_limit = set(d for d in days if d >= worker_admissao)
                 else:
-                    days_set = set(days) - dynamic_empty_days[w]
-                    model.Add(sum(shift[(w, d, '-')] for d in (days_set - set(empty_set[w])) if (w, d, '-') in shift) == 0)
+                    week_limit = set(d for d in days if d <= worker_demissao)
+                size_week = len(week_limit)
+                proportion = size_week / 7.0
+                proportion_days = proportion * 2
+                if admissao_proporcional == 'floor':
+                    required_free_days = max(0, int(floor(proportion_days)))
+                elif admissao_proporcional == 'ceil':
+                    required_free_days = max(0, int(ceil(proportion_days)))
+                else:
+                    required_free_days = max(0, int(floor(proportion_days)))
+                empty_days_smaller_week = size_week - contract_type.get(w, 0) - required_free_days
+                if empty_days_smaller_week <= 0:
+                    continue
+                empty_out_of_contract = empty_days_smaller_week + len(empty_set[w].intersection(days))
+                logger.info(f"{w} will have {empty_out_of_contract} empty days instead of {empty_days_week} in special week {week}, size {size_week}")
+                model.Add(empty_shifts == empty_out_of_contract)
+                
+                ordered_days = sorted(week_limit - empty_set[w])
+                for i in range(len(ordered_days)):
+                    for j in range(i + 1, len(ordered_days)):
+                        d1 = ordered_days[i]
+                        if d1 in days_off:
+                            continue
+                        d2 = ordered_days[j]
+                        terms = []
+                        if (w, d1, 'L') in shift:
+                            terms.append(shift[(w, d1, 'L')])
+                        if (w, d1, 'LD') in shift:
+                            terms.append(shift[(w, d1, 'LD')])
+                        if len(terms) >= 1 and (w, d2, '-') in shift:
+                            model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
+            elif worker_admissao < min(days) < worker_demissao:
+                model.Add(empty_shifts == empty_days_week - len(holidays_in_week))
+                
+                ordered_days = sorted(days)
+                for i in range(len(ordered_days)):
+                    for j in range(i + 1, len(ordered_days)):
+                        d1 = ordered_days[i]
+                        if d1 in days_off:
+                            continue
+                        d2 = ordered_days[j]
+                        if d2 in dynamic_empty_days[w]:
+                            continue
+                        terms = []
+                        if (w, d1, 'L') in shift:
+                            terms.append(shift[(w, d1, 'L')])
+                        if (w, d1, 'LD') in shift:
+                            terms.append(shift[(w, d1, 'LD')])
+                        if len(terms) >= 1 and (w, d2, '-') in shift:
+                            model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
+            else:
+                days_set = set(days) - dynamic_empty_days[w]
+                model.Add(sum(shift[(w, d, '-')] for d in (days_set - set(empty_set[w])) if (w, d, '-') in shift) == 0)

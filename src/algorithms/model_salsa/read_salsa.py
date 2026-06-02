@@ -7,8 +7,8 @@ import logging
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
 from collections import defaultdict
-from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atributtion, populate_week_seed_5_6, populate_week_fixed_days_off,
-                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic)
+from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atributtion, populate_week_template, populate_week_fixed_days_off, joining_template_with_contract_per_week,
+                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic, first_not_A_value)
 
 
 # Set up logger
@@ -296,6 +296,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             week_to_days = {}
             logger.warning("No unique dates found in matriz_calendario_gd, week calculations may be incomplete")  
             
+
+        nbr_weeks = len(week_to_days)
         logger.info(f"Week calculation:")
         logger.info(f"  - Start weekday: {start_weekday}")
         logger.info(f"  - Number of weeks: {len(week_to_days)}")
@@ -656,6 +658,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_compensation_days[dummy] = {d for d in fixed_compensation_days[original] if start <= d <= end}
             work_day_hours[dummy] = work_day_hours[original]
             free_day_complete_cycle[dummy] = {d for d in free_day_complete_cycle[original] if start <= d <= end}
+            week_template[dummy] = week_template[original]
 
         for original in workers_with_dummy:
             shift_M[original] = {d for d in shift_M[original] if d <= data_demissao[original]}
@@ -689,14 +692,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             free_day_complete_cycle[w] = sorted(set(free_day_complete_cycle[w]) - closed_holidays)
 
             if contract_type[w] == 8:
-                if (first_week_5_6[w] != 0):
-                    work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa)
+                week = first_not_A_value(week_template[w])
+                if week > -1:
+                    work_days_per_week[w] = populate_week_template(int(week_template[w][week]), week - 1, nbr_weeks)
                 else:
-                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period)
+                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period, nbr_weeks)
                 check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
             else:
-                work_days_per_week[w] = [contract_type[w]] * 54
-
+                work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
+            work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w])
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
 

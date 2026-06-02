@@ -188,19 +188,17 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
     
     return absences, vacations, fixed_days_off, fixed_LQs
 
-def populate_week_seed_5_6(first_week_5_6, data_admissao, week_to_days):
-    nbr_weeks = len(week_to_days)
+def populate_week_template(work_days, week_first, nbr_weeks):
     work_days_per_week = np.full(nbr_weeks, 5)
 
     # Find starting week, default to week 0 if not found
-    week = next((wk for wk, val in week_to_days.items() if data_admissao in val), 1) - 1
-    other = 6 if first_week_5_6 == 5 else 5
-    work_days_per_week[week:] = np.tile(np.array([first_week_5_6, other]), (nbr_weeks // 2) + 1)[:nbr_weeks - week]
+    other = 6 if work_days == 5 else 5
+    work_days_per_week[week_first:] = np.tile(np.array([work_days, other]), (nbr_weeks // 2) + 1)[:nbr_weeks - week_first]
+    work_days_per_week[:week_first] = np.tile(np.array([work_days, other]), (nbr_weeks // 2) + 1)[:week_first]
 
     return work_days_per_week.astype(int)
 
-def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period):
-    nbr_weeks = len(week_to_days)
+def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period, nbr_weeks):
     work_days_per_week = np.full(nbr_weeks, 5)
     week_5_days = 0
     found_week = False
@@ -301,6 +299,19 @@ def fixed_to_dynamic(empty_days, dynamic_empty, data_admissao, data_demissao):
         dynamic_empty |= days
     return empty_days, dynamic_empty
 
+def first_not_A_value(week_template):
+    for week in week_template:
+        if week_template[week] != 'A':
+            logger.info(f"first week non automatic with value {week_template[week]} found and its week nbr {week}")
+            return week
+    return -1
+
+def joining_template_with_contract_per_week(work_days_per_week, week_template):
+    for week in range(len(work_days_per_week)):
+        if week_template[week + 1] != 'A':
+            work_days_per_week[week] = int(week_template[week + 1])
+    return work_days_per_week
+
 #salsa_constraints funcs:
 
 def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, closed_days, period, day):
@@ -348,33 +359,6 @@ def ld_counter(shift_T, shift_M, fixed_ld, period, holidays):
     del holidays_worked_before[:lds]
     
     return holidays_worked_before
-
-#general funcs:
-
-def legenda(data_array, range_bool):
-    data_len = len(data_array)
-    if range_bool and data_len != 2:
-        logger.warning(f"Data imcompatible with range (RN, RC or RD) type")
-        return -1
-    
-    data_type = type(data_array[0])
-    if data_type == str:
-        field_type = 'C'
-    elif data_type == datetime or data_type == pd.Timestamp:
-        field_type = 'D'
-    elif data_type == int or data_type == float:
-        field_type = 'N'
-    else:
-        logger.warning(f"Data type undefined: {data_type}")
-        return -1
-    
-    if range_bool:
-        return 'R' + field_type
-    elif data_len > 1:
-        return 'L' + field_type
-    else:
-        return field_type
-
 
 # optimization salsa
 
