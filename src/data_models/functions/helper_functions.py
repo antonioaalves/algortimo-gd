@@ -401,41 +401,44 @@ def convert_types_in(df: pd.DataFrame) -> pd.DataFrame:
 def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.DataFrame:
     """
     Convert ciclos completos WFM data to algorithm 'horario' codes.
-    Simplified version focusing on P (split shift) and MoT (continuous shift).
-    
+
     Mapping logic:
-    - tipo_dia == 'F' + dia_semana in [1,8] -> 'L_DOM'
+    - tipo_dia == 'F' + dia_semana in l_dom_days -> 'L_DOM'
     - tipo_dia == 'F' -> 'L'
     - tipo_dia == 'S' -> '-'
     - tipo_dia == 'N' -> 'NL'
-    - tipo_dia == 'A':
+    - tipo_dia in ['A', 'H']:
         - intervalo >= 1 hour -> 'P' (split shift)
-        - intervalo < 1 hour -> 'MoT' (continuous shift)
+        - intervalo < 1 hour and work_shift == 'M' -> 'M'
+        - intervalo < 1 hour and work_shift == 'T' -> 'T'
+        - intervalo < 1 hour and work_shift ambiguous (A/empty/missing) -> 'MoT'
+        - when work_shift column absent: intervalo < 1 hour -> 'MoT' (legacy fallback)
     - Default -> '-'
-    
+
     Args:
-        df: DataFrame with columns: tipo_dia, dia_semana, hora_ini_1, hora_fim_1, hora_ini_2, hora_fim_2
-        
+        df: DataFrame with columns: tipo_dia, dia_semana, hora_ini_1, hora_fim_1,
+            hora_ini_2, hora_fim_2, and optionally work_shift (WORK_SHIFT from WFM)
+
     Returns:
         DataFrame with 'horario' column added
     """
     df_result = df.copy()
-    
+
     # Normalize column names to lowercase
     df_result.columns = df_result.columns.str.lower()
-    
+
+    use_work_shift = 'work_shift' in df_result.columns
+
     # Calculate intervalo if time columns exist
     has_time_cols = all(col in df_result.columns for col in ['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2'])
-    
+
     if has_time_cols:
         try:
-            # Convert time columns to datetime
             for col in ['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']:
                 df_result[col] = pd.to_datetime(df_result[col], format="%Y-%m-%d %H:%M:%S", errors='coerce')
-            
-            # Calculate intervalo (break time between shifts in hours)
+
             df_result['intervalo'] = df_result.apply(
-                lambda row: 0 if pd.isna(row['hora_ini_2']) else 
+                lambda row: 0 if pd.isna(row['hora_ini_2']) else
                 (row['hora_ini_2'] - row['hora_fim_1']).total_seconds() / 3600,
                 axis=1
             )
@@ -444,48 +447,56 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
             df_result['intervalo'] = 0
     else:
         df_result['intervalo'] = 0
-    
-    # Apply simplified mapping logic
+
+    def _work_shift_code(row) -> str:
+        """Resolve M/T/MoT for a working day from WORK_SHIFT when present."""
+        if not use_work_shift:
+            return 'MoT'
+        raw = row.get('work_shift', '')
+        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+            return 'MoT'
+        work_shift = str(raw).strip().upper()
+        if work_shift == 'M':
+            return 'M'
+        if work_shift == 'T':
+            return 'T'
+        return 'MoT'
+
     def get_horario_code(row):
         tipo_dia = row.get('tipo_dia', '')
         dia_semana = row.get('dia_semana', 0)
         intervalo = row.get('intervalo', 0)
-        
-        # Free days
+
         if tipo_dia == 'F':
             if dia_semana in l_dom_days:
                 return 'L_DOM'
             return 'L'
-        
-        # Skip day
+
         if tipo_dia == 'S':
             return '-'
-        
-        # Night leave
+
         if tipo_dia == 'N':
             return 'NL'
-        
-        # Working days
+
         if tipo_dia in ['A', 'H']:
             if intervalo >= 1:
                 return 'P'
-            return 'MoT'
-        
-        # Default
+            return _work_shift_code(row)
+
         return '-'
-    
+
     df_result['horario'] = df_result.apply(get_horario_code, axis=1)
-    
-    # Log conversion statistics
+
     horario_counts = df_result['horario'].value_counts()
     tipo_dia_counts = df_result.get('tipo_dia', pd.Series()).value_counts()
     nl_count = (df_result['horario'] == 'NL').sum()
     n_count = (df_result.get('tipo_dia', pd.Series()) == 'N').sum() if 'tipo_dia' in df_result.columns else 0
-    
+
+    logger.info(f"convert_ciclos_to_horario: use_work_shift={use_work_shift}")
     logger.info(f"convert_ciclos_to_horario: tipo_dia counts - {tipo_dia_counts.to_dict()}")
     logger.info(f"convert_ciclos_to_horario: horario counts - {horario_counts.to_dict()}")
     logger.info(f"convert_ciclos_to_horario: tipo_dia='N' count: {n_count}, horario='NL' count: {nl_count}")
-    
+
     return df_result
 
 def convert_fields_to_int(df: pd.DataFrame, fields: List[str]) -> Tuple[bool, pd.DataFrame, str]:

@@ -4418,15 +4418,38 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             l_mask = valid_ciclos_mask & ~preserve_f_mask & (mapped_values == 'L')
             if l_mask.any():
                 df_result.loc[l_mask, 'horario'] = 'L'
-            
-            # For other non-dash, non-L values, assign normally but preserve F's, A's and V's
-            # A's and V's should NOT be overridden by regular shift codes (only by '-' or 'L')
-            other_mask = valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask & (mapped_values != '-') & (mapped_values != 'L')
+
+            # M/T/MoT: assign per tipo_turno row (same rules as add_shift_info_from_ciclos)
+            shift_code_mask = (
+                valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask
+                & mapped_values.isin(['M', 'T', 'MoT'])
+            )
+            if shift_code_mask.any():
+                mot_rows = shift_code_mask & (mapped_values == 'MoT')
+                if mot_rows.any():
+                    df_result.loc[mot_rows, 'horario'] = 'MoT'
+
+                m_rows = shift_code_mask & (mapped_values == 'M')
+                if m_rows.any():
+                    df_result.loc[m_rows & (df_result['tipo_turno'] == 'M'), 'horario'] = 'M'
+                    df_result.loc[m_rows & (df_result['tipo_turno'] == 'T'), 'horario'] = '0'
+
+                t_rows = shift_code_mask & (mapped_values == 'T')
+                if t_rows.any():
+                    df_result.loc[t_rows & (df_result['tipo_turno'] == 'T'), 'horario'] = 'T'
+                    df_result.loc[t_rows & (df_result['tipo_turno'] == 'M'), 'horario'] = '0'
+
+            # Other codes (P, NL, LD, …): same value on both tipo_turno rows
+            other_mask = (
+                valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask
+                & (mapped_values != '-') & (mapped_values != 'L')
+                & ~mapped_values.isin(['M', 'T', 'MoT'])
+            )
             if other_mask.any():
                 df_result.loc[other_mask, 'horario'] = mapped_values[other_mask]
-            
+
             # Calculate fill_mask for logging purposes (combines dash, L, and other updates)
-            fill_mask = dash_mask | l_mask | other_mask
+            fill_mask = dash_mask | l_mask | shift_code_mask | other_mask
             
             filled_count = fill_mask.sum()
             
@@ -4437,7 +4460,7 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             
             # Count A/V values that were preserved (not overridden by regular shift codes, but may have been overridden by L or -)
             preserved_av_from_shifts = (preserve_av_mask & valid_ciclos_mask & (mapped_values != '-') & (mapped_values != 'L')).sum()
-            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos ({dash_mask.sum()} -, {l_mask.sum()} L, {other_mask.sum()} other) (preserved {preserve_f_mask.sum()} F values, {preserved_av_from_shifts} A/V from shift codes)")
+            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos ({dash_mask.sum()} -, {l_mask.sum()} L, {shift_code_mask.sum()} M/T/MoT, {other_mask.sum()} other) (preserved {preserve_f_mask.sum()} F values, {preserved_av_from_shifts} A/V from shift codes)")
             logger.info(f"add_ciclos_completos: NL values from ciclos lookup: {nl_values_from_ciclos}, NL values in result after merge: {nl_values_in_result}")
             logger.info(f"add_ciclos_completos: horario value counts after merge: {horario_counts_after.to_dict()}")
             
