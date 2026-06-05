@@ -1,6 +1,6 @@
 from math import floor, ceil
 from base_data_project.log_config import get_logger
-from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_days_calc, compensation_days_calc_with_contract_changes, get_dummy
+from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_days_calc, compensation_days_calc_with_contract_changes, get_dummy, get_annual_variables
 
 logger = get_logger('algoritmo_GD')
 
@@ -420,13 +420,23 @@ def maximum_continuous_working_days(model, shift, days_of_year, workers, working
                         if (dummy_second, change_date + j, s) in shift)
                     model.Add(consecutive_days <= max_days)
 
-def LQ_attribution(model, shift, workers, working_days, c2d, year_range):
+def LQ_attribution(model, shift, workers_no_contract_changes, working_days, c2d, year_range, annual_variables, workers_with_dummy, sundays):
     # #constraint for maximum of LD days in a year
-    for w in workers:
-        model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w] if year_range[0] <= d < year_range[1] and (w, d, "LQ") in shift) >= c2d.get(w, 0))
+    for w in workers_no_contract_changes:
+        if c2d.get(w, 0) == 0:
+            continue
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[w] and year_range[0] <= d - 1 <= year_range[1] \
+                            and get_annual_variables(annual_variables, w, d - 1, "c2d") == True and (w, d - 1, "LQ") in shift]
+        model.Add(sum(shift[(w, d, "LQ")] for d in worker_saturdays if (w, d, 'LQ') in shift) >= c2d.get(w, 0))
+    for w in workers_with_dummy:
+        if c2d.get(w, 0) == 0:
+            continue
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[get_dummy(workers_with_dummy, w, d - 1)] and year_range[0] <= d - 1 <= year_range[1] \
+                            and get_annual_variables(annual_variables, w, d - 1, "c2d") == True and (get_dummy(workers_with_dummy, w, d - 1), d - 1, "LQ") in shift]
+        model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, "LQ")] for d in worker_saturdays if (get_dummy(workers_with_dummy, w, d), d, 'LQ') in shift) >= c2d.get(w, 0))
 
 def working_day_shifts(model, shift, workers, working_days, check_shift, working_shift, period, contract_type, complete_cycle_days):
-    # Check for the workers so that they can only have M, T, TC, L, LD and LQ in workingd days
+    # Check for the workers so that they can only have M, T, TC, L, LD and LQ in working days
     #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
     check_shift_with_empty = check_shift + ["-"]
     for w in workers:
@@ -490,7 +500,7 @@ def salsa_2_consecutive_free_days(model, shift, workers, working_days, contract_
                 # This prevents having more than max_continuous_free_days consecutive free days
                 model.AddBoolOr([free_day_vars[day].Not() for day in day_sequence])
 
-def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, year_range, period):
+def salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, F_special_day, days_of_year, year_range):
     # Track quality 2-day weekends and ensure LQ is only used in this pattern
     debug_vars = {}  # Store debug variables to return    
     for w in workers:
@@ -763,34 +773,62 @@ def first_day_not_free(model, shift, workers, working_days, first_registered_day
             model.Add(sum(shift.get((w, first, shift_type), 0) for shift_type in working_shift) == 1)
             
 #-------------------------------------------------------------------------------------------------------------------------------------
-def free_days_sundays(model, shift, sundays, workers, working_days, total_l_dom, year_range):
-    for w in workers:
+def free_days_sundays(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom, year_range, annual_variables, workers_with_dummy):
+    for w in workers_no_contract_changes:
         if total_l_dom.get(w, 0) == 0:
             continue
         # Only consider special days that are in this worker's working days
-        worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
+        worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1] and get_annual_variables(annual_variables, w, d, "l_dom") == True]
         logger.info(f"Worker {w}, Sundays {worker_sundays}, total {total_l_dom.get(w, 0)}")
         model.Add(sum(shift[(w, d, "L")] for d in worker_sundays if (w, d, 'L') in shift) >= total_l_dom.get(w, 0))
+    for w in workers_with_dummy:
+        if total_l_dom.get(w, 0) == 0:
+            continue
+        worker_sundays = [d for d in sundays if d in working_days[get_dummy(workers_with_dummy, w, d)] \
+                          and year_range[0] <= d <= year_range[1] and get_annual_variables(annual_variables, w, d, "l_dom") == True]
+        logger.info(f"Worker contract changes {w}, Sundays {worker_sundays}, total {total_l_dom.get(w, 0)}")
+        model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, "L")] for d in worker_sundays if (get_dummy(workers_with_dummy, w, d), d, 'L') in shift) >= total_l_dom.get(w, 0))
 
-def free_days_saturdays(model, shift, sundays, workers, working_days, total_l_sab, year_range):
-    for w in workers:
+
+def free_days_saturdays(model, shift, sundays, workers_no_contract_changes, working_days, total_l_sab, year_range, annual_variables, workers_with_dummy):
+    for w in workers_no_contract_changes:
         if total_l_sab.get(w, 0) == 0:
             continue
         # Only consider special days that are in this worker's working days
-        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[w] and year_range[0] <= d - 1 <= year_range[1]]
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[w] and year_range[0] <= d - 1 <= year_range[1]\
+                            and get_annual_variables(annual_variables, w, d - 1, "l_sab") == True]
         logger.info(f"Worker {w}, saturdays {worker_saturdays}, total {total_l_sab.get(w, 0)}")
         model.Add(sum(shift[(w, d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (w, d, s) in shift) >= total_l_sab.get(w, 0))
+    for w in workers_with_dummy:
+        if total_l_sab.get(w, 0) == 0:
+            continue
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[get_dummy(workers_with_dummy, w, d - 1)] \
+                            and year_range[0] <= d - 1 <= year_range[1] and get_annual_variables(annual_variables, w, d - 1, "l_sab") == True]
+        logger.info(f"Worker contract changes {w}, Sundays {worker_saturdays}, total {total_l_sab.get(w, 0)}")
+        model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, "L")] for d in worker_saturdays if (get_dummy(workers_with_dummy, w, d), d, 'L') in shift) >= total_l_sab.get(w, 0))
 
-def free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom_or_sab, year_range):
-    for w in workers:
+def free_days_special_days(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom_or_sab, year_range, annual_variables, workers_with_dummy):
+    for w in workers_no_contract_changes:
         if total_l_dom_or_sab.get(w, 0) == 0:
             continue
         # Only consider special days that are in this worker's working days
-        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[w] and year_range[0] <= d - 1 <= year_range[1]]
-        worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]]
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[w] and year_range[0] <= d - 1 <= year_range[1]\
+                            and get_annual_variables(annual_variables, w, d - 1, "l_dom_or_sab") == True]
+        worker_sundays = [d for d in sundays if d in working_days[w] and year_range[0] <= d <= year_range[1]\
+                          and get_annual_variables(annual_variables, w, d, "l_dom_or_sab") == True]
         worker_saturdays.extend(worker_sundays)
         logger.info(f"Worker {w}, saturdays and sundays {worker_saturdays}, total {total_l_dom_or_sab.get(w, 0)}")
         model.Add(sum(shift[(w, d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (w, d, s) in shift) >= total_l_dom_or_sab.get(w, 0))
+    for w in workers_with_dummy:
+        if total_l_dom_or_sab.get(w, 0) == 0:
+            continue
+        worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[get_dummy(workers_with_dummy, w, d - 1)] \
+                            and year_range[0] <= d - 1 <= year_range[1] and get_annual_variables(annual_variables, w, d - 1, "l_dom_or_sab") == True]
+        worker_sundays = [d for d in sundays if d in working_days[get_dummy(workers_with_dummy, w, d)] \
+                          and year_range[0] <= d <= year_range[1] and get_annual_variables(annual_variables, w, d, "l_dom_or_sab") == True]
+        worker_saturdays.extend(worker_sundays)
+        logger.info(f"Worker contract changes {w}, Sundays {worker_saturdays}, total {total_l_dom_or_sab.get(w, 0)}")
+        model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (get_dummy(workers_with_dummy, w, d), d, s) in shift) >= total_l_dom_or_sab.get(w, 0))
 
 def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T, period, closed_days):
     if len(workers) > 1:

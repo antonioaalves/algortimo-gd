@@ -306,10 +306,13 @@ def first_not_A_value(week_template):
             return week
     return -1
 
-def joining_template_with_contract_per_week(work_days_per_week, week_template):
+def joining_template_with_contract_per_week(work_days_per_week, week_template, min_work_days, max_work_days, worker):
     for week in range(len(work_days_per_week)):
         if week_template[week + 1] != 'A':
-            work_days_per_week[week] = int(week_template[week + 1])
+            if week_template[week + 1] != min_work_days and week_template[week + 1] != max_work_days:
+                logger.error(f"CARGA SEMANAL: Value of {week_template[week + 1]} in week {week} is incompatible with contract type, for {worker}")
+            else:
+                work_days_per_week[week] = int(week_template[week + 1])
     return work_days_per_week
 
 #salsa_constraints funcs:
@@ -383,6 +386,23 @@ def get_dummy(workers_with_dummy, w, d):
                 return new_w
     return w
 
+def get_annual_variables(annual_variables, w, d, variable):
+    for range, new_w in annual_variables.get(w, {}).items():
+        if d in range:
+            if variable == "l_dom":
+                logger.info(f"Getting variable l_dom {annual_variables[w][range]['apply_l_dom']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_l_dom"]
+            elif variable == "c2d":
+                logger.info(f"Getting variable c2d {annual_variables[w][range]['apply_c2d']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_c2d"]
+            elif variable == "l_sab":
+                logger.info(f"Getting variable l_sab {annual_variables[w][range]['apply_l_sab']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_l_sab"]
+            elif variable == "l_dom_or_sab":
+                logger.info(f"Getting variable l_dom_or_sab {annual_variables[w][range]['apply_l_dom_or_sab']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_l_dom_or_sab"]
+    return True
+                
 def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days,
                                                  week_to_days, compensation_limit, working_days, shift, w, fixed_lds,
                                                  closed_days, period, day, workers_with_dummy):
