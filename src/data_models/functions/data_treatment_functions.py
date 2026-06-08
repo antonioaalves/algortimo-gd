@@ -3369,40 +3369,103 @@ def _weekly_free_day_budget(tipo_contrato: int) -> int:
     return 2
 
 
-def _count_fixed_free_in_iso_week(
+def _build_salsa_week_maps_from_calendario(
+    df_calendario: Optional[pd.DataFrame],
+) -> Tuple[Dict[int, frozenset], Dict[pd.Timestamp, int]]:
+    """
+    Build salsa week groupings exactly as read_salsa.py week_to_days_salsa:
+    consecutive 7-day index blocks, incrementing the week after each index % 7 == 0.
+    """
+    if df_calendario is None or df_calendario.empty:
+        return {}, {}
+    if 'index' not in df_calendario.columns or 'schedule_day' not in df_calendario.columns:
+        return {}, {}
+
+    df = (
+        df_calendario[['schedule_day', 'index']]
+        .drop_duplicates('schedule_day')
+        .sort_values('index')
+    )
+    week_to_days: Dict[int, list] = {}
+    day_to_week: Dict[pd.Timestamp, int] = {}
+    week_number = 1
+
+    for _, row in df.iterrows():
+        day = pd.Timestamp(row['schedule_day']).normalize()
+        idx = int(row['index'])
+
+        if week_number not in week_to_days:
+            week_to_days[week_number] = []
+        if day not in week_to_days[week_number]:
+            week_to_days[week_number].append(day)
+        day_to_week[day] = week_number
+
+        if idx % 7 == 0:
+            week_number += 1
+
+    return (
+        {w: frozenset(days) for w, days in week_to_days.items()},
+        day_to_week,
+    )
+
+
+def _count_fixed_free_in_iso_week_unclipped(
     preallocated_free: frozenset,
     day: pd.Timestamp,
-    begin: pd.Timestamp,
-    effective_end: pd.Timestamp,
 ) -> int:
-    """Count fixed weekly-rest days (L, L_DOM, LQ, C) in the ISO week of day."""
+    """Fallback: count fixed weekly-rest days across the full ISO week (no execution clip)."""
     week_start = day - pd.Timedelta(days=day.weekday())
     week_end = week_start + pd.Timedelta(days=6)
     one_day = pd.Timedelta(days=1)
     count = 0
     d = week_start
     while d <= week_end:
-        if begin <= d <= effective_end and d in preallocated_free:
+        if d in preallocated_free:
             count += 1
         d += one_day
     return count
 
 
-def _remaining_weekly_free_day_slots(
+def _count_fixed_free_in_salsa_week(
+    preallocated_free: frozenset,
     day: pd.Timestamp,
-    weekly_rest: frozenset,
-    begin: pd.Timestamp,
-    effective_end: pd.Timestamp,
-    tipo_contrato: int,
+    day_to_week: Dict[pd.Timestamp, int],
+    week_to_days: Dict[int, frozenset],
 ) -> int:
     """
-    Additional L/LQ slots still assignable in the ISO week of day.
+    Count fixed weekly-rest days (L, L_DOM, LQ, C) in the salsa week of day.
+
+    Uses the full salsa week block (all indices in week_to_days_salsa), including
+    days outside the execution window — mirrors salsa_2_free_days_week fixed_days_week
+    and fixed_LQs_week intersection with week_work_days.
+    """
+    week_num = day_to_week.get(day.normalize())
+    if week_num is None:
+        return _count_fixed_free_in_iso_week_unclipped(preallocated_free, day)
+    week_days = week_to_days.get(week_num, frozenset())
+    return sum(1 for d in week_days if d in preallocated_free)
+
+
+def _remaining_weekly_free_day_slots(
+    day: pd.Timestamp,
+    weekly_rest_for_quota: frozenset,
+    tipo_contrato: int,
+    day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
+    week_to_days: Optional[Dict[int, frozenset]] = None,
+) -> int:
+    """
+    Additional L/LQ slots still assignable in the salsa week of day.
 
     Mirrors salsa_2_free_days_week: fixed weekly rest on seed calendar (L, L_DOM,
-    LQ, C) consumes the weekly quota; MoT/M/T placeholders do not.
+    LQ, C) in the full salsa week consumes the weekly quota; MoT/M/T placeholders do not.
     """
     budget = _weekly_free_day_budget(tipo_contrato)
-    fixed = _count_fixed_free_in_iso_week(weekly_rest, day, begin, effective_end)
+    if day_to_week and week_to_days:
+        fixed = _count_fixed_free_in_salsa_week(
+            weekly_rest_for_quota, day, day_to_week, week_to_days
+        )
+    else:
+        fixed = _count_fixed_free_in_iso_week_unclipped(weekly_rest_for_quota, day)
     return max(0, budget - fixed)
 
 
@@ -3445,6 +3508,9 @@ def _count_eligible_sundays(
     tipo_contrato: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
     tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
+    weekly_rest_for_quota: Optional[frozenset] = None,
+    day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
+    week_to_days: Optional[Dict[int, frozenset]] = None,
 ) -> int:
     """
     Count Sundays eligible for l_dom within [begin, effective_end].
@@ -3460,6 +3526,7 @@ def _count_eligible_sundays(
     non-working days (e.g. closed F) and l_dom Rule 1+2 when both Saturday and
     Monday are in adjacent_free_days (holidays + absences).
     """
+    quota_rest = weekly_rest_for_quota if weekly_rest_for_quota is not None else weekly_rest
     days_to_sun = (6 - begin.weekday()) % 7
     sunday = begin + pd.Timedelta(days=days_to_sun)
     one_day = pd.Timedelta(days=1)
@@ -3480,7 +3547,7 @@ def _count_eligible_sundays(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            sunday, weekly_rest, begin, effective_end, tc
+            sunday, quota_rest, tc, day_to_week, week_to_days
         ) < 1:
             pass
         else:
@@ -3498,6 +3565,9 @@ def _count_eligible_saturdays(
     tipo_contrato: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
     tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
+    weekly_rest_for_quota: Optional[frozenset] = None,
+    day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
+    week_to_days: Optional[Dict[int, frozenset]] = None,
 ) -> int:
     """
     Count Saturdays eligible for l_sab (and l_dom_or_sab pool contribution).
@@ -3507,6 +3577,7 @@ def _count_eligible_saturdays(
     weeks where fixed weekly rest already fills the salsa_2_free_days_week quota,
     and l_sab Rule 1+2 (Friday and Sunday both in adjacent_free_days).
     """
+    quota_rest = weekly_rest_for_quota if weekly_rest_for_quota is not None else weekly_rest
     days_to_sat = (5 - begin.weekday()) % 7
     saturday = begin + pd.Timedelta(days=days_to_sat)
     one_day = pd.Timedelta(days=1)
@@ -3527,7 +3598,7 @@ def _count_eligible_saturdays(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            saturday, weekly_rest, begin, effective_end, tc
+            saturday, quota_rest, tc, day_to_week, week_to_days
         ) < 1:
             pass
         else:
@@ -3546,6 +3617,9 @@ def _count_eligible_weekends_c2d(
     tipo_contrato: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
     tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
+    weekly_rest_for_quota: Optional[frozenset] = None,
+    day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
+    week_to_days: Optional[Dict[int, frozenset]] = None,
 ) -> int:
     """
     Count Sat+Sun pairs eligible for c2d quality weekends.
@@ -3556,6 +3630,7 @@ def _count_eligible_weekends_c2d(
     fixed weekly rest leaves fewer than two free-day slots in the ISO week,
     or c2d Rules 1+2 fire on adjacent_free_days.
     """
+    quota_rest = weekly_rest_for_quota if weekly_rest_for_quota is not None else weekly_rest
     days_to_sat = (5 - begin.weekday()) % 7
     saturday = begin + pd.Timedelta(days=days_to_sat)
     one_day = pd.Timedelta(days=1)
@@ -3589,7 +3664,7 @@ def _count_eligible_weekends_c2d(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            saturday, weekly_rest, begin, effective_end, tc_sat
+            saturday, quota_rest, tc_sat, day_to_week, week_to_days
         ) < 2:
             pass
         else:
@@ -3834,6 +3909,9 @@ def _count_feasibility_cap_for_field(
     tipo_ciclo_weeks: frozenset,
     tipo_contrato_resolver: Callable[[pd.Timestamp], int],
     default_tipo: int,
+    weekly_rest_for_quota: Optional[frozenset] = None,
+    day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
+    week_to_days: Optional[Dict[int, frozenset]] = None,
 ) -> Tuple[int, int]:
     """
     Returns (achievable_total, eligible_in_execution).
@@ -3856,31 +3934,42 @@ def _count_feasibility_cap_for_field(
         wr_exec = _filter_days_to_period(weekly_rest, in_exec_begin, in_exec_end)
         nw_exec = _filter_days_to_period(non_working, in_exec_begin, in_exec_end)
 
+        quota_rest = weekly_rest_for_quota if weekly_rest_for_quota is not None else weekly_rest
+        count_kwargs = {
+            'weekly_rest_for_quota': quota_rest,
+            'day_to_week': day_to_week,
+            'week_to_days': week_to_days,
+        }
         if field == 'l_dom':
             eligible_in_execution = _count_eligible_sundays(
                 in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                 default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                **count_kwargs,
             )
         elif field == 'l_sab':
             eligible_in_execution = _count_eligible_saturdays(
                 in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                 default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                **count_kwargs,
             )
         elif field == 'l_dom_or_sab':
             eligible_in_execution = (
                 _count_eligible_sundays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    **count_kwargs,
                 )
                 + _count_eligible_saturdays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    **count_kwargs,
                 )
             )
         elif field == 'c2d':
             eligible_in_execution = _count_eligible_weekends_c2d(
                 in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                 holiday_set, default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                **count_kwargs,
             )
 
     satisfied_outside = 0
@@ -4040,6 +4129,9 @@ def apply_annual_dayoff_feasibility_cap(
 
         calendar_state_by_employee = _build_calendar_day_state_by_employee(df_calendario)
         tipo_ciclo_weeks_by_employee = _build_tipo_ciclo_weeks_by_employee(df_calendario)
+        salsa_week_to_days, salsa_day_to_week = _build_salsa_week_maps_from_calendario(
+            df_calendario
+        )
         if df_calendario is None or df_calendario.empty:
             logger.warning(
                 "apply_annual_dayoff_feasibility_cap: df_calendario missing/empty; "
@@ -4112,6 +4204,9 @@ def apply_annual_dayoff_feasibility_cap(
                     tipo_ciclo_weeks=tipo_ciclo_weeks,
                     tipo_contrato_resolver=tipo_resolver,
                     default_tipo=5,
+                    weekly_rest_for_quota=cal_state['weekly_rest'],
+                    day_to_week=salsa_day_to_week,
+                    week_to_days=salsa_week_to_days,
                 )
 
                 if value > achievable:
