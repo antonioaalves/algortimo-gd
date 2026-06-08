@@ -14,7 +14,7 @@ from base_data_project.log_config import get_logger
 from src.data_models.base import BaseDescansosDataModel
 from src.configuration_manager.base import BaseConfig
 from src.configuration_manager.instance import get_config
-from src.helpers import log_feasibility_cap_events
+from src.helpers import log_feasibility_cap_events, log_workload_template_contract_errors
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
     get_param_for_posto, 
@@ -44,6 +44,7 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_calendario_passado,
     treat_df_ausencias_ferias,
     treat_df_ciclos_completos,
+    validate_workload_template_vs_contract,
     treat_df_colaborador,
     add_lqs_to_df_colaborador,
     set_tipo_contrato_to_df_colaborador,
@@ -1982,6 +1983,47 @@ class SalsaDataModel(BaseDescansosDataModel):
             if not success:
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
                 return False, "errSubproc", error_msg
+
+            # workload_template vs contract (fatal) — same phase as feasibility cap logging.
+            try:
+                df_ciclos = self.auxiliary_data.get('df_ciclos', pd.DataFrame())
+                success_wt, wt_events, error_wt = validate_workload_template_vs_contract(
+                    df_ciclos, df_colaborador
+                )
+                if not success_wt:
+                    df_messages = self.auxiliary_data.get('df_messages', pd.DataFrame())
+                    if df_messages is None:
+                        df_messages = pd.DataFrame()
+                    connection = self.auxiliary_data.get('raw_connection')
+                    if connection is not None and not df_messages.empty:
+                        n_logged = log_workload_template_contract_errors(
+                            connection=connection,
+                            path_os=self.config_manager.system.project_root_dir,
+                            fk_process=self.external_call_data.get('current_process_id'),
+                            process_type='func_inicializa',
+                            df_messages=df_messages,
+                            error_events=wt_events,
+                            child_num=str(self.external_call_data.get('child_number', 1)),
+                            posto_id=self.auxiliary_data.get('current_posto_id'),
+                        )
+                        self.logger.info(
+                            f"Logged {n_logged}/{len(wt_events)} workload_template error(s) "
+                            f"to esc_processo_erros"
+                        )
+                    elif wt_events:
+                        self.logger.warning(
+                            f"{len(wt_events)} workload_template error(s) not written to DB "
+                            f"(connection={connection is not None}, messages={not df_messages.empty})"
+                        )
+                    self.auxiliary_data['workload_template_error_events'] = wt_events
+                    self.logger.error(f"workload_template contract validation failed: {error_wt}")
+                    return False, "ERR_WORKLOAD_TEMPLATE_CONTRACT", error_wt
+            except Exception as e:
+                self.logger.error(
+                    f"workload_template contract validation failed: {e}",
+                    exc_info=True,
+                )
+                return False, "ERR_WORKLOAD_TEMPLATE_CONTRACT", str(e)
 
             # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
             # Runs here because all required data is available: df_annual_variables and df_feriados

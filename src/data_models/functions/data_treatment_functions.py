@@ -788,20 +788,21 @@ def treat_df_ciclos_completos(df_ciclos_completos: pd.DataFrame, df_colaborador_
         else:
             logger.warning("dia_semana column not found - skipping transformation")
         
-        # Step 3: Normalise workload_template — 5/6 fixed weeks; A = algorithm decides (replaces seed_5_6)
-        _VALID_WORKLOAD_TEMPLATES = frozenset({'5', '6', 'A'})
+        # Step 3: Normalise workload_template — 1–7 = fixed working days/week; A = algorithm decides
+        _VALID_WORKLOAD_TEMPLATES = frozenset({'A'} | {str(i) for i in range(1, 8)})
         if 'workload_template' in df_ciclos_completos.columns:
             wt_raw = df_ciclos_completos['workload_template']
             wt = pd.Series(np.nan, index=wt_raw.index, dtype=object)
             present = wt_raw.notna()
             if present.any():
                 wt_str = wt_raw.loc[present].astype(str).str.strip().str.upper()
-                wt_str = wt_str.replace({'5.0': '5', '6.0': '6'})
+                for i in range(1, 8):
+                    wt_str = wt_str.replace({f'{i}.0': str(i)})
                 wt.loc[present] = wt_str.where(wt_str.isin(_VALID_WORKLOAD_TEMPLATES), np.nan)
             df_ciclos_completos['workload_template'] = wt
             n_valid = int(df_ciclos_completos['workload_template'].notna().sum())
             logger.info(
-                f"workload_template: {n_valid}/{len(df_ciclos_completos)} rows with value 5, 6 or A "
+                f"workload_template: {n_valid}/{len(df_ciclos_completos)} rows with value 1–7 or A "
                 f"(other values set to NaN)"
             )
         else:
@@ -822,6 +823,173 @@ def treat_df_ciclos_completos(df_ciclos_completos: pd.DataFrame, df_colaborador_
     except Exception as e:
         logger.error(f"Error in treat_df_ciclos_completos: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), str(e)
+
+
+def _workload_template_is_ciclo_completo(raw) -> bool:
+    if isinstance(raw, (bool, np.bool_)):
+        return bool(raw)
+    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+        return False
+    return str(raw).strip().upper() == 'S'
+
+
+def validate_workload_template_vs_contract(
+    df_ciclos: pd.DataFrame,
+    df_colaborador: pd.DataFrame,
+) -> Tuple[bool, List[dict], str]:
+    """
+    Validate numeric workload_template (1–7) against the active contract on each day.
+
+    Non-ciclo-completo rows only. Dynamic contract (min != max): template must be in
+    [min_dia_trab, max_dia_trab]. Fixed contract (min == max): template must equal that value.
+
+    Returns:
+        (success, error_events, error_message). error_events holds one dict per
+        (employee_id, week) mismatch for esc_processo_erros / df_messages rendering.
+    """
+    if df_ciclos is None or df_ciclos.empty:
+        return True, [], ""
+    if df_colaborador is None or df_colaborador.empty:
+        return True, [], ""
+    if 'workload_template' not in df_ciclos.columns:
+        return True, [], ""
+
+    required_colab = ['employee_id', 'begin_date', 'end_date', 'min_dia_trab', 'max_dia_trab']
+    missing_colab = [c for c in required_colab if c not in df_colaborador.columns]
+    if missing_colab:
+        logger.warning(
+            "validate_workload_template_vs_contract: df_colaborador missing %s — skipping",
+            missing_colab,
+        )
+        return True, [], ""
+
+    pick_cols = ['employee_id', 'schedule_day', 'workload_template']
+    if 'tipo_ciclo' in df_ciclos.columns:
+        pick_cols.append('tipo_ciclo')
+    if 'nro_semana' in df_ciclos.columns:
+        pick_cols.append('nro_semana')
+    if 'matricula' in df_ciclos.columns:
+        pick_cols.append('matricula')
+
+    df = df_ciclos[pick_cols].copy()
+    df.columns = df.columns.str.lower()
+    df['employee_id'] = df['employee_id'].astype(str)
+    df['schedule_day'] = pd.to_datetime(df['schedule_day'], errors='coerce').dt.normalize()
+    df = df.dropna(subset=['schedule_day'])
+    df = df.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='first')
+
+    if 'tipo_ciclo' in df.columns:
+        df = df[~df['tipo_ciclo'].apply(_workload_template_is_ciclo_completo)].copy()
+    if df.empty:
+        return True, [], ""
+
+    wt_num = pd.to_numeric(df['workload_template'], errors='coerce')
+    df = df[wt_num.notna() & (wt_num >= 1) & (wt_num <= 7)].copy()
+    if df.empty:
+        return True, [], ""
+    df['_wt_num'] = pd.to_numeric(df['workload_template'], errors='coerce')
+
+    contracts = sort_df_colaborador_by_contract_period(
+        df_colaborador[required_colab].copy()
+    )
+    contracts['employee_id'] = contracts['employee_id'].astype(str)
+    contracts['begin_date'] = pd.to_datetime(contracts['begin_date'], errors='coerce').dt.normalize()
+    contracts['end_date'] = pd.to_datetime(contracts['end_date'], errors='coerce').dt.normalize()
+    contracts['min_dia_trab'] = pd.to_numeric(contracts['min_dia_trab'], errors='coerce')
+    contracts['max_dia_trab'] = pd.to_numeric(contracts['max_dia_trab'], errors='coerce')
+    contracts = contracts.dropna(subset=['begin_date', 'end_date', 'min_dia_trab', 'max_dia_trab'])
+    if contracts.empty:
+        return True, [], ""
+
+    merged = df.merge(contracts, on='employee_id', how='inner')
+    merged = merged[
+        (merged['schedule_day'] >= merged['begin_date'])
+        & (merged['schedule_day'] <= merged['end_date'])
+    ]
+    if merged.empty:
+        return True, [], ""
+
+    merged = merged.sort_values(['employee_id', 'schedule_day', 'begin_date'])
+    merged = merged.drop_duplicates(subset=['employee_id', 'schedule_day'], keep='last')
+
+    dynamic = merged['min_dia_trab'] != merged['max_dia_trab']
+    dynamic_invalid = dynamic & (
+        (merged['_wt_num'] < merged['min_dia_trab']) | (merged['_wt_num'] > merged['max_dia_trab'])
+    )
+    fixed_invalid = (~dynamic) & (merged['_wt_num'] != merged['min_dia_trab'])
+    invalid = merged[dynamic_invalid | fixed_invalid].copy()
+    if invalid.empty:
+        logger.info(
+            "validate_workload_template_vs_contract: all numeric workload_template values "
+            "match active contract working days per week"
+        )
+        return True, [], ""
+
+    use_nro_semana = 'nro_semana' in invalid.columns and invalid['nro_semana'].notna().any()
+    if use_nro_semana:
+        invalid['_week_key'] = invalid['nro_semana'].astype(str)
+    else:
+        invalid['_week_key'] = invalid['schedule_day'].apply(adjusted_isoweek).astype(str)
+
+    error_events: List[dict] = []
+    for (emp_id, week_key), grp in invalid.groupby(['employee_id', '_week_key'], sort=False):
+        row = grp.iloc[0]
+        day_min = grp['schedule_day'].min()
+        day_max = grp['schedule_day'].max()
+        period_begin = day_min.strftime('%Y-%m-%d')
+        period_end = day_max.strftime('%Y-%m-%d')
+        if use_nro_semana:
+            week_label = f"semana {week_key}"
+        else:
+            week_label = f"semana ISO {week_key}"
+        period_suffix = (
+            f" ({period_begin})" if period_begin == period_end
+            else f" ({period_begin} a {period_end})"
+        )
+        matricula = row.get('matricula')
+        matricula_str = str(int(matricula)) if pd.notna(matricula) and str(matricula).strip() != '' else ''
+        min_trab = int(row['min_dia_trab'])
+        max_trab = int(row['max_dia_trab'])
+        wt_val = int(row['_wt_num'])
+        is_dynamic = min_trab != max_trab
+
+        if is_dynamic:
+            detail_pt = (
+                f"na {week_label}{period_suffix}, o colaborador {emp_id}"
+                f"{f', matrícula {matricula_str}' if matricula_str else ''} tem ciclo com modelo de "
+                f"{wt_val} dias úteis/semana, fora do intervalo do contrato "
+                f"({min_trab}–{max_trab} dias/semana)"
+            )
+        else:
+            detail_pt = (
+                f"na {week_label}{period_suffix}, o colaborador {emp_id}"
+                f"{f', matrícula {matricula_str}' if matricula_str else ''} tem ciclo com modelo de "
+                f"{wt_val} dias úteis/semana, diferente do contrato fixo "
+                f"({min_trab} dias/semana)"
+            )
+
+        logger.error("workload_template: %s", detail_pt)
+        error_events.append({
+            'employee_id': emp_id,
+            'matricula': matricula_str,
+            'workload_template': wt_val,
+            'min_dia_trab': min_trab,
+            'max_dia_trab': max_trab,
+            'week_label': week_label,
+            'period_begin': period_begin,
+            'period_end': period_end,
+            'period_suffix': period_suffix,
+            'mismatch_type': 'range' if is_dynamic else 'fixed',
+            'detail_pt': detail_pt,
+        })
+
+    summary = (
+        f"workload_template incompatível com o contrato em {len(error_events)} semana(s) "
+        f"({len(invalid)} dia(s))"
+    )
+    logger.error("validate_workload_template_vs_contract: %s", summary)
+    return False, error_events, summary
+
 
 def treat_df_folgas_ciclos(df_folgas_ciclos: pd.DataFrame) -> Tuple[bool, pd.DataFrame, str]:
     """
@@ -2904,7 +3072,7 @@ def add_tipo_ciclo_to_calendario(
         True  — DB value 'S' (ciclo completo)
         False — DB value 'N', or no horario_det row for that day
 
-    workload_template is per employee-day ('5', '6', or 'A'; NaN otherwise), pre-normalised in
+    workload_template is per employee-day ('1'–'7' or 'A'; NaN otherwise), pre-normalised in
     treat_df_ciclos_completos — replaces legacy seed_5_6 from df_colaborador. 'A' means the
     algorithm decides the weekly working-day count from demand.
     """
@@ -2971,7 +3139,7 @@ def add_tipo_ciclo_to_calendario(
             n_valid = int(df_result['workload_template'].notna().sum())
             logger.info(
                 f"add_tipo_ciclo_to_calendario: workload_template merged — "
-                f"{n_valid}/{len(df_result)} rows with value 5, 6 or A"
+                f"{n_valid}/{len(df_result)} rows with value 1–7 or A"
             )
 
         df_result = df_result.drop(columns=['schedule_day_dt'], errors='ignore')

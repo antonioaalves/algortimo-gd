@@ -209,6 +209,73 @@ def log_feasibility_cap_events(
     return logged
 
 
+def log_workload_template_contract_errors(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    df_messages: pd.DataFrame,
+    error_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist workload_template vs contract mismatches to wfm.esc_processo_erros.
+
+    Each event is logged as type_error='E' (fatal), unlike feasibility cap warnings.
+    """
+    if connection is None or not error_events or df_messages is None or df_messages.empty:
+        return 0
+
+    logged = 0
+    for event in error_events:
+        matricula = str(event.get('matricula', '') or '')
+        matricula_part = f", matrícula {matricula}" if matricula else ''
+        placeholder_values = {
+            '1': child_num,
+            '2': str(event.get('employee_id', '')),
+            '3': matricula_part,
+            '4': str(event.get('workload_template', '')),
+            '5': str(event.get('min_dia_trab', '')),
+            '6': str(event.get('max_dia_trab', '')),
+            '7': str(event.get('week_label', '')),
+            '8': str(event.get('period_suffix', '')),
+            '9': str(posto_id or ''),
+        }
+        description = set_messages(df_messages, 'ERR_WORKLOAD_TEMPLATE_CONTRACT', placeholder_values)
+        if not description:
+            description = event.get('detail_pt') or (
+                f"Subprocesso {child_num}: workload_template={event.get('workload_template')} "
+                f"incompatível com contrato ({event.get('min_dia_trab')}-{event.get('max_dia_trab')}) "
+                f"colaborador {event.get('employee_id')}{matricula_part} "
+                f"{event.get('week_label', '')}{event.get('period_suffix', '')} posto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='E',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(event.get('period_begin')) if event.get('period_begin') else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
+
 def replace_placeholders(template, values_dict):
     """
     Replaces placeholders in the template string with corresponding values from the values dictionary.

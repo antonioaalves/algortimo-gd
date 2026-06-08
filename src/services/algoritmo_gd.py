@@ -1161,7 +1161,6 @@ class AlgoritmoGDService(BaseService):
                     process_id=self.external_data['current_process_id'],
                 )
                 if not valid_load_calendario_info:
-                    #self.logger.error("Error loading calendario info")
                     if self.stage_handler:
                         self.stage_handler.complete_substage(
                             stage_name=stage_name,
