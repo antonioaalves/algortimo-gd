@@ -295,6 +295,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             dummy_workers = adapted_data["dummy_workers"]
             workers_with_dummy = adapted_data["workers_with_dummy"]
             complete_cycle_days = adapted_data["complete_cycle_days"]
+            annual_variables = adapted_data["annual_variables"]
+            workers_no_contract_changes = adapted_data["workers_no_contract_changes"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -411,7 +413,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # LQ attribution constraint
                 if constraint_selections.get("LQ_attribution", {}).get("enabled", True):
                     self.logger.info("Applying constraint: LQ_attribution")
-                    LQ_attribution(model, shift, workers, working_days, c2d, year_range)
+                    LQ_attribution(model, shift, workers_no_contract_changes, working_days, c2d, year_range, annual_variables, workers_with_dummy, sundays)
                 else:
                     self.logger.warning("Skipping constraint: LQ_attribution (disabled in config)")
                             
@@ -423,7 +425,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 
                 if constraint_selections.get("salsa_2_day_quality_weekend", {}).get("enabled", True):
                     self.logger.info(f"Applying constraint: salsa_2_day_quality_weekend (workers: {len(workers)}, c2d configured)")
-                    salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, c2d, F_special_day, days_of_year, year_range, period)
+                    salsa_2_day_quality_weekend(model, shift, workers, contract_type, working_days, sundays, F_special_day, days_of_year, year_range)
                 else:
                     self.logger.warning("Skipping constraint: salsa_2_day_quality_weekend (disabled in config)")
                 
@@ -446,19 +448,19 @@ class SalsaAlgorithm(BaseAlgorithm):
     
                 if constraint_selections.get("free_days_special_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: free_days_special_days")
-                    free_days_special_days(model, shift, sundays, workers, working_days, total_l_dom_or_sab, year_range)
+                    free_days_special_days(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom_or_sab, year_range, annual_variables, workers_with_dummy)
                 else:
                     self.logger.warning("Skipping constraint: free_days_special_days (disabled in config)")
 
                 if constraint_selections.get("free_days_sundays", {}).get("enabled", True):
                     self.logger.info("Applying constraint: free_days_sundays")
-                    free_days_sundays(model, shift, sundays, workers, working_days, total_l_dom, year_range)
+                    free_days_sundays(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom, year_range, annual_variables, workers_with_dummy)
                 else:
                     self.logger.warning("Skipping constraint: free_days_sundays (disabled in config)")
                 
                 if constraint_selections.get("free_days_saturdays", {}).get("enabled", True):
                     self.logger.info("Applying constraint: free_days_saturdays")
-                    free_days_saturdays(model, shift, sundays, workers, working_days, total_l_sab, year_range)
+                    free_days_saturdays(model, shift, sundays, workers_no_contract_changes, working_days, total_l_sab, year_range, annual_variables, workers_with_dummy)
                 else:
                     self.logger.warning("Skipping constraint: free_days_saturdays (disabled in config)")
 
@@ -470,7 +472,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("dynamic_empty_day", {}).get("enabled", True):
                     self.logger.info("Applying constraint: dynamic_empty_day")
-                    dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_holidays, complete_cycle_days)
+                    dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_holidays, complete_cycle_days, work_days_per_week)
                 else:
                     self.logger.warning("Skipping constraint: dynamic_empty_day (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")

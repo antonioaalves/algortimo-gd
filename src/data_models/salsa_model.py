@@ -1702,7 +1702,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False, "errSubproc", error_msg
 
                 # Set C2D values based on use case
-                # use_case=0: initialise c2d=0; real values come from apply_annual_dayoff_feasibility_cap
+                # use_case=0: initialise c2d=0; capped values live on df_annual_variables (func_inicializa)
                 # (CAV-sourced c2d/c3d columns no longer exist in df_colaborador — STRSOL-1279)
                 success, df_colaborador, error_msg = set_c2d_to_df_colaborador(
                     df_colaborador=df_colaborador,
@@ -1736,7 +1736,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False, "errSubproc", error_msg
 
                 # Add L_DOM / L_SAB / L_DOM_OR_SAB (annual rule columns)
-                # use_case=0: initialise to 0; real values set by apply_annual_dayoff_feasibility_cap
+                # use_case=0: initialise to 0; capped values live on df_annual_variables (func_inicializa)
                 success, df_colaborador, error_msg = add_l_dom_to_df_colaborador(
                     df_colaborador=df_colaborador,
                     df_feriados=df_feriados,
@@ -1780,7 +1780,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 # STRSOL-1279: date_adjustments_to_df_colaborador and
                 # adjust_counters_for_contract_types are retired — counters are initialised to 0
                 # above and populated (with period-aware feasibility caps) by
-                # apply_annual_dayoff_feasibility_cap in func_inicializa.
+                # apply_annual_dayoff_feasibility_cap in func_inicializa updates df_annual_variables only.
 
                 try:
                     self.raw_data['df_colaborador'] = df_colaborador.copy()
@@ -2034,7 +2034,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_ausencias_cap = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
                 num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
 
-                success_cap, df_colaborador, cap_events, error_cap = apply_annual_dayoff_feasibility_cap(
+                success_cap, df_annual_variables, cap_events, error_cap = apply_annual_dayoff_feasibility_cap(
                     df_colaborador=df_colaborador,
                     df_annual_variables=df_annual_variables,
                     df_feriados=df_feriados_cap,
@@ -2042,12 +2042,29 @@ class SalsaDataModel(BaseDescansosDataModel):
                     num_dias_cons=num_dias_cons,
                     main_year=main_year,
                     df_calendario=df_calendario,
+                    execution_begin=start_date,
+                    execution_end=end_date,
                 )
                 if not success_cap:
                     self.logger.error(f"apply_annual_dayoff_feasibility_cap failed: {error_cap}")
                     return False, "errSubproc", error_cap
 
+                self.auxiliary_data['df_annual_variables'] = df_annual_variables.copy()
                 self.auxiliary_data['feasibility_cap_events'] = cap_events
+                self.algorithm_treatment_params['df_annual_variables'] = df_annual_variables.copy()
+                self.logger.info(
+                    f"df_annual_variables stored in algorithm_treatment_params "
+                    f"(rows={df_annual_variables.shape[0]}, cols={df_annual_variables.shape[1]})"
+                )
+
+                annual_cols = [
+                    'l_dom', 'c2d', 'l_sab', 'l_dom_or_sab',
+                    'apply_l_dom', 'apply_c2d', 'apply_l_sab', 'apply_l_dom_or_sab',
+                ]
+                df_colaborador = df_colaborador.drop(
+                    columns=[c for c in annual_cols if c in df_colaborador.columns],
+                    errors='ignore',
+                )
 
                 for event in cap_events:
                     self.logger.warning(
@@ -2085,10 +2102,10 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error applying annual day-off feasibility cap: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            # Final type coercion: ensure rule-sourced counters are stored as integers
+            # Final type coercion (annual day-off quotas live on df_annual_variables, not colaborador)
             success, df_colaborador, error_msg = convert_fields_to_int(
                 df=df_colaborador,
-                fields=['ld', 'l_dom', 'lq', 'l_total', 'c2d', 'c3d', 'l_sab', 'l_dom_or_sab']
+                fields=['ld', 'lq', 'l_total', 'c3d']
             )
             if not success:
                 self.logger.error(f"Final conversion of fields to int failed: {error_msg}")
@@ -2107,6 +2124,8 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.medium_data['df_colaborador'] = df_colaborador.copy()
                 self.medium_data['df_calendario'] = df_calendario.copy()
                 self.medium_data['df_estimativas'] = df_estimativas.copy()
+                if 'df_annual_variables' in self.auxiliary_data:
+                    self.medium_data['df_annual_variables'] = self.auxiliary_data['df_annual_variables'].copy()
                 self.logger.info("Stored processed dataframes in raw_data")
             except Exception as e:
                 self.logger.error(f"Error storing processed dataframes: {e}", exc_info=True)
@@ -2133,6 +2152,13 @@ class SalsaDataModel(BaseDescansosDataModel):
                     index=False,
                     encoding='utf-8'
                 )
+                df_annual_debug = self.auxiliary_data.get('df_annual_variables')
+                if df_annual_debug is not None and not df_annual_debug.empty:
+                    df_annual_debug.to_csv(
+                        os.path.join(output_dir, f'df_annual_variables-{process_id}-{posto_id}.csv'),
+                        index=False,
+                        encoding='utf-8',
+                    )
                 self.logger.info("CSV debug files saved successfully")
             except Exception as csv_error:
                 self.logger.warning(f"Failed to save CSV debug files: {csv_error}")

@@ -7,8 +7,8 @@ import logging
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
 from collections import defaultdict
-from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atributtion, populate_week_seed_5_6, populate_week_fixed_days_off,
-                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic)
+from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atributtion, populate_week_template, populate_week_fixed_days_off, joining_template_with_contract_per_week,
+                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic, first_not_A_value)
 
 
 # Set up logger
@@ -50,7 +50,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             matriz_past_lds_gd = pd.DataFrame()
         else:
             matriz_past_lds_gd = matriz_past_lds_gd.copy()
-       
+        matriz_annual_variables = algorithm_treatment_params["df_annual_variables"]
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
         num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
@@ -296,6 +296,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             week_to_days = {}
             logger.warning("No unique dates found in matriz_calendario_gd, week calculations may be incomplete")  
             
+
+        nbr_weeks = len(week_to_days)
         logger.info(f"Week calculation:")
         logger.info(f"  - Start weekday: {start_weekday}")
         logger.info(f"  - Number of weeks: {len(week_to_days)}")
@@ -355,6 +357,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         workers_with_dummy = defaultdict(dict)
         workers_complete_with_dummy = workers_complete.copy()
         workers_list_with_dummy = workers.copy()
+        min_work_days = {}
+        max_work_days = {}
+        workers_no_contract_changes = []
 
         for w in workers_complete:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
@@ -364,28 +369,24 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 # Set default values
                 contract_type[w] = 'Contract Error'  # Default contract type
                 total_l[w] = 0
-                total_l_dom[w] = 0
-                total_l_sab[w] = 0
-                total_l_dom_or_sab[w] = 0
-                c2d[w] = 0
                 c3d[w] = 0
                 l_d[w] = 0
                 cxx[w] = 0
                 first_week_5_6[w] = 0
                 work_days_per_week[w] = 0
                 week_compensation_limit[w] = 0
+                min_work_days[w] = 0
+                max_work_days[w] = 0
             else:
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
                 total_l[w] = int(worker_row.get('l_total', 0))
-                total_l_dom[w] = int(worker_row.get('l_dom', 0))
-                total_l_sab[w] = int(worker_row.get('l_sab', 0))
-                total_l_dom_or_sab[w] = int(worker_row.get('l_dom_or_sab', 0))
-                c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
+                min_work_days[w] = int(worker_row.get('min_dia_trab', 0))
+                max_work_days[w] = int(worker_row.get('max_dia_trab', 0))
                 first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
                 week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
                 # MODIFIED: Fix date handling - don't convert Timestamp to datetime
@@ -450,6 +451,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                     last_registered_day[w] = 0
 
                 nbr_of_contracts = len(worker_data)
+                if nbr_of_contracts == 1:
+                    workers_no_contract_changes.append(w)
                 if nbr_of_contracts > 1:
                     logger.info(f"Worker {w} changes contract {nbr_of_contracts - 1} times")
                     layer = 1
@@ -472,7 +475,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         c3d[new_w] = int(worker_row.get('c3d', 0))
                         l_d[new_w] = int(worker_row.get('l_d', 0))
                         cxx[new_w] = int(worker_row.get('cxx', 0))
-
+                        min_work_days[w] = int(worker_row.get('min_dia_trab', 0))
+                        max_work_days[w] = int(worker_row.get('max_dia_trab', 0))
                         first_week_5_6[new_w] = int(worker_row.get('seed_5_6', 0))
                         week_compensation_limit[new_w] = int(worker_row.get('n_sem_a_folga', 0))
                         admissao_value = worker_row.get('begin_date', None)
@@ -623,7 +627,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
             week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
-            logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
+            #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL')]['index'].tolist()
@@ -656,6 +660,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             fixed_compensation_days[dummy] = {d for d in fixed_compensation_days[original] if start <= d <= end}
             work_day_hours[dummy] = work_day_hours[original]
             free_day_complete_cycle[dummy] = {d for d in free_day_complete_cycle[original] if start <= d <= end}
+            week_template[dummy] = week_template[original]
 
         for original in workers_with_dummy:
             shift_M[original] = {d for d in shift_M[original] if d <= data_demissao[original]}
@@ -689,14 +694,15 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             free_day_complete_cycle[w] = sorted(set(free_day_complete_cycle[w]) - closed_holidays)
 
             if contract_type[w] == 8:
-                if (first_week_5_6[w] != 0):
-                    work_days_per_week[w] = populate_week_seed_5_6(first_week_5_6[w], data_admissao[w], week_to_days_salsa)
+                week = first_not_A_value(week_template[w])
+                if week > -1:
+                    work_days_per_week[w] = populate_week_template(int(week_template[w][week]), week - 1, nbr_weeks)
                 else:
-                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period)
+                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period, nbr_weeks)
                 check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
             else:
-                work_days_per_week[w] = [contract_type[w]] * 54
-
+                work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
+            work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w)
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
 
@@ -932,7 +938,53 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             logger.info(f"past holiday : {holiday_past_lds}")
             logger.info(f"past sunday : {sunday_past_lds}")
         # =================================================================
-        # 14. RETURN ALL PROCESSED data
+        # 14. ANNUAL VARIABLES
+        # =================================================================
+        matriz_annual_variables.columns = matriz_annual_variables.columns.str.lower()
+        required_cols_annual = {"begin_date", "end_date", "l_dom", "c2d", "l_sab", "l_dom_or_sab", "apply_l_dom", "apply_c2d", "apply_l_sab", "apply_l_dom_or_sab"}
+        annual_variables = defaultdict(dict)
+        if not required_cols_annual.issubset(matriz_annual_variables.columns):
+            logger.warning("Missing required columns for annual variables data")
+        else:
+            #se alguma vez worker_calendar nao tiver garantido todos os dias dentro, poderá dar erro
+            matriz_annual_variables['employee_id'] = matriz_annual_variables['employee_id'].astype(int)
+            for w in workers_complete:
+                worker_data = matriz_annual_variables[matriz_annual_variables['employee_id'] == w]
+                if worker_data.empty:
+                    total_l_dom[w] = 0
+                    total_l_sab[w] = 0
+                    total_l_dom_or_sab[w] = 0
+                    c2d[w] = 0
+                    continue
+                worker_row = worker_data.iloc[0]
+                start_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("begin_date", None), 'index'].iloc[0]
+                end_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("end_date", None), 'index'].iloc[0]
+                annual_variables[w][range(start_date, end_date + 1)] = {
+                    "apply_l_dom": worker_row.get("apply_l_dom", True), 
+                    "apply_c2d": worker_row.get("apply_c2d", True), 
+                    "apply_l_sab": worker_row.get("apply_l_sab", True), 
+                    "apply_l_dom_or_sab": worker_row.get("apply_l_dom_or_sab", True)
+                }
+                total_l_dom[w] = int(worker_row.get('l_dom', 0))
+                total_l_sab[w] = int(worker_row.get('l_sab', 0))
+                total_l_dom_or_sab[w] = int(worker_row.get('l_dom_or_sab', 0))
+                c2d[w] = int(worker_row.get('c2d', 0))
+                size = len(worker_data)
+                if size > 1:
+                    for row in range(1, size):
+                        worker_row = worker_data.iloc[row]
+                        start_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("begin_date", None), 'index'].iloc[0]
+                        end_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("end_date", None), 'index'].iloc[0]
+                        annual_variables[w][range(start_date, end_date + 1)] = {
+                            "apply_l_dom": worker_row.get("apply_l_dom", True), 
+                            "apply_c2d": worker_row.get("apply_c2d", True), 
+                            "apply_l_sab": worker_row.get("apply_l_sab", True), 
+                            "apply_l_dom_or_sab": worker_row.get("apply_l_dom_or_sab", True)
+                        }
+        logger.info(f"annual variables: {annual_variables}")
+
+        # =================================================================
+        # 15. RETURN ALL PROCESSED data
         # =================================================================
         return {
             "matriz_calendario_gd": matriz_calendario_gd,
@@ -1004,6 +1056,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "dummy_workers": dummy_workers,
             "workers_with_dummy": workers_with_dummy,
             "complete_cycle_days": complete_cycle_days,
+            "annual_variables": annual_variables,
+            "workers_no_contract_changes": workers_no_contract_changes,
             }
         
     except Exception as e:

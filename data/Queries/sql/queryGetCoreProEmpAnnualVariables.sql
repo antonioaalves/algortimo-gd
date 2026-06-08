@@ -1,13 +1,12 @@
 SELECT
     cpeav.process_id,
     cpeav.employee_id,
-    cpeav.contract_id,
     cpeav.year,
     cpeav.begin_date,
     cpeav.end_date,
-    cpeav.days,
     cpeav.rule_field_code,
-    cpeav.value
+    cpeav.value,
+    cpeav.apply_ind
 FROM wfm.core_pro_emp_annual_variables cpeav
 WHERE cpeav.process_id = {process_id}
     AND cpeav.employee_id IN ({colabs_id})
@@ -17,4 +16,4 @@ WHERE cpeav.process_id = {process_id}
         'NUM_DAYS_OFF_SAT_YEAR',
         'NUM_DAYS_OFF_SAT_OR_SUN_YEAR'
     )
-ORDER BY cpeav.employee_id, cpeav.contract_id, cpeav.year, cpeav.rule_field_code
+ORDER BY cpeav.employee_id, cpeav.begin_date, cpeav.year, cpeav.rule_field_code

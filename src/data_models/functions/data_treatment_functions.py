@@ -42,7 +42,7 @@ Dataframe manipulation functions:
 import datetime as dt
 import pandas as pd
 import numpy as np
-from typing import List, Tuple, Dict, Optional
+from typing import Callable, List, Tuple, Dict, Optional
 from base_data_project.log_config import get_logger
 
 # Local stuff
@@ -3406,6 +3406,36 @@ def _remaining_weekly_free_day_slots(
     return max(0, budget - fixed)
 
 
+def _resolve_tipo_contrato_for_day(
+    day: pd.Timestamp,
+    tipo_contrato: int,
+    tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
+) -> int:
+    if tipo_contrato_for_day is not None:
+        return int(tipo_contrato_for_day(day))
+    return tipo_contrato
+
+
+def _count_weekly_rest_weekend_days_in_range(
+    weekly_rest: frozenset,
+    begin: pd.Timestamp,
+    end: pd.Timestamp,
+    weekday: int,
+) -> int:
+    """Count days in weekly_rest with given weekday (5=Sat, 6=Sun) within [begin, end]."""
+    if begin > end:
+        return 0
+    days_to_target = (weekday - begin.weekday()) % 7
+    target = begin + pd.Timedelta(days=days_to_target)
+    one_week = pd.Timedelta(days=7)
+    count = 0
+    while target <= end:
+        if target in weekly_rest:
+            count += 1
+        target += one_week
+    return count
+
+
 def _count_eligible_sundays(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
@@ -3414,6 +3444,7 @@ def _count_eligible_sundays(
     non_working: frozenset,
     tipo_contrato: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
+    tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
 ) -> int:
     """
     Count Sundays eligible for l_dom within [begin, effective_end].
@@ -3429,13 +3460,14 @@ def _count_eligible_sundays(
     non-working days (e.g. closed F) and l_dom Rule 1+2 when both Saturday and
     Monday are in adjacent_free_days (holidays + absences).
     """
-    max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sun = (6 - begin.weekday()) % 7
     sunday = begin + pd.Timedelta(days=days_to_sun)
     one_day = pd.Timedelta(days=1)
     count = 0
 
     while sunday <= effective_end:
+        tc = _resolve_tipo_contrato_for_day(sunday, tipo_contrato, tipo_contrato_for_day)
+        max_consec_free = _max_continuous_free_days(tc)
         if _is_tipo_ciclo_week(sunday, tipo_ciclo_weeks):
             if sunday in weekly_rest:
                 count += 1
@@ -3448,7 +3480,7 @@ def _count_eligible_sundays(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            sunday, weekly_rest, begin, effective_end, tipo_contrato
+            sunday, weekly_rest, begin, effective_end, tc
         ) < 1:
             pass
         else:
@@ -3465,6 +3497,7 @@ def _count_eligible_saturdays(
     non_working: frozenset,
     tipo_contrato: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
+    tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
 ) -> int:
     """
     Count Saturdays eligible for l_sab (and l_dom_or_sab pool contribution).
@@ -3474,13 +3507,14 @@ def _count_eligible_saturdays(
     weeks where fixed weekly rest already fills the salsa_2_free_days_week quota,
     and l_sab Rule 1+2 (Friday and Sunday both in adjacent_free_days).
     """
-    max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sat = (5 - begin.weekday()) % 7
     saturday = begin + pd.Timedelta(days=days_to_sat)
     one_day = pd.Timedelta(days=1)
     count = 0
 
     while saturday <= effective_end:
+        tc = _resolve_tipo_contrato_for_day(saturday, tipo_contrato, tipo_contrato_for_day)
+        max_consec_free = _max_continuous_free_days(tc)
         if _is_tipo_ciclo_week(saturday, tipo_ciclo_weeks):
             if saturday in weekly_rest:
                 count += 1
@@ -3493,7 +3527,7 @@ def _count_eligible_saturdays(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            saturday, weekly_rest, begin, effective_end, tipo_contrato
+            saturday, weekly_rest, begin, effective_end, tc
         ) < 1:
             pass
         else:
@@ -3511,6 +3545,7 @@ def _count_eligible_weekends_c2d(
     holiday_set: frozenset,
     tipo_contrato: int,
     tipo_ciclo_weeks: frozenset = frozenset(),
+    tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
 ) -> int:
     """
     Count Sat+Sun pairs eligible for c2d quality weekends.
@@ -3521,7 +3556,6 @@ def _count_eligible_weekends_c2d(
     fixed weekly rest leaves fewer than two free-day slots in the ISO week,
     or c2d Rules 1+2 fire on adjacent_free_days.
     """
-    max_consec_free = _max_continuous_free_days(tipo_contrato)
     days_to_sat = (5 - begin.weekday()) % 7
     saturday = begin + pd.Timedelta(days=days_to_sat)
     one_day = pd.Timedelta(days=1)
@@ -3531,6 +3565,12 @@ def _count_eligible_weekends_c2d(
         sunday = saturday + one_day
         if sunday > effective_end:
             break
+
+        tc_sat = _resolve_tipo_contrato_for_day(saturday, tipo_contrato, tipo_contrato_for_day)
+        if tc_sat == 6:
+            saturday += one_day * 7
+            continue
+        max_consec_free = _max_continuous_free_days(tc_sat)
 
         if _is_tipo_ciclo_week(saturday, tipo_ciclo_weeks):
             if (
@@ -3549,7 +3589,7 @@ def _count_eligible_weekends_c2d(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            saturday, weekly_rest, begin, effective_end, tipo_contrato
+            saturday, weekly_rest, begin, effective_end, tc_sat
         ) < 2:
             pass
         else:
@@ -3558,183 +3598,355 @@ def _count_eligible_weekends_c2d(
     return count
 
 
-def _merge_annual_dayoff_into_colaborador(
-    df_colaborador: pd.DataFrame,
-    df_sorted: pd.DataFrame,
-    field_codes: List[str],
+_ANNUAL_DAYOFF_FIELD_CODES = ['l_dom', 'c2d', 'l_sab', 'l_dom_or_sab']
+_ANNUAL_RULE_CODE_TO_COLUMN = {
+    'NUM_DAYS_OFF_SUNDAY_YEAR': 'l_dom',
+    'NUM_DAYS_OFF_WEEKEND_YEAR': 'c2d',
+    'NUM_DAYS_OFF_SAT_YEAR': 'l_sab',
+    'NUM_DAYS_OFF_SAT_OR_SUN_YEAR': 'l_dom_or_sab',
+}
+
+
+def _annual_dayoff_apply_ind_enabled(series: pd.Series) -> pd.Series:
+    """True when WFM apply_ind allows using annual day-off values for that period."""
+    if series is None or series.empty:
+        return pd.Series(dtype=bool)
+    normalized = series.astype(str).str.strip().str.upper()
+    return normalized.isin({'Y', 'YES', '1', 'TRUE', 'S', 'SIM'})
+
+
+def _annual_dayoff_apply_column(field: str) -> str:
+    return f'apply_{field}'
+
+
+def _normalize_annual_rule_field(code, field_codes: List[str]) -> Optional[str]:
+    if code is None or (isinstance(code, float) and pd.isna(code)):
+        return None
+    s = str(code).strip()
+    key = s.upper()
+    if key in _ANNUAL_RULE_CODE_TO_COLUMN:
+        return _ANNUAL_RULE_CODE_TO_COLUMN[key]
+    if s in field_codes:
+        return s
+    return None
+
+
+def _pivot_annual_variables_long_to_wide(
+    df_long: pd.DataFrame,
+    main_year: int,
 ) -> pd.DataFrame:
-    """
-    Merge annual day-off rule values into df_colaborador (long -> wide per row).
-
-    Tier 1a — period-aware: (employee_id, contract_id, begin_date, end_date) when both
-        sides carry contract-period dates (core_pro_emp_annual_variables.begin_date/end_date).
-    Tier 1b — contract-only: (employee_id, contract_id) for rows still unmatched after 1a,
-        only when exactly one annual row exists per (employee, contract, rule); skipped
-        when multiple period rows would make keep='first' ambiguous.
-    Tier 2 — employee_id-only fallback for rows still without a match.
-    """
-    df_rules = df_sorted[df_sorted['_internal_rule'].isin(field_codes)].copy()
-    if df_rules.empty:
-        return df_colaborador
-
-    df_out = df_colaborador.copy()
-    df_out['employee_id'] = df_out['employee_id'].astype(str)
-    df_out['contract_id'] = df_out['contract_id'].astype(str)
-
-    for field in field_codes:
-        if field not in df_out.columns:
-            df_out[field] = np.nan
-        else:
-            df_out[field] = np.nan
-
-    merge_keys: List[str] = ['employee_id', 'contract_id']
-    has_colab_period = (
-        'begin_date' in df_out.columns
-        and 'end_date' in df_out.columns
+    """Long SQL shape -> one row per (employee_id, begin_date, end_date) with apply_* per rule."""
+    field_codes = _ANNUAL_DAYOFF_FIELD_CODES
+    df = df_long.copy()
+    df['employee_id'] = df['employee_id'].astype(str)
+    df['year'] = pd.to_numeric(df.get('year'), errors='coerce')
+    df['value'] = pd.to_numeric(df.get('value'), errors='coerce')
+    df['_internal_rule'] = df['rule_field_code'].map(
+        lambda c: _normalize_annual_rule_field(c, field_codes)
     )
-    has_annual_period = (
-        'begin_date' in df_rules.columns
-        and 'end_date' in df_rules.columns
+    df = df[df['_internal_rule'].notna()].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    df['begin_date'] = pd.to_datetime(df['begin_date'], errors='coerce').dt.normalize()
+    df['end_date'] = pd.to_datetime(df['end_date'], errors='coerce').dt.normalize()
+    df = df[df['begin_date'].notna() & df['end_date'].notna()].copy()
+    if 'apply_ind' in df.columns:
+        df['_apply_enabled'] = _annual_dayoff_apply_ind_enabled(df['apply_ind'])
+    else:
+        df['_apply_enabled'] = True
+
+    df = pd.concat([
+        df[df['year'] == main_year],
+        df[df['year'] != main_year].sort_values('year', ascending=False),
+    ], ignore_index=True)
+    df = df.drop_duplicates(
+        subset=['employee_id', 'begin_date', 'end_date', '_internal_rule'],
+        keep='first',
     )
 
-    if has_colab_period:
-        df_out['_merge_begin'] = pd.to_datetime(df_out['begin_date'], errors='coerce').dt.normalize()
-        df_out['_merge_end'] = pd.to_datetime(df_out['end_date'], errors='coerce').dt.normalize()
-        merge_keys = merge_keys + ['_merge_begin', '_merge_end']
-
-    period_merge_cols = merge_keys.copy()
-    n_period_matched = 0
-
-    if has_colab_period and has_annual_period:
-        rules_period = df_rules.copy()
-        rules_period['_merge_begin'] = pd.to_datetime(
-            rules_period['begin_date'], errors='coerce'
-        ).dt.normalize()
-        rules_period['_merge_end'] = pd.to_datetime(
-            rules_period['end_date'], errors='coerce'
-        ).dt.normalize()
-        rules_period = rules_period[
-            rules_period['_merge_begin'].notna() & rules_period['_merge_end'].notna()
-        ]
-
-        if not rules_period.empty:
-            rules_period = rules_period.drop_duplicates(
-                subset=['employee_id', 'contract_id', '_merge_begin', '_merge_end', '_internal_rule'],
-                keep='first',
-            )
-            wide_period = (
-                rules_period.pivot_table(
-                    index=['employee_id', 'contract_id', '_merge_begin', '_merge_end'],
-                    columns='_internal_rule',
-                    values='value',
-                    aggfunc='first',
-                )
-                .reset_index()
-            )
-            wide_period.columns.name = None
-            ann_cols = [c for c in field_codes if c in wide_period.columns]
-            if ann_cols:
-                wide_subset = wide_period[period_merge_cols + ann_cols].rename(
-                    columns={f: f'_ann_{f}' for f in ann_cols}
-                )
-                merged = df_out.merge(wide_subset, on=period_merge_cols, how='left')
-                for field in ann_cols:
-                    ann_col = f'_ann_{field}'
-                    matched = merged[ann_col].notna()
-                    n_period_matched += int(matched.sum())
-                    if matched.any():
-                        df_out.loc[matched, field] = merged.loc[matched, ann_col].values
-
-    # Tier 1b: contract-only when unambiguous (single annual row per emp/contract/rule)
-    contract_merge_keys = ['employee_id', 'contract_id']
-    rule_counts = (
-        df_rules.groupby(['employee_id', 'contract_id', '_internal_rule'], observed=True)
-        .size()
+    idx_cols = ['employee_id', 'begin_date', 'end_date']
+    values_wide = (
+        df.pivot_table(index=idx_cols, columns='_internal_rule', values='value', aggfunc='first')
+        .reset_index()
     )
-    unambiguous_rules = rule_counts[rule_counts == 1].reset_index()[
-        ['employee_id', 'contract_id', '_internal_rule']
-    ]
-    if not unambiguous_rules.empty:
-        df_single = df_rules.merge(
-            unambiguous_rules,
-            on=['employee_id', 'contract_id', '_internal_rule'],
-            how='inner',
-        )
-        wide_contract = (
-            df_single.pivot_table(
-                index=contract_merge_keys,
-                columns='_internal_rule',
-                values='value',
-                aggfunc='first',
-            )
-            .reset_index()
-        )
-        wide_contract.columns.name = None
-        ann_cols = [c for c in field_codes if c in wide_contract.columns]
-        if ann_cols:
-            wide_subset = wide_contract[contract_merge_keys + ann_cols].rename(
-                columns={f: f'_ann_{f}' for f in ann_cols}
-            )
-            merged = df_out.merge(wide_subset, on=contract_merge_keys, how='left')
-            for field in ann_cols:
-                ann_col = f'_ann_{field}'
-                still_missing = df_out[field].isna()
-                matched = still_missing & merged[ann_col].notna()
-                if matched.any():
-                    df_out.loc[matched, field] = merged.loc[matched, ann_col].values
-                    logger.warning(
-                        f"apply_annual_dayoff_feasibility_cap: {field} — {matched.sum()} row(s) used "
-                        f"contract_id-only merge (no period match; single annual row for contract)"
-                    )
+    values_wide.columns.name = None
 
-    ambiguous = rule_counts[rule_counts > 1]
-    if not ambiguous.empty and has_colab_period and has_annual_period:
-        n_ambiguous = int(
-            ambiguous.reset_index().groupby(['employee_id', 'contract_id']).ngroups
-        )
-        if n_ambiguous:
-            logger.info(
-                f"apply_annual_dayoff_feasibility_cap: {n_ambiguous} employee/contract pair(s) "
-                f"have multiple annual period rows — contract-only fallback skipped for those"
-            )
-
-    if n_period_matched:
-        logger.info(
-            f"apply_annual_dayoff_feasibility_cap: period-aware merge applied to "
-            f"{n_period_matched} field slot(s) across contract-period rows"
-        )
-
-    # Tier 2: employee_id-only fallback
-    df_wide_emp = (
-        df_rules.drop_duplicates(subset=['employee_id', '_internal_rule'], keep='first')
-        .pivot_table(
-            index=['employee_id'],
-            columns='_internal_rule',
-            values='value',
-            aggfunc='first',
+    apply_wide = (
+        df.pivot_table(
+            index=idx_cols, columns='_internal_rule', values='_apply_enabled', aggfunc='first'
         )
         .reset_index()
     )
-    df_wide_emp.columns.name = None
-    emp_lookup = df_wide_emp.set_index('employee_id') if not df_wide_emp.empty else pd.DataFrame()
+    apply_wide.columns.name = None
+
+    result = values_wide.copy()
     for field in field_codes:
-        if field not in emp_lookup.columns:
+        if field not in result.columns:
+            result[field] = 0.0
+        else:
+            result[field] = pd.to_numeric(result[field], errors='coerce').fillna(0.0)
+
+        apply_col = _annual_dayoff_apply_column(field)
+        if field in apply_wide.columns:
+            apply_slice = apply_wide[idx_cols + [field]].rename(columns={field: apply_col})
+            result = result.merge(apply_slice, on=idx_cols, how='left')
+            result[apply_col] = result[apply_col].fillna(False).astype(bool)
+        else:
+            result[apply_col] = False
+
+    if 'year' in df.columns:
+        year_wide = df.groupby(idx_cols, observed=True)['year'].first().reset_index()
+        result = result.merge(year_wide, on=idx_cols, how='left')
+    return result
+
+
+def _ensure_annual_variables_for_employees(
+    df_wide: pd.DataFrame,
+    employee_ids: List[str],
+    main_year: int,
+) -> pd.DataFrame:
+    """Default missing employees to full-year zeros with all apply_* = False."""
+    field_codes = _ANNUAL_DAYOFF_FIELD_CODES
+    year_begin = pd.Timestamp(year=int(main_year), month=1, day=1)
+    year_end = pd.Timestamp(year=int(main_year), month=12, day=31)
+
+    if df_wide is None or df_wide.empty:
+        df_wide = pd.DataFrame(columns=['employee_id', 'begin_date', 'end_date'] + field_codes)
+
+    df_out = df_wide.copy()
+    if 'employee_id' in df_out.columns:
+        df_out['employee_id'] = df_out['employee_id'].astype(str)
+    else:
+        df_out['employee_id'] = pd.Series(dtype=str)
+
+    present = set(df_out['employee_id'].dropna().unique())
+    missing = [str(e) for e in employee_ids if str(e) not in present]
+    if not missing:
+        for field in field_codes:
+            apply_col = _annual_dayoff_apply_column(field)
+            if apply_col not in df_out.columns:
+                df_out[apply_col] = False
+        return df_out
+
+    default_rows = []
+    for emp_id in missing:
+        row = {
+            'employee_id': emp_id,
+            'begin_date': year_begin,
+            'end_date': year_end,
+            'year': main_year,
+        }
+        for field in field_codes:
+            row[field] = 0.0
+            row[_annual_dayoff_apply_column(field)] = False
+        default_rows.append(row)
+
+    df_defaults = pd.DataFrame(default_rows)
+    df_out = pd.concat([df_out, df_defaults], ignore_index=True)
+    logger.info(
+        f"apply_annual_dayoff_feasibility_cap: added default full-year row(s) for "
+        f"{len(missing)} employee(s) without annual variables"
+    )
+    return df_out
+
+
+def _build_tipo_contrato_resolver(
+    df_colaborador: pd.DataFrame,
+    employee_id: str,
+    default_tipo: int = 5,
+) -> Callable[[pd.Timestamp], int]:
+    """Return tipo_contrato for a calendar day from the active contract period."""
+    ranges: List[Tuple[pd.Timestamp, pd.Timestamp, int]] = []
+    if df_colaborador is None or df_colaborador.empty:
+        return lambda _day: default_tipo
+
+    sub = df_colaborador[df_colaborador['employee_id'].astype(str) == str(employee_id)]
+    if sub.empty or 'tipo_contrato' not in sub.columns:
+        return lambda _day: default_tipo
+
+    for _, row in sub.iterrows():
+        begin = pd.to_datetime(row.get('begin_date'), errors='coerce')
+        end = pd.to_datetime(row.get('end_date'), errors='coerce')
+        if pd.isna(begin) or pd.isna(end):
             continue
-        missing_mask = df_out[field].isna()
-        if not missing_mask.any():
-            continue
-        fallback_vals = emp_lookup[field].reindex(df_out.loc[missing_mask, 'employee_id']).values
-        has_fallback = ~pd.isna(fallback_vals)
-        if has_fallback.any():
-            target_idx = df_out.index[missing_mask][has_fallback]
-            df_out.loc[target_idx, field] = fallback_vals[has_fallback]
-            logger.warning(
-                f"apply_annual_dayoff_feasibility_cap: {field} — {has_fallback.sum()} row(s) used "
-                f"employee_id-only fallback (no period or contract match in df_annual_variables)"
+        begin = begin.normalize()
+        end = end.normalize()
+        try:
+            tc = int(row['tipo_contrato'])
+        except (TypeError, ValueError):
+            tc = default_tipo
+        ranges.append((begin, end, tc))
+
+    def resolver(day: pd.Timestamp) -> int:
+        d = pd.Timestamp(day).normalize()
+        for begin, end, tc in ranges:
+            if begin <= d <= end:
+                return tc
+        return default_tipo
+
+    return resolver
+
+
+def _employee_demissao_end(
+    df_colaborador: pd.DataFrame,
+    employee_id: str,
+) -> Optional[pd.Timestamp]:
+    if df_colaborador is None or df_colaborador.empty or 'data_demissao' not in df_colaborador.columns:
+        return None
+    sub = df_colaborador[df_colaborador['employee_id'].astype(str) == str(employee_id)]
+    if sub.empty:
+        return None
+    dem = pd.to_datetime(sub['data_demissao'], errors='coerce').dropna()
+    if dem.empty:
+        return None
+    return dem.min().normalize()
+
+
+def _intersect_period(
+    begin: pd.Timestamp,
+    end: pd.Timestamp,
+    clip_begin: Optional[pd.Timestamp],
+    clip_end: Optional[pd.Timestamp],
+) -> Tuple[Optional[pd.Timestamp], Optional[pd.Timestamp]]:
+    out_begin = begin
+    out_end = end
+    if clip_begin is not None and not pd.isna(clip_begin):
+        out_begin = max(out_begin, clip_begin.normalize())
+    if clip_end is not None and not pd.isna(clip_end):
+        out_end = min(out_end, clip_end.normalize())
+    if out_begin > out_end:
+        return None, None
+    return out_begin, out_end
+
+
+def _count_feasibility_cap_for_field(
+    field: str,
+    annual_begin: pd.Timestamp,
+    annual_end: pd.Timestamp,
+    effective_annual_end: pd.Timestamp,
+    exec_begin: Optional[pd.Timestamp],
+    exec_end: Optional[pd.Timestamp],
+    weekly_rest: frozenset,
+    adjacent_free: frozenset,
+    non_working: frozenset,
+    holiday_set: frozenset,
+    tipo_ciclo_weeks: frozenset,
+    tipo_contrato_resolver: Callable[[pd.Timestamp], int],
+    default_tipo: int,
+) -> Tuple[int, int]:
+    """
+    Returns (achievable_total, eligible_in_execution).
+
+    achievable_total = rest already fixed outside execution + assignable slots inside execution.
+    Used for partial runs without lowering stored VALUE until cap binds.
+    """
+    annual_begin = annual_begin.normalize()
+    effective_annual_end = effective_annual_end.normalize()
+
+    exec_b = exec_begin.normalize() if exec_begin is not None and not pd.isna(exec_begin) else None
+    exec_e = exec_end.normalize() if exec_end is not None and not pd.isna(exec_end) else None
+
+    in_exec_begin, in_exec_end = _intersect_period(
+        annual_begin, effective_annual_end, exec_b, exec_e
+    )
+    eligible_in_execution = 0
+    if in_exec_begin is not None and in_exec_end is not None:
+        adj_exec = _filter_days_to_period(adjacent_free, in_exec_begin, in_exec_end)
+        wr_exec = _filter_days_to_period(weekly_rest, in_exec_begin, in_exec_end)
+        nw_exec = _filter_days_to_period(non_working, in_exec_begin, in_exec_end)
+
+        if field == 'l_dom':
+            eligible_in_execution = _count_eligible_sundays(
+                in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+            )
+        elif field == 'l_sab':
+            eligible_in_execution = _count_eligible_saturdays(
+                in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+            )
+        elif field == 'l_dom_or_sab':
+            eligible_in_execution = (
+                _count_eligible_sundays(
+                    in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                    default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                )
+                + _count_eligible_saturdays(
+                    in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                    default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                )
+            )
+        elif field == 'c2d':
+            eligible_in_execution = _count_eligible_weekends_c2d(
+                in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                holiday_set, default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
             )
 
-    df_out = df_out.drop(columns=['_merge_begin', '_merge_end'], errors='ignore')
-    return df_out
+    satisfied_outside = 0
+    if exec_b is not None or exec_e is not None:
+        one_day = pd.Timedelta(days=1)
+        if exec_b is not None and annual_begin < exec_b:
+            before_end = min(effective_annual_end, exec_b - one_day)
+            if annual_begin <= before_end:
+                if field == 'l_dom':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, annual_begin, before_end, 6
+                    )
+                elif field == 'l_sab':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, annual_begin, before_end, 5
+                    )
+                elif field == 'l_dom_or_sab':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, annual_begin, before_end, 5
+                    )
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, annual_begin, before_end, 6
+                    )
+                elif field == 'c2d':
+                    sat_begin = annual_begin
+                    sat_end = before_end
+                    days_to_sat = (5 - sat_begin.weekday()) % 7
+                    saturday = sat_begin + pd.Timedelta(days=days_to_sat)
+                    while saturday <= sat_end:
+                        sunday = saturday + one_day
+                        if sunday <= sat_end and saturday in weekly_rest and sunday in weekly_rest:
+                            if saturday not in holiday_set and sunday not in holiday_set:
+                                satisfied_outside += 1
+                        saturday += one_day * 7
+        if exec_e is not None and exec_e < effective_annual_end:
+            after_begin = max(annual_begin, exec_e + one_day)
+            if after_begin <= effective_annual_end:
+                if field == 'l_dom':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 6
+                    )
+                elif field == 'l_sab':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 5
+                    )
+                elif field == 'l_dom_or_sab':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 5
+                    )
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 6
+                    )
+                elif field == 'c2d':
+                    sat_begin = after_begin
+                    sat_end = effective_annual_end
+                    days_to_sat = (5 - sat_begin.weekday()) % 7
+                    saturday = sat_begin + pd.Timedelta(days=days_to_sat)
+                    while saturday <= sat_end:
+                        sunday = saturday + one_day
+                        if sunday <= sat_end and saturday in weekly_rest and sunday in weekly_rest:
+                            if saturday not in holiday_set and sunday not in holiday_set:
+                                satisfied_outside += 1
+                        saturday += one_day * 7
+
+    achievable_total = satisfied_outside + eligible_in_execution
+    return achievable_total, eligible_in_execution
 
 
 def apply_annual_dayoff_feasibility_cap(
@@ -3745,81 +3957,20 @@ def apply_annual_dayoff_feasibility_cap(
     num_dias_cons: int,
     main_year: int,
     df_calendario: Optional[pd.DataFrame] = None,
+    execution_begin: Optional[str] = None,
+    execution_end: Optional[str] = None,
 ) -> Tuple[bool, pd.DataFrame, List[dict], str]:
     """
-    Override annual day-off entitlements in df_colaborador with pre-calculated values from
-    wfm.core_pro_emp_annual_variables, and apply a feasibility cap when the entitlement
-    exceeds the eligible domain-specific day count.
+    Build wide df_annual_variables from WFM long data and apply feasibility caps per
+    annual rule period. df_colaborador is used only for contract lookup (tipo_contrato
+    per day, demissao) — annual quotas are not written onto contract rows.
 
-    Replaces the legacy computed entitlements (add_l_dom_to_df_colaborador, set_c2d_to_df_colaborador,
-    etc.) for `l_dom`, `c2d`, `l_sab`, `l_dom_or_sab` rule fields.
-
-    Business Rules:
-        1. For each (employee_id, contract_id, year) combination read the pre-calculated
-           `value` for each `rule_field_code` from df_annual_variables.
-        2. Merge values into df_colaborador using a three-tier join (see
-           _merge_annual_dayoff_into_colaborador):
-               Tier 1a (period)  — (employee_id, contract_id, begin_date, end_date) when
-                                   annual variables carry contract-period dates.
-               Tier 1b (contract)— (employee_id, contract_id) only when Tier 1a missed and
-                                   exactly one annual row exists for that rule (ambiguous
-                                   multi-period contracts are not deduped with keep='first').
-               Tier 2 (employee) — employee_id-only fallback when no contract match exists.
-           Year preference: main_year first, then nearest year (descending).
-        3. Feasibility cap — per rule type the eligible pool counts slots that remain
-           assignable after fixed cycle rest on df_calendario, public holidays, absences,
-           and the same consecutive-free-day / max-working-day rules enforced by the solver:
-               l_dom:        Sundays in [begin_date, effective_end]
-               l_sab:        Saturdays in [begin_date, effective_end]
-               l_dom_or_sab: Saturdays + Sundays in [begin_date, effective_end]
-               c2d:          Complete Sat+Sun weekend pairs on working days in df_calendario;
-                             skipped only for tipo_contrato 6.
-           Ciclo completo weeks (df_calendario.tipo_ciclo=True): the schedule is fixed and
-           counts toward the cap from existing weekly rest (L, L_DOM, LQ, C — not F):
-               l_dom / l_sab / l_dom_or_sab: rest on that weekend day → eligible; working → not.
-               c2d: both Sat and Sun at weekly rest (neither a public holiday) → eligible.
-           Non-ciclo weeks: Sundays/Saturdays in the contract period are L_DOM/L_SAB
-           assignment slots (aligned with free_days_special_days). Seed horario (MoT)
-           must not be treated as fixed work for Rule 4. Fixed weekly rest (L/LQ/L_DOM/C)
-           consumes the salsa_2_free_days_week quota per ISO week; when the quota is
-           full, no additional weekend day-off can be assigned. Pre-fixed non-working
-           days and adjacent_free_days Rule 1+2 (holidays + absences) may also exclude
-           a slot. c2d requires two remaining weekly free-day slots in the ISO week.
-           Eligibility reads the full df_calendario horario field (L, LQ, -, MoT, F, …)
-           aggregated per schedule_day, mirroring read_salsa variable creation.
-           Only days within [begin_date, effective_end] are evaluated (partial weeks at
-           contract boundaries do not pull in Sat/Sun outside the period).
-           effective_end = min(end_date, data_demissao) when data_demissao is present and
-           falls before end_date; otherwise effective_end = end_date.
-           If value > eligible_count: cap to eligible_count and log a WARNING to
-           wfm.esc_processo_erros via log_process_event().
-
-    Args:
-        df_colaborador: Contract-period DataFrame (one row per employee/contract period).
-            Must contain: employee_id, contract_id, begin_date, end_date.
-            Optional but consumed when present: data_demissao, tipo_contrato.
-        df_annual_variables: Annual variables DataFrame from queryGetCoreProEmpAnnualVariables.sql.
-            Columns: employee_id, contract_id, year, rule_field_code, value; begin_date and
-            end_date are used for period-aware matching when present.
-            (rule_field_code uses WFM codes such as NUM_DAYS_OFF_SUNDAY_YEAR, mapped internally
-            to l_dom, c2d, l_sab, l_dom_or_sab).
-        df_feriados: Holiday calendar DataFrame (post-treatment). Must contain schedule_day
-            as datetime. Used for c2d Rule 3 and as preallocated free days.
-        df_ausencias_ferias: Employee absences — merged into preallocated free days.
-        df_calendario: Calendar at func_inicializa time with full horario column populated
-            (cycles, passado, holidays, availability). Required for accurate feasibility.
-        num_dias_cons: Maximum consecutive working days allowed (from df_params['NUM_DIAS_CONS']).
-            Mirrors the solver's maximum_continuous_working_days constraint (Rule 4).
-        main_year: The primary scheduling year (used to select the correct annual record).
-
-    Returns:
-        Tuple[bool, pd.DataFrame, List[dict], str]:
-            success, updated_colaborador, cap_events, error_message.
-            cap_events is a list of dicts — one per applied cap — with keys:
-            employee_id, field, original_value, cap_value, period_begin, period_end.
+    Partial executions: stored VALUE is not reduced by fixed rest before the run; cap
+    uses fixed rest outside the execution window plus assignable slots inside it.
     """
     try:
-        FIELD_CODES = ['l_dom', 'c2d', 'l_sab', 'l_dom_or_sab']
+        field_codes = _ANNUAL_DAYOFF_FIELD_CODES
+        column_to_rule_code = {v: k for k, v in _ANNUAL_RULE_CODE_TO_COLUMN.items()}
         cap_events: List[dict] = []
         _empty_calendar_state = {
             'weekly_rest': frozenset(),
@@ -3828,89 +3979,61 @@ def apply_annual_dayoff_feasibility_cap(
             'non_working': frozenset(),
         }
 
-        # WFM core_pro_emp_annual_variables.rule_field_code -> df_colaborador column
-        RULE_CODE_TO_COLUMN = {
-            'NUM_DAYS_OFF_SUNDAY_YEAR': 'l_dom',
-            'NUM_DAYS_OFF_WEEKEND_YEAR': 'c2d',
-            'NUM_DAYS_OFF_SAT_YEAR': 'l_sab',
-            'NUM_DAYS_OFF_SAT_OR_SUN_YEAR': 'l_dom_or_sab',
-        }
+        employee_ids: List[str] = []
+        if df_colaborador is not None and not df_colaborador.empty and 'employee_id' in df_colaborador.columns:
+            employee_ids = sorted(df_colaborador['employee_id'].astype(str).unique().tolist())
 
-        df_result = df_colaborador.copy()
-
-        # Ensure all rule-sourced entitlement columns exist before merge/cap.
-        # Missing columns (no annual-variable row) default to 0.
-        for field in FIELD_CODES:
-            if field not in df_result.columns:
-                df_result[field] = 0
-            else:
-                df_result[field] = pd.to_numeric(df_result[field], errors='coerce').fillna(0)
-
-        if df_annual_variables is None or df_annual_variables.empty:
-            logger.warning("apply_annual_dayoff_feasibility_cap: df_annual_variables is empty; skipping override")
-            return True, df_result, cap_events, ""
-
-        required_cols = ['employee_id', 'contract_id', 'year', 'rule_field_code', 'value']
-        missing = [c for c in required_cols if c not in df_annual_variables.columns]
-        if missing:
-            logger.warning(f"apply_annual_dayoff_feasibility_cap: df_annual_variables missing columns {missing}; skipping")
-            return True, df_result, cap_events, ""
-
-        df_vars = df_annual_variables.copy()
-        df_vars['employee_id'] = df_vars['employee_id'].astype(str)
-        df_vars['contract_id'] = df_vars['contract_id'].astype(str)
-        df_vars['year'] = pd.to_numeric(df_vars['year'], errors='coerce')
-        df_vars['value'] = pd.to_numeric(df_vars['value'], errors='coerce')
-
-        def _normalize_annual_rule_field(code) -> Optional[str]:
-            if code is None or (isinstance(code, float) and pd.isna(code)):
-                return None
-            s = str(code).strip()
-            key = s.upper()
-            if key in RULE_CODE_TO_COLUMN:
-                return RULE_CODE_TO_COLUMN[key]
-            if s in FIELD_CODES:
-                return s
-            return None
-
-        df_vars['_internal_rule'] = df_vars['rule_field_code'].map(_normalize_annual_rule_field)
-        n_bad = df_vars['_internal_rule'].isna().sum()
-        if n_bad:
-            logger.warning(
-                f"apply_annual_dayoff_feasibility_cap: dropping {n_bad} row(s) with unknown rule_field_code"
-            )
-        df_vars = df_vars[df_vars['_internal_rule'].notna()]
-
-        # Prefer main_year; fall back to closest year (descending)
-        df_sorted = pd.concat([
-            df_vars[df_vars['year'] == main_year],
-            df_vars[df_vars['year'] != main_year].sort_values('year', ascending=False),
-        ], ignore_index=True)
-
-        df_result = _merge_annual_dayoff_into_colaborador(
-            df_colaborador=df_result,
-            df_sorted=df_sorted,
-            field_codes=FIELD_CODES,
+        exec_begin = (
+            pd.to_datetime(execution_begin, errors='coerce').normalize()
+            if execution_begin
+            else None
         )
+        exec_end = (
+            pd.to_datetime(execution_end, errors='coerce').normalize()
+            if execution_end
+            else None
+        )
+        if exec_begin is not None and pd.isna(exec_begin):
+            exec_begin = None
+        if exec_end is not None and pd.isna(exec_end):
+            exec_end = None
 
-        # Rows with no annual-variable match default to 0.
-        for field in FIELD_CODES:
-            df_result[field] = pd.to_numeric(df_result[field], errors='coerce').fillna(0)
+        df_annual = pd.DataFrame()
+        if df_annual_variables is not None and not df_annual_variables.empty:
+            if 'rule_field_code' in df_annual_variables.columns:
+                required_long = ['employee_id', 'year', 'rule_field_code', 'value', 'begin_date', 'end_date']
+                missing = [c for c in required_long if c not in df_annual_variables.columns]
+                if missing:
+                    logger.warning(
+                        f"apply_annual_dayoff_feasibility_cap: df_annual_variables missing {missing}; "
+                        "using defaults"
+                    )
+                else:
+                    df_annual = _pivot_annual_variables_long_to_wide(df_annual_variables, main_year)
+            elif 'begin_date' in df_annual_variables.columns and 'end_date' in df_annual_variables.columns:
+                df_annual = df_annual_variables.copy()
+                df_annual['employee_id'] = df_annual['employee_id'].astype(str)
+                for field in field_codes:
+                    apply_col = _annual_dayoff_apply_column(field)
+                    if apply_col not in df_annual.columns:
+                        df_annual[apply_col] = False
+                    if field not in df_annual.columns:
+                        df_annual[field] = 0.0
+            else:
+                logger.warning(
+                    "apply_annual_dayoff_feasibility_cap: unrecognized df_annual_variables shape; "
+                    "using defaults"
+                )
 
-        # FEASIBILITY CAP — cap each rule field against the actual eligible day count
-        # within the contract period, not against total calendar days.
-        if 'begin_date' not in df_result.columns or 'end_date' not in df_result.columns:
-            logger.warning("apply_annual_dayoff_feasibility_cap: begin_date/end_date missing; skipping feasibility cap")
-            logger.info(f"apply_annual_dayoff_feasibility_cap: completed for {len(df_result)} contract-period rows")
-            return True, df_result, cap_events, ""
+        df_annual = _ensure_annual_variables_for_employees(df_annual, employee_ids, main_year)
 
-        df_result['begin_date'] = pd.to_datetime(df_result['begin_date'], errors='coerce')
-        df_result['end_date'] = pd.to_datetime(df_result['end_date'], errors='coerce')
+        if 'begin_date' not in df_annual.columns or 'end_date' not in df_annual.columns:
+            logger.warning("apply_annual_dayoff_feasibility_cap: annual periods missing; skipping cap")
+            return True, df_annual, cap_events, ""
 
-        has_demissao = 'data_demissao' in df_result.columns
-        has_tipo_contrato = 'tipo_contrato' in df_result.columns
+        df_annual['begin_date'] = pd.to_datetime(df_annual['begin_date'], errors='coerce')
+        df_annual['end_date'] = pd.to_datetime(df_annual['end_date'], errors='coerce')
 
-        # Build global holiday set (normalised to date-only Timestamps)
         holiday_set: frozenset = frozenset()
         if df_feriados is not None and not df_feriados.empty and 'schedule_day' in df_feriados.columns:
             holiday_set = frozenset(pd.to_datetime(df_feriados['schedule_day']).dt.normalize())
@@ -3922,18 +4045,7 @@ def apply_annual_dayoff_feasibility_cap(
                 "apply_annual_dayoff_feasibility_cap: df_calendario missing/empty; "
                 "horario-based feasibility checks will be skipped"
             )
-        elif not calendar_state_by_employee:
-            logger.info(
-                "apply_annual_dayoff_feasibility_cap: no calendar day state derived from df_calendario"
-            )
-        elif tipo_ciclo_weeks_by_employee:
-            n_weeks = sum(len(w) for w in tipo_ciclo_weeks_by_employee.values())
-            logger.info(
-                f"apply_annual_dayoff_feasibility_cap: {len(tipo_ciclo_weeks_by_employee)} employee(s), "
-                f"{n_weeks} ciclo-completo ISO week(s) for fixed-schedule eligibility"
-            )
 
-        # Build per-employee absence set from df_ausencias_ferias
         ausencias_by_employee: dict = {}
         if df_ausencias_ferias is not None and not df_ausencias_ferias.empty:
             emp_col = 'employee_id' if 'employee_id' in df_ausencias_ferias.columns else 'fk_colaborador'
@@ -3943,96 +4055,91 @@ def apply_annual_dayoff_feasibility_cap(
                         pd.to_datetime(grp['data']).dt.normalize()
                     )
 
-        for idx, row in df_result.iterrows():
+        for idx, row in df_annual.iterrows():
             begin = row['begin_date']
             end = row['end_date']
             if pd.isna(begin) or pd.isna(end):
                 continue
 
-            # Effective upper boundary: respect data_demissao when it falls before end_date
-            if has_demissao and pd.notna(row['data_demissao']):
-                demissao = pd.Timestamp(row['data_demissao'])
-                effective_end = min(end, demissao)
-            else:
-                effective_end = end
-
             emp_id = str(row.get('employee_id', ''))
-            emp_ausencias = ausencias_by_employee.get(emp_id, frozenset())
+            demissao_end = _employee_demissao_end(df_colaborador, emp_id)
+            effective_annual_end = end
+            if demissao_end is not None:
+                effective_annual_end = min(end, demissao_end)
+
             cal_state = calendar_state_by_employee.get(emp_id, _empty_calendar_state)
             tipo_ciclo_weeks = tipo_ciclo_weeks_by_employee.get(emp_id, frozenset())
+            tipo_resolver = _build_tipo_contrato_resolver(df_colaborador, emp_id)
 
-            weekly_rest = _filter_days_to_period(cal_state['weekly_rest'], begin, effective_end)
-            non_working = _filter_days_to_period(cal_state['non_working'], begin, effective_end)
-            adjacent_free = _filter_days_to_period(
-                holiday_set | emp_ausencias, begin, effective_end
+            annual_begin = begin.normalize()
+            annual_end = effective_annual_end.normalize()
+            weekly_rest_annual = _filter_days_to_period(
+                cal_state['weekly_rest'], annual_begin, annual_end
+            )
+            non_working_annual = _filter_days_to_period(
+                cal_state['non_working'], annual_begin, annual_end
+            )
+            emp_ausencias = ausencias_by_employee.get(emp_id, frozenset())
+            adjacent_annual = _filter_days_to_period(
+                holiday_set | emp_ausencias, annual_begin, annual_end
             )
 
-            # Resolve tipo_contrato for the consecutive free-day threshold
-            tipo_contrato_val = int(row.get('tipo_contrato', 5)) if has_tipo_contrato else 5
+            cap_exec_begin = exec_begin if exec_begin is not None else annual_begin
+            cap_exec_end = exec_end if exec_end is not None else annual_end
 
-            for field in FIELD_CODES:
-                if field not in df_result.columns:
-                    continue
-                value = pd.to_numeric(df_result.at[idx, field], errors='coerce')
-                if pd.isna(value):
-                    continue
-
-                if field == 'l_dom':
-                    eligible = _count_eligible_sundays(
-                        begin, effective_end, weekly_rest, adjacent_free, non_working,
-                        tipo_contrato_val, tipo_ciclo_weeks,
-                    )
-                elif field == 'l_sab':
-                    eligible = _count_eligible_saturdays(
-                        begin, effective_end, weekly_rest, adjacent_free, non_working,
-                        tipo_contrato_val, tipo_ciclo_weeks,
-                    )
-                elif field == 'l_dom_or_sab':
-                    eligible = (
-                        _count_eligible_sundays(
-                            begin, effective_end, weekly_rest, adjacent_free, non_working,
-                            tipo_contrato_val, tipo_ciclo_weeks,
-                        )
-                        + _count_eligible_saturdays(
-                            begin, effective_end, weekly_rest, adjacent_free, non_working,
-                            tipo_contrato_val, tipo_ciclo_weeks,
-                        )
-                    )
-                elif field == 'c2d':
-                    if has_tipo_contrato and int(row.get('tipo_contrato', 0)) == 6:
-                        continue
-                    eligible = _count_eligible_weekends_c2d(
-                        begin, effective_end, weekly_rest, adjacent_free, non_working,
-                        holiday_set, tipo_contrato_val, tipo_ciclo_weeks,
-                    )
-                else:
+            for field in field_codes:
+                apply_col = _annual_dayoff_apply_column(field)
+                apply_enabled = bool(row.get(apply_col, False)) if apply_col in df_annual.columns else False
+                if not apply_enabled:
+                    df_annual.at[idx, field] = 0.0
                     continue
 
-                if value > eligible:
+                value = pd.to_numeric(row.get(field), errors='coerce')
+                if pd.isna(value) or value <= 0:
+                    continue
+
+                achievable, eligible_in_exec = _count_feasibility_cap_for_field(
+                    field=field,
+                    annual_begin=annual_begin,
+                    annual_end=annual_end,
+                    effective_annual_end=annual_end,
+                    exec_begin=cap_exec_begin,
+                    exec_end=cap_exec_end,
+                    weekly_rest=weekly_rest_annual,
+                    adjacent_free=adjacent_annual,
+                    non_working=non_working_annual,
+                    holiday_set=holiday_set,
+                    tipo_ciclo_weeks=tipo_ciclo_weeks,
+                    tipo_contrato_resolver=tipo_resolver,
+                    default_tipo=5,
+                )
+
+                if value > achievable:
                     logger.info(
                         f"apply_annual_dayoff_feasibility_cap: capping employee={emp_id} "
-                        f"field={field} {int(value)}->{eligible} "
-                        f"(weekly_rest={len(weekly_rest)}, non_working={len(non_working)})"
+                        f"field={field} {value}->{achievable} "
+                        f"(outside_fixed+exec_eligible={achievable}, exec_eligible={eligible_in_exec})"
                     )
-                    df_result.at[idx, field] = eligible
+                    df_annual.at[idx, field] = float(achievable)
                     cap_events.append({
                         'employee_id': emp_id,
                         'field': field,
-                        'original_value': int(value),
-                        'cap_value': eligible,
-                        'period_begin': begin.date(),
-                        'period_end': effective_end.date(),
+                        'rule_field_code': column_to_rule_code.get(field, field),
+                        'original_value': float(value),
+                        'cap_value': achievable,
+                        'period_begin': annual_begin.date(),
+                        'period_end': annual_end.date(),
                     })
 
         logger.info(
-            f"apply_annual_dayoff_feasibility_cap: completed for {len(df_result)} contract-period rows"
+            f"apply_annual_dayoff_feasibility_cap: completed for {len(df_annual)} annual period row(s)"
             f" ({len(cap_events)} cap(s) applied)"
         )
-        return True, df_result, cap_events, ""
+        return True, df_annual, cap_events, ""
 
     except Exception as e:
         logger.error(f"Error in apply_annual_dayoff_feasibility_cap: {str(e)}", exc_info=True)
-        return False, df_colaborador, [], str(e)
+        return False, pd.DataFrame(), [], str(e)
 
 
 def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
