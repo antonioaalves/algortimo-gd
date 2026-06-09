@@ -135,7 +135,9 @@ from src.data_models.functions.data_treatment_functions import (
     add_calendario_passado,
     add_folgas_ciclos,
     add_days_off,
+    restrict_turnos_by_disponibilidade,
 )
+from src.data_models.functions.helper_functions import convert_ciclos_to_horario
 
 
 # =============================================================================
@@ -427,6 +429,95 @@ class TestAddCiclosCompletos:
         # Note: The function should convert A -> A- when '-' is applied
         assert 'A-' in jan2['horario'].values or 'A' in jan2['horario'].values, \
             "Absence should be converted to A- or preserved as A"
+
+    def test_splits_nlm_nlt_per_tipo_turno(self, base_df_calendario):
+        """NLM/NLT from cycles should split across M/T rows like M/T codes."""
+        df_ciclos = pd.DataFrame({
+            'employee_id': ['101', '101', '101'],
+            'schedule_day': ['2025-01-02', '2025-01-03', '2025-01-04'],
+            'horario': ['NLM', 'NLT', 'NL'],
+        })
+
+        success, df, _ = add_ciclos_completos(base_df_calendario, df_ciclos)
+
+        assert success
+        nlm_day = df[(df['employee_id'] == '101') & (df['schedule_day'] == '2025-01-02')]
+        nlt_day = df[(df['employee_id'] == '101') & (df['schedule_day'] == '2025-01-03')]
+        nl_day = df[(df['employee_id'] == '101') & (df['schedule_day'] == '2025-01-04')]
+
+        assert set(nlm_day['horario']) == {'NLM', '0'}
+        assert set(nlt_day['horario']) == {'NLT', '0'}
+        assert set(nl_day['horario']) == {'NL'}
+
+
+# =============================================================================
+# TEST: convert_ciclos_to_horario (NLM/NLT)
+# =============================================================================
+
+class TestConvertCiclosToHorario:
+    def test_tipo_dia_n_maps_to_nlm_nlt_or_nl(self):
+        df = pd.DataFrame({
+            'tipo_dia': ['N', 'N', 'N'],
+            'dia_semana': [3, 3, 3],
+            'work_shift': ['M', 'T', 'A'],
+        })
+
+        result = convert_ciclos_to_horario(df, l_dom_days=[])
+
+        assert list(result['horario']) == ['NLM', 'NLT', 'NL']
+
+
+# =============================================================================
+# TEST: restrict_turnos_by_disponibilidade (NLM/NLT)
+# =============================================================================
+
+class TestRestrictTurnosByDisponibilidade:
+    def _calendario_with_forced_work(self, horario_m: str, horario_t: str) -> pd.DataFrame:
+        return pd.DataFrame({
+            'employee_id': ['101', '101'],
+            'schedule_day': ['2025-01-02', '2025-01-02'],
+            'tipo_turno': ['M', 'T'],
+            'horario': [horario_m, horario_t],
+        })
+
+    def test_forced_work_nl_gets_nlm_on_morning_restriction(self):
+        df_cal = self._calendario_with_forced_work('NL', 'NL')
+        df_disp = pd.DataFrame({
+            'employee_id': ['101'],
+            'schedule_day': ['2025-01-02'],
+            'restricao_turno': ['M'],
+        })
+
+        success, df, _ = restrict_turnos_by_disponibilidade(df_cal, df_disp)
+
+        assert success
+        assert set(df['horario']) == {'NLM', '0'}
+
+    def test_forced_work_nlm_gets_nlt_on_afternoon_restriction(self):
+        df_cal = self._calendario_with_forced_work('NLM', '0')
+        df_disp = pd.DataFrame({
+            'employee_id': ['101'],
+            'schedule_day': ['2025-01-02'],
+            'restricao_turno': ['T'],
+        })
+
+        success, df, _ = restrict_turnos_by_disponibilidade(df_cal, df_disp)
+
+        assert success
+        assert set(df['horario']) == {'0', 'NLT'}
+
+    def test_regular_work_day_still_uses_m_t(self):
+        df_cal = self._calendario_with_forced_work('MoT', 'MoT')
+        df_disp = pd.DataFrame({
+            'employee_id': ['101'],
+            'schedule_day': ['2025-01-02'],
+            'restricao_turno': ['M'],
+        })
+
+        success, df, _ = restrict_turnos_by_disponibilidade(df_cal, df_disp)
+
+        assert success
+        assert set(df['horario']) == {'M', '0'}
 
 
 # =============================================================================
