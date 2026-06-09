@@ -630,13 +630,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
-            shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL')]['index'].tolist()
-            shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL')]['index'].tolist()
-            forced_work_days[w] = worker_calendar[(worker_calendar['horario'] == 'NL')]['index'].tolist()
+            shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL') | (worker_calendar['horario'] == 'NLM')]['index'].tolist()
+            shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL') | (worker_calendar['horario'] == 'NLT')]['index'].tolist()
+            forced_work_days[w] = worker_calendar[(worker_calendar['horario'] == 'NL') | (worker_calendar['horario'] == 'NLT') | (worker_calendar['horario'] == 'NLM')]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
-            worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
-            worker_row = worker_data.iloc[0]
 
         for w in week_template_temp:
             week_template[w] = {}

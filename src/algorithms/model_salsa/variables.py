@@ -82,8 +82,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         fixed_days_set = fixed_days_off[w] - vacation - fixed_LQs_set
         absence_set = absences[w] - fixed_days_set - fixed_LQs_set - vacation - empty_set
         forced_set = set(forced_work_days[w])
-        shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set - forced_set
-        shift_T_set = set(shift_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set - forced_set
+        shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set
+        shift_T_set = set(shift_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set
         fixed_LD_set = set(fixed_compensation_days[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set
         complete_set = set(complete_cycle_days[w])
 
@@ -130,8 +130,11 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                             break
                     continue
                 if d in forced_set:
-                    shift[(w, d, 'M')] = model.NewBoolVar(f"{w}_Day{d}_M")
-                    shift[(w, d, 'T')] = model.NewBoolVar(f"{w}_Day{d}_T")
+                    if d in shift_M_set:
+                        shift[(w, d, 'M')] = model.NewBoolVar(f"{w}_Day{d}_M")
+                    if d in shift_T_set:
+                        shift[(w, d, 'T')] = model.NewBoolVar(f"{w}_Day{d}_T")
+                    #logger.info(f"{w} has forced work day {d} with shift {True if d in shift_M_set else False} M and  {True if d in shift_T_set else False} M")
                     continue
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
