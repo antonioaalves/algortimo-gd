@@ -255,7 +255,7 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
                          f"{work_days_per_week[week - 1]} days but have received {actual_days_off} "
                          f"days off: {days_set.intersection(fixed_days_off.union(fixed_LQs))}. Process will be Infeasible!")
 
-def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_days_salsa):
+def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_days_salsa, empty_days):
     dynamic_empty = set()
     for week, days in week_to_days_salsa.items():
         if len(days) <= 6:
@@ -268,7 +268,10 @@ def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_day
         if nbr_absences == nbr_vacations == 0:
             continue
 
-        empty_days = 5 - contract_type
+        empty_in_week = days_set.intersection(empty_days)
+        empty_days = 5 - contract_type - len(empty_in_week)
+        if empty_days <= 0:
+            continue
         if nbr_absences >= empty_days:
             days = set(sorted(absences_in_week)[:empty_days])
             worker_absences -= days
@@ -306,11 +309,11 @@ def first_not_A_value(week_template):
             return week
     return -1
 
-def joining_template_with_contract_per_week(work_days_per_week, week_template, min_work_days, max_work_days, worker):
+def joining_template_with_contract_per_week(work_days_per_week, week_template, min_work_days, max_work_days, worker, contract_type):
     for week in range(len(work_days_per_week)):
         if week_template[week + 1] != 'A':
-            if week_template[week + 1] != min_work_days and week_template[week + 1] != max_work_days:
-                logger.error(f"CARGA SEMANAL: Value of {week_template[week + 1]} in week {week} is incompatible with contract type, for {worker}")
+            if int(week_template[week + 1]) < min_work_days or int(week_template[week + 1]) > max_work_days:
+                logger.error(f"CARGA SEMANAL: Value of {week_template[week + 1]} in week {week} is incompatible with contract type {contract_type}, for {worker}")
             else:
                 work_days_per_week[week] = int(week_template[week + 1])
     return work_days_per_week

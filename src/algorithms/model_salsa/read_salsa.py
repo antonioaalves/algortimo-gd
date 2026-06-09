@@ -702,7 +702,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
             else:
                 work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
-            work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w)
+            work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w, contract_type[w])
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
 
@@ -713,7 +713,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
         for w in workers:
             if contract_type[w] <= 4:
-                worker_absences[w], vacation_days[w], dynamic_empty[w] = absences_to_empty(worker_absences[w], vacation_days[w], contract_type[w], week_to_days_salsa)
+                worker_absences[w], vacation_days[w], dynamic_empty[w] = absences_to_empty(worker_absences[w], vacation_days[w], contract_type[w], week_to_days_salsa, empty_days[w])
                 empty_days[w], dynamic_empty[w] = fixed_to_dynamic(empty_days[w], dynamic_empty[w], data_admissao[w], data_demissao[w])
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
