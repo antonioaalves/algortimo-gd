@@ -3031,7 +3031,7 @@ def add_shift_info_from_ciclos(
         tipo_turno = df_result['tipo_turno']
 
         # Preserve rows already set by earlier steps (F, V, L*, etc.) — only update '0' / empty
-        prefilled_mask = df_result['horario'].isin(['F', 'V', 'L', 'LD', 'LQ', 'L_DOM', 'NL', 'A', 'P'])
+        prefilled_mask = df_result['horario'].isin(['F', 'V', 'L', 'LD', 'LQ', 'L_DOM', 'NL', 'NLM', 'NLT', 'A', 'P'])
 
         conditions = [
             has_shift & (work_shift_upper.isin(['A', ''])) & ~prefilled_mask,
@@ -3170,7 +3170,8 @@ _CALENDAR_WEEKLY_REST_HORARIOS = frozenset({'L', 'L_DOM', 'LQ', 'C'})
 _CALENDAR_CONSECUTIVE_REST_HORARIOS = frozenset({
     'L', 'L_DOM', 'LQ', 'C', 'LD', 'F', 'A', 'AP', 'V', 'A-', 'V-',
 })
-_CALENDAR_WORKING_HORARIOS = frozenset({'M', 'T', 'MoT', 'NL', 'P'})
+_CALENDAR_WORKING_HORARIOS = frozenset({'M', 'T', 'MoT', 'NL', 'NLM', 'NLT', 'P'})
+_CALENDAR_FORCED_WORK_HORARIOS = frozenset({'NL', 'NLM', 'NLT'})
 _CALENDAR_FORCE_NON_WORK_HORARIOS = frozenset({'-', '0', 'A-', 'V-'})
 
 
@@ -4789,10 +4790,10 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             if l_mask.any():
                 df_result.loc[l_mask, 'horario'] = 'L'
 
-            # M/T/MoT: assign per tipo_turno row (same rules as add_shift_info_from_ciclos)
+            # M/T/MoT/NLM/NLT: assign per tipo_turno row (same rules as add_shift_info_from_ciclos)
             shift_code_mask = (
                 valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask
-                & mapped_values.isin(['M', 'T', 'MoT'])
+                & mapped_values.isin(['M', 'T', 'MoT', 'NLM', 'NLT'])
             )
             if shift_code_mask.any():
                 mot_rows = shift_code_mask & (mapped_values == 'MoT')
@@ -4809,11 +4810,21 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
                     df_result.loc[t_rows & (df_result['tipo_turno'] == 'T'), 'horario'] = 'T'
                     df_result.loc[t_rows & (df_result['tipo_turno'] == 'M'), 'horario'] = '0'
 
+                nlm_rows = shift_code_mask & (mapped_values == 'NLM')
+                if nlm_rows.any():
+                    df_result.loc[nlm_rows & (df_result['tipo_turno'] == 'M'), 'horario'] = 'NLM'
+                    df_result.loc[nlm_rows & (df_result['tipo_turno'] == 'T'), 'horario'] = '0'
+
+                nlt_rows = shift_code_mask & (mapped_values == 'NLT')
+                if nlt_rows.any():
+                    df_result.loc[nlt_rows & (df_result['tipo_turno'] == 'T'), 'horario'] = 'NLT'
+                    df_result.loc[nlt_rows & (df_result['tipo_turno'] == 'M'), 'horario'] = '0'
+
             # Other codes (P, NL, LD, …): same value on both tipo_turno rows
             other_mask = (
                 valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask
                 & (mapped_values != '-') & (mapped_values != 'L')
-                & ~mapped_values.isin(['M', 'T', 'MoT'])
+                & ~mapped_values.isin(['M', 'T', 'MoT', 'NLM', 'NLT'])
             )
             if other_mask.any():
                 df_result.loc[other_mask, 'horario'] = mapped_values[other_mask]
@@ -4830,8 +4841,13 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             
             # Count A/V values that were preserved (not overridden by regular shift codes, but may have been overridden by L or -)
             preserved_av_from_shifts = (preserve_av_mask & valid_ciclos_mask & (mapped_values != '-') & (mapped_values != 'L')).sum()
-            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos ({dash_mask.sum()} -, {l_mask.sum()} L, {shift_code_mask.sum()} M/T/MoT, {other_mask.sum()} other) (preserved {preserve_f_mask.sum()} F values, {preserved_av_from_shifts} A/V from shift codes)")
-            logger.info(f"add_ciclos_completos: NL values from ciclos lookup: {nl_values_from_ciclos}, NL values in result after merge: {nl_values_in_result}")
+            logger.info(f"Overridden {filled_count} horario values from df_ciclos_completos ({dash_mask.sum()} -, {l_mask.sum()} L, {shift_code_mask.sum()} M/T/MoT/NLM/NLT, {other_mask.sum()} other) (preserved {preserve_f_mask.sum()} F values, {preserved_av_from_shifts} A/V from shift codes)")
+            logger.info(
+                f"add_ciclos_completos: forced-work from ciclos lookup NL={nl_values_from_ciclos}, "
+                f"NLM={(mapped_values == 'NLM').sum()}, NLT={(mapped_values == 'NLT').sum()}; "
+                f"result NL={nl_values_in_result}, NLM={(df_result['horario'] == 'NLM').sum()}, "
+                f"NLT={(df_result['horario'] == 'NLT').sum()}"
+            )
             logger.info(f"add_ciclos_completos: horario value counts after merge: {horario_counts_after.to_dict()}")
             
             return True, df_result, f"Successfully filled {filled_count} horario values from completos cycles"
@@ -6426,14 +6442,18 @@ def restrict_turnos_by_disponibilidade(
     
     Restriction Logic:
         - If restricao_turno == 'M' (morning only):
-            - tipo_turno == 'M' -> horario = 'M'
+            - tipo_turno == 'M' -> horario = 'M' (or 'NLM' on forced-work days)
             - tipo_turno == 'T' -> horario = '0'
         - If restricao_turno == 'T' (afternoon only):
             - tipo_turno == 'M' -> horario = '0'
-            - tipo_turno == 'T' -> horario = 'T'
+            - tipo_turno == 'T' -> horario = 'T' (or 'NLT' on forced-work days)
+    
+    Forced-work days (horario NL/NLM/NLT on the employee-day) use NLM/NLT instead of M/T
+    so the no-day-off constraint is preserved alongside the shift restriction.
     
     Preservation Rules:
         - Only modifies horario values that are 'M', 'T', or 'MoT' (working shifts)
+        - On forced-work days, applies restrictions even when horario is NL/NLM/NLT
         - Preserves other values like 'F' (holidays), 'V' (vacations), 'L' (day-off), etc.
     
     Args:
@@ -6500,23 +6520,33 @@ def restrict_turnos_by_disponibilidade(
         # Vectorized lookup: map restricao_turno values to result positions
         mapped_restricao = result_index.map(restricao_lookup)
         
-        # Define working shifts that can be modified
+        # Define working shifts that can be modified (regular work days)
         working_shifts = ['M', 'T', 'MoT']
         
-        # Create mask for rows that have a restriction and current horario is a working shift
+        # Forced-work days: any row with NL/NLM/NLT marks the whole employee-day
+        day_has_forced_work = df_result.groupby(
+            ['employee_id', 'schedule_day'], sort=False
+        )['horario'].transform(lambda s: s.isin(_CALENDAR_FORCED_WORK_HORARIOS).any())
+        
+        # Create mask for rows that have a restriction
         has_restricao = mapped_restricao.notna() & (mapped_restricao != '')
         is_working_shift = df_result['horario'].isin(working_shifts)
-        can_modify_mask = has_restricao & is_working_shift
+        can_modify_mask = has_restricao & is_working_shift & ~day_has_forced_work
+        forced_modify_mask = has_restricao & day_has_forced_work
         
         # Count matches before applying
         matches_found = has_restricao.sum()
         modifiable_matches = can_modify_mask.sum()
-        logger.info(f"Found {matches_found} matching restrictions, {modifiable_matches} on working shifts")
+        forced_matches = forced_modify_mask.sum()
+        logger.info(
+            f"Found {matches_found} matching restrictions, "
+            f"{modifiable_matches} on working shifts, {forced_matches} on forced-work days"
+        )
         
         # Apply restrictions
         modified_count = 0
         
-        # Case 1: restricao_turno == 'M' (morning only)
+        # Case 1: restricao_turno == 'M' (morning only) — regular working days
         restricao_m_mask = can_modify_mask & (mapped_restricao == 'M')
         # For tipo_turno == 'M' -> horario = 'M'
         morning_m_mask = restricao_m_mask & (df_result['tipo_turno'] == 'M')
@@ -6527,7 +6557,7 @@ def restrict_turnos_by_disponibilidade(
         df_result.loc[afternoon_m_mask, 'horario'] = '0'
         modified_count += afternoon_m_mask.sum()
         
-        # Case 2: restricao_turno == 'T' (afternoon only)
+        # Case 2: restricao_turno == 'T' (afternoon only) — regular working days
         restricao_t_mask = can_modify_mask & (mapped_restricao == 'T')
         # For tipo_turno == 'M' -> horario = '0'
         morning_t_mask = restricao_t_mask & (df_result['tipo_turno'] == 'M')
@@ -6537,9 +6567,26 @@ def restrict_turnos_by_disponibilidade(
         afternoon_t_mask = restricao_t_mask & (df_result['tipo_turno'] == 'T')
         df_result.loc[afternoon_t_mask, 'horario'] = 'T'
         modified_count += afternoon_t_mask.sum()
+
+        # Case 3: forced-work days — use NLM/NLT instead of M/T
+        restricao_m_forced = forced_modify_mask & (mapped_restricao == 'M')
+        morning_m_forced = restricao_m_forced & (df_result['tipo_turno'] == 'M')
+        df_result.loc[morning_m_forced, 'horario'] = 'NLM'
+        modified_count += morning_m_forced.sum()
+        afternoon_m_forced = restricao_m_forced & (df_result['tipo_turno'] == 'T')
+        df_result.loc[afternoon_m_forced, 'horario'] = '0'
+        modified_count += afternoon_m_forced.sum()
+
+        restricao_t_forced = forced_modify_mask & (mapped_restricao == 'T')
+        morning_t_forced = restricao_t_forced & (df_result['tipo_turno'] == 'M')
+        df_result.loc[morning_t_forced, 'horario'] = '0'
+        modified_count += morning_t_forced.sum()
+        afternoon_t_forced = restricao_t_forced & (df_result['tipo_turno'] == 'T')
+        df_result.loc[afternoon_t_forced, 'horario'] = 'NLT'
+        modified_count += afternoon_t_forced.sum()
         
         # Log detailed changes per employee-day combination
-        all_modified_mask = restricao_m_mask | restricao_t_mask
+        all_modified_mask = restricao_m_mask | restricao_t_mask | restricao_m_forced | restricao_t_forced
         if all_modified_mask.any():
             # Get unique employee-day combinations that were modified
             modified_rows = df_result.loc[all_modified_mask, ['employee_id', 'schedule_day', 'tipo_turno', 'horario']].copy()

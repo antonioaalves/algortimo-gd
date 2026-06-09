@@ -996,6 +996,11 @@ def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str = 
             elif tipo_dia == 'S':
                 return '-'
             elif tipo_dia == 'N':
+                if use_work_shift:
+                    if work_shift == 'M':
+                        return 'NLM'
+                    if work_shift == 'T':
+                        return 'NLT'
                 return 'NL'
             elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo >= 1:
                 return 'P'

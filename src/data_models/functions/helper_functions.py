@@ -406,7 +406,9 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
     - tipo_dia == 'F' + dia_semana in l_dom_days -> 'L_DOM'
     - tipo_dia == 'F' -> 'L'
     - tipo_dia == 'S' -> '-'
-    - tipo_dia == 'N' -> 'NL'
+    - tipo_dia == 'N' + work_shift == 'M' -> 'NLM' (no day off, morning)
+    - tipo_dia == 'N' + work_shift == 'T' -> 'NLT' (no day off, afternoon)
+    - tipo_dia == 'N' (ambiguous / missing work_shift) -> 'NL'
     - tipo_dia in ['A', 'H']:
         - intervalo >= 1 hour -> 'P' (split shift)
         - intervalo < 1 hour and work_shift == 'M' -> 'M'
@@ -476,6 +478,12 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
             return '-'
 
         if tipo_dia == 'N':
+            if use_work_shift:
+                shift_code = _work_shift_code(row)
+                if shift_code == 'M':
+                    return 'NLM'
+                if shift_code == 'T':
+                    return 'NLT'
             return 'NL'
 
         if tipo_dia in ['A', 'H']:
@@ -490,12 +498,17 @@ def convert_ciclos_to_horario(df: pd.DataFrame, l_dom_days: List[int]) -> pd.Dat
     horario_counts = df_result['horario'].value_counts()
     tipo_dia_counts = df_result.get('tipo_dia', pd.Series()).value_counts()
     nl_count = (df_result['horario'] == 'NL').sum()
+    nlm_count = (df_result['horario'] == 'NLM').sum()
+    nlt_count = (df_result['horario'] == 'NLT').sum()
     n_count = (df_result.get('tipo_dia', pd.Series()) == 'N').sum() if 'tipo_dia' in df_result.columns else 0
 
     logger.info(f"convert_ciclos_to_horario: use_work_shift={use_work_shift}")
     logger.info(f"convert_ciclos_to_horario: tipo_dia counts - {tipo_dia_counts.to_dict()}")
     logger.info(f"convert_ciclos_to_horario: horario counts - {horario_counts.to_dict()}")
-    logger.info(f"convert_ciclos_to_horario: tipo_dia='N' count: {n_count}, horario='NL' count: {nl_count}")
+    logger.info(
+        f"convert_ciclos_to_horario: tipo_dia='N' count: {n_count}, "
+        f"horario NL={nl_count}, NLM={nlm_count}, NLT={nlt_count}"
+    )
 
     return df_result
 
