@@ -255,7 +255,7 @@ def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, wo
                          f"{work_days_per_week[week - 1]} days but have received {actual_days_off} "
                          f"days off: {days_set.intersection(fixed_days_off.union(fixed_LQs))}. Process will be Infeasible!")
 
-def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_days_salsa, empty_days):
+def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_days_salsa, empty_days_cal):
     dynamic_empty = set()
     for week, days in week_to_days_salsa.items():
         if len(days) <= 6:
@@ -267,9 +267,11 @@ def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_day
         nbr_vacations = len(vacations_in_week)
         if nbr_absences == nbr_vacations == 0:
             continue
-
-        empty_in_week = days_set.intersection(empty_days)
+        empty_in_week = days_set.intersection(empty_days_cal)
         empty_days = 5 - contract_type - len(empty_in_week)
+        if len(empty_in_week):
+            worker_absences -= empty_in_week
+            vacation_days -= empty_in_week
         if empty_days <= 0:
             continue
         if nbr_absences >= empty_days:
