@@ -805,7 +805,7 @@ def free_days_saturdays(model, shift, sundays, workers_no_contract_changes, work
         worker_saturdays = [d - 1 for d in sundays if d - 1 in working_days[get_dummy(workers_with_dummy, w, d - 1)] \
                             and year_range[0] <= d - 1 <= year_range[1] and get_annual_variables(annual_variables, w, d - 1, "l_sab") == True]
         logger.info(f"Worker contract changes {w}, Sundays {worker_saturdays}, total {total_l_sab.get(w, 0)}")
-        model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, "L")] for d in worker_saturdays if (get_dummy(workers_with_dummy, w, d), d, 'L') in shift) >= total_l_sab.get(w, 0))
+        model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (get_dummy(workers_with_dummy, w, d), d, s) in shift) >= total_l_sab.get(w, 0))
 
 def free_days_special_days(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom_or_sab, year_range, annual_variables, workers_with_dummy):
     for w in workers_no_contract_changes:
