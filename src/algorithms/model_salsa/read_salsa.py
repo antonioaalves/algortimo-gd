@@ -380,7 +380,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             else:
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
                 # Extract contract information
-                contract_type[w] = worker_row.get('tipo_contrato', 'Contract Error')
+                contract_type[w] = int(worker_row.get('tipo_contrato', 0))
                 total_l[w] = int(worker_row.get('l_total', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
@@ -466,7 +466,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         if layer == 1 and layer != nbr_of_contracts - 1:
                             original_end_date = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0]) - 1
                         # Extract contract information
-                        contract_type[new_w] = worker_row.get('tipo_contrato', 'Contract Error')
+                        contract_type[new_w] = int(worker_row.get('tipo_contrato', 'Contract Error'))
                         total_l[new_w] = int(worker_row.get('l_total', 0))
                         total_l_dom[new_w] = int(worker_row.get('l_dom', 0))
                         total_l_sab[w] = int(worker_row.get('l_sab', 0))
