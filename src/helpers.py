@@ -276,6 +276,76 @@ def log_workload_template_contract_errors(
     return logged
 
 
+def log_max_consecutive_working_days_errors(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    df_messages: pd.DataFrame,
+    error_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist max consecutive working days pre-check failures to wfm.esc_processo_erros.
+
+    Each event is logged as type_error='E' (fatal), same as workload_template validation.
+    """
+    if connection is None or not error_events or df_messages is None or df_messages.empty:
+        return 0
+
+    logged = 0
+    for event in error_events:
+        matricula = str(event.get('matricula', '') or '')
+        matricula_part = f", matrícula {matricula}" if matricula else ''
+        placeholder_values = {
+            '1': child_num,
+            '2': str(event.get('employee_id', '')),
+            '3': matricula_part,
+            '4': str(event.get('num_dias_cons', '')),
+            '5': str(event.get('streak_days', '')),
+            '6': str(event.get('period_begin', '')),
+            '7': str(event.get('period_end', '')),
+            '8': str(event.get('period_suffix', '')),
+            '9': str(posto_id or ''),
+        }
+        description = set_messages(
+            df_messages, 'ERR_MAX_CONSECUTIVE_WORKING_DAYS', placeholder_values
+        )
+        if not description:
+            description = event.get('detail_pt') or (
+                f"Subprocesso {child_num}: no periodo {event.get('period_begin')}-"
+                f"{event.get('period_end')} o colaborador {event.get('employee_id')}"
+                f"{matricula_part} viola o limite de {event.get('num_dias_cons')} dias "
+                f"consecutivos de trabalho ({event.get('streak_days')} dias). "
+                f"Posto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='E',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(event.get('period_begin')) if event.get('period_begin') else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
+
 def replace_placeholders(template, values_dict):
     """
     Replaces placeholders in the template string with corresponding values from the values dictionary.
