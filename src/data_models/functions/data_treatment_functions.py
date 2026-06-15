@@ -1460,9 +1460,9 @@ def set_tipo_contrato_to_df_colaborador(df_colaborador: pd.DataFrame, use_case: 
         if use_case == 1:
             # TODO: this shouldnt be defined here, it should be in database or csv
             params_contrato = pd.DataFrame({
-                'min': [2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
-                'max': [2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
-                'tipo_contrato': [2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
+                'min': [1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 6],
+                'max': [1, 2, 3, 4, 3, 4, 5, 6, 4, 5, 6, 5, 6, 6],
+                'tipo_contrato': [1, 2, 3, 4, 3, 4, 5, 4, 4, 5, 6, 5, 8, 6]
             })
 
             df_colaborador = pd.merge(
