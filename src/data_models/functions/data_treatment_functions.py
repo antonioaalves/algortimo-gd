@@ -3442,6 +3442,169 @@ def _build_salsa_week_index_maps_from_calendario(
     return week_to_days, nbr_weeks
 
 
+def _build_calendario_index_date_maps(
+    df_calendario: pd.DataFrame,
+) -> Tuple[Dict[pd.Timestamp, int], Dict[int, pd.Timestamp]]:
+    """Map schedule_day <-> salsa index (process-wide, from df_calendario)."""
+    if df_calendario is None or df_calendario.empty or 'index' not in df_calendario.columns:
+        return {}, {}
+    df = (
+        df_calendario[['schedule_day', 'index']]
+        .drop_duplicates('schedule_day')
+        .sort_values('index')
+    )
+    idx_by_date: Dict[pd.Timestamp, int] = {}
+    date_by_idx: Dict[int, pd.Timestamp] = {}
+    for _, row in df.iterrows():
+        day = pd.Timestamp(row['schedule_day']).normalize()
+        idx = int(row['index'])
+        idx_by_date[day] = idx
+        date_by_idx[idx] = day
+    return idx_by_date, date_by_idx
+
+
+def _indices_to_schedule_days(
+    indices: set,
+    date_by_idx: Dict[int, pd.Timestamp],
+) -> frozenset:
+    return frozenset(date_by_idx[i] for i in indices if i in date_by_idx)
+
+
+def _resolve_employee_tipo_contrato(
+    df_colaborador: pd.DataFrame,
+    employee_id: str,
+    default_tipo: int = 5,
+) -> int:
+    if df_colaborador is None or df_colaborador.empty:
+        return default_tipo
+    sub = df_colaborador[df_colaborador['employee_id'].astype(str) == str(employee_id)]
+    if sub.empty or 'tipo_contrato' not in sub.columns:
+        return default_tipo
+    try:
+        return int(sub.iloc[0]['tipo_contrato'])
+    except (TypeError, ValueError):
+        return default_tipo
+
+
+def _build_attributed_rest_and_unavailable_days_for_cap(
+    df_calendario: pd.DataFrame,
+    df_colaborador: pd.DataFrame,
+    employee_id: str,
+    holiday_set: frozenset,
+    df_ausencias_ferias: Optional[pd.DataFrame],
+    period_begin: pd.Timestamp,
+    period_end: pd.Timestamp,
+) -> dict:
+    """
+    Mirror read_salsa days_off_atributtion for feasibility-cap weekly quota.
+
+    Vacation/absence weeks push weekly rest to week-end (Sat+Sun for 5-day weeks,
+    Sunday only for 6-day weeks). Attributed days consume salsa_2_free_days_week quota;
+    remaining vacation/absence days are not assignable as L/LQ.
+    """
+    empty = {
+        'weekly_rest_quota': frozenset(),
+        'unavailable_days': frozenset(),
+    }
+    if df_calendario is None or df_calendario.empty:
+        return empty
+
+    emp_cal = df_calendario[df_calendario['employee_id'].astype(str) == str(employee_id)]
+    if emp_cal.empty or 'index' not in emp_cal.columns:
+        return empty
+
+    idx_by_date, date_by_idx = _build_calendario_index_date_maps(df_calendario)
+    if not idx_by_date:
+        return empty
+
+    week_to_days_idx, nbr_weeks = _build_salsa_week_index_maps_from_calendario(df_calendario)
+    if not week_to_days_idx or nbr_weeks <= 0:
+        return empty
+
+    horario = emp_cal['horario'].astype(str).str.strip()
+    fixed_days_off = set(emp_cal.loc[horario.isin(['L', 'C', 'L_DOM']), 'index'].astype(int))
+    fixed_LQs = set(emp_cal.loc[horario == 'LQ', 'index'].astype(int))
+    vacation_days = set(emp_cal.loc[horario.isin(['V', 'V-']), 'index'].astype(int))
+    worker_absences = set(emp_cal.loc[horario.isin(['A', 'AP', 'A-']), 'index'].astype(int))
+
+    if df_ausencias_ferias is not None and not df_ausencias_ferias.empty:
+        emp_col = 'employee_id' if 'employee_id' in df_ausencias_ferias.columns else 'fk_colaborador'
+        if emp_col in df_ausencias_ferias.columns and 'data' in df_ausencias_ferias.columns:
+            sub = df_ausencias_ferias[
+                df_ausencias_ferias[emp_col].astype(str) == str(employee_id)
+            ]
+            for _, row in sub.iterrows():
+                day = pd.to_datetime(row['data'], errors='coerce')
+                if pd.isna(day):
+                    continue
+                idx = idx_by_date.get(day.normalize())
+                if idx is None:
+                    continue
+                tipo = str(row.get('tipo_ausencia', '')).strip().upper()
+                if tipo == 'V':
+                    vacation_days.add(idx)
+                else:
+                    worker_absences.add(idx)
+
+    closed_holidays = set(emp_cal.loc[horario == 'F', 'index'].astype(int))
+    for day in holiday_set:
+        idx = idx_by_date.get(pd.Timestamp(day).normalize())
+        if idx is not None:
+            closed_holidays.add(idx)
+
+    vacation_days -= closed_holidays
+    worker_absences -= closed_holidays
+    fixed_days_off -= closed_holidays
+    fixed_LQs -= closed_holidays
+
+    contract_type = _resolve_employee_tipo_contrato(df_colaborador, employee_id)
+    from src.algorithms.model_salsa.auxiliar_functions_salsa import days_off_atributtion
+
+    if contract_type == 8:
+        work_days_arr = _build_work_days_per_week_for_cap(
+            df_calendario, df_colaborador, employee_id, period_begin, period_end
+        )
+        if work_days_arr:
+            work_days_per_week = np.array(
+                [work_days_arr.get(week, 5) for week in range(1, nbr_weeks + 1)]
+            )
+        else:
+            work_days_per_week = np.full(nbr_weeks, 5)
+    else:
+        work_days_per_week = np.full(nbr_weeks, contract_type)
+
+    period_begin_idx = idx_by_date.get(period_begin.normalize())
+    period_end_idx = idx_by_date.get(period_end.normalize())
+    if period_begin_idx is None:
+        period_begin_idx = int(emp_cal['index'].min())
+    if period_end_idx is None:
+        period_end_idx = int(emp_cal['index'].max())
+    year_range = [period_begin_idx, period_end_idx]
+
+    days_off_atributtion(
+        str(employee_id),
+        worker_absences,
+        vacation_days,
+        fixed_days_off,
+        fixed_LQs,
+        week_to_days_idx,
+        closed_holidays,
+        work_days_per_week,
+        year_range,
+    )
+
+    weekly_rest_quota = _indices_to_schedule_days(
+        fixed_days_off | fixed_LQs, date_by_idx
+    )
+    unavailable = _indices_to_schedule_days(
+        vacation_days | worker_absences, date_by_idx
+    )
+    return {
+        'weekly_rest_quota': weekly_rest_quota,
+        'unavailable_days': unavailable,
+    }
+
+
 def _build_work_days_per_week_for_cap(
     df_calendario: Optional[pd.DataFrame],
     df_colaborador: Optional[pd.DataFrame],
@@ -3450,7 +3613,7 @@ def _build_work_days_per_week_for_cap(
     execution_end: Optional[pd.Timestamp],
 ) -> Dict[int, int]:
     """
-    Per-salsa-week working days (5 or 6) for tipo-8 employees.
+    Per-salsa-week working days (5 or 6).
 
     Mirrors read_salsa populate_week_template / populate_week_fixed_days_off so the
     feasibility cap applies the same weekly free-day budget as salsa_2_free_days_week.
@@ -3464,16 +3627,20 @@ def _build_work_days_per_week_for_cap(
     if sub_colab.empty or 'tipo_contrato' not in sub_colab.columns:
         return {}
 
+    week_to_days_idx, nbr_weeks = _build_salsa_week_index_maps_from_calendario(df_calendario)
+    if not week_to_days_idx or nbr_weeks <= 0:
+        return {}
+
+    contract_type = _resolve_employee_tipo_contrato(df_colaborador, employee_id)
+    if contract_type != 8:
+        return {week: contract_type for week in week_to_days_idx}
+
     tipo8_rows = sub_colab[sub_colab['tipo_contrato'] == 8]
     if tipo8_rows.empty:
-        return {}
+        return {week: contract_type for week in week_to_days_idx}
 
     emp_cal = df_calendario[df_calendario['employee_id'].astype(str) == str(employee_id)]
     if emp_cal.empty or 'index' not in emp_cal.columns:
-        return {}
-
-    week_to_days_idx, nbr_weeks = _build_salsa_week_index_maps_from_calendario(df_calendario)
-    if not week_to_days_idx or nbr_weeks <= 0:
         return {}
 
     contract_row = tipo8_rows.iloc[0]
@@ -3747,96 +3914,6 @@ def _count_eligible_saturdays(
             count += 1
         saturday += one_day * 7
     return count
-
-
-def _debug_log_l_sab_saturdays(
-    employee_id: str,
-    period_label: str,
-    begin: pd.Timestamp,
-    effective_end: pd.Timestamp,
-    weekly_rest: frozenset,
-    adjacent_free: frozenset,
-    non_working: frozenset,
-    tipo_contrato: int,
-    tipo_ciclo_weeks: frozenset = frozenset(),
-    tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]] = None,
-    weekly_rest_for_quota: Optional[frozenset] = None,
-    day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
-    week_to_days: Optional[Dict[int, frozenset]] = None,
-    work_days_per_week: Optional[Dict[int, int]] = None,
-) -> None:
-    """TEMP DEBUG (STRSOL): log each Saturday and whether l_sab cap counts it."""
-    quota_rest = weekly_rest_for_quota if weekly_rest_for_quota is not None else weekly_rest
-    days_to_sat = (5 - begin.weekday()) % 7
-    saturday = begin + pd.Timedelta(days=days_to_sat)
-    one_day = pd.Timedelta(days=1)
-    eligible_dates: List[str] = []
-
-    logger.info(
-        f"FEASIBILITY_CAP_DEBUG l_sab employee={employee_id} period={period_label} "
-        f"range={begin.date()}-{effective_end.date()}"
-    )
-    while saturday <= effective_end:
-        tc = _resolve_tipo_contrato_for_day(saturday, tipo_contrato, tipo_contrato_for_day)
-        max_consec_free = _max_continuous_free_days(tc)
-        friday = saturday - one_day
-        sunday = saturday + one_day
-        salsa_week = day_to_week.get(saturday.normalize()) if day_to_week else None
-        fixed = (
-            _count_fixed_free_in_salsa_week(quota_rest, saturday, day_to_week, week_to_days)
-            if day_to_week and week_to_days
-            else None
-        )
-        remaining = (
-            _remaining_weekly_free_day_slots(
-                saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week
-            )
-            if day_to_week and week_to_days
-            else None
-        )
-        week_work_days = (
-            work_days_per_week.get(salsa_week) if work_days_per_week and salsa_week else None
-        )
-
-        if _is_tipo_ciclo_week(saturday, tipo_ciclo_weeks):
-            if saturday in weekly_rest:
-                eligible, reason = True, "ciclo_week_already_weekly_rest"
-            else:
-                eligible, reason = False, "ciclo_week_not_weekly_rest"
-        elif saturday in weekly_rest:
-            eligible, reason = True, "already_weekly_rest"
-        elif saturday in non_working:
-            eligible, reason = False, "non_working_prefixed"
-        elif _violates_l_sab_consecutive_free_adjacent_rule(
-            saturday, adjacent_free, max_consec_free
-        ):
-            eligible, reason = False, (
-                f"rule_1_2 fri_adjacent={friday in adjacent_free} "
-                f"sun_adjacent={sunday in adjacent_free}"
-            )
-        elif remaining is not None and remaining < 1:
-            eligible, reason = False, (
-                f"weekly_quota_full fixed={fixed} remaining={remaining} "
-                f"work_days={week_work_days}"
-            )
-        else:
-            eligible, reason = True, (
-                f"assignable fixed={fixed} remaining={remaining} work_days={week_work_days}"
-            )
-
-        status = "ELIGIBLE" if eligible else "SKIP"
-        logger.info(
-            f"FEASIBILITY_CAP_DEBUG l_sab employee={employee_id} {status} "
-            f"date={saturday.date()} salsa_week={salsa_week} reason={reason}"
-        )
-        if eligible:
-            eligible_dates.append(str(saturday.date()))
-        saturday += one_day * 7
-
-    logger.info(
-        f"FEASIBILITY_CAP_DEBUG l_sab employee={employee_id} period={period_label} "
-        f"eligible_count={len(eligible_dates)} dates={eligible_dates}"
-    )
 
 
 def _count_eligible_weekends_c2d(
@@ -4403,9 +4480,6 @@ def apply_annual_dayoff_feasibility_cap(
             weekly_rest_annual = _filter_days_to_period(
                 cal_state['weekly_rest'], annual_begin, annual_end
             )
-            non_working_annual = _filter_days_to_period(
-                cal_state['non_working'], annual_begin, annual_end
-            )
             emp_ausencias = ausencias_by_employee.get(emp_id, frozenset())
             adjacent_annual = _filter_days_to_period(
                 holiday_set | emp_ausencias, annual_begin, annual_end
@@ -4419,6 +4493,25 @@ def apply_annual_dayoff_feasibility_cap(
                 employee_id=emp_id,
                 execution_begin=cap_exec_begin,
                 execution_end=cap_exec_end,
+            )
+            cap_attribution = _build_attributed_rest_and_unavailable_days_for_cap(
+                df_calendario=df_calendario,
+                df_colaborador=df_colaborador,
+                employee_id=emp_id,
+                holiday_set=holiday_set,
+                df_ausencias_ferias=df_ausencias_ferias,
+                period_begin=annual_begin,
+                period_end=annual_end,
+            )
+            weekly_rest_for_quota = (
+                cap_attribution['weekly_rest_quota']
+                if cap_attribution['weekly_rest_quota']
+                else cal_state['weekly_rest']
+            )
+            non_working_annual = _filter_days_to_period(
+                cal_state['non_working'] | cap_attribution['unavailable_days'],
+                annual_begin,
+                annual_end,
             )
 
             for field in field_codes:
@@ -4446,55 +4539,11 @@ def apply_annual_dayoff_feasibility_cap(
                     tipo_ciclo_weeks=tipo_ciclo_weeks,
                     tipo_contrato_resolver=tipo_resolver,
                     default_tipo=5,
-                    weekly_rest_for_quota=cal_state['weekly_rest'],
+                    weekly_rest_for_quota=weekly_rest_for_quota,
                     day_to_week=salsa_day_to_week,
                     week_to_days=salsa_week_to_days,
                     work_days_per_week=work_days_per_week,
                 )
-
-                # TEMP DEBUG (STRSOL): remove after identifying cap vs solver gaps
-                if field == 'l_sab' and cap_exec_begin is not None and cap_exec_end is not None:
-                    outside_end = cap_exec_begin - pd.Timedelta(days=1)
-                    if annual_begin <= outside_end:
-                        _debug_log_l_sab_saturdays(
-                            employee_id=emp_id,
-                            period_label='outside_execution',
-                            begin=annual_begin,
-                            effective_end=outside_end,
-                            weekly_rest=weekly_rest_annual,
-                            adjacent_free=adjacent_annual,
-                            non_working=non_working_annual,
-                            tipo_contrato=5,
-                            tipo_ciclo_weeks=tipo_ciclo_weeks,
-                            tipo_contrato_for_day=tipo_resolver,
-                            weekly_rest_for_quota=cal_state['weekly_rest'],
-                            day_to_week=salsa_day_to_week,
-                            week_to_days=salsa_week_to_days,
-                            work_days_per_week=work_days_per_week,
-                        )
-                    in_exec_begin, in_exec_end = _intersect_period(
-                        annual_begin, annual_end, cap_exec_begin, cap_exec_end
-                    )
-                    if in_exec_begin is not None and in_exec_end is not None:
-                        adj_exec = _filter_days_to_period(adjacent_annual, in_exec_begin, in_exec_end)
-                        wr_exec = _filter_days_to_period(weekly_rest_annual, in_exec_begin, in_exec_end)
-                        nw_exec = _filter_days_to_period(non_working_annual, in_exec_begin, in_exec_end)
-                        _debug_log_l_sab_saturdays(
-                            employee_id=emp_id,
-                            period_label='execution',
-                            begin=in_exec_begin,
-                            effective_end=in_exec_end,
-                            weekly_rest=wr_exec,
-                            adjacent_free=adj_exec,
-                            non_working=nw_exec,
-                            tipo_contrato=5,
-                            tipo_ciclo_weeks=tipo_ciclo_weeks,
-                            tipo_contrato_for_day=tipo_resolver,
-                            weekly_rest_for_quota=cal_state['weekly_rest'],
-                            day_to_week=salsa_day_to_week,
-                            week_to_days=salsa_week_to_days,
-                            work_days_per_week=work_days_per_week,
-                        )
 
                 if value > achievable:
                     logger.info(
