@@ -14,7 +14,11 @@ from base_data_project.log_config import get_logger
 from src.data_models.base import BaseDescansosDataModel
 from src.configuration_manager.base import BaseConfig
 from src.configuration_manager.instance import get_config
-from src.helpers import log_feasibility_cap_events, log_workload_template_contract_errors
+from src.helpers import (
+    log_feasibility_cap_events,
+    log_max_consecutive_working_days_errors,
+    log_workload_template_contract_errors,
+)
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
     get_param_for_posto, 
@@ -45,6 +49,7 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_ausencias_ferias,
     treat_df_ciclos_completos,
     validate_workload_template_vs_contract,
+    validate_max_consecutive_working_days,
     treat_df_colaborador,
     add_lqs_to_df_colaborador,
     set_tipo_contrato_to_df_colaborador,
@@ -2024,6 +2029,58 @@ class SalsaDataModel(BaseDescansosDataModel):
                     exc_info=True,
                 )
                 return False, "ERR_WORKLOAD_TEMPLATE_CONTRACT", str(e)
+
+            # Max consecutive working days pre-check (fatal) — mirrors solver constraint.
+            try:
+                df_feriados_cons = self.auxiliary_data.get('df_feriados', pd.DataFrame())
+                df_ausencias_cons = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
+                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
+                success_cons, cons_events, error_cons = validate_max_consecutive_working_days(
+                    df_calendario=df_calendario,
+                    df_colaborador=df_colaborador,
+                    df_feriados=df_feriados_cons,
+                    df_ausencias_ferias=df_ausencias_cons,
+                    section_num_dias_cons=num_dias_cons,
+                    execution_begin=start_date,
+                    execution_end=end_date,
+                )
+                if not success_cons:
+                    df_messages = self.auxiliary_data.get('df_messages', pd.DataFrame())
+                    if df_messages is None:
+                        df_messages = pd.DataFrame()
+                    connection = self.auxiliary_data.get('raw_connection')
+                    if connection is not None and not df_messages.empty:
+                        n_logged = log_max_consecutive_working_days_errors(
+                            connection=connection,
+                            path_os=self.config_manager.system.project_root_dir,
+                            fk_process=self.external_call_data.get('current_process_id'),
+                            process_type='func_inicializa',
+                            df_messages=df_messages,
+                            error_events=cons_events,
+                            child_num=str(self.external_call_data.get('child_number', 1)),
+                            posto_id=self.auxiliary_data.get('current_posto_id'),
+                        )
+                        self.logger.info(
+                            f"Logged {n_logged}/{len(cons_events)} max consecutive working "
+                            f"days error(s) to esc_processo_erros"
+                        )
+                    elif cons_events:
+                        self.logger.warning(
+                            f"{len(cons_events)} max consecutive working days error(s) not "
+                            f"written to DB (connection={connection is not None}, "
+                            f"messages={not df_messages.empty})"
+                        )
+                    self.auxiliary_data['max_consecutive_working_days_error_events'] = cons_events
+                    self.logger.error(
+                        f"max consecutive working days validation failed: {error_cons}"
+                    )
+                    return False, "ERR_MAX_CONSECUTIVE_WORKING_DAYS", error_cons
+            except Exception as e:
+                self.logger.error(
+                    f"max consecutive working days validation failed: {e}",
+                    exc_info=True,
+                )
+                return False, "ERR_MAX_CONSECUTIVE_WORKING_DAYS", str(e)
 
             # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
             # Runs here because all required data is available: df_annual_variables and df_feriados
