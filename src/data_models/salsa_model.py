@@ -1989,99 +1989,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
                 return False, "errSubproc", error_msg
 
-            # workload_template vs contract (fatal) — same phase as feasibility cap logging.
-            try:
-                df_ciclos = self.auxiliary_data.get('df_ciclos', pd.DataFrame())
-                success_wt, wt_events, error_wt = validate_workload_template_vs_contract(
-                    df_ciclos, df_colaborador
-                )
-                if not success_wt:
-                    df_messages = self.auxiliary_data.get('df_messages', pd.DataFrame())
-                    if df_messages is None:
-                        df_messages = pd.DataFrame()
-                    connection = self.auxiliary_data.get('raw_connection')
-                    if connection is not None and not df_messages.empty:
-                        n_logged = log_workload_template_contract_errors(
-                            connection=connection,
-                            path_os=self.config_manager.system.project_root_dir,
-                            fk_process=self.external_call_data.get('current_process_id'),
-                            process_type='func_inicializa',
-                            df_messages=df_messages,
-                            error_events=wt_events,
-                            child_num=str(self.external_call_data.get('child_number', 1)),
-                            posto_id=self.auxiliary_data.get('current_posto_id'),
-                        )
-                        self.logger.info(
-                            f"Logged {n_logged}/{len(wt_events)} workload_template error(s) "
-                            f"to esc_processo_erros"
-                        )
-                    elif wt_events:
-                        self.logger.warning(
-                            f"{len(wt_events)} workload_template error(s) not written to DB "
-                            f"(connection={connection is not None}, messages={not df_messages.empty})"
-                        )
-                    self.auxiliary_data['workload_template_error_events'] = wt_events
-                    self.logger.error(f"workload_template contract validation failed: {error_wt}")
-                    return False, "ERR_WORKLOAD_TEMPLATE_CONTRACT", error_wt
-            except Exception as e:
-                self.logger.error(
-                    f"workload_template contract validation failed: {e}",
-                    exc_info=True,
-                )
-                return False, "ERR_WORKLOAD_TEMPLATE_CONTRACT", str(e)
-
-            # Max consecutive working days pre-check (fatal) — mirrors solver constraint.
-            try:
-                df_feriados_cons = self.auxiliary_data.get('df_feriados', pd.DataFrame())
-                df_ausencias_cons = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
-                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
-                success_cons, cons_events, error_cons = validate_max_consecutive_working_days(
-                    df_calendario=df_calendario,
-                    df_colaborador=df_colaborador,
-                    df_feriados=df_feriados_cons,
-                    df_ausencias_ferias=df_ausencias_cons,
-                    section_num_dias_cons=num_dias_cons,
-                    execution_begin=start_date,
-                    execution_end=end_date,
-                )
-                if not success_cons:
-                    df_messages = self.auxiliary_data.get('df_messages', pd.DataFrame())
-                    if df_messages is None:
-                        df_messages = pd.DataFrame()
-                    connection = self.auxiliary_data.get('raw_connection')
-                    if connection is not None and not df_messages.empty:
-                        n_logged = log_max_consecutive_working_days_errors(
-                            connection=connection,
-                            path_os=self.config_manager.system.project_root_dir,
-                            fk_process=self.external_call_data.get('current_process_id'),
-                            process_type='func_inicializa',
-                            df_messages=df_messages,
-                            error_events=cons_events,
-                            child_num=str(self.external_call_data.get('child_number', 1)),
-                            posto_id=self.auxiliary_data.get('current_posto_id'),
-                        )
-                        self.logger.info(
-                            f"Logged {n_logged}/{len(cons_events)} max consecutive working "
-                            f"days error(s) to esc_processo_erros"
-                        )
-                    elif cons_events:
-                        self.logger.warning(
-                            f"{len(cons_events)} max consecutive working days error(s) not "
-                            f"written to DB (connection={connection is not None}, "
-                            f"messages={not df_messages.empty})"
-                        )
-                    self.auxiliary_data['max_consecutive_working_days_error_events'] = cons_events
-                    self.logger.error(
-                        f"max consecutive working days validation failed: {error_cons}"
-                    )
-                    return False, "ERR_MAX_CONSECUTIVE_WORKING_DAYS", error_cons
-            except Exception as e:
-                self.logger.error(
-                    f"max consecutive working days validation failed: {e}",
-                    exc_info=True,
-                )
-                return False, "ERR_MAX_CONSECUTIVE_WORKING_DAYS", str(e)
-
             # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
             # Runs here because all required data is available: df_annual_variables and df_feriados
             # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
@@ -2229,11 +2136,109 @@ class SalsaDataModel(BaseDescansosDataModel):
 
     def validate_func_inicializa(self) -> bool:
         """
-        Validates func_inicializa operations. Validates data before running the allocation cycle.
+        Fatal pre-checks after func_inicializa (CSVs already saved).
+        Mirrors solver rules; logs to esc_processo_erros and blocks the solver on failure.
         """
         try:
-            # TODO: Implement validation logic
-            self.logger.info("Entered func_inicializa validation. Needs to be implemented.")
+            start_date = self.external_call_data.get('start_date')
+            end_date = self.external_call_data.get('end_date')
+            df_calendario = self.medium_data.get('df_calendario', pd.DataFrame())
+            df_colaborador = self.medium_data.get('df_colaborador', pd.DataFrame())
+            df_messages = self.auxiliary_data.get('df_messages', pd.DataFrame())
+            if df_messages is None:
+                df_messages = pd.DataFrame()
+            connection = self.auxiliary_data.get('raw_connection')
+            child_num = str(self.external_call_data.get('child_number', 1))
+            posto_id = self.auxiliary_data.get('current_posto_id')
+            process_id = self.external_call_data.get('current_process_id')
+            path_os = self.config_manager.system.project_root_dir
+
+            # workload_template vs contract
+            try:
+                df_ciclos = self.auxiliary_data.get('df_ciclos', pd.DataFrame())
+                success_wt, wt_events, error_wt = validate_workload_template_vs_contract(
+                    df_ciclos, df_colaborador
+                )
+                if not success_wt:
+                    if connection is not None and not df_messages.empty:
+                        n_logged = log_workload_template_contract_errors(
+                            connection=connection,
+                            path_os=path_os,
+                            fk_process=process_id,
+                            process_type='func_inicializa',
+                            df_messages=df_messages,
+                            error_events=wt_events,
+                            child_num=child_num,
+                            posto_id=posto_id,
+                        )
+                        self.logger.info(
+                            f"Logged {n_logged}/{len(wt_events)} workload_template error(s) "
+                            f"to esc_processo_erros"
+                        )
+                    elif wt_events:
+                        self.logger.warning(
+                            f"{len(wt_events)} workload_template error(s) not written to DB "
+                            f"(connection={connection is not None}, messages={not df_messages.empty})"
+                        )
+                    self.auxiliary_data['workload_template_error_events'] = wt_events
+                    self.logger.error(f"workload_template contract validation failed: {error_wt}")
+                    return False
+            except Exception as e:
+                self.logger.error(
+                    f"workload_template contract validation failed: {e}",
+                    exc_info=True,
+                )
+                return False
+
+            # Max consecutive working days pre-check
+            try:
+                df_feriados = self.auxiliary_data.get('df_feriados', pd.DataFrame())
+                df_ausencias = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
+                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
+                success_cons, cons_events, error_cons = validate_max_consecutive_working_days(
+                    df_calendario=df_calendario,
+                    df_colaborador=df_colaborador,
+                    df_feriados=df_feriados,
+                    df_ausencias_ferias=df_ausencias,
+                    section_num_dias_cons=num_dias_cons,
+                    execution_begin=start_date,
+                    execution_end=end_date,
+                )
+                if not success_cons:
+                    if connection is not None and not df_messages.empty:
+                        n_logged = log_max_consecutive_working_days_errors(
+                            connection=connection,
+                            path_os=path_os,
+                            fk_process=process_id,
+                            process_type='func_inicializa',
+                            df_messages=df_messages,
+                            error_events=cons_events,
+                            child_num=child_num,
+                            posto_id=posto_id,
+                        )
+                        self.logger.info(
+                            f"Logged {n_logged}/{len(cons_events)} max consecutive working "
+                            f"days error(s) to esc_processo_erros"
+                        )
+                    elif cons_events:
+                        self.logger.warning(
+                            f"{len(cons_events)} max consecutive working days error(s) not "
+                            f"written to DB (connection={connection is not None}, "
+                            f"messages={not df_messages.empty})"
+                        )
+                    self.auxiliary_data['max_consecutive_working_days_error_events'] = cons_events
+                    self.logger.error(
+                        f"max consecutive working days validation failed: {error_cons}"
+                    )
+                    return False
+            except Exception as e:
+                self.logger.error(
+                    f"max consecutive working days validation failed: {e}",
+                    exc_info=True,
+                )
+                return False
+
+            self.logger.info("func_inicializa fatal pre-checks passed")
             return True
         except Exception as e:
             self.logger.error(f"Error validating func_inicializa from data manager: {str(e)}")
