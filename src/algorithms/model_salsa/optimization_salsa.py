@@ -7,94 +7,21 @@ from src.configuration_manager.instance import get_config
 _config_manager = get_config()
 logger = get_logger(_config_manager.project_name)
 import numpy as np
-import math 
+import math
+from src.algorithms.model_salsa.auxiliar_functions_salsa import group_creator
+
 
 
 def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, real_working_shift, shift, pessObj, working_days, 
-                       closed_holidays, min_workers,max_workers, week_to_days, sundays, c2d, first_day, last_day, role_by_worker,
+                       closed_holidays, min_workers, max_workers, week_to_days, sundays, c2d, l_dom, l_sab, l_dom_or_sab,
                        work_day_hours, workers_past, year_range, managers, keyholders, h_plus, eci_sibling_results_flag):
-
-    pos_diff_dict = {}
-    neg_diff_dict = {}
-    no_workers_penalties = {}
-    min_workers_penalties_shift = {}
-    min_workers_penalties_day = {}
-    inconsistent_shift_penalties = {}
-
-    # Create the objective function with heavy penalties
-    objective_terms = []
-    PESS_OBJ_PENALTY = 1000  # Penalty for deviations from pessObj
-    CONSECUTIVE_FREE_DAY = -1  # Bonus for consecutive free days
-    HEAVY_PENALTY = 300  # Penalty for days with no workers
-    MIN_WORKER_PENALTY_SHIFT = 600  # Penalty for breaking minimum worker requirements per shift
-    MIN_WORKER_PENALTY_DAY = 6000  # Penalty for breaking minimum worker requirements per day
-    SUNDAY_YEAR_BALANCE_PENALTY = 1  # Penalty for unbalanced Sunday free days ALL YEAR
-    C2D_YEAR_BALANCE_PENALTY = 8  # Penalty for unbalanced C2D free days ALL YEAR
-    INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
-    SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing Sundays across workers
-    C2D_BALANCE_ACROSS_WORKERS_PENALTY = 5  # Penalty for balancing C2D across workers
-    MANAGER_KEYHOLDER_CONFLICT_PENALTY = 30000
-    KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY = 50000
-    MANAGER_MANAGER_CONFLICT_PENALTY = 50000
-    hours_scale = 1000
-
-    optimization_details = {
-        'point_1_pessobj_deviations': {
-            'variables': {},
-            'weights': {},
-            'penalty_weight': PESS_OBJ_PENALTY
-        },
-        'point_2_consecutive_free_days': {
-            'variables': [],
-            'weight': CONSECUTIVE_FREE_DAY
-        },
-        'point_3_no_workers': {
-            'variables': {},
-            'penalty_weight': HEAVY_PENALTY
-        },
-        'point_4_1_min_workers': {
-            'variables': {},
-            'penalty_weight': MIN_WORKER_PENALTY_SHIFT
-        },
-        'point_4_2_min_workers': {
-            'variables': {},
-            'penalty_weight': MIN_WORKER_PENALTY_DAY
-        },
-        'point_5_1_sunday_balance': {
-            'variables': [],
-            'penalty_weight': SUNDAY_YEAR_BALANCE_PENALTY
-        },
-        'point_5_2_c2d_balance': {
-            'variables': [],
-            'penalty_weight': C2D_YEAR_BALANCE_PENALTY
-        },
-        'point_6_inconsistent_shifts': {
-            'variables': {},
-            'penalty_weight': INCONSISTENT_SHIFT_PENALTY
-        },
-        'point_7_sunday_balance_across_workers': {
-            'variables': [],
-            'penalty_weight': SUNDAY_BALANCE_ACROSS_WORKERS_PENALTY
-        },
-        'point_7b_lq_balance_across_workers': {
-            'variables': [],
-            'penalty_weight': C2D_BALANCE_ACROSS_WORKERS_PENALTY
-        },
-        'point_8_manager_keyholder_conflicts': {
-            'variables': {},
-            'penalty_weights': {
-                'mgr_kh_same_off': MANAGER_KEYHOLDER_CONFLICT_PENALTY,
-                'kh_overlap': KEYHOLDER_KEYHOLDER_CONFLICT_PENALTY,
-                'mgr_overlap': MANAGER_MANAGER_CONFLICT_PENALTY
-            }
-        }
-    }
 
     scale=10000
     objective_terms = []
     days_of_year_real= [d for d in days_of_year if year_range[0] <= d <= year_range[1] and d not in closed_holidays]
     days_of_year_working= [d for d in days_of_year if d not in closed_holidays]
     sundays = [d for d in sundays if d not in closed_holidays]
+    saturdays = [d - 1 for d in sundays if d - 1 not in closed_holidays]
     workers_not_complete = [w for w in workers if w not in workers_complete_cycle]
     if len(workers_not_complete) < 1:
         workers_not_complete_exist = False
@@ -128,6 +55,11 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         q3 = q_groups[3]
         q4 = q_groups[4]
         q5 = q_groups[5]
+    
+        group_by_c2d = group_creator(workers_not_complete, c2d)
+        group_by_l_dom = group_creator(workers_not_complete, l_dom)
+        group_by_l_sab = group_creator(workers_not_complete, l_sab)
+        group_by_l_dom_or_sab = group_creator(workers_not_complete, l_dom_or_sab)
 
     # Weights:
         
@@ -271,11 +203,13 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     num_days_deficit_over_q_worst_case= 1
     deficit_over_q_day_weight=int(scale*percentage_of_importance_day_deficit_over_q/num_days_deficit_over_q_worst_case)
 
+    all_workers = workers + workers_past
 
-     ####################################################
+
+    ####################################################
 
 
-     # 1. No managers/keyholders    
+    # 1. No managers/keyholders    
 
     workers_with_key = managers + keyholders
     list_shifts_no_keys = [] 
@@ -362,7 +296,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     excess_diff_vars = []
     deficit_diff_vars = []
-    all_workers = workers + workers_past
     for d in days_of_year:
         for s in real_working_shift:
             target = pessObj.get((d, s), 0)
@@ -371,8 +304,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                 for w in all_workers if (w, d, s) in shift
             )
 
-            excess  = model.NewIntVar(0, len(all_workers)*80000, f'excess_{d}_{s}')
-            deficit = model.NewIntVar(0, target*80000, f'deficit_{d}_{s}')
+            excess  = model.NewIntVar(0, len(all_workers)*80, f'excess_{d}_{s}')
+            deficit = model.NewIntVar(0, target*80, f'deficit_{d}_{s}')
 
             model.Add(excess >= assigned_workers - target)
             model.Add(deficit >= target - assigned_workers)
@@ -391,8 +324,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     daily_deficit = {}
     daily_excess  = {}
 
-    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 80000
-    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 80000
+    max_daily_deficit_possible = len(real_working_shift)*max(pessObj.values()) * 80
+    max_daily_excess_possible  = len(real_working_shift)*len(all_workers) * 80
     for d in days_of_year_working:
         daily_deficit[d] = model.NewIntVar(0, max_daily_deficit_possible, f'daily_deficit_{d}')
         daily_excess[d]  = model.NewIntVar(0, max_daily_excess_possible,  f'daily_excess_{d}')
@@ -496,7 +429,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     weekly_diff_vars = []
     weekly_diff_vars_per_day=[]
     sorted_weeks = sorted(week_to_days.keys())
-    safe_limit = len(all_workers) * 80 * len(real_working_shift)  # same as before
+    safe_limit = len(all_workers) * 80 * len(real_working_shift)
 
     for w in sorted_weeks:
         days = set(week_to_days[w])
@@ -662,7 +595,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         if percentage_of_importance_workers>0:
             objective_terms.append(objective_zero_eci * no_workers_weight * 5)
 
-    # 5. Balancing number of free sundays across the workers 
+    # 5.1 Balancing number of free sundays across the workers 
  
     for qi, workers_q in q_groups.items():
     
@@ -695,6 +628,41 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
         
         objective_terms.append(sunday_diff_q * sundays_diff_weight)
+
+    # 5.2 Balancing number of free saturdays across the workers 
+ 
+    for qi, workers_q in q_groups.items():
+    
+        if len(workers_q) <= 1:
+            continue  
+
+        saturdays_per_worker_q = []
+
+        for w in workers_q:
+            saturday_free = sum(
+                shift[(w, d, s)]
+                for d in saturdays
+                for s in ['LQ', 'L']
+                if (w, d, s) in shift and year_range[0] <= d <= year_range[1]
+            )
+            saturdays_per_worker_q.append(saturday_free)
+
+        if not saturdays_per_worker_q:
+            continue    
+
+        
+        max_saturdays_q = model.NewIntVar(0, len(saturdays), f"max_saturdays_q{qi}")
+        min_saturdays_q = model.NewIntVar(0, len(saturdays), f"min_saturdays_q{qi}")
+
+        model.AddMaxEquality(max_saturdays_q, saturdays_per_worker_q)
+        model.AddMinEquality(min_saturdays_q, saturdays_per_worker_q)
+
+        
+        saturday_diff_q = model.NewIntVar(0, len(saturdays), f"saturday_diff_q{qi}")
+        model.Add(saturday_diff_q == max_saturdays_q - min_saturdays_q)
+
+        
+        objective_terms.append(saturday_diff_q * sundays_diff_weight)
 
 
     # 6. Balancing number of free EsLQ across the workers 
@@ -1014,7 +982,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     #        sunday_difference * total_sunday_imbalance_weight
     #    )
 
-    # 10 Control the periodicity of free Sundays
+    # 10.1 Control the periodicity of free Sundays
     
     excess_free_sundays_per_worker = {}
 
@@ -1061,7 +1029,60 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         model.Add(total_excess_free_sundays == sum(excess_free_sundays_per_worker.values()))
 
         objective_terms.append(total_excess_free_sundays * sunday_imbalance_weight_periodicity)
-       
+    
+    # 10.2 Control the periodicity of free Saturdays
+    
+    excess_free_saturdays_per_worker = {}
+
+    windows = [
+        saturdays[i:i+3]
+        for i in range(len(saturdays) - 2)
+    ]
+
+    if workers_not_complete_exist:
+        all_workers_not_complete = workers_not_complete + workers_past
+        for w in workers_not_complete:
+            window_violations = []
+
+            for idx, window in enumerate(windows):
+                free_saturdays = []
+
+                for d in window:
+                    terms = []
+
+                    if (w, d, 'L') in shift:
+                        terms.append(shift[(w, d, 'L')])
+                    if (w, d, 'LQ') in shift:
+                        terms.append(shift[(w, d, 'LQ')])
+                    if len(terms) == 0:
+                        free = model.NewIntVar(0, 0, f"missing_L_{w}_{d}")
+                    else:
+                        free = sum(terms)
+
+                    free_saturdays.append(free)
+
+                total_free = model.NewIntVar(0, 3, f"free_3s_{w}_{idx}")
+                model.Add(total_free == sum(free_saturdays))
+
+                violation = model.NewBoolVar(f"excess_free_saturday_{w}_{idx}")
+                model.Add(total_free >= 2).OnlyEnforceIf(violation)
+                model.Add(total_free <= 1).OnlyEnforceIf(violation.Not())
+
+                window_violations.append(violation)
+
+            total_excess = model.NewIntVar(
+                0, len(window_violations),
+                f"total_excess_free_saturdays_{w}"
+            )
+            model.Add(total_excess == sum(window_violations))
+
+            excess_free_saturdays_per_worker[w] = total_excess
+
+        total_excess_free_saturdays = model.NewIntVar(0, len(saturdays) * len(workers_not_complete),"total_excess_free_saturdays")
+
+        model.Add(total_excess_free_saturdays == sum(excess_free_saturdays_per_worker.values()))
+
+        objective_terms.append(total_excess_free_saturdays * sunday_imbalance_weight_periodicity)
 
     # 11. Balancing LQ's across the year
 
@@ -1151,7 +1172,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
                  
     model.Minimize(sum(objective_terms))
 
-    return optimization_details
 
 
 

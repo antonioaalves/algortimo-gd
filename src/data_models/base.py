@@ -27,6 +27,7 @@ from src.data_models.functions.helper_functions import (
     count_dates_per_year,
     convert_types_out,
     bulk_insert_with_query,
+    collapse_df_colaborador_to_employee_level,
     filter_insert_results,
     get_df_faixa_horario,
 )
@@ -36,6 +37,7 @@ from src.data_models.functions.data_treatment_functions import (
     add_date_related_columns,
     create_df_estimativas,
     add_pessoa_obj_whole_day,
+    fill_estimativas_passado_grid,
     treat_df_orcamento,
     apply_compensatory_sched_types,
     build_compensatory_output,
@@ -151,7 +153,9 @@ class BaseDescansosDataModel(ABC):
                 # df_estimativas borns as an empty dataframe
                 df_estimativas = pd.DataFrame()
 
-                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto', 'loja', 'secao', 'limite_superior_manha', 'limite_inferior_tarde']
+                # Retired columns removed: loja, secao, limite_superior_manha, limite_inferior_tarde
+                # (sourced from core_algorithm_variables, now retired — use WORK_SHIFT from ciclos instead)
+                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto']
                 self.logger.info(f"Columns to select: {columns_select}")
             except Exception as e:
                 self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
@@ -465,6 +469,20 @@ class BaseDescansosDataModel(ABC):
                 self.logger.error(f"Error filtering estimativas by dates: {e}", exc_info=True)
                 return False
 
+            # Pad missing passado days (transition weeks without orçamento) with zero numerics
+            try:
+                success, df_estimativas, error_msg = fill_estimativas_passado_grid(
+                    df_estimativas=df_estimativas,
+                    first_date_passado=first_date_passado,
+                    last_date_passado=last_date_passado,
+                )
+                if not success:
+                    self.logger.error(f"Failed to fill estimativas passado grid: {error_msg}")
+                    return False, "", error_msg
+            except Exception as e:
+                self.logger.error(f"Error filling estimativas passado grid: {e}", exc_info=True)
+                return False, "", str(e)
+
             # Adjust for special dates (Step 2 from func_inicializa guide)
             try:
                 self.logger.info("Adjusting estimativas for special dates (Christmas/New Year)")
@@ -693,7 +711,10 @@ class BaseDescansosDataModel(ABC):
             final_df = self.rare_data['df_results'].copy()
             df_colaborador = self.medium_data['df_colaborador'].copy()
             self.logger.info(f"DEBUG: df_colaborador: {df_colaborador}")
-            df_colaborador = df_colaborador[['employee_id', 'matricula', 'data_admissao', 'data_demissao']]
+            df_colaborador = collapse_df_colaborador_to_employee_level(
+                df_colaborador[['employee_id', 'matricula', 'data_admissao', 'data_demissao']],
+                employee_col='employee_id',
+            )
 
             # Adding validation to fall gracefully
             if final_df.empty:

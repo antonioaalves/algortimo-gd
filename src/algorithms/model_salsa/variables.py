@@ -17,8 +17,8 @@ def add_var(model, shift, w, days, code):
 
 
 def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, empty_days,
-                       closed_holidays, fixed_days_off, fixed_LQs, shift_M, shift_T, past_workers,
-                       fixed_compensation_days, locked_days, forced_work_days, contract_type, dynamic_empty):
+                       closed_holidays, fixed_days_off, fixed_LQs, shift_M, shift_T, past_workers, fixed_compensation_days,
+                       locked_days, forced_work_days, contract_type, dynamic_empty, complete_cycle_days):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 
@@ -82,9 +82,11 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         fixed_days_set = fixed_days_off[w] - vacation - fixed_LQs_set
         absence_set = absences[w] - fixed_days_set - fixed_LQs_set - vacation - empty_set
         forced_set = set(forced_work_days[w])
-        shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set - forced_set
-        shift_T_set = set(shift_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set - forced_set
+        shift_M_set = set(shift_M[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set
+        shift_T_set = set(shift_T[w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set
         fixed_LD_set = set(fixed_compensation_days[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set
+        complete_set = set(complete_cycle_days[w])
+
         SET_CODE_PRIORITY = [
             ("-", empty_set),
             ("V", vacation),
@@ -107,6 +109,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         logger.info(f"\tDEBUG fixed lds {sorted(fixed_LD_set)}\n")
         if len(locked_days[w]) > 0:
             logger.info(f"\tDEBUG locked days {sorted(locked_days[w])}\n")
+        if len(complete_set) > 0:
+            logger.info(f"\tDEBUG complete cycle days {sorted(complete_set)}\n")
  
         if contract_type.get(w, 0) <= 4 and w in dynamic_empty:
             fixed_dynamic_empty = dynamic_empty[w]
@@ -126,8 +130,11 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                             break
                     continue
                 if d in forced_set:
-                    shift[(w, d, 'M')] = model.NewBoolVar(f"{w}_Day{d}_M")
-                    shift[(w, d, 'T')] = model.NewBoolVar(f"{w}_Day{d}_T")
+                    if d in shift_M_set:
+                        shift[(w, d, 'M')] = model.NewBoolVar(f"{w}_Day{d}_M")
+                    if d in shift_T_set:
+                        shift[(w, d, 'T')] = model.NewBoolVar(f"{w}_Day{d}_T")
+                    #logger.info(f"{w} has forced work day {d} with shift {True if d in shift_M_set else False} M and  {True if d in shift_T_set else False} M")
                     continue
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")

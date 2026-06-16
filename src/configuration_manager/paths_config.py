@@ -60,7 +60,8 @@ class PathsConfig:
         self._path_hierarchy = self._load_path_hierarchy()
         self._validate_path_hierarchy()
         
-        # Initialize path dictionaries
+        # CSV files referenced from sql_processing_paths (not under data/Queries/sql)
+        self._csv_processing_entities = frozenset({'df_messages'})
         self.sql_processing_paths: Dict[str, str] = {}
         self.sql_auxiliary_paths: Dict[str, str] = {}
         self.sql_raw_paths: Dict[str, str] = {}
@@ -150,9 +151,13 @@ class PathsConfig:
         """
         # Build full paths for processing SQL files
         for entity, filename in self.sql_processing_paths.items():
-            if filename:
+            if not filename:
+                continue
+            if entity in self._csv_processing_entities:
+                full_path = os.path.join(self.project_root_dir, 'data', 'csvs', filename)
+            else:
                 full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
-                self.sql_processing_paths[entity] = full_path
+            self.sql_processing_paths[entity] = full_path
         
         # Build full paths for auxiliary SQL files
         for entity, filename in self.sql_auxiliary_paths.items():

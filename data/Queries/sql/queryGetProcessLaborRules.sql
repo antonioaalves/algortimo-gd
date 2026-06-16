@@ -15,3 +15,7 @@ SELECT
     cplr.VALUE
 FROM wfm.core_process_labor_rules cplr
 WHERE cplr.PROCESS_ID = {process_id}
+    AND cplr.RULE_CODE IN (
+        'COMPENSATORY_TIME_OFF_SUNDAYS',
+        'COMPENSATORY_TIME_OFF_HOLIDAYS'
+    )

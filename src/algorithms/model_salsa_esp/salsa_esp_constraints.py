@@ -439,7 +439,7 @@ def salsa_esp_saturday_L_constraint(model, shift, workers, working_days, start_w
                         sunday_l = shift[sunday_l_key]
                         #logger.debug(f"DEBUG: Adding constraint for Worker {w}, Saturday {day}, Sunday {sunday_day}")
                         # If Sunday has L, then Saturday can't have L
-                        # This translates to: sunday_l == 1 → saturday_l == 0
+                        # This translates to: sunday_l == 1 -> saturday_l == 0
                         # Which is equivalent to: saturday_l + sunday_l <= 1
                         model.Add(saturday_l + sunday_l <= 1)
 

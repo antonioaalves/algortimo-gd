@@ -14,6 +14,8 @@ import os
 import psutil
 from src.algorithms.solver.solver_callback import SolutionCallback
 from src.algorithms.helpers_algorithm import analyze_optimization_results
+from src.algorithms.model_salsa.auxiliar_functions_salsa import get_dummy
+
 
 # Get project name and set up logger
 project_name = get_config_manager().system.project_name
@@ -37,6 +39,8 @@ def solve(
     eci_sibling_results_flag: bool,
     period: List[int],
     index_to_date: Dict[int, str],
+    dummy_workers: Dict[int, Dict[str, int]],
+    worker_with_dummy: Dict[int, tuple[int, int]],
     unique_dates_row: pd.core.series.Series,
     max_time_seconds: int = 600,
     enumerate_all_solutions: bool = False,
@@ -45,7 +49,6 @@ def solve(
     log_callback: Optional[Callable[[str], None]] = None,
     output_filename: str = os.path.join(get_config_manager().paths.get_output_dir(), 'working_schedule.xlsx'),
     debug_vars: Optional[Dict[str, cp_model.IntVar]] = None,  # Add this parameter
-    optimization_details: Optional[Dict[str, Any]] = None
 ) -> pd.DataFrame:
     """
     Enhanced solver function with comprehensive logging and configurable parameters.
@@ -161,8 +164,6 @@ def solve(
 
 
         status = solver.Solve(model, solution_callback)
-        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            results = analyze_optimization_results(solver, optimization_details)
     
 
         solve_end = time.time()
@@ -300,12 +301,14 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        time_worked_day_T[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_T:
+                            time_worked_day_T[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if d in special_days:
                             special_days_count += 1
                             special_days_worked[w].append(d)
-                        time_worked_day_M[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_M:
+                            time_worked_day_M[d - 1] += work_day_hours[w].get(d, 8)
 
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
@@ -333,6 +336,12 @@ def solve(
         time_worked_day_T_after = time_worked_day_T.copy()
         for w in workers:
             try:
+                if dummy_workers:
+                    if w in dummy_workers:
+                        logger.info(f"{w} is a dummy worker, skiping")
+                        continue
+                    if w in worker_with_dummy:
+                        logger.info(f"{w} changes contract  {len(worker_with_dummy[w])} times.")
                 worker_row = [w]  # Start with the worker's name
                 l_count = 0
                 lq_count = 0
@@ -359,10 +368,10 @@ def solve(
                 logger.info(f"Processing worker {w}")
                 for d in days_of_year_sorted:
                     day_assignment = None
-                    
+                    temp_w = get_dummy(worker_with_dummy, w, d)
                     # Check each shift type for this day
                     for s in shifts:
-                        if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
+                        if (temp_w, d, s) in shift and solver.Value(shift[(temp_w, d, s)]) == 1:
                             day_assignment = shift_mapping.get(s, s)
                             break
                     
@@ -389,7 +398,8 @@ def solve(
                                 special_days_count += 1
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
-                        time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_T:
+                            time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
                     elif day_assignment in ['M']:
                         if 12 <= d <= period[1]:
                             if d in special_days:
@@ -397,7 +407,8 @@ def solve(
                                 special_days_count += 1
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
-                        time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 in time_worked_day_M:
+                            time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
 
                 if contingente_feriados:
                     if w in contingente_feriados and len(contingente_feriados[w]) > 0:
@@ -509,7 +520,7 @@ def solve(
         
         logger.info("[OK] Solver completed successfully")
         df.columns = unique_dates_row
-        return df , results, feriados_domingos_compensacao
+        return df , feriados_domingos_compensacao
         
     except Exception as e:
         logger.error(f"Error in solver: {str(e)}", exc_info=True)
