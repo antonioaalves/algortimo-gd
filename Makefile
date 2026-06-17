@@ -2,7 +2,7 @@
 
 PYTHON  ?= python
 PORT    ?= 5000
-VERSION := 1.1-dev
+VERSION := 1.1.51-docker
 IMAGE   ?= algoritmo-gd
 
 help: ## Show this help
