@@ -813,9 +813,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
 
-                if param_name == 'NUM_DIAS_CONS':
-                    algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
-
                 if param_name == 'ld_sunday_param':
                     algorithm_treatment_params['ld_sunday_param'] = float(param_value)
 
@@ -1990,20 +1987,16 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", error_msg
 
             # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
-            # Runs here because all required data is available: df_annual_variables and df_feriados
-            # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
             try:
                 df_annual_variables = self.auxiliary_data.get('df_annual_variables', pd.DataFrame())
                 df_feriados_cap = self.auxiliary_data.get('df_feriados', pd.DataFrame())
                 df_ausencias_cap = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
-                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
 
                 success_cap, df_annual_variables, cap_events, error_cap = apply_annual_dayoff_feasibility_cap(
                     df_colaborador=df_colaborador,
                     df_annual_variables=df_annual_variables,
                     df_feriados=df_feriados_cap,
                     df_ausencias_ferias=df_ausencias_cap,
-                    num_dias_cons=num_dias_cons,
                     main_year=main_year,
                     df_calendario=df_calendario,
                     execution_begin=start_date,
@@ -2194,7 +2187,9 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 df_feriados = self.auxiliary_data.get('df_feriados', pd.DataFrame())
                 df_ausencias = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
-                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
+                num_dias_cons = int(
+                    self.config_manager.parameters.get_parameter_defaults().get('NUM_DIAS_CONS', 6)
+                )
                 success_cons, cons_events, error_cons = validate_max_consecutive_working_days(
                     df_calendario=df_calendario,
                     df_colaborador=df_colaborador,

@@ -12,7 +12,6 @@
             "GD_algorithmName",
             "GD_consideraFestivos",
             "GD_convenioBD",
-            "NUM_DIAS_CONS",
             "codigos_motivo_ausencia",
             "l_dom_days",
             "ld_sunday_param",
@@ -30,6 +29,7 @@
             "GD_algorithmName": "alcampo_algorithm",
             "GD_consideraFestivos": 1,
             "GD_convenioBD": "ALCAMPO",
+            "NUM_DIAS_CONS": 6,
             "codigos_motivo_ausencia": [
                 2101,
                 8999,

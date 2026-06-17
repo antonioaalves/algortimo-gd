@@ -292,14 +292,15 @@ def validate_df_colaborador_structure(df_colaborador: pd.DataFrame) -> Tuple[boo
 
         # RECOMMENDED COLUMNS CHECK (warn if missing)
         recommended_columns = [
-            'nome',           # Employee display name
-            'labor_union',    # Labor agreement / union code
-            'maximumworkload',# Maximum weekly workload (hours)
-            'maximumworkday', # Maximum daily workload (hours)
-            'carga_diaria',   # Derived daily workload cap
-            'data_admissao',  # Admission date
-            'data_demissao',  # Dismissal date (may be null)
-            'fk_tipo_posto',  # Job position type
+            'nome',                      # Employee display name
+            'labor_union',               # Labor agreement / union code
+            'maximumworkload',           # Maximum weekly workload (hours)
+            'maximumworkday',            # Maximum daily workload (hours)
+            'max_continuous_work_days',  # Maximum consecutive working days (contract-level)
+            'carga_diaria',              # Derived daily workload cap
+            'data_admissao',             # Admission date
+            'data_demissao',             # Dismissal date (may be null)
+            'fk_tipo_posto',             # Job position type
         ]
 
         missing_recommended = [col for col in recommended_columns if col not in df_colaborador.columns]

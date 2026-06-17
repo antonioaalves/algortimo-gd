@@ -7,6 +7,7 @@ WITH contract_days AS (
         cpec.MAXIMUMDAYSPERWEEK,
         cpec.MAXIMUMWORKLOAD,
         cpec.MAXIMUMWORKDAY,
+        cpec.MAXIMUMCONTINUOUSWORKDAY,
         cpec.schedule_day,
         cpec.schedule_day - ROW_NUMBER() OVER (
             PARTITION BY cpec.employee_id, cpec.contract_id
@@ -23,8 +24,9 @@ SELECT
     cd.laborunionid        AS labor_union,
     cd.MINIMUMDAYSPERWEEK  AS min_dia_trab,
     cd.MAXIMUMDAYSPERWEEK  AS max_dia_trab,
-    cd.MAXIMUMWORKLOAD     AS maximumworkload,
-    cd.MAXIMUMWORKDAY      AS maximumworkday,
+    cd.MAXIMUMWORKLOAD              AS maximumworkload,
+    cd.MAXIMUMWORKDAY               AS maximumworkday,
+    cd.MAXIMUMCONTINUOUSWORKDAY     AS max_continuous_work_days,
     MIN(cd.schedule_day)   AS begin_date,
     MAX(cd.schedule_day)   AS end_date,
     ec.MATRICULA           AS matricula,
@@ -41,6 +43,7 @@ GROUP BY
     cd.MAXIMUMDAYSPERWEEK,
     cd.MAXIMUMWORKLOAD,
     cd.MAXIMUMWORKDAY,
+    cd.MAXIMUMCONTINUOUSWORKDAY,
     cd.period_grp,
     ec.MATRICULA,
     ec.NOME,
