@@ -5,7 +5,7 @@ Created on Tue Jan 21 17:08:55 2025
 @author: jason.vogensen
 """
 import os
-import cx_Oracle
+import oracledb as cx_Oracle  # oracledb replaces cx_Oracle
 import pandas as pd
 
 def get_all_params(path_os, unit_id=None, secao=None, posto=None,  connection=None, p_name=None,):
