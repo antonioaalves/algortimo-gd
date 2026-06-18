@@ -271,7 +271,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             role_by_worker = adapted_data['role_by_worker']
             work_day_hours = adapted_data['work_day_hours']
             work_days_per_week = adapted_data['work_days_per_week']
-            max_continuous_days = adapted_data["num_dias_cons"]
             country = adapted_data["country"]
             partial_workers_complete = adapted_data['partial_workers_complete']
             workers_past = adapted_data['workers_past']
@@ -297,6 +296,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             complete_cycle_days = adapted_data["complete_cycle_days"]
             annual_variables = adapted_data["annual_variables"]
             workers_no_contract_changes = adapted_data["workers_no_contract_changes"]
+            max_consect_days = adapted_data["max_consect_days"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -308,8 +308,6 @@ class SalsaAlgorithm(BaseAlgorithm):
                 shifts.remove("LD")
                 check_shift.remove("LD")
                 working_shift.remove("LD")
-                if max_continuous_days == None:
-                    max_continuous_days = 6
 
             # Extract settings
             settings = self.parameters["settings"]
@@ -406,7 +404,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Maximum continuous working days constraint
                 if constraint_selections.get("maximum_continuous_working_days", {}).get("enabled", True):
                     self.logger.info("Applying constraint: maximum_continuous_working_days")
-                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period, dummy_workers, workers_with_dummy, complete_cycle_days)
+                    maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_consect_days, period, dummy_workers, workers_with_dummy, complete_cycle_days)
                 else:
                     self.logger.warning("Skipping constraint: maximum_continuous_working_days (disabled in config)")
                 

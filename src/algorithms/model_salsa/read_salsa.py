@@ -360,6 +360,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         min_work_days = {}
         max_work_days = {}
         workers_no_contract_changes = []
+        max_consect_days = {}
 
         for w in workers_complete:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
@@ -377,6 +378,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 week_compensation_limit[w] = 0
                 min_work_days[w] = 0
                 max_work_days[w] = 0
+                max_consect_days[w] = 0
             else:
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
                 # Extract contract information
@@ -389,6 +391,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 max_work_days[w] = int(worker_row.get('max_dia_trab', 0))
                 first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
                 week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
+                #max_consect_days[w] = int(worker_row.get('n_sem_a_folga', 0))
+
                 # MODIFIED: Fix date handling - don't convert Timestamp to datetime
                 admissao_value = worker_row.get('data_admissao', None)
                 logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
@@ -479,6 +483,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                         max_work_days[new_w] = int(worker_row.get('max_dia_trab', 0))
                         first_week_5_6[new_w] = int(worker_row.get('seed_5_6', 0))
                         week_compensation_limit[new_w] = int(worker_row.get('n_sem_a_folga', 0))
+                        #max_consect_days[new_w] = int(worker_row.get('n_sem_a_folga', 0))
+
                         admissao_value = worker_row.get('begin_date', None)
                         logger.info(f"Processing worker {new_w} with data_admissao: {admissao_value}")
                         demissao_value = worker_row.get('end_date', None)
@@ -1056,6 +1062,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "complete_cycle_days": complete_cycle_days,
             "annual_variables": annual_variables,
             "workers_no_contract_changes": workers_no_contract_changes,
+            "max_consect_days": max_consect_days,
             }
         
     except Exception as e:
