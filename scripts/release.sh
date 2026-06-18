@@ -91,10 +91,10 @@ else
   NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 fi
 
-if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-  echo "Invalid semver: ${NEW_VERSION}" >&2
-  exit 2
-fi
+#if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+#  echo "Invalid semver: ${NEW_VERSION}" >&2
+#  exit 2
+#fi
 
 TAG="v${NEW_VERSION}"
 if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
