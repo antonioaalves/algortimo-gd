@@ -6,8 +6,23 @@ Created on Mon Oct 28 15:06:29 2024
 """
 
 import os
+import unicodedata
 
 import pandas as pd
+
+# Per-process override set when unit country is loaded (see apply_unit_message_lang_from_estrutura).
+_runtime_message_lang: str | None = None
+
+# Optional WFM core_country.id → message column; nome_pais is used when an id is not listed.
+_FK_PAIS_MESSAGE_LANG: dict[int, str] = {}
+
+_ES_COUNTRY_TOKENS = frozenset({'espana', 'spain', 'espanha'})
+_PT_COUNTRY_TOKENS = frozenset({'portugal'})
+# Until FR translations exist, France and Ireland use the EN column in df_messages.
+_EN_COUNTRY_TOKENS = frozenset({'france', 'franca', 'irlanda', 'ireland', 'irlande'})
+
+_SUPPORTED_MESSAGE_LANGS = ('EN', 'ES', 'PT')
+_DEFAULT_MESSAGE_LANG = 'EN'
 
 
 def _get_logging_config() -> dict:
@@ -19,8 +34,72 @@ def _get_logging_config() -> dict:
         return {}
 
 
-def get_message_lang(default: str = 'ES') -> str:
-    """Resolve message language from system settings (ES or PT)."""
+def _normalize_country_name(name: str) -> str:
+    normalized = unicodedata.normalize('NFKD', str(name))
+    ascii_name = normalized.encode('ascii', 'ignore').decode('ascii')
+    return ascii_name.strip().lower()
+
+
+def resolve_message_lang_from_unit(
+    fk_pais=None,
+    nome_pais=None,
+    default: str | None = None,
+) -> str:
+    """
+    Map unit country (fk_pais / nome_pais) to a df_messages language column (EN, ES, or PT).
+
+    Falls back to logging.message_lang from system settings, then EN.
+    """
+    if default is None:
+        default = _get_logging_config().get('message_lang', _DEFAULT_MESSAGE_LANG) or _DEFAULT_MESSAGE_LANG
+    fallback = str(default).upper()
+
+    if fk_pais is not None and str(fk_pais).strip() != '':
+        try:
+            mapped = _FK_PAIS_MESSAGE_LANG.get(int(fk_pais))
+            if mapped:
+                return str(mapped).upper()
+        except (TypeError, ValueError):
+            pass
+
+    if nome_pais is not None and str(nome_pais).strip():
+        norm = _normalize_country_name(nome_pais)
+        if norm in _ES_COUNTRY_TOKENS or any(token in norm for token in _ES_COUNTRY_TOKENS):
+            return 'ES'
+        if norm in _PT_COUNTRY_TOKENS or 'portugal' in norm:
+            return 'PT'
+        if norm in _EN_COUNTRY_TOKENS or any(
+            token in norm for token in ('france', 'franca', 'irland', 'ireland')
+        ):
+            return 'EN'
+
+    return fallback
+
+
+def set_runtime_message_lang(lang: str | None) -> None:
+    """Set or clear the per-process message language override."""
+    global _runtime_message_lang
+    _runtime_message_lang = str(lang).upper() if lang else None
+
+
+def apply_unit_message_lang_from_estrutura(df_estrutura_wfm: pd.DataFrame) -> str:
+    """Resolve language from df_estrutura_wfm and apply it for subsequent set_messages calls."""
+    fk_pais = nome_pais = None
+    if df_estrutura_wfm is not None and not df_estrutura_wfm.empty:
+        row = df_estrutura_wfm.iloc[0]
+        if 'fk_pais' in df_estrutura_wfm.columns:
+            fk_pais = row.get('fk_pais')
+        if 'nome_pais' in df_estrutura_wfm.columns:
+            nome_pais = row.get('nome_pais')
+    lang = resolve_message_lang_from_unit(fk_pais=fk_pais, nome_pais=nome_pais)
+    set_runtime_message_lang(lang)
+    return lang
+
+
+def get_message_lang(default: str = _DEFAULT_MESSAGE_LANG) -> str:
+    """Resolve message language: unit override, then system settings, then default."""
+    if _runtime_message_lang:
+        return _runtime_message_lang
     lang = _get_logging_config().get('message_lang', default)
     return str(lang).upper() if lang else default
 
@@ -56,9 +135,9 @@ def load_df_messages(project_root_dir: str | None = None) -> pd.DataFrame:
 
 
 def _resolve_message_template(message_row: pd.Series, df_msg: pd.DataFrame, lang: str) -> str:
-    """Pick template for lang with fallback to ES then PT when translation is missing."""
+    """Pick template for lang with fallback to EN, ES, then PT when translation is missing."""
     fallback_order = [lang.upper()]
-    for fallback in ('ES', 'PT'):
+    for fallback in _SUPPORTED_MESSAGE_LANGS:
         if fallback not in fallback_order:
             fallback_order.append(fallback)
     for col in fallback_order:
@@ -70,13 +149,13 @@ def _resolve_message_template(message_row: pd.Series, df_msg: pd.DataFrame, lang
     return ''
 
 
-def get_messages(path_os, lang='ES'):
+def get_messages(path_os, lang=_DEFAULT_MESSAGE_LANG):
     """
     Reads df_messages and filters to the requested language column.
 
     Parameters:
         path_os (str): Project root directory (used when settings path is relative).
-        lang (str): Language code ('ES' or 'PT'). Default is 'ES'.
+        lang (str): Language code ('EN', 'ES', or 'PT'). Default is EN.
 
     Returns:
         pd.DataFrame: DataFrame with VAR and DESC columns, or empty on error.
@@ -88,7 +167,7 @@ def get_messages(path_os, lang='ES'):
 
         lang = str(lang).upper()
         if lang not in df_msg.columns:
-            lang = 'ES'
+            lang = _DEFAULT_MESSAGE_LANG if _DEFAULT_MESSAGE_LANG in df_msg.columns else 'ES'
 
         melted = df_msg.melt(id_vars=['VAR'], value_vars=[lang], var_name='LANG', value_name='DESC')
         return melted[melted['LANG'] == lang]
@@ -122,7 +201,7 @@ def set_messages(df_msg, var, values, lang=None):
         df_msg (pd.DataFrame): DataFrame containing message templates (columns VAR, ES, PT, ...).
         var (str): The variable name to filter the message by.
         values (dict): Dictionary of placeholders and their corresponding values.
-        lang (str, optional): Language code ('ES' or 'PT'). Defaults to system message_lang.
+        lang (str, optional): Language code ('EN', 'ES', or 'PT'). Defaults to system message_lang.
 
     Returns:
         str: The formatted message with placeholders replaced.

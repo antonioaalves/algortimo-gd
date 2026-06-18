@@ -678,6 +678,9 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.warning("df_estrutura_wfm query path not found in config")
                 df_estrutura_wfm = data_manager.load_data('df_estrutura_wfm', query_file=query_path)
                 self.logger.info(f"df_estrutura_wfm shape (rows {df_estrutura_wfm.shape[0]}, columns {df_estrutura_wfm.shape[1]}): {df_estrutura_wfm.columns.tolist()}")
+                from src.orquestrador_functions.Logs.message_loader import apply_unit_message_lang_from_estrutura
+                message_lang = apply_unit_message_lang_from_estrutura(df_estrutura_wfm)
+                self.logger.info(f"Process message language set to {message_lang}")
             except Exception as e:
                 self.logger.error(f"Error loading df_estrutura_wfm: {e}", exc_info=True)
                 return False
@@ -744,6 +747,7 @@ class DescansosDataModel(BaseDataModel):
                 self.raw_data['df_estimativas'] = df_estimativas.copy()
                 self.auxiliary_data['df_turnos'] = df_turnos.copy()
                 self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
+                self.auxiliary_data['message_lang'] = message_lang
                 self.auxiliary_data['df_feriados'] = df_feriados.copy()
                 self.auxiliary_data['df_faixa_horario'] = df_faixa_horario.copy()
                 self.auxiliary_data['df_orcamento'] = df_orcamento.copy()
