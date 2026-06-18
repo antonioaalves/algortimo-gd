@@ -19,22 +19,25 @@ from base_data_project.data_manager.managers.managers import BaseDataManager, DB
 from src.orquestrador_functions.Logs.message_loader import set_messages, get_message_lang
 
 _FEASIBILITY_CAP_DAYOFF_LABELS = {
-    'l_dom': {'ES': 'domingos', 'PT': 'domingos'},
-    'l_sab': {'ES': 'sabados', 'PT': 'sabados'},
+    'l_dom': {'ES': 'domingos', 'PT': 'domingos', 'EN': 'Sundays'},
+    'l_sab': {'ES': 'sabados', 'PT': 'sabados', 'EN': 'Saturdays'},
     'l_dom_or_sab': {
         'ES': 'descansos (sabado o domingo)',
         'PT': 'descansos (sabado ou domingo)',
+        'EN': 'days off (Saturday or Sunday)',
     },
     'c2d': {
         'ES': 'fines de semana de calidad',
         'PT': 'fins de semana de qualidade',
+        'EN': 'quality weekends',
     },
 }
 
 
 def _feasibility_cap_dayoff_label(field: str, lang: str) -> str:
     labels = _FEASIBILITY_CAP_DAYOFF_LABELS.get(field, {})
-    return labels.get(lang.upper(), labels.get('ES', field))
+    lang = lang.upper()
+    return labels.get(lang, labels.get('EN', labels.get('ES', field)))
 
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)

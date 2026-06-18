@@ -251,7 +251,12 @@ class SalsaDataModel(BaseDescansosDataModel):
         # In the future it should contain the error message to add to the log
         error_message = None
         try:
-            from src.orquestrador_functions.Logs.message_loader import load_df_messages
+            from src.orquestrador_functions.Logs.message_loader import (
+                load_df_messages,
+                set_runtime_message_lang,
+                apply_unit_message_lang_from_estrutura,
+            )
+            set_runtime_message_lang(None)
             df_messages = load_df_messages(self.config_manager.system.project_root_dir)
         except Exception as e:
             self.logger.error(f"Error loading df_messages: {e}")
@@ -329,6 +334,16 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "", ""
 
             nome_pais = get_df_estrutura_wfm_info(df_estrutura_wfm)
+            message_lang = apply_unit_message_lang_from_estrutura(df_estrutura_wfm)
+            fk_pais_val = (
+                df_estrutura_wfm['fk_pais'].iloc[0]
+                if 'fk_pais' in df_estrutura_wfm.columns
+                else None
+            )
+            self.logger.info(
+                f"Process message language set to {message_lang} "
+                f"(fk_pais={fk_pais_val}, nome_pais={nome_pais})"
+            )
 
             # ECI Unit Detection: check if this is an ECI unit and load sibling section data
             eci_flag = is_eci_unit(df_estrutura_wfm)
@@ -705,6 +720,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 
                 # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
+                self.auxiliary_data['message_lang'] = message_lang
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
                 self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()

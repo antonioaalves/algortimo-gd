@@ -286,6 +286,29 @@ class AlgoritmoGDService(BaseService):
                     )
                 return False
 
+            df_messages = self.data_model.auxiliary_data.get('df_messages', df_messages)
+            if self.raw_connection and not df_messages.empty:
+                self._refresh_raw_connection()
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=self.config_manager.system.project_root_dir,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='I',
+                    process_type='AlgoritmoHorariosPython_Pai',
+                    error_code=None,
+                    description=set_messages(
+                        df_messages,
+                        'callSubproc',
+                        {
+                            '1': self.external_data['current_process_id'],
+                            '2': child_num,
+                        },
+                    ),
+                    employee_id=None,
+                    schedule_day=None,
+                )
+
             # Progress update
             if self.stage_handler:
                 self.stage_handler.track_progress(

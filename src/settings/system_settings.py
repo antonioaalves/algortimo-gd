@@ -47,7 +47,7 @@ system_configs = {
         'log_level': 'INFO',
         'log_dir': 'logs',
 
-        'message_lang': 'PT',  # ES or PT — all process/DB messages use this language for now
+        'message_lang': 'EN',  # EN, ES, or PT — fallback when unit fk_pais/nome_pais cannot be resolved
 
     },
 
