@@ -344,7 +344,7 @@ def shift_day_constraint(model, shift, days_of_year, workers_complete, shifts):
             if (total_shifts):
                 model.add_exactly_one(total_shifts)
 
-def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type, work_days_per_week, period, complete_cycle_days):
+def week_working_days_constraint(model, shift, week_to_days, workers, working_shift, work_days_per_week, period, complete_cycle_days):
     # Define working shifts
     # Add constraint to limit working days in a week to contract type
     for w in workers:
@@ -437,7 +437,6 @@ def LQ_attribution(model, shift, workers_no_contract_changes, working_days, c2d,
 
 def working_day_shifts(model, shift, workers, working_days, check_shift, working_shift, period, contract_type, complete_cycle_days):
     # Check for the workers so that they can only have M, T, TC, L, LD and LQ in working days
-    #  check_shift = ['M', 'T', 'L', 'LQ', "LD"]
     check_shift_with_empty = check_shift + ["-"]
     for w in workers:
         for d in working_days[w]:
@@ -830,15 +829,20 @@ def free_days_special_days(model, shift, sundays, workers_no_contract_changes, w
         logger.info(f"Worker contract changes {w}, Sundays {worker_saturdays}, total {total_l_dom_or_sab.get(w, 0)}")
         model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (get_dummy(workers_with_dummy, w, d), d, s) in shift) >= total_l_dom_or_sab.get(w, 0))
 
-def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_M, shift_T, period, closed_days):
+def one_colab_min_constraint(model, shift, workers, working_shift, days_of_year, shift_data, period, closed_days):
     if len(workers) > 1:
         for day in days_of_year:
             if not (period[0] < day < period[1]) or day in closed_days:
                 continue
             available_workers = 0
             for w in workers:
-                if day in shift_M[w] or day in shift_T[w]:
-                    available_workers += 1
+                for value in working_shift:
+                    if value == 'LD':
+                        continue
+
+                    if day in shift_data[f"shift_{value}"][w]:
+                        available_workers += 1
+                        break
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in workers for s in working_shift if (w, day, s) in shift) >= 1)
 

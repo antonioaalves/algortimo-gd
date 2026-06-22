@@ -14,7 +14,7 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atribu
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
 
-def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Enhanced version of read_data_salsa with comprehensive logging and error checks.
     
@@ -562,8 +562,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         fixed_days_off = {}
         fixed_LQs = {}
         work_day_hours = {}
-        shift_M = {}
-        shift_T = {}
         fixed_compensation_days = {}
         locked_days = {}
         forced_work_days = {}
@@ -571,6 +569,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         complete_cycle_days = {}
         week_template_temp = {}
         week_template = {}
+
+        shift_data = {f"shift_{value}" for value in shifts}
 
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -581,14 +581,14 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 continue
             else:
                 logger.info(f"PAST WORKERS: Calendar data found for worker {w}")
-            shift_M[w] = set(worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT')]['index'].tolist())
-            shift_T[w] = set(worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT')]['index'].tolist())
+            for value in shifts:
+                shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'MoT'])]['index'].tolist())
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
-            fixed_days_off[w] = set(worker_calendar[(worker_calendar['horario'] == 'L') | (worker_calendar['horario'] == 'C')]['index'].tolist())
+            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'].isin(['L', 'C'])]['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             empty_days[w] = set(worker_calendar[worker_calendar['horario'] == '-']['index'].tolist())
             vacation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'V']['index'].tolist())
-            worker_absences[w] = set(worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP')]['index'].tolist())
+            worker_absences[w] = set(worker_calendar[worker_calendar['horario'].isin(['A', 'AP'])]['index'].tolist())
             work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
 
             logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
@@ -608,8 +608,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 fixed_days_off[w] = []
                 fixed_LQs[w] = []
                 work_day_hours[w] = []
-                shift_M[w] = []
-                shift_T[w] = []
+                for value in shifts:
+                    shift_data[f"shift_{value}"][w] = []
                 fixed_compensation_days[w] = []
                 locked_days[w] = []
                 forced_work_days[w] = []
@@ -620,18 +620,19 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                 continue
             
             # Find days with specific statuses
-            empty_days[w] = worker_calendar[(worker_calendar['horario'] == '-') | (worker_calendar['horario'] == 'A-') | (worker_calendar['horario'] == 'V-') | (worker_calendar['horario'] == '0')]['index'].tolist()
-            vacation_days[w] = worker_calendar[(worker_calendar['horario'] == 'V') | (worker_calendar['horario'] == 'V-')]['index'].tolist()
-            worker_absences[w] = worker_calendar[(worker_calendar['horario'] == 'A') | (worker_calendar['horario'] == 'AP') | (worker_calendar['horario'] == 'A-')]['index'].tolist()
-            fixed_days_off[w] = worker_calendar[(worker_calendar['horario'] == 'L') | (worker_calendar['horario'] == 'C') | (worker_calendar['horario'] == 'L_DOM')]['index'].tolist()
+            empty_days[w] = worker_calendar[worker_calendar['horario'].isin(['-', 'A-', 'V-' , '0'])]['index'].tolist()
+            vacation_days[w] = worker_calendar[worker_calendar['horario'].isin(['V', 'V-'])]['index'].tolist()
+            worker_absences[w] = worker_calendar[worker_calendar['horario'].isin(['AP', 'A-', 'A'])]['index'].tolist()
+            fixed_days_off[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'L_DOM'])]['index'].tolist()
             free_day_complete_cycle[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'L_DOM'])]['index'].tolist()
             work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
             week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
-            shift_M[w] = worker_calendar[(worker_calendar['horario'] == 'M') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL') | (worker_calendar['horario'] == 'NLM')]['index'].tolist()
-            shift_T[w] = worker_calendar[(worker_calendar['horario'] == 'T') | (worker_calendar['horario'] == 'MoT') | (worker_calendar['horario'] == 'NL') | (worker_calendar['horario'] == 'NLT')]['index'].tolist()
+            for value in shifts:
+                shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'MoT', 'NL' , f'NL{value}'])]['index'].tolist())
+    #preciso de iterar por todos os tipos de NL e value
             forced_work_days[w] = worker_calendar[(worker_calendar['horario'] == 'NL') | (worker_calendar['horario'] == 'NLT') | (worker_calendar['horario'] == 'NLM')]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
@@ -645,8 +646,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             original = dummy_workers[dummy]["parent"]
             start = dummy_workers[dummy]["start_date"]
             end = dummy_workers[dummy]["end_date"]
-            shift_M[dummy] = {d for d in shift_M[original] if start <= d <= end}
-            shift_T[dummy] = {d for d in shift_T[original] if start <= d <= end}
+            for value in shifts:
+                shift_data[f"shift_{value}"][dummy] = {d for d in shift_data[f"shift_{value}"][original] if start <= d <= end}
             fixed_LQs[dummy] = {d for d in fixed_LQs[original] if start <= d <= end}
             empty_days[dummy] = [d for d in empty_days[original] if start <= d <= end]
             vacation_days[dummy] = {d for d in vacation_days[original] if start <= d <= end}
@@ -661,8 +662,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             week_template[dummy] = week_template[original]
 
         for original in workers_with_dummy:
-            shift_M[original] = {d for d in shift_M[original] if d <= data_demissao[original]}
-            shift_T[original] = {d for d in shift_T[original] if d <= data_demissao[original]}
+            for value in shifts:
+                shift_data[f"shift_{value}"][original] = {d for d in shift_data[f"shift_{value}"][original] if d <= data_demissao[original]}
             fixed_LQs[original] = {d for d in fixed_LQs[original] if d <= data_demissao[original]}
             empty_days[original] = [d for d in empty_days[original] if d <= data_demissao[original]]
             vacation_days[original] = {d for d in vacation_days[original] if d <= data_demissao[original]}
@@ -804,13 +805,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
         h_plus = {}
         min_workers = {}
         max_workers = {}
-        working_shift = ["M", "T"]
 
         # If estimativas has specific data, process it
         if not matriz_estimativas_gd.empty: 
             for d in days_of_year: 
                 # Process pess_obj for working_shift
-                for s in working_shift:
+                for s in shifts:
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['index'] == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
@@ -1030,8 +1030,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "week_compensation_limit": week_compensation_limit,
             "num_dias_cons": num_dias_cons,
             "country": country,
-            "shift_M": shift_M,
-            "shift_T": shift_T,
             "partial_workers_complete": partial_workers_complete,
             "workers_past": workers_past,
             "fixed_compensation_days": fixed_compensation_days, 
@@ -1056,6 +1054,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             "complete_cycle_days": complete_cycle_days,
             "annual_variables": annual_variables,
             "workers_no_contract_changes": workers_no_contract_changes,
+            "shift_data" : shift_data,
             }
         
     except Exception as e:

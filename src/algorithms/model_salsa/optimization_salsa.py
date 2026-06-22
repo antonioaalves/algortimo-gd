@@ -1150,18 +1150,16 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     for w in workers:
         inconsistent_weeks=[]
         for week, days in week_to_days.items():
+            shift_total = {f"shift_{value}" for value in real_working_shift}
+            for value in real_working_shift:
+
+                shift_total[f"shift_{value}"] = model.NewBoolVar(f"shift_{value}_{w}_{week}")
+                model.AddBoolOr([shift[(w, d, value)] for d in days if (w, d, value) in shift]).OnlyEnforceIf(shift_total[f"shift_{value}"])
+                model.AddBoolAnd([shift[(w, d, value)].Not() for d in days if (w, d, value) in shift]).OnlyEnforceIf(shift_total[f"shift_{value}"].Not())
             
-            shift_M=model.NewBoolVar(f"shift_M_{w}_{week}")
-            model.AddBoolOr([shift[(w, d, 'M')] for d in days if (w,d,'M') in shift]).OnlyEnforceIf(shift_M)
-            model.AddBoolAnd([shift[(w, d, 'M')].Not() for d in days if (w,d,'M') in shift]).OnlyEnforceIf(shift_M.Not())
-            
-            shift_T=model.NewBoolVar(f"shift_T_{w}_{week}")
-            model.AddBoolOr([shift[(w, d, 'T')] for d in days if (w,d,'T') in shift]).OnlyEnforceIf(shift_T)
-            model.AddBoolAnd([shift[(w, d, 'T')].Not() for d in days if (w,d,'T') in shift]).OnlyEnforceIf(shift_T.Not())
-           
             is_inconsistent=model.NewBoolVar(f"is_inconsistent_{w}_{week}")
-            model.AddBoolAnd([shift_M, shift_T]).OnlyEnforceIf(is_inconsistent)
-            model.AddBoolOr([shift_M.Not(), shift_T.Not()]).OnlyEnforceIf(is_inconsistent.Not())
+            model.AddBoolAnd([shift_total[f"shift_{value}"] for value in real_working_shift]).OnlyEnforceIf(is_inconsistent)
+            model.AddBoolOr([shift_total[f"shift_{value}"].Not() for value in real_working_shift]).OnlyEnforceIf(is_inconsistent.Not())
 
             inconsistent_weeks.append(is_inconsistent)
             
