@@ -61,12 +61,12 @@ class SalsaAlgorithm(BaseAlgorithm):
             end_date: End date for scheduling
         """
         # Default parameters for the SALSA algorithm
-        real_shifts = ...
+        real_shifts = ['M', 'T']
         default_parameters = {
             "real_working_shifts": real_shifts,
-            "shifts": real_shifts.append["L", "LQ", 'LD', "F", "A", "V", "-"],
-            "check_shifts": real_shifts.append['L', 'LQ', 'LD'],
-            "working_shifts": real_shifts.append['LD'],
+            "shifts": real_shifts + ["L", "LQ", 'LD', "F", "A", "V", "-"],
+            "check_shifts": real_shifts + ['L', 'LQ', 'LD'],
+            "working_shifts": real_shifts + ['LD'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -359,7 +359,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences, vacation_days, empty_days, 
                                        closed_holidays, fixed_days_off, fixed_LQs, shift_data, workers_past, fixed_compensation_days, locked_days,
-                                       forced_work_days, contract_type, dynamic_empty, complete_cycle_days, real_working_shift, shift_data)
+                                       forced_work_days, contract_type, dynamic_empty, complete_cycle_days, real_working_shift)
             
             self.logger.info("Decision variables created for SALSA")
             

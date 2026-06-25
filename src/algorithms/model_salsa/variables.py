@@ -70,7 +70,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
     shifts2.remove('F')
     shifts2.remove('-')
     shifts2.remove('LQ')
-    shifts2.remove(real_working_shift)
+    shifts2 = [x for x in shifts2 if x not in real_working_shift]
 
     for w in workers:
 

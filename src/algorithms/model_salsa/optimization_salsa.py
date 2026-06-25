@@ -1143,14 +1143,13 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         max_diff_LQ = model.NewIntVar(0, len(sundays), "max_diff_LQ")
         model.AddMaxEquality(max_diff_LQ, diff_per_worker_LQ)
         objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
-            
-        
+    
     # 13. Weeks of inconsistent shifts error
 
     for w in workers:
         inconsistent_weeks=[]
         for week, days in week_to_days.items():
-            shift_total = {f"shift_{value}" for value in real_working_shift}
+            shift_total = {f"shift_{value}" : {} for value in real_working_shift}
             for value in real_working_shift:
 
                 shift_total[f"shift_{value}"] = model.NewBoolVar(f"shift_{value}_{w}_{week}")
@@ -1165,11 +1164,5 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             
         if inconsistent_number_of_weeks_weight>0:   
             objective_terms.append(sum(inconsistent_weeks)*inconsistent_number_of_weeks_weight)   
-            
-
-                 
+                     
     model.Minimize(sum(objective_terms))
-
-
-
-

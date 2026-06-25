@@ -570,7 +570,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         week_template_temp = {}
         week_template = {}
 
-        shift_data = {f"shift_{value}" for value in shifts}
+        shift_data = {f"shift_{value}": {} for value in shifts}
 
         for w in workers_past:
             worker_calendar = matriz_calendario_nao_alterada[matriz_calendario_nao_alterada['employee_id'] == w]
@@ -595,7 +595,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
 
             first_registered_day[w] = worker_calendar['index'].min()
             last_registered_day[w] = worker_calendar['index'].max()
-            working_days[w] = shift_T[w] | fixed_days_off[w] | shift_M[w] | fixed_LQs[w] | fixed_compensation_days[w]
+            working_days[w] = fixed_days_off[w] | fixed_LQs[w] | fixed_compensation_days[w]
+            for value in shifts:
+                working_days[w] |= shift_data[f"shift_{value}"][w]
 
         for w in workers_complete:
             worker_calendar = matriz_calendario_gd[matriz_calendario_gd['employee_id'] == w]
@@ -632,8 +634,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             for value in shifts:
                 shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'MoT', 'NL' , f'NL{value}'])]['index'].tolist())
-    #preciso de iterar por todos os tipos de NL e value
-            forced_work_days[w] = worker_calendar[(worker_calendar['horario'] == 'NL') | (worker_calendar['horario'] == 'NLT') | (worker_calendar['horario'] == 'NLM')]['index'].tolist()
+            forced_work_days[w] = worker_calendar[worker_calendar['horario'].isin(['NL', [f"NL{value}" for value in shifts]])]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
 
@@ -686,7 +687,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 empty_days[w].extend([d for d in range(last_registered_day[w] + 1, max_day) if d not in empty_days[w]])
             
 
-            empty_days[w] = set(empty_days[w]) - closed_holidays - set(shift_M[w]) - set(shift_T[w])
+            empty_days[w] = set(empty_days[w]) - closed_holidays
+            for value in shifts:
+                empty_days[w] -= shift_data[f"shift_{value}"][w]
             worker_absences[w] = set(worker_absences[w]) - closed_holidays
             fixed_days_off[w] = set(fixed_days_off[w]) - closed_holidays
             vacation_days[w] = set(vacation_days[w]) - closed_holidays
