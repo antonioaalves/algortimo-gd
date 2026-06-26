@@ -1,0 +1,51 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+dist
+build
+
+# Virtualenvs
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+*.env.local
+
+# Tests and notebooks
+tests/
+*.ipynb
+.ipynb_checkpoints
+
+# Runtime artefacts (mounted as volumes)
+logs/
+data/csvs/*
+!data/csvs/messages_df.csv
+data/output/*
+data/intermediate/*
+
+# Docs / misc
+*.md
+LICENSE
+RELEASES.txt
+log.txt
+
+# OS
+.DS_Store
+Thumbs.db

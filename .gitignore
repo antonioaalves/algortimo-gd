@@ -174,7 +174,7 @@ data/processed/
 # Exclude all CSV files in data/csvs/ except specific ones
 data/csvs/*
 !data/csvs/.gitkeep
-!data/csvs/messages_df.csv
+!data/csvs/df_messages.csv
 
 # Logs and monitoring
 /logs/
@@ -197,11 +197,12 @@ reports/
 
 # Data files
 *.csv
-!data/csvs/messages_df.csv
+!data/csvs/df_messages.csv
 *.xlsx
 *.xls
 *.json
 !src/settings/*.json
+!src/settings/**/*.json
 # Exception: ignore sensitive connection parameters
 src/settings/oracle_connection_parameters.json
 *.parquet

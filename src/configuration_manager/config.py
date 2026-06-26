@@ -42,7 +42,7 @@ CONFIG = {
     'logging': {
         'environment': 'server',  # or 'local' for development
         'db_logging_enabled': True,
-        'df_messages_path': 'data/csvs/messages.csv',
+        'message_lang': 'PT',
         'log_errors_db': True,  # Enable/disable database error logging with set_process_errors
     },
     
@@ -97,7 +97,7 @@ CONFIG = {
         'df_faixa_horario': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_faixa_horario.csv'),
         'df_feriados': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_feriados.csv'),
         'df_festivos':  os.path.join(ROOT_DIR, 'data', 'csvs', 'df_festivos.csv'),
-        'df_messages': os.path.join(ROOT_DIR, 'data', 'csvs', 'messages_df.csv'),
+        'df_messages': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_messages.csv'),
         'df_orcamento': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_orcamento.csv'),
         'df_pre_gerados': os.path.join(ROOT_DIR, 'data', 'csvs', 'df_pre_gerados.csv'),
         'params_algo': os.path.join(ROOT_DIR, 'data', 'csvs', 'params_algo.csv'),
@@ -131,7 +131,7 @@ CONFIG = {
 
     'available_entities_raw': {
         'df_calendario': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
-        'df_colaborador': os.path.join(ROOT_DIR, 'src', 'sql_querys', 'qry_ma.sql'),
+        'df_colaborador': os.path.join(ROOT_DIR, '..', 'data', 'Queries', 'sql', 'queryGetCoreProEmpContract.sql'),
         'df_estimativas': os.path.join(ROOT_DIR, 'src', 'sql_querys', ''),
     },
 
@@ -262,7 +262,6 @@ ALGORITHM_GD_DEV_CONFIG = {
     'logging': {
         'environment': 'local',
         'db_logging_enabled': False,
-        'df_messages_path': 'data/csvs/messages.csv',
         'server_file_logging': True,
         'log_level': 'DEBUG',
         'log_dir': 'logs'
@@ -283,7 +282,6 @@ ALGORITHM_GD_PROD_CONFIG = {
     'logging': {
         'environment': 'server',
         'db_logging_enabled': True,
-        'df_messages_path': 'data/csvs/messages.csv',
         'db_logging_query': 'queries/log_process_errors.sql',
         'server_file_logging': True,
         'retention_days_server': 60,

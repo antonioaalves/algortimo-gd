@@ -16,19 +16,41 @@ from src.orquestrador_functions.Classes.Connection.connect import ensure_connect
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
 
+from src.orquestrador_functions.Logs.message_loader import set_messages, get_message_lang
+
+_FEASIBILITY_CAP_DAYOFF_LABELS = {
+    'l_dom': {'ES': 'domingos', 'PT': 'domingos', 'EN': 'Sundays'},
+    'l_sab': {'ES': 'sabados', 'PT': 'sabados', 'EN': 'Saturdays'},
+    'l_dom_or_sab': {
+        'ES': 'descansos (sabado o domingo)',
+        'PT': 'descansos (sabado ou domingo)',
+        'EN': 'days off (Saturday or Sunday)',
+    },
+    'c2d': {
+        'ES': 'fines de semana de calidad',
+        'PT': 'fins de semana de qualidade',
+        'EN': 'quality weekends',
+    },
+}
+
+
+def _feasibility_cap_dayoff_label(field: str, lang: str) -> str:
+    labels = _FEASIBILITY_CAP_DAYOFF_LABELS.get(field, {})
+    lang = lang.upper()
+    return labels.get(lang, labels.get('EN', labels.get('ES', field)))
+
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
 
-def log_process_event(message_key:str, messages_df: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
+def log_process_event(message_key: str, df_messages: pd.DataFrame, data_manager: BaseDataManager, external_call_data: dict, values_replace_dict: dict, level: str = 'INFO'):
     """
-    Log a process event with a message key and a message dataframe.
+    Log a process event with a message key and df_messages.
     """
-    message = pd.DataFrame(messages_df[messages_df['VAR'] == message_key])
+    message = pd.DataFrame(df_messages[df_messages['VAR'] == message_key])
     if message.empty:
-        logger.error(f"Message key {message_key} not found in messages_df")
+        logger.error(f"Message key {message_key} not found in df_messages")
         return
-    message_str = message['ES'].values[0]
-    message_str = replace_placeholders(message_str, values_replace_dict)
+    message_str = set_messages(df_messages, message_key, values_replace_dict)
     logger.info(f"DEBUG: message_str: {message_str}")
     data_manager.set_process_errors(message_key=message_key, rendered_message=message_str, values_replace_dict=external_call_data, error_type=level)
 
@@ -61,7 +83,7 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
         else:
             logger.info(f"DEBUG: using SQLAlchemy connection as-is")
         
-        query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Setters', 'set_process_errors.sql')
+        query_file_path = os.path.join(pathOS, 'data', 'Queries', 'WFM_Process', 'Setters', 'set_process_errors.sql')
         logger.info(f"DEBUG: query_file_path: {query_file_path}")
         
         # Load the query from file
@@ -122,6 +144,210 @@ def set_process_errors(connection, pathOS, user, fk_process, type_error, process
     except Exception as e:
         logger.error(f"Error in set_process_errors: {e}", exc_info=True)
         return 0
+
+
+def log_feasibility_cap_events(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    df_messages: pd.DataFrame,
+    cap_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist feasibility cap adjustments to wfm.esc_processo_erros (via set_process_errors).
+
+    Each cap event becomes one WARNING row so WFM users can see entitlement reductions.
+    """
+    if connection is None or not cap_events or df_messages is None or df_messages.empty:
+        return 0
+
+    lang = get_message_lang()
+    logged = 0
+    for event in cap_events:
+        field = str(event.get('field', ''))
+        placeholder_values = {
+            '1': child_num,
+            '2': str(event.get('employee_id', '')),
+            '3': _feasibility_cap_dayoff_label(field, lang),
+            '4': str(event.get('original_value', '')),
+            '5': str(event.get('cap_value', '')),
+            '6': str(event.get('period_begin', '')),
+            '7': str(event.get('period_end', '')),
+            '8': str(posto_id or ''),
+        }
+        description = set_messages(df_messages, 'WARN_FEASIBILITY_CAP', placeholder_values)
+        if not description:
+            description = (
+                f"Subproceso {child_num}: folgas {field} empleado "
+                f"{event.get('employee_id')} ajustadas {event.get('original_value')}->"
+                f"{event.get('cap_value')} ({event.get('period_begin')}-{event.get('period_end')}) "
+                f"puesto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='W',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(event.get('period_begin')) if event.get('period_begin') else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
+
+def log_workload_template_contract_errors(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    df_messages: pd.DataFrame,
+    error_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist workload_template vs contract mismatches to wfm.esc_processo_erros.
+
+    Each event is logged as type_error='E' (fatal), unlike feasibility cap warnings.
+    """
+    if connection is None or not error_events or df_messages is None or df_messages.empty:
+        return 0
+
+    logged = 0
+    for event in error_events:
+        matricula = str(event.get('matricula', '') or '')
+        matricula_part = f", matrícula {matricula}" if matricula else ''
+        placeholder_values = {
+            '1': child_num,
+            '2': str(event.get('employee_id', '')),
+            '3': matricula_part,
+            '4': str(event.get('workload_template', '')),
+            '5': str(event.get('min_dia_trab', '')),
+            '6': str(event.get('max_dia_trab', '')),
+            '7': str(event.get('week_label', '')),
+            '8': str(event.get('period_suffix', '')),
+            '9': str(posto_id or ''),
+        }
+        description = set_messages(df_messages, 'ERR_WORKLOAD_TEMPLATE_CONTRACT', placeholder_values)
+        if not description:
+            description = event.get('detail_pt') or (
+                f"Subprocesso {child_num}: workload_template={event.get('workload_template')} "
+                f"incompatível com contrato ({event.get('min_dia_trab')}-{event.get('max_dia_trab')}) "
+                f"colaborador {event.get('employee_id')}{matricula_part} "
+                f"{event.get('week_label', '')}{event.get('period_suffix', '')} posto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='E',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(event.get('period_begin')) if event.get('period_begin') else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
+
+def log_max_consecutive_working_days_errors(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    df_messages: pd.DataFrame,
+    error_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist max consecutive working days pre-check failures to wfm.esc_processo_erros.
+
+    Each event is logged as type_error='E' (fatal), same as workload_template validation.
+    """
+    if connection is None or not error_events or df_messages is None or df_messages.empty:
+        return 0
+
+    logged = 0
+    for event in error_events:
+        matricula = str(event.get('matricula', '') or '')
+        matricula_part = f", matrícula {matricula}" if matricula else ''
+        placeholder_values = {
+            '1': child_num,
+            '2': str(event.get('employee_id', '')),
+            '3': matricula_part,
+            '4': str(event.get('num_dias_cons', '')),
+            '5': str(event.get('streak_days', '')),
+            '6': str(event.get('period_begin', '')),
+            '7': str(event.get('period_end', '')),
+            '8': str(event.get('period_suffix', '')),
+            '9': str(posto_id or ''),
+        }
+        description = set_messages(
+            df_messages, 'ERR_MAX_CONSECUTIVE_WORKING_DAYS', placeholder_values
+        )
+        if not description:
+            description = event.get('detail_pt') or (
+                f"Subprocesso {child_num}: no periodo {event.get('period_begin')}-"
+                f"{event.get('period_end')} o colaborador {event.get('employee_id')}"
+                f"{matricula_part} viola o limite de {event.get('num_dias_cons')} dias "
+                f"consecutivos de trabalho ({event.get('streak_days')} dias). "
+                f"Posto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='E',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(event.get('period_begin')) if event.get('period_begin') else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
 
 def replace_placeholders(template, values_dict):
     """
@@ -494,15 +720,12 @@ def create_m0_0t(reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
 
 def create_mt_mtt_cycles(df_alg_variables_filtered: pd.DataFrame, reshaped_final_3: pd.DataFrame) -> pd.DataFrame:
     """
-    Convert R create_MT_MTT_cycles function to Python.
-    Create MT or MTT cycles according to shift patterns.
-    
-    Args:
-        df_alg_variables_filtered: DataFrame with employee algorithm variables
-        reshaped_final_3: Schedule matrix DataFrame
-        
-    Returns:
-        Updated schedule matrix with MT/MTT cycles
+    RETIRED — sourced from core_algorithm_variables (seq_turno / semana_1) which is being retired.
+
+    Shift-cycle construction is now handled by add_shift_info_from_ciclos() in
+    data_treatment_functions.py using WORK_SHIFT from CORE_PRO_EMP_HORARIO_DET.
+
+    This function is kept for reference only and should not be called in new code.
     """
     try:
         logger.info(f"=== CALENDAR CREATION DEBUG START ===")
@@ -776,113 +999,106 @@ def assign_empty_days(df_tipo_contrato: pd.DataFrame, reshaped_final_3: pd.DataF
         logger.error(f"Error in assign_empty_days: {str(e)}")
         return reshaped_final_3
 
-def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str, lim_inf_tarde: str) -> pd.DataFrame:
+def add_trads_code(df_cycle90_info_filtered: pd.DataFrame, lim_sup_manha: str = None, lim_inf_tarde: str = None) -> pd.DataFrame:
     """
     Convert R add_trads_code function to Python.
     Add TRADS codes to 90-day cycle information.
-    
+
+    M/T classification now uses the per-day WORK_SHIFT column from
+    CORE_PRO_EMP_HORARIO_DET (present in df_cycle90_info_filtered after the
+    queryGetCiclosCompletosFolgasCiclos migration).
+
+    The legacy lim_sup_manha / lim_inf_tarde parameters are retained in the
+    signature for backward compatibility but are ignored when work_shift is
+    available in the dataframe.
+
     Args:
-        df_cycle90_info_filtered: DataFrame with 90-day cycle information
-        lim_sup_manha: Morning limit time
-        lim_inf_tarde: Afternoon limit time
-        
+        df_cycle90_info_filtered: DataFrame with 90-day cycle information;
+            should contain 'work_shift' column (WORK_SHIFT from CORE_PRO_EMP_HORARIO_DET)
+        lim_sup_manha: Deprecated — ignored when work_shift column is present
+        lim_inf_tarde: Deprecated — ignored when work_shift column is present
+
     Returns:
         DataFrame with TRADS codes added
     """
     try:
-        # Convert time columns to datetime
+        use_work_shift = 'work_shift' in df_cycle90_info_filtered.columns
+
+        # Convert time columns to datetime (still needed for intervalo / P detection)
         time_cols = ['hora_ini_1', 'hora_ini_2', 'hora_fim_1', 'hora_fim_2']
         for col in time_cols:
             if col in df_cycle90_info_filtered.columns:
                 df_cycle90_info_filtered[col] = pd.to_datetime(
                     df_cycle90_info_filtered[col], format="%Y-%m-%d %H:%M:%S", errors='coerce'
                 )
-        
-        # Convert limit times
-        lim_sup_manha = pd.to_datetime(lim_sup_manha, format="%Y-%m-%d %H:%M:%S", errors='coerce')
-        
-        # Calculate interval and max exit time
+
+        if not use_work_shift and lim_sup_manha is not None:
+            lim_sup_manha = pd.to_datetime(lim_sup_manha, format="%Y-%m-%d %H:%M:%S", errors='coerce')
+
+        # Calculate interval (needed for split-shift 'P' detection)
         df_cycle90_info_filtered['intervalo'] = np.where(
-            df_cycle90_info_filtered['hora_ini_2'].isna(),
+            df_cycle90_info_filtered['hora_ini_2'].isna() if 'hora_ini_2' in df_cycle90_info_filtered.columns else True,
             0,
             (df_cycle90_info_filtered['hora_ini_2'] - df_cycle90_info_filtered['hora_fim_1']).dt.total_seconds() / 3600
-        )
-        
-        df_cycle90_info_filtered['max_exit'] = (
-            df_cycle90_info_filtered[['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']].max(axis=1) - 
-            pd.Timedelta(minutes=15)
+            if 'hora_ini_2' in df_cycle90_info_filtered.columns and 'hora_fim_1' in df_cycle90_info_filtered.columns
+            else 0
         )
 
-        # Calculate intervalo column
-        #df_cycle90_info_filtered['intervalo'] = df_cycle90_info_filtered.apply(
-        #    lambda row: 0 if pd.isna(row['hora_ini_2']) else 
-        #    (pd.to_datetime(row['hora_ini_2']) - pd.to_datetime(row['hora_fim_1'])).total_seconds() / 3600,
-        #    axis=1
-        #)
-#
-        # Calculate max_exit column
-        #time_columns = ['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']
-        #df_cycle90_info_filtered['max_exit'] = df_cycle90_info_filtered[time_columns].apply(
-        #    lambda row: pd.to_datetime(row.dropna()).max() - pd.Timedelta(minutes=15),
-        #    axis=1
-        #)
-        
-        # Apply TRADS code logic
+        if not use_work_shift:
+            time_cols_existing = [c for c in ['hora_ini_1', 'hora_fim_1', 'hora_ini_2', 'hora_fim_2']
+                                   if c in df_cycle90_info_filtered.columns]
+            if time_cols_existing:
+                df_cycle90_info_filtered['max_exit'] = (
+                    df_cycle90_info_filtered[time_cols_existing].max(axis=1) - pd.Timedelta(minutes=15)
+                )
+            else:
+                df_cycle90_info_filtered['max_exit'] = pd.NaT
+
         def get_trads_code(row):
-            tipo_dia = row['tipo_dia']
-            descanso = row['descanso']
-            horario_ind = row['horario_ind']
-            dia_semana = row['dia_semana']
-            intervalo = row['intervalo']
-            max_exit = row['max_exit']
-           
-            # Log every row to understand the mapping
-            #log_msg = f"[TRADS-MAP] tipo_dia='{tipo_dia}', descanso='{descanso}', horario_ind='{horario_ind}', dia_semana={dia_semana}, intervalo={intervalo}, max_exit={max_exit}"
-           
+            tipo_dia = row.get('tipo_dia', '')
+            descanso = row.get('descanso', '')
+            horario_ind = row.get('horario_ind', '')
+            dia_semana = row.get('dia_semana', 0)
+            intervalo = row.get('intervalo', 0)
+            work_shift = str(row.get('work_shift', '')).upper() if use_work_shift else ''
+
             if tipo_dia == 'F' and (dia_semana == 1 or dia_semana == 8):
-                #logger.info(f"{log_msg} → 'L_DOM' (tipo_dia='F' on Sunday/Monday)")
                 return 'L_DOM'
             elif tipo_dia == 'F':
-                #logger.info(f"{log_msg} → 'L' (tipo_dia='F': free/holiday)")
                 return 'L'
-            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'N':
-                #logger.info(f"{log_msg} → 'MoT' (Active + no rest + no individual schedule)")
-                return 'MoT'
-            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit >= lim_sup_manha:
-                #logger.info(f"{log_msg} → 'T' (Active + no rest + horario_ind='S' + max_exit >= {lim_sup_manha})")
-                return 'T'
-            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'S' and max_exit < lim_sup_manha:
-                #logger.info(f"{log_msg} → 'M' (Active + no rest + horario_ind='S' + max_exit < {lim_sup_manha})")
-                return 'M'
             elif tipo_dia == 'S':
-                #logger.info(f"{log_msg} → '-' (tipo_dia='S': suspended/missing)")
                 return '-'
-            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo >= 1:
-                #logger.info(f"{log_msg} → 'P' (Active + rest/night + break >= 1h)")
-                return 'P'
-            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit >= lim_sup_manha:
-                #logger.info(f"{log_msg} → 'T' (Active + rest/night + break < 1h + max_exit >= {lim_sup_manha})")
-                return 'T'
-            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo < 1 and max_exit < lim_sup_manha:
-                #logger.info(f"{log_msg} → 'M' (Active + rest/night + break < 1h + max_exit < {lim_sup_manha})")
-                return 'M'
-            elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit >= lim_sup_manha:
-                #logger.info(f"{log_msg} → 'T' (Active + no rest + individual='Y' + max_exit >= {lim_sup_manha})")
-                return 'T'
-            elif tipo_dia == 'A' and descanso == 'A' and horario_ind == 'Y' and intervalo < 1 and max_exit < lim_sup_manha:
-                #logger.info(f"{log_msg} → 'M' (Active + no rest + individual='Y' + max_exit < {lim_sup_manha})")
-                return 'M'
             elif tipo_dia == 'N':
-                #logger.info(f"{log_msg} → 'NL' (tipo_dia='N': night shift)")
+                if use_work_shift:
+                    if work_shift == 'M':
+                        return 'NLM'
+                    if work_shift == 'T':
+                        return 'NLT'
                 return 'NL'
+            elif tipo_dia == 'A' and (descanso == 'R' or descanso == 'N') and intervalo >= 1:
+                return 'P'
+            elif tipo_dia == 'A' and (descanso == 'A' or descanso == 'R') and horario_ind == 'N':
+                return 'MoT'
+            elif tipo_dia == 'A':
+                if use_work_shift:
+                    if work_shift == 'M':
+                        return 'M'
+                    elif work_shift == 'T':
+                        return 'T'
+                    else:
+                        return 'MoT'
+                else:
+                    max_exit = row.get('max_exit', pd.NaT)
+                    if pd.isna(max_exit) or lim_sup_manha is None:
+                        return 'MoT'
+                    return 'T' if max_exit >= lim_sup_manha else 'M'
             else:
-                #logger.warning(f"{log_msg} → '-' (NO CONDITION MATCHED - this is why you get '-'!)")
                 return '-'
-        
+
         df_cycle90_info_filtered['codigo_trads'] = df_cycle90_info_filtered.apply(get_trads_code, axis=1)
-        
+
         return df_cycle90_info_filtered
-        
+
     except Exception as e:
         logger.error(f"Error in add_trads_code: {str(e)}")
         return df_cycle90_info_filtered
@@ -1288,45 +1504,26 @@ def count_dates_per_year(start_date_str: str, end_date_str: str) -> str:
 
 def get_limit_mt(matricula: str, df_colaborador: pd.DataFrame) -> Tuple[str, str]:
     """
-    Get MT (Morning/Afternoon) time limits for a specific employee from df_colaborador.
-    
+    Get MT (Morning/Afternoon) time limits for a specific employee.
+
+    MIGRATION NOTE: limite_superior_manha / limite_inferior_tarde have been retired from
+    df_colaborador (they were sourced from core_algorithm_variables). This function now
+    returns the hardcoded section-level defaults (12:00 / 14:00) which are superseded by
+    the per-day WORK_SHIFT classification in add_trads_code().
+
+    Callers that depend on accurate per-employee limits should migrate to reading
+    WORK_SHIFT directly from df_ciclos_completos_folgas_ciclos instead of calling
+    this function.
+
     Args:
-        matricula: Employee matricula (ID)
-        df_colaborador: DataFrame containing employee data with limit columns
-        
+        matricula: Employee matricula — kept for API compatibility, no longer used
+        df_colaborador: Employee DataFrame — kept for API compatibility, no longer used
+
     Returns:
-        Tuple of (lim_sup_manha, lim_inf_tarde) as time strings
+        Tuple of (lim_sup_manha, lim_inf_tarde) — always returns section-level defaults
     """
-    try:
-        # Filter df_colaborador for this specific employee
-        employee_data = df_colaborador[df_colaborador['matricula'] == matricula]
-        
-        if len(employee_data) == 0:
-            logger.warning(f"No employee data found for matricula {matricula}")
-            # Return default values
-            return "12:00", "14:00"
-        
-        # Get the first matching record
-        emp_record = employee_data.iloc[0]
-        
-        # Extract the limit columns
-        lim_sup_manha = str(emp_record.get('limite_superior_manha', '12:00'))
-        lim_inf_tarde = str(emp_record.get('limite_inferior_tarde', '14:00'))
-        
-        # Handle potential None or NaN values
-        if pd.isna(lim_sup_manha) or lim_sup_manha == 'nan':
-            lim_sup_manha = "12:00"
-        if pd.isna(lim_inf_tarde) or lim_inf_tarde == 'nan':
-            lim_inf_tarde = "14:00"
-        
-        logger.debug(f"Retrieved MT limits for matricula {matricula}: morning={lim_sup_manha}, afternoon={lim_inf_tarde}")
-        
-        return lim_sup_manha, lim_inf_tarde
-        
-    except Exception as e:
-        logger.error(f"Error in get_limit_mt for matricula {matricula}: {str(e)}")
-        # Return default values in case of error
-        return "12:00", "14:00"
+    logger.debug(f"get_limit_mt called for matricula {matricula}: returning section defaults (12:00 / 14:00)")
+    return "12:00", "14:00"
 
 def pad_zeros(value: str, length: int = 10) -> str:
     """
@@ -1619,7 +1816,7 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
     Args:
         df: pd.DataFrame, dataframe with parameters
         posto_id: int, posto ID
-        unit_id: int, unit ID  
+        unit_id: int or str, unit ID  
         secao_id: int, section ID
         params_names_list: list, list of parameter names to retrieve
     Returns:
@@ -1662,11 +1859,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
         logger.info(f"DEBUG: Rows matching section condition:\n {matching_section}")
     
     # 3. Unit-specific: fk_tipo_posto is null AND fk_secao is null AND fk_unidade = unit_id
-    if unit_id is not None:
+    if unit_id is not None and str(unit_id).strip():
         unit_condition = (
             (df_filtered['fk_tipo_posto'].isna()) & 
             (df_filtered['fk_secao'].isna()) & 
-            (df_filtered['fk_unidade'] == unit_id)
+            (df_filtered['fk_unidade'].astype(str) == str(unit_id).strip())
         )
         conditions.append(unit_condition)
         logger.info(f"DEBUG: Added unit condition for unit_id={unit_id}")
@@ -1723,11 +1920,11 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
                     continue
         
         # Priority 3: Unit-specific (fk_tipo_posto and fk_secao are null, fk_unidade matches)
-        if unit_id is not None:
+        if unit_id is not None and str(unit_id).strip():
             unit_specific = param_rows[
                 (param_rows['fk_tipo_posto'].isna()) & 
                 (param_rows['fk_secao'].isna()) & 
-                (param_rows['fk_unidade'] == unit_id)
+                (param_rows['fk_unidade'].astype(str) == str(unit_id).strip())
             ]
             if not unit_specific.empty:
                 value = get_value_from_row(unit_specific.iloc[0])

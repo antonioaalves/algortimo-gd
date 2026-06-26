@@ -45,7 +45,11 @@ from src.orquestrador_functions.WFM_Process.Getters import get_process_by_status
 from src.orquestrador_functions.WFM_Process.Setters import set_process_status, set_process_param_status
 from src.helpers import set_process_errors
 from src.orquestrador_functions.Data_Handlers.GetGlobalData import get_all_params, get_gran_equi
-from src.orquestrador_functions.Logs.message_loader import get_messages, set_messages
+from src.orquestrador_functions.Logs.message_loader import (
+    load_df_messages,
+    set_messages,
+    set_runtime_message_lang,
+)
 from src.orquestrador_functions.Classes.AlgorithmPrepClasses.ConnectionHandler import ConnectionHandler
 
 # Setup database connection (uses config_manager credentials - no path required)
@@ -54,9 +58,9 @@ connection_object.connect_to_database()
 connection = connection_object.get_connection()
 connection = connection_object.ensure_connection()
 logger.info(f"connection: {connection}")
-# GET LOG MESSAGES
-df_msg = get_messages(path_ficheiros_global, lang='ES')
-#print(f"df_msg: {df_msg}")
+# GET LOG MESSAGES (full template table — language resolved per unit at log time)
+set_runtime_message_lang(None)
+df_msg = load_df_messages(path_ficheiros_global)
 data_hoje = datetime.date.today()
 # Suppress all warnings
 warnings.filterwarnings("ignore")
@@ -107,7 +111,7 @@ else:
 
 
 # GET PROCESSES -----------------------------------
-sec_to_proc = get_process_by_status(path_ficheiros_global, 'WFM', 'MPD', '2', 'N', connection)
+sec_to_proc = get_process_by_status(path_ficheiros_global, 'WFM', 'MPD', '2', 'N', connection, use_case=0)
 logger.info(f"Nr of process {len(sec_to_proc)}")
 
 local_processes = 0
@@ -119,6 +123,7 @@ if not sec_to_proc.empty:
         
         # MAX THREADS REACHED, MUST WAIT
         if num_processing_processes >= GLOBAL_MAX_CONCURRENT_PROCESSES:
+            set_runtime_message_lang(None)
             set_process_errors(
                 connection=connection,
                 pathOS=path_ficheiros_global, 
@@ -159,18 +164,6 @@ if not sec_to_proc.empty:
                         res = set_process_status(connection,path_ficheiros_global, wfm_user, wfm_proc_id, status='P')
                         logger.info(f"res: {res}")
                         if res == 1:
-                            set_process_errors(
-                                connection,
-                                pathOS=path_ficheiros_global, 
-                                user=api_user,
-                                fk_process=wfm_proc_id, 
-                                type_error='I', 
-                                process_type=PROC_COD, 
-                                error_code=None, 
-                                description=set_messages(df_msg, 'callSubproc', {'1': wfm_proc_id, '2': i+1}),
-                                employee_id=None, 
-                                schedule_day=None
-                            )
                             logger.info(f"running the process")
                             
                             # Commit any pending transactions to prevent database lock conflicts
@@ -197,6 +190,7 @@ if not sec_to_proc.empty:
                                     'wfm_user': wfm_user,
                                     'start_date': str(data_ini),
                                     'end_date': str(data_fim),
+                                    'child_number': i + 1,
                                 }
                                 
                                 # Add wfm-proc-colab - use empty string when NULL (valid business case)
@@ -223,7 +217,7 @@ if not sec_to_proc.empty:
                                         process_id=wfm_proc_id,
                                         new_status='G'
                                     )
-                                    # Log the end of the process errors
+                                    # Log the end of the process errors (language set during batch load_process_data)
                                     set_process_errors(
                                         connection,
                                         pathOS=path_ficheiros_global,
@@ -287,6 +281,7 @@ if not sec_to_proc.empty:
             break
             
     if retries >= MAX_RETRIES:
+        set_runtime_message_lang(None)
         set_process_errors(
             connection,
             pathOS=path_ficheiros_global, 
