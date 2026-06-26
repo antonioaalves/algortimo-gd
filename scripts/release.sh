@@ -108,8 +108,18 @@ echo "New tag:     ${TAG}"
 # ---- bump + commit + tag ---------------------------------------------------
 echo "${NEW_VERSION}" > "$VERSION_FILE"
 git add "$VERSION_FILE"
-git commit -m "Release ${TAG}"
-git tag -a "${TAG}" -m "Release ${TAG}"
+
+if ! git diff --cached --quiet; then
+  git commit -m "Release ${TAG}"
+else
+  echo "No VERSION change to commit."
+fi
+
+if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+  echo "Tag ${TAG} already exists, skipping tag creation."
+else
+  git tag -a "${TAG}" -m "Release ${TAG}"
+fi
 
 if [[ "$SKIP_PUSH" == false ]]; then
   echo "Pushing ${CURRENT_BRANCH} and ${TAG} to origin..."
