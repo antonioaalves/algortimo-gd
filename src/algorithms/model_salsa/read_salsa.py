@@ -524,8 +524,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
                             data_demissao[new_w] = data_demissao[w]
                             if layer == 1:
                                 original_end_date = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0]) - 1
-                            else:
-                                data_demissao[w] = original_end_date
+                            data_demissao[w] = original_end_date
                             last_registered_day[w] = data_demissao[w]
                         # Track first and last registered days
                         if w in matriz_calendario_gd['employee_id'].values:
@@ -673,7 +672,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], algorithm_treatm
             complete_cycle_days[original] = {d for d in complete_cycle_days[original] if d <= data_demissao[original]}
             fixed_compensation_days[original] = {d for d in fixed_compensation_days[original] if d <= data_demissao[original]}
             free_day_complete_cycle[original] = {d for d in free_day_complete_cycle[original] if d <= data_demissao[original]}
-
 
         workers = workers_list_with_dummy
         workers_complete = workers_complete_with_dummy
