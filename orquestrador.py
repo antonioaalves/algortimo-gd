@@ -165,7 +165,9 @@ if not sec_to_proc.empty:
                         logger.info(f"res: {res}")
                         if res == 1:
                             logger.info(f"running the process")
-                            
+                            # Language is resolved inside batch load_process_data; clear stale override from a prior child.
+                            set_runtime_message_lang(None)
+
                             # Commit any pending transactions to prevent database lock conflicts
                             if connection:
                                 connection.commit()
@@ -217,19 +219,7 @@ if not sec_to_proc.empty:
                                         process_id=wfm_proc_id,
                                         new_status='G'
                                     )
-                                    # Log the end of the process errors (language set during batch load_process_data)
-                                    set_process_errors(
-                                        connection,
-                                        pathOS=path_ficheiros_global,
-                                        user=api_user,
-                                        fk_process=wfm_proc_id,
-                                        type_error='I',
-                                        process_type=PROC_COD,
-                                        error_code=None,
-                                        description=set_messages(df_msg, 'endSubproc', {'1': wfm_proc_id, '2': ''}),
-                                        employee_id=None, 
-                                        schedule_day=None
-                                    )
+                                    # endSubproc is logged from algoritmo_gd after processing (unit language known there)
                                 else:
                                     logger.info(f"Direct function call failed for process {wfm_proc_id}")
                                     set_process_param_status(

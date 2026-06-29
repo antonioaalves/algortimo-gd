@@ -287,6 +287,7 @@ class AlgoritmoGDService(BaseService):
                 return False
 
             df_messages = self.data_model.auxiliary_data.get('df_messages', df_messages)
+            message_lang = self.data_model.auxiliary_data.get('message_lang')
             if self.raw_connection and not df_messages.empty:
                 self._refresh_raw_connection()
                 set_process_errors(
@@ -304,6 +305,7 @@ class AlgoritmoGDService(BaseService):
                             '1': self.external_data['current_process_id'],
                             '2': child_num,
                         },
+                        lang=message_lang,
                     ),
                     employee_id=None,
                     schedule_day=None,
@@ -751,6 +753,24 @@ class AlgoritmoGDService(BaseService):
                     description=set_messages(df_messages, 'okSubprocPosto', {'1': child_num, '2': str(posto_id), '3': ''}),
                     employee_id=None,
                     schedule_day=None
+                )
+                message_lang = self.data_model.auxiliary_data.get('message_lang')
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=self.config_manager.system.project_root_dir,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='I',
+                    process_type='AlgoritmoHorariosPython_Pai',
+                    error_code=None,
+                    description=set_messages(
+                        df_messages,
+                        'endSubproc',
+                        {'1': self.external_data['current_process_id'], '2': ''},
+                        lang=message_lang,
+                    ),
+                    employee_id=None,
+                    schedule_day=None,
                 )
             return True
 
