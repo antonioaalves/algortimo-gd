@@ -30,18 +30,17 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         fixed_LQs_set = fixed_LQs[w]
         fixed_days_set = fixed_days_off[w]
         absence_set = absences[w]
-        shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) for value in real_working_shift}
         fixed_LD_set = fixed_compensation_days[w]
 
-        mot = shift_M_set & shift_T_set #cuidado aqui, tenho de juntar todos os shifts
+        mot = set.intersection(*(set(shift_data[f"shift_{value}"][w]) for value in real_working_shift))
         if mot is not None:
-        
-            shift_M_set -= mot
-            shift_T_set -= mot
+            shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) - mot for value in real_working_shift}
             for d in mot:
                 for value in real_working_shift:
                     shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
                 model.add_exactly_one([shift[(w, d, value)] for value in real_working_shift])
+        else:
+            shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) for value in real_working_shift}
 
         logger.info(f"For PAST WORKER {w}:")
         logger.info(f"\tDEBUG empty days {sorted(empty_set)}")
@@ -49,9 +48,6 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
         logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
-        logger.info(f"\tDEBUG fixed M {sorted(shift_M_set)}")
-        logger.info(f"\tDEBUG fixed T {sorted(shift_T_set)}")
-        logger.info(f"\tDEBUG fixed MoT {sorted(mot)}")
         logger.info(f"\tDEBUG fixed LDs {sorted(fixed_LD_set)}")
 
         add_var(model, shift, w, fixed_LD_set, 'LD')
@@ -129,7 +125,6 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                     for value in real_working_shift:
                         if d in shift_set[f"shift_{value}_set"]:
                             shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
-                    #logger.info(f"{w} has forced work day {d} with shift {True if d in shift_M_set else False} M and  {True if d in shift_T_set else False} M")
                     continue
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")

@@ -128,7 +128,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 60  # Short timeout for testing
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -227,8 +227,8 @@ def solve(
         # 5. PROCESS SOLUTION AND CREATE SCHEDULE
         # =================================================================
         logger.info("Processing solution and creating schedule")
-        
-        logger.info(f"Processing schedule for {len(workers)} workers across {len(days_of_year)} days")
+        ammount_of_days = len(days_of_year)
+        logger.info(f"Processing schedule for {len(workers)} workers across {ammount_of_days} days")
         # Prepare the data for the DataFrame
         table_data = []  # List to store each worker's data as a row
         worker_stats = {}  # Dictionary to track L, LQ, LD counts for each worker
@@ -285,7 +285,7 @@ def solve(
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        if d - 1 in time_worked_day_shift:
+                        if d - 1 <= ammount_of_days:
                             time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
 
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
@@ -375,7 +375,7 @@ def solve(
                                 special_days_count += 1
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
-                        if d - 1 in time_worked_day_shift[f"time_worked_day_{day_assignment}"]:
+                        if d - 1 <= ammount_of_days:
                             time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
 
                 if contingente_feriados:
@@ -446,7 +446,6 @@ def solve(
         logger.info(f"DataFrame columns: {len(df.columns)} columns")
         
         # Save to Excel
-       
         try:
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
             days_of_year_sorted = sorted(days_of_year)
