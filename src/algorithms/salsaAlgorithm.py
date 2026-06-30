@@ -61,12 +61,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             end_date: End date for scheduling
         """
         # Default parameters for the SALSA algorithm
-        real_shifts = ['M', 'T']
+
         default_parameters = {
-            "real_working_shifts": real_shifts,
-            "shifts": real_shifts + ["L", "LQ", 'LD', "F", "A", "V", "-"],
-            "check_shifts": real_shifts + ['L', 'LQ', 'LD'],
-            "working_shifts": real_shifts + ['LD'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -117,8 +113,22 @@ class SalsaAlgorithm(BaseAlgorithm):
             if algorithm_treatment_params is None:
                 algorithm_treatment_params = {}
                 self.logger.debug("No algorithm treatment parameters provided, using empty dict")
+                real_shifts = ['M', 'T']
             else:
                 self.logger.info(f"Using algorithm treatment parameters: {list(algorithm_treatment_params.keys())}")
+                real_shifts = algorithm_treatment_params.get('real_shifts', ['M', 'T'])
+
+            self.parameters = {
+                "real_working_shifts": real_shifts,
+                "shifts": real_shifts + ["L", "LQ", "LD", "F", "A", "V", "-"],
+                "check_shifts": real_shifts + ["L", "LQ", "LD"],
+                "working_shifts": real_shifts + ["LD"],
+                "settings": {
+                    "F_special_day": False,
+                    "free_sundays_plus_c2d": False,
+                    "missing_days_afect_free_days": False,
+                }
+            }
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE
@@ -142,25 +152,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             if not isinstance(medium_dataframes, dict):
                 raise TypeError(f"Expected medium_dataframes to be dictionary, got {type(medium_dataframes)}")
-            # =================================================================
-            # 2. VALIDATE REQUIRED DATAFRAMES
-            # =================================================================
-            # required_dataframes = ['matrizA_bk', 'matrizB_bk', 'matriz2_bk']
-            # missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
-            
-            # if missing_dataframes:
-            #     self.logger.error(f"Missing required DataFrames: {missing_dataframes}")
-            #     raise ValueError(f"Missing required DataFrames: {missing_dataframes}")
-            
-            # # Check if DataFrames are not empty
-            # for df_name in required_dataframes:
-            #     df = medium_dataframes[df_name]
-            #     if df.empty:
-            #         self.logger.error(f"DataFrame {df_name} is empty")
-            #         raise ValueError(f"DataFrame {df_name} is empty")
-                
-            #     self.logger.info(f"✅ {df_name}: {df.shape} - {df.memory_usage(deep=True).sum()/1024/1024:.2f} MB")
-            
 
             # =================================================================
             # 3. PROCESS DATA USING SALSA FUNCTION
@@ -466,7 +457,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")
-                    one_colab_min_constraint(model, shift, workers, real_working_shift, days_of_year, shift_data, period, closed_holidays)
+                    one_colab_min_constraint(model, shift, workers_past, workers, real_working_shift, days_of_year, shift_data, period, closed_holidays)
                 else:
                     self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
 
