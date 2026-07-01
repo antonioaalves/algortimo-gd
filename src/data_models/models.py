@@ -4059,8 +4059,14 @@ class DescansosDataModel(BaseDataModel):
                     self.logger.error(f"Algorithm {algorithm_name} returned no results.")
                     return False
 
-                if results.get('summary', {}).get('status') == 'failed':  # Fixed: was checking for 'completed' which is wrong
-                    self.logger.error(f"Algorithm {algorithm_name} failed to run. Status: {results.get('summary', {}).get('status')}")
+                if results.get('status') == 'failed' or results.get('summary', {}).get('status') == 'failed':
+                    allocation_error = results.get('error', '')
+                    self.rare_data['allocation_error'] = allocation_error
+                    self.logger.error(
+                        f"Algorithm {algorithm_name} failed to run. "
+                        f"Status: {results.get('status') or results.get('summary', {}).get('status')}. "
+                        f"Error: {allocation_error}"
+                    )
                     return False
 
                 #self.logger.info(f"DEBUG: results: {results}")
