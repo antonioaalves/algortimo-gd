@@ -40,9 +40,10 @@ Dataframe manipulation functions:
 
 # Dependencies
 import datetime as dt
+from math import ceil, floor
 import pandas as pd
 import numpy as np
-from typing import Callable, List, Tuple, Dict, Optional
+from typing import Callable, List, Tuple, Dict, Optional, Set
 from base_data_project.log_config import get_logger
 
 # Local stuff
@@ -1119,6 +1120,12 @@ def _weekly_remaining_cache(
 ) -> Dict[int, int]:
     """Remaining L/LQ slots per salsa week (same rules as salsa_2_free_days_week)."""
     cache: Dict[int, int] = {}
+    quota_ctx = state.get('weekly_quota_ctx')
+    if quota_ctx:
+        for week in quota_ctx.get('salsa_week_to_days', {}):
+            cache[week] = _remaining_weekly_free_day_slots_for_week(week, quota_ctx)
+        return cache
+
     salsa_week_to_days = state['salsa_week_to_days']
     salsa_day_to_week = state['salsa_day_to_week']
     for week, week_days in salsa_week_to_days.items():
@@ -1310,6 +1317,7 @@ def _build_consecutive_work_index_state_for_employee(
     flexible = working_days - fixed_work - guaranteed_rest
 
     salsa_week_to_days, salsa_day_to_week = build_salsa_day_week_date_maps(df_calendario)
+    salsa_week_to_indices, _ = _build_salsa_week_index_maps_from_calendario(df_calendario)
     weekly_rest_for_quota = frozenset(
         date_by_idx[i].normalize()
         for i in (finalized.fixed_days_off | finalized.fixed_LQs)
@@ -1322,6 +1330,27 @@ def _build_consecutive_work_index_state_for_employee(
     work_days_per_week = {
         week: int(finalized.work_days_per_week[week - 1])
         for week in range(1, nbr_weeks + 1)
+    }
+
+    all_indices = set(emp_cal['index'].astype(int))
+    max_idx = int(max(all_indices)) if all_indices else exec_end_idx
+    admissao_idx, demissao_idx = _resolve_admissao_demissao_indices(
+        df_colaborador, employee_id, idx_by_date, max_idx
+    )
+    weekly_quota_ctx = {
+        'employee_id': str(employee_id),
+        'working_days': working_days,
+        'tipo_contrato': contract_type,
+        'work_days_per_week': work_days_per_week,
+        'salsa_week_to_days': salsa_week_to_days,
+        'salsa_week_to_indices': salsa_week_to_indices,
+        'salsa_day_to_week': salsa_day_to_week,
+        'weekly_rest_for_quota': weekly_rest_for_quota,
+        'admissao_idx': admissao_idx,
+        'demissao_idx': demissao_idx,
+        'admissao_proporcional': _get_admissao_proporcional_default(),
+        'idx_by_date': idx_by_date,
+        'date_by_idx': date_by_idx,
     }
 
     section_default = int(section_num_dias_cons) if section_num_dias_cons else 6
@@ -1373,6 +1402,7 @@ def _build_consecutive_work_index_state_for_employee(
         'weekly_rest_for_quota': weekly_rest_for_quota,
         'preallocated_free': preallocated_free,
         'flexible_indices': flexible,
+        'weekly_quota_ctx': weekly_quota_ctx,
         'contract_change_indices': _contract_change_indices(
             df_colaborador, employee_id, idx_by_date
         ),
@@ -1528,14 +1558,15 @@ def validate_max_consecutive_working_days(
 
     Mirrors read_salsa calendar processing, days_off_atributtion, sliding windows from
     maximum_continuous_working_days (including passado prefix overlap at execution start),
-    and weekly L/LQ budget (salsa_2_free_days_week).
+    and weekly L/LQ budget (salsa_2_free_days_week), including admission/demission
+    proportional free-day rules.
 
     LD is treated as fixed work (does not break the consecutive-work streak). Unlocked
     MoT/M/T placeholders can become L/LQ when weekly quota allows. Ciclo completo
     windows are skipped. Contract-change boundary windows mirror dummy-worker logic.
 
-    num_dias_cons: section param (AS-IS) with optional per-contract override via
-    df_colaborador.num_dias_cons (TO-BE).
+    num_dias_cons: section default with optional per-contract override via
+    df_colaborador.max_continuous_work_days (contract-level), section fallback.
 
     Returns:
         (success, error_events, error_message)
@@ -3999,6 +4030,272 @@ def _weekly_free_day_budget(
     return 2
 
 
+def _get_admissao_proporcional_default() -> str:
+    """Mirror read_salsa admissao_proporcional treatment parameter."""
+    try:
+        val = _config.algorithm.get_algorithm_parameter(
+            'data_treatment', 'admissao_proporcional', 'default_value'
+        )
+        if val in ('floor', 'ceil'):
+            return val
+    except Exception:
+        pass
+    return 'floor'
+
+
+def _resolve_admissao_demissao_indices(
+    df_colaborador: pd.DataFrame,
+    employee_id: str,
+    idx_by_date: Dict[pd.Timestamp, int],
+    max_idx: int,
+) -> Tuple[int, int]:
+    """Mirror read_salsa data_admissao / data_demissao index resolution."""
+    admissao_idx = 0
+    demissao_idx = max_idx + 1
+    if df_colaborador is None or df_colaborador.empty:
+        return admissao_idx, demissao_idx
+
+    sub = df_colaborador[df_colaborador['employee_id'].astype(str) == str(employee_id)]
+    if sub.empty:
+        return admissao_idx, demissao_idx
+
+    if 'data_admissao' in sub.columns:
+        adm_dates = pd.to_datetime(sub['data_admissao'], errors='coerce').dropna()
+        if not adm_dates.empty:
+            adm_day = pd.Timestamp(adm_dates.min()).normalize()
+            idx = idx_by_date.get(adm_day)
+            if idx is not None:
+                admissao_idx = int(idx)
+
+    if 'data_demissao' in sub.columns:
+        dem_raw = sub['data_demissao'].replace('', pd.NaT)
+        dem_dates = pd.to_datetime(dem_raw, errors='coerce').dropna()
+        if not dem_dates.empty:
+            dem_day = pd.Timestamp(dem_dates.max()).normalize()
+            idx = idx_by_date.get(dem_day)
+            if idx is not None:
+                demissao_idx = int(idx)
+
+    return admissao_idx, demissao_idx
+
+
+def _salsa_2_required_free_days_for_week(
+    *,
+    tipo_contrato: int,
+    week_num: int,
+    actual_days_in_week: int,
+    work_days_per_week: Optional[Dict[int, int]],
+    is_admissao_week: bool,
+    is_demissao_week: bool,
+    fixed_free_count: int,
+    admissao_proporcional: str = 'floor',
+) -> int:
+    """Mirror salsa_2_free_days_week required_free_days (including fixed-day bump)."""
+    if is_admissao_week or is_demissao_week:
+        if tipo_contrato >= 5:
+            if 4 <= actual_days_in_week <= 5:
+                required_free_days = 1
+            elif actual_days_in_week < 4:
+                required_free_days = 0
+            else:
+                wdpw = (
+                    work_days_per_week.get(week_num, 5)
+                    if work_days_per_week else 5
+                )
+                if wdpw == 6:
+                    required_free_days = 1
+                else:
+                    required_free_days = 2
+        else:
+            proportion = actual_days_in_week / 7.0 * 2
+            if admissao_proporcional == 'ceil':
+                required_free_days = max(0, int(ceil(proportion)))
+            else:
+                required_free_days = max(0, int(floor(proportion)))
+    elif tipo_contrato >= 5:
+        wdpw = (
+            work_days_per_week.get(week_num, 5)
+            if work_days_per_week else 5
+        )
+        if (tipo_contrato == 8 and wdpw == 6 and actual_days_in_week >= 1) or tipo_contrato == 6:
+            required_free_days = 1
+        elif actual_days_in_week >= 2:
+            required_free_days = 2
+        elif actual_days_in_week == 1:
+            required_free_days = 1
+        else:
+            required_free_days = 0
+    elif actual_days_in_week >= 2:
+        required_free_days = 2
+    elif actual_days_in_week == 1:
+        required_free_days = 1
+    else:
+        required_free_days = 0
+
+    if required_free_days < fixed_free_count:
+        required_free_days = fixed_free_count
+    return required_free_days
+
+
+def _build_salsa_weekly_quota_context(
+    df_calendario: pd.DataFrame,
+    df_colaborador: pd.DataFrame,
+    employee_id: str,
+    *,
+    execution_begin: pd.Timestamp,
+    execution_end: pd.Timestamp,
+    holiday_set: frozenset,
+    df_ausencias_ferias: Optional[pd.DataFrame] = None,
+) -> Optional[dict]:
+    """
+    Per-employee salsa week quota context mirroring read_salsa + salsa_2_free_days_week.
+
+    Used by consecutive-days pre-check and annual day-off feasibility cap.
+    """
+    from src.data_models.functions.read_salsa_calendar_mirror import (
+        build_read_salsa_worker_calendar,
+        build_salsa_day_week_date_maps,
+    )
+
+    if df_calendario is None or df_calendario.empty:
+        return None
+
+    emp_cal = df_calendario[df_calendario['employee_id'].astype(str) == str(employee_id)]
+    if emp_cal.empty or 'index' not in emp_cal.columns:
+        return None
+
+    idx_by_date, date_by_idx = _build_calendario_index_date_maps(df_calendario)
+    if not idx_by_date or not date_by_idx:
+        return None
+
+    exec_begin_idx = idx_by_date.get(execution_begin.normalize())
+    exec_end_idx = idx_by_date.get(execution_end.normalize())
+    if exec_begin_idx is None or exec_end_idx is None:
+        return None
+
+    horario = emp_cal['horario'].astype(str).str.strip()
+    closed_holidays: Set[int] = set(
+        emp_cal.loc[horario == 'F', 'index'].astype(int)
+    )
+    for day in holiday_set:
+        idx = idx_by_date.get(pd.Timestamp(day).normalize())
+        if idx is not None:
+            closed_holidays.add(int(idx))
+
+    extra_vacation: Set[int] = set()
+    extra_absence: Set[int] = set()
+    if df_ausencias_ferias is not None and not df_ausencias_ferias.empty:
+        emp_col = (
+            'employee_id' if 'employee_id' in df_ausencias_ferias.columns
+            else 'fk_colaborador'
+        )
+        if emp_col in df_ausencias_ferias.columns and 'data' in df_ausencias_ferias.columns:
+            sub = df_ausencias_ferias[
+                df_ausencias_ferias[emp_col].astype(str) == str(employee_id)
+            ]
+            for _, row in sub.iterrows():
+                day = pd.to_datetime(row['data'], errors='coerce')
+                if pd.isna(day):
+                    continue
+                idx = idx_by_date.get(day.normalize())
+                if idx is None:
+                    continue
+                tipo = str(row.get('tipo_ausencia', '')).strip().upper()
+                if tipo == 'V':
+                    extra_vacation.add(int(idx))
+                else:
+                    extra_absence.add(int(idx))
+
+    year_range = [exec_begin_idx, exec_end_idx]
+    period = (exec_begin_idx, exec_end_idx)
+
+    finalized = build_read_salsa_worker_calendar(
+        df_calendario=df_calendario,
+        df_colaborador=df_colaborador,
+        employee_id=str(employee_id),
+        closed_holidays=closed_holidays,
+        year_range=year_range,
+        period=period,
+        extra_vacation_indices=extra_vacation or None,
+        extra_absence_indices=extra_absence or None,
+    )
+    if finalized is None:
+        return None
+
+    salsa_week_to_days, salsa_day_to_week = build_salsa_day_week_date_maps(df_calendario)
+    salsa_week_to_indices, _ = _build_salsa_week_index_maps_from_calendario(df_calendario)
+    weekly_rest_for_quota = frozenset(
+        date_by_idx[i].normalize()
+        for i in (finalized.fixed_days_off | finalized.fixed_LQs)
+        if i in date_by_idx
+    )
+
+    contract_type = _resolve_employee_tipo_contrato(df_colaborador, employee_id)
+    nbr_weeks = len(finalized.work_days_per_week)
+    work_days_per_week = {
+        week: int(finalized.work_days_per_week[week - 1])
+        for week in range(1, nbr_weeks + 1)
+    }
+
+    all_indices = set(emp_cal['index'].astype(int))
+    max_idx = int(max(all_indices)) if all_indices else exec_end_idx
+    admissao_idx, demissao_idx = _resolve_admissao_demissao_indices(
+        df_colaborador, employee_id, idx_by_date, max_idx
+    )
+
+    return {
+        'employee_id': str(employee_id),
+        'working_days': finalized.working_days,
+        'tipo_contrato': contract_type,
+        'work_days_per_week': work_days_per_week,
+        'salsa_week_to_days': salsa_week_to_days,
+        'salsa_week_to_indices': salsa_week_to_indices,
+        'salsa_day_to_week': salsa_day_to_week,
+        'weekly_rest_for_quota': weekly_rest_for_quota,
+        'admissao_idx': admissao_idx,
+        'demissao_idx': demissao_idx,
+        'admissao_proporcional': _get_admissao_proporcional_default(),
+        'idx_by_date': idx_by_date,
+        'date_by_idx': date_by_idx,
+    }
+
+
+def _remaining_weekly_free_day_slots_for_week(
+    week_num: int,
+    quota_ctx: dict,
+) -> int:
+    """Additional assignable L/LQ slots in one salsa week (salsa_2_free_days_week mirror)."""
+    week_indices = quota_ctx.get('salsa_week_to_indices', {}).get(week_num, [])
+    if not week_indices:
+        return 0
+
+    working_days = quota_ctx.get('working_days', set())
+    week_work_days = [d for d in week_indices if d in working_days]
+    if not week_work_days:
+        return 0
+
+    week_days_dates = quota_ctx.get('salsa_week_to_days', {}).get(week_num, frozenset())
+    weekly_rest = quota_ctx.get('weekly_rest_for_quota', frozenset())
+    fixed_free_count = sum(1 for d in week_days_dates if d in weekly_rest)
+
+    admissao_idx = int(quota_ctx.get('admissao_idx', 0))
+    demissao_idx = int(quota_ctx.get('demissao_idx', 0))
+    is_admissao_week = admissao_idx > 0 and admissao_idx in week_indices
+    is_demissao_week = demissao_idx > 0 and demissao_idx in week_indices
+
+    required = _salsa_2_required_free_days_for_week(
+        tipo_contrato=int(quota_ctx.get('tipo_contrato', 5)),
+        week_num=week_num,
+        actual_days_in_week=len(week_work_days),
+        work_days_per_week=quota_ctx.get('work_days_per_week'),
+        is_admissao_week=is_admissao_week,
+        is_demissao_week=is_demissao_week,
+        fixed_free_count=fixed_free_count,
+        admissao_proporcional=str(quota_ctx.get('admissao_proporcional', 'floor')),
+    )
+    return max(0, required - fixed_free_count)
+
+
 def _build_salsa_week_maps_from_calendario(
     df_calendario: Optional[pd.DataFrame],
 ) -> Tuple[Dict[int, frozenset], Dict[pd.Timestamp, int]]:
@@ -4376,14 +4673,20 @@ def _remaining_weekly_free_day_slots(
     day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
+    weekly_quota_ctx: Optional[dict] = None,
 ) -> int:
     """
     Additional L/LQ slots still assignable in the salsa week of day.
 
     Mirrors salsa_2_free_days_week: fixed weekly rest on seed calendar (L, L_DOM,
     LQ, C) in the full salsa week consumes the weekly quota; MoT/M/T placeholders do not.
-    For tipo 8, the weekly budget follows the alternating 5/6 work_days_per_week pattern.
+    When weekly_quota_ctx is provided, admission/demission proportional rules apply.
     """
+    if weekly_quota_ctx and day_to_week:
+        week_num = day_to_week.get(day.normalize())
+        if week_num is not None:
+            return _remaining_weekly_free_day_slots_for_week(week_num, weekly_quota_ctx)
+
     work_days_in_week: Optional[int] = None
     if tipo_contrato == 8 and work_days_per_week and day_to_week:
         week_num = day_to_week.get(day.normalize())
@@ -4442,6 +4745,7 @@ def _count_eligible_sundays(
     day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
+    weekly_quota_ctx: Optional[dict] = None,
 ) -> int:
     """
     Count Sundays eligible for l_dom within [begin, effective_end].
@@ -4478,7 +4782,8 @@ def _count_eligible_sundays(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week
+            sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+            weekly_quota_ctx=weekly_quota_ctx,
         ) < 1:
             pass
         else:
@@ -4500,6 +4805,7 @@ def _count_eligible_saturdays(
     day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
+    weekly_quota_ctx: Optional[dict] = None,
 ) -> int:
     """
     Count Saturdays eligible for l_sab (and l_dom_or_sab pool contribution).
@@ -4530,7 +4836,8 @@ def _count_eligible_saturdays(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week
+            saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+            weekly_quota_ctx=weekly_quota_ctx,
         ) < 1:
             pass
         else:
@@ -4553,6 +4860,7 @@ def _count_eligible_weekends_c2d(
     day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
+    weekly_quota_ctx: Optional[dict] = None,
 ) -> int:
     """
     Count Sat+Sun pairs eligible for c2d quality weekends.
@@ -4597,7 +4905,8 @@ def _count_eligible_weekends_c2d(
         ):
             pass
         elif _remaining_weekly_free_day_slots(
-            saturday, quota_rest, tc_sat, day_to_week, week_to_days, work_days_per_week
+            saturday, quota_rest, tc_sat, day_to_week, week_to_days, work_days_per_week,
+            weekly_quota_ctx=weekly_quota_ctx,
         ) < 2:
             pass
         else:
@@ -4846,6 +5155,7 @@ def _count_feasibility_cap_for_field(
     day_to_week: Optional[Dict[pd.Timestamp, int]] = None,
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
+    weekly_quota_ctx: Optional[dict] = None,
 ) -> Tuple[int, int]:
     """
     Returns (achievable_total, eligible_in_execution).
@@ -4874,6 +5184,7 @@ def _count_feasibility_cap_for_field(
             'day_to_week': day_to_week,
             'week_to_days': week_to_days,
             'work_days_per_week': work_days_per_week,
+            'weekly_quota_ctx': weekly_quota_ctx,
         }
         if field == 'l_dom':
             eligible_in_execution = _count_eligible_sundays(
@@ -5117,6 +5428,15 @@ def apply_annual_dayoff_feasibility_cap(
                 execution_begin=cap_exec_begin,
                 execution_end=cap_exec_end,
             )
+            weekly_quota_ctx = _build_salsa_weekly_quota_context(
+                df_calendario=df_calendario,
+                df_colaborador=df_colaborador,
+                employee_id=emp_id,
+                execution_begin=cap_exec_begin,
+                execution_end=cap_exec_end,
+                holiday_set=holiday_set,
+                df_ausencias_ferias=df_ausencias_ferias,
+            )
             cap_attribution = _build_attributed_rest_and_unavailable_days_for_cap(
                 df_calendario=df_calendario,
                 df_colaborador=df_colaborador,
@@ -5166,6 +5486,7 @@ def apply_annual_dayoff_feasibility_cap(
                     day_to_week=salsa_day_to_week,
                     week_to_days=salsa_week_to_days,
                     work_days_per_week=work_days_per_week,
+                    weekly_quota_ctx=weekly_quota_ctx,
                 )
 
                 if value > achievable:
