@@ -647,6 +647,17 @@ class AlgoritmoGDService(BaseService):
                             message="Invalid result in allocation_cycle substage, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
+                        alloc_error = str(self.data_model.rare_data.get('allocation_error', ''))
+                        if 'INFEASIBLE' in alloc_error.upper():
+                            message_key = 'ERR_SOLVER_INFEASIBLE'
+                            placeholder_values = {
+                                '1': child_num,
+                                '2': str(posto_id),
+                                '3': '',
+                            }
+                        else:
+                            message_key = 'invalidAllocationCycle'
+                            placeholder_values = {'1': child_num, '2': ''}
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -655,7 +666,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(df_messages, 'invalidAllocationCycle', {'1': child_num, '2': ''}),
+                            description=set_messages(df_messages, message_key, placeholder_values),
                             employee_id=None,
                             schedule_day=None
                         )
