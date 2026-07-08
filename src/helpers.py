@@ -279,6 +279,71 @@ def log_workload_template_contract_errors(
     return logged
 
 
+def log_missing_ciclos_warnings(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    df_messages: pd.DataFrame,
+    warning_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist missing cycle configuration warnings to wfm.esc_processo_erros.
+
+    Each event is logged as type_error='W' so WFM users can configure cycles without
+    aborting the process (synthetic rows were backfilled automatically).
+    """
+    if connection is None or not warning_events or df_messages is None or df_messages.empty:
+        return 0
+
+    logged = 0
+    for event in warning_events:
+        matricula = str(event.get('matricula', '') or '')
+        matricula_part = f", matrícula {matricula}" if matricula else ''
+        placeholder_values = {
+            '1': child_num,
+            '2': str(event.get('employee_id', '')),
+            '3': matricula_part,
+            '6': str(event.get('period_begin', '')),
+            '7': str(event.get('period_end', '')),
+            '8': str(posto_id or ''),
+        }
+        description = set_messages(df_messages, 'WARN_MISSING_CICLOS', placeholder_values)
+        if not description:
+            description = (
+                f"Subproceso {child_num}: el colaborador {event.get('employee_id')}"
+                f"{matricula_part} no tiene ciclo configurado para el periodo "
+                f"[{event.get('period_begin')}-{event.get('period_end')}]. "
+                f"Puesto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='W',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(event.get('period_begin')) if event.get('period_begin') else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
+
 def log_max_consecutive_working_days_errors(
     connection,
     path_os: str,

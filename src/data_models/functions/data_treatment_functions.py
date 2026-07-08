@@ -830,6 +830,203 @@ def treat_df_ciclos_completos(df_ciclos_completos: pd.DataFrame, df_colaborador_
         return False, pd.DataFrame(), str(e)
 
 
+def _db_dia_semana_series(dates: pd.Series) -> pd.Series:
+    """
+    Vectorized WFM DB dia_semana from calendar dates (inverse of treat_df_ciclos conversion).
+    """
+    dayofweek = pd.to_datetime(dates, errors='coerce').dt.dayofweek
+    algo = ((dayofweek + 1) % 7) + 1
+    return np.where(algo == 1, 7, algo - 1).astype(int)
+
+
+def _adjusted_isoweek_series(dates: pd.Series) -> pd.Series:
+    """Vectorized adjusted ISO week (December week-1 -> 53)."""
+    dt = pd.to_datetime(dates, errors='coerce')
+    iso = dt.dt.isocalendar()
+    week = iso.week.astype(int)
+    month = dt.dt.month
+    return np.where((week == 1) & (month == 12), 53, week).astype(int)
+
+
+def _format_matricula_value(matricula) -> str:
+    if pd.isna(matricula) or not str(matricula).strip():
+        return ''
+    try:
+        return str(int(matricula))
+    except (TypeError, ValueError):
+        return str(matricula).strip()
+
+
+def populate_missing_df_ciclos(
+    df_ciclos_completos_folgas_ciclos: pd.DataFrame,
+    df_colaborador: pd.DataFrame,
+    employees_id_list: List[str],
+    process_id: int,
+    start_date: str,
+    end_date: str,
+) -> Tuple[bool, pd.DataFrame, List[dict], str]:
+    """
+    Detect missing per-day cycle rows and backfill df_ciclos with automatic defaults.
+
+    Expected employee-days are contract-active days clipped to the process window
+    (same date bounds as queryGetCiclosCompletosFolgasCiclos.sql). Missing rows are
+    synthesised so downstream calendar/algorithm steps can continue; warning events are
+    returned for esc_processo_erros logging.
+
+    Default field values (user-confirmed):
+        workload_template='A', tipo_ciclo='N', tipo_dia='A', descanso='A',
+        horario_ind='N', work_shift='A', fk_horario=NULL,
+        minimumworkday/maximumworkday from active contract, derived nro_semana/dia_semana.
+
+    Returns:
+        (success, backfilled_df, warning_events, error_message)
+    """
+    try:
+        if df_colaborador is None or df_colaborador.empty:
+            return True, df_ciclos_completos_folgas_ciclos, [], ""
+
+        employee_ids = {str(e) for e in employees_id_list if str(e).strip()}
+        if not employee_ids:
+            return True, df_ciclos_completos_folgas_ciclos, [], ""
+
+        colab = df_colaborador.copy()
+        colab.columns = colab.columns.str.lower()
+        colab['employee_id'] = colab['employee_id'].astype(str)
+        colab = colab[colab['employee_id'].isin(employee_ids)].copy()
+        if colab.empty:
+            logger.warning(
+                "populate_missing_df_ciclos: no df_colaborador rows for employees %s",
+                sorted(employee_ids),
+            )
+            return True, df_ciclos_completos_folgas_ciclos, [], ""
+
+        success, expected_days, error_msg = build_day_level_contract_lookup(
+            df_colaborador=colab,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if not success:
+            logger.warning(
+                "populate_missing_df_ciclos: could not build expected days — %s",
+                error_msg,
+            )
+            return True, df_ciclos_completos_folgas_ciclos, [], ""
+
+        expected_days['employee_id'] = expected_days['employee_id'].astype(str)
+        expected_days['schedule_day'] = pd.to_datetime(
+            expected_days['schedule_day'], errors='coerce'
+        ).dt.normalize()
+        expected_days = expected_days.dropna(subset=['schedule_day'])
+
+        contract_cols = ['employee_id', 'begin_date', 'end_date', 'min_dia_trab', 'max_dia_trab']
+        if 'matricula' in colab.columns:
+            contract_cols.append('matricula')
+        contracts = sort_df_colaborador_by_contract_period(colab[contract_cols].copy())
+        contracts['begin_date'] = pd.to_datetime(contracts['begin_date'], errors='coerce').dt.normalize()
+        contracts['end_date'] = pd.to_datetime(contracts['end_date'], errors='coerce').dt.normalize()
+        contracts['min_dia_trab'] = pd.to_numeric(contracts['min_dia_trab'], errors='coerce')
+        contracts['max_dia_trab'] = pd.to_numeric(contracts['max_dia_trab'], errors='coerce')
+        contracts = contracts.dropna(subset=['begin_date', 'end_date'])
+
+        expected_with_contract = expected_days.merge(contracts, on='employee_id', how='left')
+        expected_with_contract = expected_with_contract[
+            (expected_with_contract['schedule_day'] >= expected_with_contract['begin_date'])
+            & (expected_with_contract['schedule_day'] <= expected_with_contract['end_date'])
+        ]
+        expected_with_contract = expected_with_contract.sort_values(
+            ['employee_id', 'schedule_day', 'begin_date']
+        )
+        expected_with_contract = expected_with_contract.drop_duplicates(
+            subset=['employee_id', 'schedule_day'], keep='last'
+        )
+        if expected_with_contract.empty:
+            return True, df_ciclos_completos_folgas_ciclos, [], ""
+
+        df = df_ciclos_completos_folgas_ciclos.copy()
+        if not df.empty:
+            df.columns = df.columns.str.lower()
+            df['employee_id'] = df['employee_id'].astype(str)
+            df['schedule_day'] = pd.to_datetime(df['schedule_day'], errors='coerce').dt.normalize()
+            existing = df[['employee_id', 'schedule_day']].drop_duplicates()
+            missing = expected_with_contract.merge(
+                existing,
+                on=['employee_id', 'schedule_day'],
+                how='left',
+                indicator=True,
+            )
+            missing = missing[missing['_merge'] == 'left_only'].drop(columns=['_merge'])
+        else:
+            missing = expected_with_contract.copy()
+
+        if missing.empty:
+            logger.info("populate_missing_df_ciclos: all contract-active days have cycle rows")
+            return True, df_ciclos_completos_folgas_ciclos, [], ""
+
+        schedule_days = missing['schedule_day']
+        matricula_vals = (
+            missing['matricula'].values
+            if 'matricula' in missing.columns
+            else np.full(len(missing), np.nan)
+        )
+        df_missing = pd.DataFrame({
+            'process_id': process_id,
+            'employee_id': missing['employee_id'].values,
+            'matricula': matricula_vals,
+            'schedule_day': schedule_days.values,
+            'tipo_dia': 'A',
+            'tipo_ciclo': 'N',
+            'descanso': 'A',
+            'horario_ind': 'N',
+            'hora_ini_1': pd.NA,
+            'hora_fim_1': pd.NA,
+            'hora_ini_2': pd.NA,
+            'hora_fim_2': pd.NA,
+            'fk_horario': pd.NA,
+            'nro_semana': _adjusted_isoweek_series(schedule_days),
+            'dia_semana': _db_dia_semana_series(schedule_days),
+            'work_shift': 'A',
+            'work_shift_start': pd.NA,
+            'work_shift_end': pd.NA,
+            'minimumworkday': missing['min_dia_trab'].values,
+            'maximumworkday': missing['max_dia_trab'].values,
+            'workload_template': 'A',
+        })
+
+        if df.empty:
+            df_result = df_missing
+        else:
+            df_result = pd.concat([df, df_missing], ignore_index=True)
+
+        warning_agg = (
+            df_missing.groupby('employee_id', sort=False)
+            .agg(
+                period_begin=('schedule_day', 'min'),
+                period_end=('schedule_day', 'max'),
+                missing_days_count=('schedule_day', 'count'),
+                matricula=('matricula', 'first'),
+            )
+            .reset_index()
+        )
+        warning_agg['period_begin'] = warning_agg['period_begin'].dt.strftime('%Y-%m-%d')
+        warning_agg['period_end'] = warning_agg['period_end'].dt.strftime('%Y-%m-%d')
+        warning_agg['matricula'] = warning_agg['matricula'].map(_format_matricula_value)
+        warning_agg['missing_days_count'] = warning_agg['missing_days_count'].astype(int)
+        warning_events = warning_agg[
+            ['employee_id', 'matricula', 'period_begin', 'period_end', 'missing_days_count']
+        ].to_dict('records')
+
+        logger.warning(
+            "populate_missing_df_ciclos: backfilled %s synthetic cycle rows for %s employee(s)",
+            len(df_missing),
+            len(warning_events),
+        )
+        return True, df_result, warning_events, ""
+
+    except Exception as e:
+        logger.error(f"Error in populate_missing_df_ciclos: {str(e)}", exc_info=True)
+        return False, df_ciclos_completos_folgas_ciclos, [], str(e)
+
+
 def _workload_template_is_ciclo_completo(raw) -> bool:
     if isinstance(raw, (bool, np.bool_)):
         return bool(raw)
