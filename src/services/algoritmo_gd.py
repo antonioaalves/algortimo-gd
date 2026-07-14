@@ -25,7 +25,7 @@ from src.configuration_manager.instance import get_config
 from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.data_models.factory import DataModelFactory
-from src.helpers import set_process_errors
+from src.helpers import set_process_errors, log_missing_ciclos_warnings
 from src.orquestrador_functions.Logs.message_loader import set_messages
 
 class AlgoritmoGDService(BaseService):
@@ -1294,6 +1294,24 @@ class AlgoritmoGDService(BaseService):
                         employee_id=None,
                         schedule_day=None
                     )
+                    missing_ciclos_events = self.data_model.auxiliary_data.get(
+                        'missing_ciclos_warning_events', []
+                    )
+                    if missing_ciclos_events:
+                        n_logged = log_missing_ciclos_warnings(
+                            connection=self.raw_connection,
+                            path_os=self.config_manager.system.project_root_dir,
+                            fk_process=self.external_data['current_process_id'],
+                            process_type=process_type,
+                            df_messages=df_messages,
+                            warning_events=missing_ciclos_events,
+                            child_num=child_num,
+                            posto_id=posto_id,
+                        )
+                        self.logger.info(
+                            f"Logged {n_logged}/{len(missing_ciclos_events)} missing cycle "
+                            f"warning(s) to esc_processo_erros"
+                        )
             
             except Exception as e:
                 self.logger.error(f"Error loading calendario info: {str(e)}")
