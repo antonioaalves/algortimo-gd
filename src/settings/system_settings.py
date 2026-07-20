@@ -18,7 +18,7 @@ def _read_version() -> str:
         return "0.0.0"
 
 system_configs = {
-    "environment": "tst2", # Options: development, production
+    "environment": "salsa_prd", # Options: development, production
     "use_db": True, # Options: True, False
     "override_parameter_defaults": False, # Options: True, False
     "granularity": 15,

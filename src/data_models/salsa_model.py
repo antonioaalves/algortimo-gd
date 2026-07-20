@@ -48,6 +48,7 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_calendario_passado,
     treat_df_ausencias_ferias,
     treat_df_ciclos_completos,
+    populate_missing_df_ciclos,
     validate_workload_template_vs_contract,
     validate_max_consecutive_working_days,
     treat_df_colaborador,
@@ -1345,6 +1346,29 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"df_ciclos_completos_folgas_ciclos shape (rows {df_ciclos_completos_folgas_ciclos.shape[0]}, columns {df_ciclos_completos_folgas_ciclos.shape[1]}): {df_ciclos_completos_folgas_ciclos.columns.tolist()}")
             except Exception as e:
                 self.logger.error(f"Error loading df_ciclos_completos_folgas_ciclos: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            try:
+                df_colaborador = self.raw_data.get('df_colaborador', pd.DataFrame())
+                if df_colaborador is None:
+                    df_colaborador = pd.DataFrame()
+                self.logger.info("Checking for missing cycle rows and backfilling df_ciclos")
+                success, df_ciclos_completos_folgas_ciclos, missing_ciclos_events, error_msg = (
+                    populate_missing_df_ciclos(
+                        df_ciclos_completos_folgas_ciclos=df_ciclos_completos_folgas_ciclos,
+                        df_colaborador=df_colaborador,
+                        employees_id_list=employees_id_list_for_posto,
+                        process_id=process_id,
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                    )
+                )
+                if not success:
+                    self.logger.error(f"populate_missing_df_ciclos failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.auxiliary_data['missing_ciclos_warning_events'] = missing_ciclos_events
+            except Exception as e:
+                self.logger.error(f"Error populating missing df_ciclos rows: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
             try:
