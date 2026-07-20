@@ -25,7 +25,7 @@ from src.configuration_manager.instance import get_config
 from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.data_models.factory import DataModelFactory
-from src.helpers import set_process_errors
+from src.helpers import set_process_errors, log_missing_ciclos_warnings
 from src.orquestrador_functions.Logs.message_loader import set_messages
 
 class AlgoritmoGDService(BaseService):
@@ -287,6 +287,7 @@ class AlgoritmoGDService(BaseService):
                 return False
 
             df_messages = self.data_model.auxiliary_data.get('df_messages', df_messages)
+            message_lang = self.data_model.auxiliary_data.get('message_lang')
             if self.raw_connection and not df_messages.empty:
                 self._refresh_raw_connection()
                 set_process_errors(
@@ -304,6 +305,7 @@ class AlgoritmoGDService(BaseService):
                             '1': self.external_data['current_process_id'],
                             '2': child_num,
                         },
+                        lang=message_lang,
                     ),
                     employee_id=None,
                     schedule_day=None,
@@ -645,6 +647,17 @@ class AlgoritmoGDService(BaseService):
                             message="Invalid result in allocation_cycle substage, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
+                        alloc_error = str(self.data_model.rare_data.get('allocation_error', ''))
+                        if 'INFEASIBLE' in alloc_error.upper():
+                            message_key = 'ERR_SOLVER_INFEASIBLE'
+                            placeholder_values = {
+                                '1': child_num,
+                                '2': str(posto_id),
+                                '3': '',
+                            }
+                        else:
+                            message_key = 'invalidAllocationCycle'
+                            placeholder_values = {'1': child_num, '2': ''}
                         set_process_errors(
                             connection=self.raw_connection,
                             pathOS=self.config_manager.system.project_root_dir,
@@ -653,7 +666,7 @@ class AlgoritmoGDService(BaseService):
                             type_error='E',
                             process_type=process_type,
                             error_code=None,
-                            description=set_messages(df_messages, 'invalidAllocationCycle', {'1': child_num, '2': ''}),
+                            description=set_messages(df_messages, message_key, placeholder_values),
                             employee_id=None,
                             schedule_day=None
                         )
@@ -751,6 +764,24 @@ class AlgoritmoGDService(BaseService):
                     description=set_messages(df_messages, 'okSubprocPosto', {'1': child_num, '2': str(posto_id), '3': ''}),
                     employee_id=None,
                     schedule_day=None
+                )
+                message_lang = self.data_model.auxiliary_data.get('message_lang')
+                set_process_errors(
+                    connection=self.raw_connection,
+                    pathOS=self.config_manager.system.project_root_dir,
+                    user='WFM',
+                    fk_process=self.external_data['current_process_id'],
+                    type_error='I',
+                    process_type='AlgoritmoHorariosPython_Pai',
+                    error_code=None,
+                    description=set_messages(
+                        df_messages,
+                        'endSubproc',
+                        {'1': self.external_data['current_process_id'], '2': ''},
+                        lang=message_lang,
+                    ),
+                    employee_id=None,
+                    schedule_day=None,
                 )
             return True
 
@@ -1263,6 +1294,24 @@ class AlgoritmoGDService(BaseService):
                         employee_id=None,
                         schedule_day=None
                     )
+                    missing_ciclos_events = self.data_model.auxiliary_data.get(
+                        'missing_ciclos_warning_events', []
+                    )
+                    if missing_ciclos_events:
+                        n_logged = log_missing_ciclos_warnings(
+                            connection=self.raw_connection,
+                            path_os=self.config_manager.system.project_root_dir,
+                            fk_process=self.external_data['current_process_id'],
+                            process_type=process_type,
+                            df_messages=df_messages,
+                            warning_events=missing_ciclos_events,
+                            child_num=child_num,
+                            posto_id=posto_id,
+                        )
+                        self.logger.info(
+                            f"Logged {n_logged}/{len(missing_ciclos_events)} missing cycle "
+                            f"warning(s) to esc_processo_erros"
+                        )
             
             except Exception as e:
                 self.logger.error(f"Error loading calendario info: {str(e)}")
