@@ -30,6 +30,7 @@ def solve(
     special_days: List[int],
     shift: Dict[Tuple[int, int, str], cp_model.IntVar], 
     shifts: List[str],
+    real_working_shift: List[str],
     work_day_hours: Dict[int, Dict[int, int]],
     pessOBJ: Dict[int, int],
     workers_past: List[int],
@@ -127,7 +128,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 600
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -138,7 +139,6 @@ def solve(
 
         solver.parameters.log_search_progress = log_search_progress
         solver.parameters.use_phase_saving = use_phase_saving
-        #solver.parameters.random_seed = 
 
         # Add performance optimizations
         solver.parameters.cp_model_presolve = True
@@ -147,7 +147,6 @@ def solve(
         solver.parameters.cp_model_probing_level = 3
         solver.parameters.symmetry_level = 4
         solver.parameters.linearization_level = 2
-
         testing = False
         if testing == True:
             solver.parameters.random_seed = 42
@@ -226,24 +225,8 @@ def solve(
         # 5. PROCESS SOLUTION AND CREATE SCHEDULE
         # =================================================================
         logger.info("Processing solution and creating schedule")
-        
-        # Shift mapping for readability
-        shift_mapping = {
-            'M'     : 'M',  # Morning shift
-            'T'     : 'T',  # Afternoon shift
-            'F'     : 'F',  # Closed holiday
-            'V'     : 'V',  # Empty Day
-            'A'     : 'A',  # Missing shift
-            'L'     : 'L',  # Free day
-            'LQ'    : 'LQ', # Free days semester
-            'LD'    : 'LD',
-            'TC'    : 'TC',
-            '-'     : '-'
-        }
-        
-        logger.info(f"Shift mapping: {shift_mapping}")
-        
-        logger.info(f"Processing schedule for {len(workers)} workers across {len(days_of_year)} days")
+        ammount_of_days = len(days_of_year)
+        logger.info(f"Processing schedule for {len(workers)} workers across {ammount_of_days} days")
         # Prepare the data for the DataFrame
         table_data = []  # List to store each worker's data as a row
         worker_stats = {}  # Dictionary to track L, LQ, LD counts for each worker
@@ -251,8 +234,7 @@ def solve(
         # Loop through each worker
         processed_workers = 0
         days_of_year_sorted = sorted(days_of_year)
-        time_worked_day_M = [-pessOBJ.get((d, 'M'), 0) for d in days_of_year_sorted]
-        time_worked_day_T = [-pessOBJ.get((d, 'T'), 0) for d in days_of_year_sorted]
+        time_worked_day_shift = {f"time_worked_day_{value}": [-pessOBJ.get((d, value), 0) for d in days_of_year_sorted] for value in real_working_shift}
         special_days_worked = {}
         sun = {}
         compensation_days_off = {}
@@ -279,7 +261,7 @@ def solve(
                     # Check each shift type for this day
                     for s in shifts:
                         if (w, d, s) in shift and solver.Value(shift[(w, d, s)]) == 1:
-                            day_assignment = shift_mapping.get(s, s)
+                            day_assignment = s
                             break
                     
                     # If no specific assignment found, mark as unassigned
@@ -297,18 +279,12 @@ def solve(
                     elif day_assignment == 'LD':
                         compensation_days_off[w].append(d)
                         ld_count += 1
-                    elif day_assignment in ['T']:
+                    elif day_assignment in real_working_shift:
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1
-                        if d - 1 in time_worked_day_T:
-                            time_worked_day_T[d - 1] += work_day_hours[w].get(d, 8)
-                    elif day_assignment in ['M']:
-                        if d in special_days:
-                            special_days_count += 1
-                            special_days_worked[w].append(d)
-                        if d - 1 in time_worked_day_M:
-                            time_worked_day_M[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 <= ammount_of_days:
+                            time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
 
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
@@ -332,8 +308,7 @@ def solve(
                 logger.error(f"Error processing past worker {w}: {str(e)}")
                 continue
 
-        time_worked_day_M_after = time_worked_day_M.copy()
-        time_worked_day_T_after = time_worked_day_T.copy()
+        time_worked_day_shift_after = time_worked_day_shift.copy()
         for w in workers:
             try:
                 if dummy_workers:
@@ -372,7 +347,7 @@ def solve(
                     # Check each shift type for this day
                     for s in shifts:
                         if (temp_w, d, s) in shift and solver.Value(shift[(temp_w, d, s)]) == 1:
-                            day_assignment = shift_mapping.get(s, s)
+                            day_assignment = s
                             break
                     
                     # If no specific assignment found, mark as unassigned
@@ -391,24 +366,15 @@ def solve(
                         if period[0] <= d <= period[1]:
                             compensation_days_off[w].append(index_to_date[d])
                             ld_count += 1
-                    elif day_assignment in ['T']:
+                    elif day_assignment in real_working_shift:
                         if 12 <= d <= period[1]:
                             if d in special_days:
                                 special_days_worked[w].append(index_to_date[d])
                                 special_days_count += 1
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
-                        if d - 1 in time_worked_day_T:
-                            time_worked_day_T_after[d - 1] += work_day_hours[w].get(d, 8)
-                    elif day_assignment in ['M']:
-                        if 12 <= d <= period[1]:
-                            if d in special_days:
-                                special_days_worked[w].append(index_to_date[d])
-                                special_days_count += 1
-                            elif d in sundays:
-                                sun[w].append(index_to_date[d])
-                        if d - 1 in time_worked_day_M:
-                            time_worked_day_M_after[d - 1] += work_day_hours[w].get(d, 8)
+                        if d - 1 <= ammount_of_days:
+                            time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
 
                 if contingente_feriados:
                     if w in contingente_feriados and len(contingente_feriados[w]) > 0:
@@ -478,33 +444,26 @@ def solve(
         logger.info(f"DataFrame columns: {len(df.columns)} columns")
         
         # Save to Excel
-       
         try:
             os.makedirs(os.path.dirname(output_filename), exist_ok=True)
             days_of_year_sorted = sorted(days_of_year)
 
-            time_worked_M_row_after = ["Time_Worked_M"] + [time_worked_day_M_after[i] for i in range(len(days_of_year_sorted))]
-            time_worked_T_row_after = ["Time_Worked_T"] + [time_worked_day_T_after[i] for i in range(len(days_of_year_sorted))]
+            time_worked_shift_row_after = {f"Time_Worked_{s}": [f"Time_Worked_{s}"] + [time_worked_day_shift_after[f"time_worked_day_{s}"][i] for i in range(len(days_of_year_sorted))] for s in real_working_shift}
 
             # Append rows to DataFrame
             if workers_past:
                 df_past = pd.DataFrame(table_data_past, columns=columns)
                 df2 = pd.concat([df, df_past], ignore_index=True)
-                time_worked_M_row = ["Original_M"] + [time_worked_day_M[i] for i in range(len(days_of_year_sorted))]
-                time_worked_T_row = ["Original_T"] + [time_worked_day_T[i] for i in range(len(days_of_year_sorted))]
-                df2.loc[len(df2)] = time_worked_M_row
-                df2.loc[len(df2)] = time_worked_T_row
+                for value in real_working_shift:
+                    df2.loc[len(df2)] = [f"Original_{value}"] + [time_worked_day_shift[f"time_worked_day_{day_assignment}"][i] for i in range(len(days_of_year_sorted))]
             else:
                 df2 = df.copy()
-            df2.loc[len(df2)] = time_worked_M_row_after
-            df2.loc[len(df2)] = time_worked_T_row_after
+            for value in real_working_shift:
+                df2.loc[len(df2)] = time_worked_shift_row_after[f"Time_Worked_{value}"]
 
             if eci_sibling_results_flag:
-                sister_eci_M = ["Sister_Section_M"] + [h_plus.get((i, 'M'), -1) for i in range(len(days_of_year_sorted))]
-                sister_eci_T = ["Sister_Section_T"] + [h_plus.get((i, 'T'), -1) for i in range(len(days_of_year_sorted))]
-
-                df2.loc[len(df2)] = sister_eci_M
-                df2.loc[len(df2)] = sister_eci_T
+                for value in real_working_shift:
+                    df2.loc[len(df2)] = [f"Sister_Section_{value}"] + [h_plus.get((i, value), -1) for i in range(len(days_of_year_sorted))]
 
             df2.to_excel(output_filename, index=False)
             logger.info(f"Schedule saved to: {output_filename}")

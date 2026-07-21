@@ -395,16 +395,16 @@ def get_annual_variables(annual_variables, w, d, variable):
     for range, new_w in annual_variables.get(w, {}).items():
         if d in range:
             if variable == "l_dom":
-                logger.info(f"Getting variable l_dom {annual_variables[w][range]['apply_l_dom']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable l_dom {annual_variables[w][range]['apply_l_dom']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_l_dom"]
             elif variable == "c2d":
-                logger.info(f"Getting variable c2d {annual_variables[w][range]['apply_c2d']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable c2d {annual_variables[w][range]['apply_c2d']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_c2d"]
             elif variable == "l_sab":
-                logger.info(f"Getting variable l_sab {annual_variables[w][range]['apply_l_sab']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable l_sab {annual_variables[w][range]['apply_l_sab']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_l_sab"]
             elif variable == "l_dom_or_sab":
-                logger.info(f"Getting variable l_dom_or_sab {annual_variables[w][range]['apply_l_dom_or_sab']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable l_dom_or_sab {annual_variables[w][range]['apply_l_dom_or_sab']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_l_dom_or_sab"]
     return True
                 
