@@ -128,7 +128,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 60  # Short timeout for testing
+        solver.parameters.max_time_in_seconds = 600
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -139,7 +139,6 @@ def solve(
 
         solver.parameters.log_search_progress = log_search_progress
         solver.parameters.use_phase_saving = use_phase_saving
-        #solver.parameters.random_seed = 
 
         # Add performance optimizations
         solver.parameters.cp_model_presolve = True
@@ -148,7 +147,6 @@ def solve(
         solver.parameters.cp_model_probing_level = 3
         solver.parameters.symmetry_level = 4
         solver.parameters.linearization_level = 2
-
         testing = False
         if testing == True:
             solver.parameters.random_seed = 42
