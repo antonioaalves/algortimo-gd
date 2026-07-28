@@ -30,6 +30,18 @@ from src.algorithms.model_alcampo.alcampo_constraints import (
 from src.algorithms.model_alcampo.optimization_alcampos import optimization_prediction
 from src.algorithms.solver.solver import solve
 
+from src.helpers import (_create_empty_results, _calculate_comprehensive_stats, 
+                        _validate_constraints, _calculate_quality_metrics, 
+                        _format_schedules, _create_metadata, _validate_solution, 
+                        _create_export_info)
+
+
+from src.helpers import (_create_empty_results, _calculate_comprehensive_stats, 
+                        _validate_constraints, _calculate_quality_metrics, 
+                        _format_schedules, _create_metadata, _validate_solution, 
+                        _create_export_info)
+
+
 # Initialize logger with project name from config
 logger = get_logger(get_config_manager().project_name)
 
@@ -58,21 +70,27 @@ class AlcampoAlgorithm(BaseAlgorithm):
         Args:
             parameters: Dictionary containing algorithm configuration
             algo_name: Name identifier for the algorithm
-            project_name: Project name (will use config if not provided)
-            process_id: Process ID for tracking
-            start_date: Start date for processing
-            end_date: End date for processing
-            config_manager: Configuration manager instance (will use singleton if not provided)
         """
-        # Use provided config manager or singleton
-        self.config = config_manager if config_manager else get_config_manager()
+        # Default parameters for the algorithm
+        default_parameters = {
+            "shifts": ["M", "T", "L", "LQ", "F", "V", "LD", "A", "TC", "-"],
+            "check_shifts": ['M', 'T', 'L', 'LQ', "LD", "TC"],
+            "check_shift_special": ['M', 'T', 'L', "TC"],
+            "working_shifts": ["M", "T", "TC"],
+            "max_continuous_working_days": 10,
+
+            "settings":{
+                #F days affect c2d and cxx
+                "F_special_day": False,
+                #defines if we should sum 2 day quality weekends with the number of free sundays
+                "free_sundays_plus_c2d": False,
+                "missing_days_afect_free_days": False,
+            }
+        }
         
-        # Use project name from config if not provided
-        if project_name is None:
-            project_name = self.config.project_name
-            
-        self.logger = get_logger(project_name)
-        self.logger.info(f"Initializing {algo_name} algorithm")
+        # Merge with provided parameters
+        if parameters:
+            default_parameters.update(parameters)
         
         # Validate algorithm is available
         if not self.config.system.has_algorithm(algo_name):
@@ -175,11 +193,94 @@ class AlcampoAlgorithm(BaseAlgorithm):
             # Import the enhanced function
             from src.algorithms.model_alcampo.read_alcampos import read_data_alcampo
             
-            # Read and adapt the data using the specific function
-            adapted_data = read_data_alcampo(data)
+            processed_data = read_data_alcampo(medium_dataframes)
             
-            self.logger.info("Data adaptation completed successfully")
-            return adapted_data
+            # =================================================================
+            # 4. UNPACK AND VALIDATE PROCESSED DATA
+            # =================================================================
+            self.logger.info("Unpacking processed data")
+            
+            try:
+                data_dict = {
+                    'matriz_calendario_gd': processed_data[0],
+                    'days_of_year': processed_data[1],
+                    'sundays': processed_data[2],
+                    'holidays': processed_data[3],
+                    'special_days': processed_data[4],
+                    'closed_holidays': processed_data[5],
+                    'empty_days': processed_data[6],
+                    'worker_holiday': processed_data[7],
+                    'missing_days': processed_data[8],
+                    'working_days': processed_data[9],
+                    'non_holidays': processed_data[10],
+                    'start_weekday': processed_data[11],
+                    'week_to_days': processed_data[12],
+                    'worker_week_shift': processed_data[13],
+                    'matriz_colaboradores_gd': processed_data[14],
+                    'workers': processed_data[15],
+                    'contract_type': processed_data[16],
+                    'total_l': processed_data[17],
+                    'total_l_dom': processed_data[18],
+                    'c2d': processed_data[19],
+                    'c3d': processed_data[20],
+                    'l_d': processed_data[21],
+                    'l_q': processed_data[22],
+                    'cxx': processed_data[23],
+                    't_lq': processed_data[24],
+                    'tc': processed_data[25],
+                    'matriz_estimativas_gd': processed_data[26],
+                    'pessObj': processed_data[27],
+                    'min_workers': processed_data[28],
+                    'max_workers': processed_data[29],
+                    'working_shift_2': processed_data[30],
+                    'workers_complete': processed_data[31],
+                    'workers_complete_cycle': processed_data[32],
+                    'free_day_complete_cycle': processed_data[33],
+                    'first_day' : processed_data[34],
+                    'last_day' : processed_data[35],
+                    'fixed_days_off': processed_data[36]
+                }
+
+            except IndexError as e:
+                self.logger.error(f"Error unpacking processed data: {e}")
+                raise ValueError(f"Invalid data structure returned from processing function: {e}")
+            
+            # =================================================================
+            # 5. FINAL VALIDATION AND LOGGING
+            # =================================================================
+            workers = data_dict['workers']
+            workers_complete = data_dict['workers_complete']
+            days_of_year = data_dict['days_of_year']
+            special_days = data_dict['special_days']
+            working_days = data_dict['working_days']
+
+            for w in workers_complete:
+                self.logger.info(f"Worker {w}, working days: {working_days[w]}, special days: {special_days}")
+            
+            for w in workers:
+                self.logger.info(f"Worker {w}, working days: {working_days[w]}, special days: {special_days}")
+
+            # Validate critical data
+            if not workers_complete:
+                raise ValueError("No valid workers found after processing")
+            
+            if not days_of_year:
+                raise ValueError("No valid days found after processing")
+            
+            # Log final statistics
+            self.logger.info("[OK] Data adaptation completed successfully")
+            self.logger.info(f"[STATS] Final statistics:")
+            self.logger.info(f"   Total workers: {len(workers_complete)}")
+            self.logger.info(f"   Valid workers (cycle_not complete): {len(workers)}")
+            self.logger.info(f"   Total days: {len(days_of_year)}")
+            self.logger.info(f"   Working days: {len(working_days)}")
+            self.logger.info(f"   Special days: {len(special_days)}")
+            self.logger.info(f"   Week mappings: {len(data_dict['week_to_days'])}")
+            
+            # Store processed data in instance
+            self.data_processed = data_dict
+            
+            return data_dict
             
         except Exception as e:
             error_msg = f"Error during data adaptation: {str(e)}"
@@ -196,178 +297,341 @@ class AlcampoAlgorithm(BaseAlgorithm):
         Returns:
             Algorithm results
         """
-        self.logger.info("Starting Alcampo algorithm execution")
-        
         try:
-            # Extract adapted data components
-            (colab_cod, colab_contrato, estimativas_values, num_days,
-             num_employees, start_date, days_off_by_employee,
-             absent_days_by_employee, holidays_by_employee, calendario_dataframe,
-             shifts_names) = adapted_data
+            self.logger.info("Starting Alcampo algorithm execution")
+            
+            if adapted_data is None:
+                adapted_data = self.data_processed
+            
+            # Extract data elements
+            matriz_calendario_gd = adapted_data['matriz_calendario_gd']
+            days_of_year = adapted_data['days_of_year']
+            sundays = adapted_data['sundays']
+            holidays = adapted_data['holidays']
+            special_days = adapted_data['special_days']
+            closed_holidays = adapted_data['closed_holidays']
+            empty_days = adapted_data['empty_days']
+            worker_holiday = adapted_data['worker_holiday']
+            missing_days = adapted_data['missing_days']
+            working_days = adapted_data['working_days']
+            non_holidays = adapted_data['non_holidays']
+            start_weekday = adapted_data['start_weekday']
+            week_to_days = adapted_data['week_to_days']
+            worker_week_shift = adapted_data['worker_week_shift']
+            workers = adapted_data['workers']
+            contract_type = adapted_data['contract_type']
+            total_l = adapted_data['total_l']
+            total_l_dom = adapted_data['total_l_dom']
+            c2d = adapted_data['c2d']
+            c3d = adapted_data['c3d']
+            l_d = adapted_data['l_d']
+            l_q = adapted_data['l_q']
+            cxx = adapted_data['cxx']
+            t_lq = adapted_data['t_lq']
+            tc = adapted_data['tc']
+            pessObj = adapted_data['pessObj']
+            min_workers = adapted_data['min_workers']
+            max_workers = adapted_data['max_workers']
+            working_shift_2 = adapted_data['working_shift_2']
+            workers_complete = adapted_data['workers_complete']
+            workers_complete_cycle = adapted_data['workers_complete_cycle']
+            free_day_complete_cycle = adapted_data['free_day_complete_cycle']
+            first_day = adapted_data['first_day']
+            last_day = adapted_data['last_day']
+            fixed_days_off = adapted_data['fixed_days_off']
 
-            matriz_calendario_gd = adapted_data["matriz_calendario_gd"]
-            matriz_estimativas_gd = adapted_data["matriz_estimativas_gd"]
-            matriz_colaborador_gd = adapted_data["matriz_colaborador_gd"]
-            days_of_year = adapted_data["days_of_year"]
-            sundays = adapted_data["sundays"]
-            holidays = adapted_data["holidays"]
-            special_days = adapted_data["special_days"]
-            closed_holidays = adapted_data["closed_holidays"]
-            empty_days = adapted_data["empty_days"]
-            worker_holiday = adapted_data["worker_holiday"]
-            missing_days  = adapted_data["missing_days "]
-            working_days = adapted_data["working_days"]
-            non_holidays = adapted_data["non_holidays"]
-            start_weekday = adapted_data["start_weekday"]
-            week_to_days = adapted_data["week_to_days"]
-            worker_week_shift = adapted_data["worker_week_shift"]
-            workers = adapted_data["workers"]
-            contract_type = adapted_data["contract_type"]
-            total_l = adapted_data["total_l"]
-            total_l_dom = adapted_data["total_l_dom"]
-            c2d = adapted_data["c2d"]
-            c3d = adapted_data["c3d"]
-            l_d = adapted_data["l_d"]
-            l_q = adapted_data["l_q"]
-            cxx = adapted_data["cxx"]
-            t_lq = adapted_data["t_lq"]
-            tc = adapted_data["tc"]
-            pess_obj = adapted_data["pess_obj"]
-            min_workers = adapted_data["min_workers"]
-            max_workers = adapted_data["max_workers"]
-            working_shift_2 = adapted_data["working_shift_2"]
-            workers_complete = adapted_data["workers_complete"]
-            workers_complete_cycle = adapted_data["workers_complete_cycle"]
-            free_day_complete_cycle = adapted_data["free_day_complete_cycle"]
+            # Extract algorithm parameters
+            shifts = self.parameters["shifts"]
+            check_shift = self.parameters["check_shifts"]
+            check_shift_special = self.parameters["check_shift_special"]
+            working_shift = self.parameters["working_shifts"]
+            max_continuous_days = self.parameters["max_continuous_working_days"]
             
-            self.logger.info("Creating decision variables")
-            # Create decision variables
+            # =================================================================
+            # STAGE 1: Initial scheduling with all constraints
+            # =================================================================
+
+            # === TEST: remover totalmente um worker problemático ===
+            logger.info(f"[TEST] Before dropping workers, total workers: {len(workers_complete)}, len(workers): {len(workers)}")
+            DROP_W = [ 157601 ] #187487, 5022777, 5037733 
+            logger.warning(f"[TEST] Dropping worker {DROP_W} for feasibility test")
+
+            # 1) listas de workers
+            workers = [w for w in workers if w not  in DROP_W]
+            workers_complete = [w for w in workers_complete if w not in DROP_W]
+            workers_complete_cycle = [w for w in workers_complete_cycle if w not in DROP_W]
+
+            # 2) dicionários por worker
+            for dct in [
+                working_days, worker_holiday, missing_days, empty_days, free_day_complete_cycle,
+                contract_type, c2d, c3d, l_d, l_q, t_lq, 
+                total_l, total_l_dom
+            ]:
+                if isinstance(dct, dict):
+                    for w in DROP_W:
+                        dct.pop(w, None)
+
+            # 3) mapas (w, week, ...) → limpar chaves desse worker
+            worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] not in DROP_W}
+
+            logger.info(f"[TEST] After dropping workers, total workers: {len(workers_complete)}, len(workers): {len(workers)}")
+
+
+            self.logger.info("Starting Stage 1: Initial scheduling")
+            
             model = cp_model.CpModel()
-            x = decision_variables(model, num_employees, num_days, len(shifts_names))
+            self.model_stage1 = model
             
-            self.logger.info("Adding constraints to the model")
-            # Add all constraints
+            self.logger.info("Model initialized for Stage 1")
+
+            # Create decision variables
+            shift = decision_variables(model, days_of_year, workers, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, start_weekday)
+
+            self.logger.info("Decision variables created for Stage 1")
             
-            # Basic constraints
-            shift_day_constraint(model, x, num_employees, num_days, len(shifts_names))
-            week_working_days_constraint(model, x, num_employees, num_days, len(shifts_names), colab_contrato)
-            maximum_continuous_working_days(model, x, num_employees, num_days, len(shifts_names), colab_contrato)
-            maximum_continuous_working_special_days(model, x, num_employees, num_days, len(shifts_names), 
-                                                   calendario_dataframe, start_date)
-            maximum_free_days(model, x, num_employees, num_days, len(shifts_names), colab_contrato)
-            free_days_special_days(model, x, num_employees, num_days, len(shifts_names), 
-                                 calendario_dataframe, start_date)
+            # Apply all constraints
+            self._apply_stage1_constraints(
+                                 model, shift, days_of_year, workers, shifts, check_shift, 
+                                 check_shift_special, working_shift, max_continuous_days, week_to_days,
+                                 working_shift_2, contract_type, special_days, total_l, c2d, c3d, working_days,
+                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, worker_holiday,
+                                 missing_days, empty_days, worker_week_shift, start_weekday, sundays,
+                                 t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
+                                 free_day_complete_cycle
+)
+
+            self.logger.info("Constraints applied for Stage 1")
             
-            # Shift assignment constraints
-            tc_atribution(model, x, num_employees, num_days, len(shifts_names), shifts_names, 
-                         colab_contrato, calendario_dataframe, start_date)
-            working_days_special_days(model, x, num_employees, num_days, len(shifts_names), 
-                                    calendario_dataframe, start_date, colab_contrato)
-            LQ_attribution(model, x, num_employees, num_days, len(shifts_names), shifts_names, 
-                          colab_contrato)
-            LD_attribution(model, x, num_employees, num_days, len(shifts_names), shifts_names, 
-                          colab_contrato)
+            # Set up optimization objective
+            debug_vars = optimization_prediction(
+                model, days_of_year, workers_complete, workers_complete_cycle, working_shift, shift, pessObj, 
+                min_workers, closed_holidays, week_to_days, working_days, contract_type, special_days
+            )
             
-            # Holiday and absence constraints
-            closed_holiday_attribution(model, x, num_employees, num_days, len(shifts_names), 
-                                      calendario_dataframe, start_date)
-            holiday_missing_day_attribution(model, x, num_employees, num_days, len(shifts_names), 
-                                          holidays_by_employee, absent_days_by_employee, 
-                                          days_off_by_employee, start_date)
+            logger.info(f"Optimization variables for Stage 1: {debug_vars}")
+
+            # Solve Stage 1
+            self.logger.info("Solving Stage 1 model")
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'),
+                                debug_vars=debug_vars)
+            self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
-            # Weekly and daily constraints
-            assign_week_shift(model, x, num_employees, num_days, len(shifts_names), shifts_names, 
-                            colab_contrato, calendario_dataframe, start_date)
-            special_day_shifts(model, x, num_employees, num_days, len(shifts_names), 
-                             calendario_dataframe, start_date, shifts_names)
-            working_day_shifts(model, x, num_employees, num_days, len(shifts_names), 
-                             calendario_dataframe, start_date, shifts_names)
-            complete_cycle_shifts(model, x, num_employees, num_days, len(shifts_names), 
-                                shifts_names, colab_contrato)
+            # =================================================================
+            # STAGE 2: Refinement with 3-day weekend constraints
+            # =================================================================
+            self.logger.info("Starting Stage 2: Schedule refinement")
             
-            # Quality constraints
-            free_day_next_2c(model, x, num_employees, num_days, len(shifts_names), shifts_names)
-            no_free__days_close(model, x, num_employees, num_days, len(shifts_names), shifts_names)
-            space_LQs(model, x, num_employees, num_days, len(shifts_names), shifts_names)
-            day2_quality_weekend(model, x, num_employees, num_days, len(shifts_names), 
-                                calendario_dataframe, start_date, shifts_names)
-            compensation_days(model, x, num_employees, num_days, len(shifts_names), 
-                            calendario_dataframe, start_date, shifts_names, colab_contrato)
-            prio_2_3_workers(model, x, num_employees, num_days, len(shifts_names), 
-                           calendario_dataframe, start_date, shifts_names, colab_contrato)
-            limits_LDs_week(model, x, num_employees, num_days, len(shifts_names), 
-                          calendario_dataframe, start_date, shifts_names, colab_contrato)
-            one_free_day_weekly(model, x, num_employees, num_days, len(shifts_names), 
-                               calendario_dataframe, start_date, colab_contrato)
-            maxi_free_days_c3d(model, x, num_employees, num_days, len(shifts_names), 
-                              calendario_dataframe, start_date, colab_contrato)
-            maxi_LQ_days_c3d(model, x, num_employees, num_days, len(shifts_names), 
-                            calendario_dataframe, start_date, shifts_names, colab_contrato)
+            new_model = cp_model.CpModel()
+            self.model_stage2 = new_model
             
-            self.logger.info("Setting optimization objective")
-            # Set optimization objective
-            optimization_prediction(model, x, num_employees, num_days, len(shifts_names), 
-                                   estimativas_values, shifts_names)
+            # Create new decision variables
+            new_shift = decision_variables(new_model, days_of_year, workers, shifts, first_day, last_day, worker_holiday, missing_days, empty_days, closed_holidays, fixed_days_off, start_weekday)
             
-            self.logger.info("Solving stage 1 of the algorithm")
-            # Solve the model (Stage 1)
-            solution_stage1 = solve(model, x, num_employees, num_days, len(shifts_names), 
-                                  colab_cod, start_date, shifts_names)
+            # Apply Stage 2 constraints
+            self._apply_stage2_constraints(new_model, new_shift, days_of_year, workers, shifts,
+                                 total_l, working_days, l_q, c2d, c3d, schedule_df, start_weekday,
+                                 contract_type, closed_holidays, workers_complete, workers_complete_cycle)
             
-            if solution_stage1 is None:
-                self.logger.warning("Stage 1 solution not found, returning empty results")
-                return None
+            # Apply optimization (reusing from Stage 1)
+            debug_vars = optimization_prediction(
+                new_model, days_of_year, workers_complete, workers_complete_cycle,working_shift, new_shift, pessObj,
+                min_workers, closed_holidays, week_to_days, working_days, contract_type, special_days
+            )
             
-            self.logger.info("Stage 1 completed successfully, starting stage 2")
             
-            # Stage 2: Add additional quality constraints
-            assigns_solution_days(model, x, num_employees, num_days, len(shifts_names), 
-                                solution_stage1, shifts_names)
-            day3_quality_weekend(model, x, num_employees, num_days, len(shifts_names), 
-                               calendario_dataframe, start_date, shifts_names)
-            
-            self.logger.info("Solving stage 2 of the algorithm")
-            # Solve the enhanced model (Stage 2)
-            final_solution = solve(model, x, num_employees, num_days, len(shifts_names), 
-                                 colab_cod, start_date, shifts_names)
-            
-            if final_solution is None:
-                self.logger.warning("Stage 2 solution not found, using stage 1 results")
-                final_solution = solution_stage1
+            # Solve Stage 2
+            self.logger.info("Solving Stage 2 model")
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'),
+                                       debug_vars=debug_vars)
+            #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
+            self.final_schedule = pd.DataFrame(final_schedule_df).copy()
             
             self.logger.info("Alcampo algorithm execution completed successfully")
-            return final_solution
+            self.logger.info(f"Final schedule for Stage 2: {final_schedule_df}")
+            return final_schedule_df
             
         except Exception as e:
-            error_msg = f"Error during algorithm execution: {str(e)}"
-            self.logger.error(error_msg)
-            raise RuntimeError(error_msg)
+            self.logger.error(f"Error in algorithm execution: {e}", exc_info=True)
+            raise
 
-    def format_results(self, algorithm_results=None):
+    def _apply_stage1_constraints(self, model, shift, days_of_year, workers, shifts, check_shift, 
+                                 check_shift_special, working_shift, max_continuous_days, week_to_days,
+                                 working_shift_2, contract_type, special_days, total_l, c2d, c3d, working_days,
+                                 total_l_dom, tc, l_d, l_q, cxx, closed_holidays, worker_holiday,
+                                 missing_days, empty_days, worker_week_shift, start_weekday, sundays,
+                                 t_lq, matriz_calendario_gd, workers_complete, workers_complete_cycle,
+                                 free_day_complete_cycle):
+        """Apply all Stage 1 constraints to the model."""
+        
+
+        shift_day_constraint(model, shift, days_of_year, workers_complete, shifts)
+        
+        # Constraint to limit working days in a week based on contract type
+        week_working_days_constraint(model, shift, week_to_days, workers, working_shift, contract_type)
+        
+        # Constraint to limit maximum continuous working days
+        maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days)
+        
+        # Constraint to limit maximum continuous working special days
+        maximum_continuous_working_special_days(model, shift, special_days, workers, working_shift, contract_type)
+        
+        # Constraint to limit maximum free days in a year
+        maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
+        
+        # Constraint for free days on special days
+        free_days_special_days(model, shift, special_days, workers, working_days, total_l_dom)
+        
+        # TC attribution constraint
+        tc_atribution(model, shift, workers, tc, special_days, working_days)
+        
+        # Working days special days constraint
+        working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type)
+        
+        # LQ attribution constraint
+        LQ_attribution(model, shift, workers, working_days, l_q, c2d)
+        
+        # LD attribution constraint
+        LD_attribution(model, shift, workers, working_days, l_d)
+
+        #closed_holiday_attribution(model, shift, workers_complete, closed_holidays)
+
+        #holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, missing_days, empty_days, free_day_complete_cycle)
+        
+        # Worker week shift assignments #####
+        assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
+        
+        # Working day shifts constraint
+        # for w in workers:
+        #     logger.info(f"Applying working day shifts constraint for worker {w}: shifts: {working_shift} and check shifts: {check_shift}")  
+        #     logger.info(f"Worker {w}, working days: {working_days[w]}, special days: {special_days}, \
+        #                 worker empty days: {empty_days[w]}, worker missing days: {missing_days[w]}, worker holiday: {worker_holiday[w]} \
+        #                 fixed free days: {free_day_complete_cycle[w]}")
+        working_day_shifts(model, shift, workers, working_days, check_shift)
+        
+        # Special day shifts constraint 
+        special_day_shifts(model, shift, workers, special_days, check_shift_special, working_days)
+
+        # Complete cycle shifts constraint
+        complete_cycle_shifts(model, shift, workers_complete_cycle, working_days, working_shift_2)
+        
+        # Free days adjacent to weekends
+        free_day_next_2c(model, shift, workers, working_days, start_weekday, closed_holidays)
+        
+        # Limit consecutive free days during the week
+        no_free__days_close(model, shift, workers, working_days, start_weekday, week_to_days, cxx, contract_type, closed_holidays, days_of_year)
+        
+        # Day2 quality weekends
+        day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays)
+        
+        # Space LQs constraint
+        space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
+        
+        # # Priority 2-3 workers constraint
+        prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, week_to_days, contract_type, working_shift)
+        
+        # Compensation days constraint
+        compensation_days(model, shift, workers, working_days, special_days, start_weekday, 
+                  week_to_days, contract_type, working_shift)
+        
+        # Limits LDs per week
+        limits_LDs_week(model, shift, week_to_days, workers, special_days)
+    
+        # One free day weekly
+        one_free_day_weekly(model, shift, week_to_days, workers, working_days, contract_type, closed_holidays)
+
+    def _apply_stage2_constraints(self, new_model, new_shift, days_of_year, workers, shifts,
+                                 total_l, working_days, l_q, c2d, c3d, schedule_df, start_weekday,
+                                 contract_type, closed_holidays, workers_complete, workers_complete_cycle):
+        """Apply Stage 2 specific constraints."""
+        
+        # Constraint for workers having an assigned shift for each day
+        shift_day_constraint(new_model, new_shift, days_of_year, workers, shifts)
+        
+        # Constraint for maximum free days in a year
+        maxi_free_days_c3d(new_model, new_shift, workers, days_of_year, total_l)
+        
+        # Constraint for maximum LQ days in a year
+        maxi_LQ_days_c3d(new_model, new_shift, workers, working_days, l_q, c2d, c3d)
+        
+        # Assign solution days based on the previous schedule
+        assigns_solution_days(new_model, new_shift, workers_complete, workers_complete_cycle, days_of_year, schedule_df, working_days, start_weekday, shifts)
+        
+        # Constraint for 3-day quality weekends
+        day3_quality_weekend(new_model, new_shift, workers, working_days, start_weekday, 
+                            schedule_df, c3d, contract_type, closed_holidays)
+
+    def format_results(self, algorithm_results: pd.DataFrame = pd.DataFrame()) -> Dict[str, Any]:
         """
-        Format the algorithm results for output.
+        Format the SALSA algorithm results for output.
         
         Args:
-            algorithm_results: Raw results from execute_algorithm
-            
+            algorithm_results: Final schedule DataFrame from execute_algorithm
+           
         Returns:
             Formatted results (DataFrame or dict)
         """
-        self.logger.info("Formatting Alcampo algorithm results")
-        
         try:
-            if algorithm_results is None:
-                self.logger.warning("No algorithm results to format")
-                return None
+            if algorithm_results.empty and self.final_schedule is not None:
+                algorithm_results = self.final_schedule
             
-            # The solve function already returns a formatted DataFrame
-            # Additional formatting can be added here if needed
-            formatted_results = algorithm_results
+            if algorithm_results.empty:
+                logger.warning("No algorithm results available to format")
+                return _create_empty_results(self.algo_name, self.process_id, self.start_date, self.end_date, self.parameters)
+
+            # Calculate comprehensive statistics
+            stats = _calculate_comprehensive_stats(algorithm_results, self.start_date, self.end_date, self.data_processed)
             
-            self.logger.info(f"Results formatted successfully. Shape: {formatted_results.shape if hasattr(formatted_results, 'shape') else 'N/A'}")
+            # Validate constraints
+            constraint_validation = _validate_constraints(algorithm_results)
+            
+            # Calculate quality metrics
+            quality_metrics = _calculate_quality_metrics(algorithm_results)
+            
+            # Format schedule for different outputs
+            formatted_schedules = _format_schedules(algorithm_results, self.start_date, self.end_date)
+            formatted_schedules['database_format'] = formatted_schedules['database_format'].rename(columns={'Worker': 'colaborador'})
+
+            # Get solver status (if available)
+            solver_status = getattr(self, 'solver_status', 'OPTIMAL')
+            
+            # Get solver attributes
+            solver_attributes = {
+                'solving_time_seconds': getattr(self, 'solving_time_seconds', None),
+                'num_branches': getattr(self, 'num_branches', None),
+                'num_conflicts': getattr(self, 'num_conflicts', None)
+            }
+            
+            # Create comprehensive results structure
+            formatted_results = {
+                'core_results': {
+                    'schedule': algorithm_results,
+                    'formatted_schedule': formatted_schedules['database_format'],
+                    'wide_format_schedule': formatted_schedules['wide_format'],
+                    'status': solver_status
+                },
+                'metadata': _create_metadata(self.algo_name, self.process_id, self.start_date, self.end_date, self.parameters, stats, solver_attributes),
+                'scheduling_stats': stats,
+                'constraint_validation': constraint_validation,
+                'quality_metrics': quality_metrics,
+                'validation': _validate_solution(algorithm_results),
+                'export_info': _create_export_info(self.process_id, ROOT_DIR),
+                'summary': {
+                    'status': 'completed',
+                    'message': f'Successfully scheduled {stats["workers"]["total_workers"]} workers over {stats["time_coverage"]["total_days"]} days using SALSA algorithm',
+                    'key_metrics': {
+                        'total_assignments': stats['shifts']['total_assignments'],
+                        'coverage_percentage': stats['time_coverage']['coverage_percentage'],
+                        'constraint_satisfaction': constraint_validation.get('overall_satisfaction', 100)
+                    }
+                }
+            }
+
+            #logger.info(f"DEBUG: formatted schedule: {formatted_results['core_results']['formatted_schedule'].shape}")
+            
+            self.logger.info("Enhanced SALSA results formatted successfully")
             return formatted_results
             
         except Exception as e:
-            error_msg = f"Error during result formatting: {str(e)}"
-            self.logger.error(error_msg)
-            raise ValueError(error_msg)
+            self.logger.error(f"Error in enhanced SALSA results formatting: {e}", exc_info=True)
+            raise
+
