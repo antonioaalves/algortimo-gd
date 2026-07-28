@@ -200,12 +200,45 @@ class AlcampoAlgorithm(BaseAlgorithm):
         
         try:
             # Extract adapted data components
-            (matriz_calendario_gd, matriz_estimativas_gd, matriz_colaborador_gd,
-             colab_emp, colab_cod, colab_contrato, estimativas_values, num_days,
-             num_employees, emp_range, days_range, start_date, days_off_by_employee,
+            (colab_cod, colab_contrato, estimativas_values, num_days,
+             num_employees, start_date, days_off_by_employee,
              absent_days_by_employee, holidays_by_employee, calendario_dataframe,
-             shifts_mapping, shifts_reverse_mapping, shifts_names, max_estimativas_value,
-             max_colab_value, max_days_value) = adapted_data
+             shifts_names) = adapted_data
+
+            matriz_calendario_gd = adapted_data["matriz_calendario_gd"]
+            matriz_estimativas_gd = adapted_data["matriz_estimativas_gd"]
+            matriz_colaborador_gd = adapted_data["matriz_colaborador_gd"]
+            days_of_year = adapted_data["days_of_year"]
+            sundays = adapted_data["sundays"]
+            holidays = adapted_data["holidays"]
+            special_days = adapted_data["special_days"]
+            closed_holidays = adapted_data["closed_holidays"]
+            empty_days = adapted_data["empty_days"]
+            worker_holiday = adapted_data["worker_holiday"]
+            missing_days  = adapted_data["missing_days "]
+            working_days = adapted_data["working_days"]
+            non_holidays = adapted_data["non_holidays"]
+            start_weekday = adapted_data["start_weekday"]
+            week_to_days = adapted_data["week_to_days"]
+            worker_week_shift = adapted_data["worker_week_shift"]
+            workers = adapted_data["workers"]
+            contract_type = adapted_data["contract_type"]
+            total_l = adapted_data["total_l"]
+            total_l_dom = adapted_data["total_l_dom"]
+            c2d = adapted_data["c2d"]
+            c3d = adapted_data["c3d"]
+            l_d = adapted_data["l_d"]
+            l_q = adapted_data["l_q"]
+            cxx = adapted_data["cxx"]
+            t_lq = adapted_data["t_lq"]
+            tc = adapted_data["tc"]
+            pess_obj = adapted_data["pess_obj"]
+            min_workers = adapted_data["min_workers"]
+            max_workers = adapted_data["max_workers"]
+            working_shift_2 = adapted_data["working_shift_2"]
+            workers_complete = adapted_data["workers_complete"]
+            workers_complete_cycle = adapted_data["workers_complete_cycle"]
+            free_day_complete_cycle = adapted_data["free_day_complete_cycle"]
             
             self.logger.info("Creating decision variables")
             # Create decision variables

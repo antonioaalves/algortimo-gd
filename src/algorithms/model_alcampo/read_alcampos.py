@@ -9,7 +9,7 @@ from src.configuration_manager.instance import get_config as get_config_manager
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
 
-def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, ...]:
+def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
     """
     Enhanced version of read_data_alcampo with comprehensive logging and error checks.
     
@@ -58,9 +58,9 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         # =================================================================
         required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'L_RES', 'L_RES2']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
-        required_calendario_cols = ['colaborador', 'data', 'wd', 'dia_tipo', 'tipo_turno']
+        required_calendario_cols = ['employee_id', 'wd', 'dia_tipo', 'tipo_turno']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
-        required_estimativas_cols = ['schedule_day', 'turno', 'media_turno', 'max_turno', 'min_turno', 'pess_obj', 'sd_turno', 'fk_tipo_posto', 'wday' ]
+        required_estimativas_cols = ['schedule_day', 'turno', 'media_turno', 'max_turno', 'min_turno', 'pess_obj', 'sd_turno', 'wday' ]
         required_estimativas_cols = [s.lower() for s in required_estimativas_cols]
         
         missing_colab_cols = [col for col in required_colaborador_cols if col not in matriz_colaborador_gd.columns]
@@ -76,9 +76,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
             raise KeyError(f"Missing required columns in matriz_estimativas: {missing_estima_cols}")
         
         logger.info("[OK] All required columns present in DataFrames")
-        
-        matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd["colaborador"] != "TIPO_DIA"]
-        matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd["matricula"] != "TIPO_DIA"]
 
         # =================================================================
         # 3. CALCULATE L_Q FOR colaborador data
@@ -118,17 +115,17 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         logger.info("Processing calendario data")
         
         # Ensure colaborador column is numeric
-        matriz_calendario_gd['colaborador'] = pd.to_numeric(matriz_calendario_gd['colaborador'], errors='coerce')
-        invalid_colaborador = matriz_calendario_gd['colaborador'].isna().sum()
+        matriz_calendario_gd['employee_id'] = pd.to_numeric(matriz_calendario_gd['employee_id'], errors='coerce')
+        invalid_colaborador = matriz_calendario_gd['employee_id'].isna().sum()
         if invalid_colaborador > 0:
             logger.warning(f"Found {invalid_colaborador} invalid colaborador values, removing these rows")
-            matriz_calendario_gd = matriz_calendario_gd.dropna(subset=['colaborador'])
+            matriz_calendario_gd = matriz_calendario_gd.dropna(subset=['employee_id'])
         
         # Convert data column to datetime
         try:
-            matriz_calendario_gd['data'] = pd.to_datetime(matriz_calendario_gd['data'])
+            matriz_calendario_gd['schedule_day'] = pd.to_datetime(matriz_calendario_gd['schedule_day'])
             matriz_estimativas_gd['schedule_day'] = pd.to_datetime(matriz_estimativas_gd['schedule_day'])
-            logger.info(f"Date range: {matriz_calendario_gd['data'].min()} to {matriz_calendario_gd['data'].max()}")
+            logger.info(f"Date range: {matriz_calendario_gd['schedule_day'].min()} to {matriz_calendario_gd['schedule_day'].max()}")
         except Exception as e:
             raise ValueError(f"Error converting data column to datetime: {e}")
         
@@ -139,10 +136,10 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         logger.info("Identifying valid workers present in all DataFrames")
         
         # Get unique workers from each DataFrame
-        workers_colaborador_complete = set(matriz_colaborador_gd['matricula'].dropna().astype(int))
-        workers_calendario_complete = set(matriz_calendario_gd['colaborador'].dropna().astype(int))
+        workers_colaborador_complete = set(matriz_colaborador_gd['employee_id'].dropna().astype(int))
+        workers_calendario_complete = set(matriz_calendario_gd['employee_id'].dropna().astype(int))
         
-        workers_colaborador = set(matriz_colaborador_gd[matriz_colaborador_gd['ciclo'] != 'Completo']['matricula'].dropna().astype(int))
+        workers_colaborador = set(matriz_colaborador_gd[matriz_colaborador_gd['ciclo'] != 'Completo']['employee_id'].dropna().astype(int))
 
         logger.info(f"Workers found:")
         logger.info(f"  - In matriz_colaborador_complete: {len(workers_colaborador)} workers")
@@ -167,11 +164,11 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         logger.info(f"   Worker IDs (complete): {workers_complete[:10]}{'...' if len(workers_complete) > 10 else ''}")
 
         # Ensure data type consistency before filtering
-        matriz_colaborador_gd['matricula'] = matriz_colaborador_gd['matricula'].astype(int)
-        matriz_calendario_gd['colaborador'] = matriz_calendario_gd['colaborador'].astype(int)
+        matriz_colaborador_gd['employee_id'] = matriz_colaborador_gd['employee_id'].astype(int)
+        matriz_calendario_gd['employee_id'] = matriz_calendario_gd['employee_id'].astype(int)
         
-        matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd['matricula'].isin(workers_complete)]
-        matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd['colaborador'].isin(workers_complete)]
+        matriz_colaborador_gd = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'].isin(workers_complete)]
+        matriz_calendario_gd = matriz_calendario_gd[matriz_calendario_gd['employee_id'].isin(workers_complete)]
 
         
         logger.info(f"Filtered DataFrames to valid workers:")
@@ -184,7 +181,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         # =================================================================
         logger.info("Extracting days and date information")
         
-        days_of_year = sorted(matriz_calendario_gd['data'].dt.dayofyear.unique().tolist())
+        days_of_year = sorted(matriz_calendario_gd['index'].unique().tolist())
+        print("days of year", matriz_calendario_gd)
         logger.info(f"Days of year: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         
         # =================================================================
@@ -195,16 +193,16 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         # Define shifts and special days
         shifts = ["M", "T", "L","LQ", "F", "V","LD", "A"]
         
-        sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['data'].dt.dayofyear.unique().tolist())
+        sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['schedule_day'].dt.dayofyear.unique().tolist())
 
         holidays = sorted(matriz_calendario_gd[
             (matriz_calendario_gd['wd'] != 'Sun') & 
             (matriz_calendario_gd["dia_tipo"] == "domYf")
-        ]['data'].dt.dayofyear.unique().tolist())
+        ]['schedule_day'].dt.dayofyear.unique().tolist())
         
         closed_holidays = sorted(matriz_calendario_gd[
             matriz_calendario_gd['tipo_turno'] == "F"
-        ]['data'].dt.dayofyear.unique().tolist())
+        ]['schedule_day'].dt.dayofyear.unique().tolist())
         
         special_days = sorted(list(set(sundays + holidays)))
         
@@ -230,7 +228,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         
         # Process each worker
         for w in workers_complete:
-            worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
+            worker_calendar = matriz_calendario_gd[matriz_calendario_gd['employee_id'] == w]
             
             if worker_calendar.empty:
                 logger.warning(f"No calendar data found for worker {w}")
@@ -240,10 +238,10 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
                 continue
             
             # Find days with specific statuses
-            worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-            worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            w_holiday = worker_calendar[worker_calendar['tipo_turno'] == 'A']['data'].dt.dayofyear.tolist()
-            f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
+            worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['schedule_day'].dt.dayofyear.tolist()
+            worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['schedule_day'].dt.dayofyear.tolist()
+            w_holiday = worker_calendar[worker_calendar['tipo_turno'] == 'A']['schedule_day'].dt.dayofyear.tolist()
+            f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['schedule_day'].dt.dayofyear.tolist()
 
             empty_days[w] = worker_empty
             worker_holiday[w] = w_holiday
@@ -251,13 +249,13 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
             free_day_complete_cycle[w] = f_day_complete_cycle
             
         # Track first and last registered days
-            if w in matriz_calendario_gd['colaborador'].values:
-                first_registered_day[w] = worker_calendar['data'].dt.dayofyear.min()
+            if w in matriz_calendario_gd['employee_id'].values:
+                first_registered_day[w] = worker_calendar['schedule_day'].dt.dayofyear.min()
             else:
                 first_registered_day[w] = 0
 
-            if w in matriz_calendario_gd['colaborador'].values:
-                last_registered_day[w] = worker_calendar['data'].dt.dayofyear.max()
+            if w in matriz_calendario_gd['employee_id'].values:
+                last_registered_day[w] = worker_calendar['schedule_day'].dt.dayofyear.max()
             else:
                 last_registered_day[w] = 0
 
@@ -293,27 +291,27 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         non_holidays = [d for d in days_of_year if d not in closed_holidays]  # Alias for compatibility
         
         # Calculate week information
-        unique_dates = sorted(matriz_calendario_gd['data'].unique())
+        unique_dates = sorted(matriz_calendario_gd['schedule_day'].unique())
 
         # Around line 297-317, replace the existing week_to_days calculation with:
 
         if unique_dates:
             # Get start weekday from the first date in the calendar data (not estimativas)
             # Sort calendar by date to get the actual first date
-            matriz_calendario_sorted = matriz_calendario_gd.sort_values('data')
+            matriz_calendario_sorted = matriz_calendario_gd.sort_values('schedule_day')
             first_date_row = matriz_calendario_sorted.iloc[0]
             start_weekday = first_date_row['wday']  # Get WDAY from the actual first date
             
-            logger.info(f"First date: {first_date_row['data']}, WDAY: {start_weekday}")
+            logger.info(f"First date: {first_date_row['schedule_day']}, WDAY: {start_weekday}")
             
             # Create week to days mapping using WW column and day of year
             week_to_days = {}
             
             # Process each unique date in the calendar (remove duplicates by date)
-            unique_calendar_dates = matriz_calendario_gd.drop_duplicates(['data']).sort_values('data')
+            unique_calendar_dates = matriz_calendario_gd.drop_duplicates(['schedule_day']).sort_values('schedule_day')
             
             for _, row in unique_calendar_dates.iterrows():
-                day_of_year = row['data'].dayofyear
+                day_of_year = row['schedule_day'].dayofyear
                 week_number = row['ww']  # Use WW column for week number
                 
                 # Initialize the week list if it doesn't exist
@@ -403,12 +401,11 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
                             f"CXX: {cxx[w]}, "
                             f"T_LQ: {t_lq[w]}, "
                             f"TC: {tc[w]}")
-        
         for w in workers:
             if contract_type[w] == 'Contract Error':
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
-            if total_l[w] <= 0:
+            elif total_l[w] <= 0:
                 logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
 
@@ -528,11 +525,11 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
                          # Use WW column instead of isocalendar().week for consistency
                         shift_entries = matriz_calendario_gd[
                             (matriz_calendario_gd['ww'] == week) & 
-                            (matriz_calendario_gd['data'].dt.day_of_year == day) & 
-                            (matriz_calendario_gd['colaborador'] == w)
+                            (matriz_calendario_gd['schedule_day'].dt.day_of_year == day) & 
+                            (matriz_calendario_gd['employee_id'] == w)
                         ]
                         
-                        logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
+                        #logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['tipo_turno'].tolist() if not shift_entries.empty else 'None'}")
 
                         # Check for morning shifts ('M') for the current worker
                         if not shift_entries[shift_entries['tipo_turno'] == "M"].empty:
@@ -544,7 +541,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
                             # Assign afternoon shift to the worker for that week
                             worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
                     
-                        logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
+                        #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
                 
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
@@ -559,45 +556,45 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Tuple[Any, 
         # =================================================================
         # 13. RETURN ALL PROCESSED data
         # =================================================================
-        return (
-            matriz_calendario_gd,    # 0
-            days_of_year,           # 1
-            sundays,                # 2
-            holidays,               # 3
-            special_days,           # 4
-            closed_holidays,        # 5
-            empty_days,             # 6
-            worker_holiday,         # 7
-            missing_days,           # 8
-            working_days,           # 9
-            non_holidays,           # 10
-            start_weekday,          # 11
-            week_to_days,           # 12
-            worker_week_shift,      # 13
-            matriz_colaborador_gd,  # 14
-            workers,                # 15
-            contract_type,          # 16
-            total_l,                # 17
-            total_l_dom,            # 18
-            c2d,                    # 19
-            c3d,                    # 20
-            l_d,                    # 21
-            l_q,                    # 22
-            cxx,                    # 23
-            t_lq,                   # 24
-            tc,                     # 25
-            matriz_estimativas_gd,  # 26
-            pess_obj,                # 27
-            min_workers,            # 28
-            max_workers,            # 29
-            working_shift_2,         # 30
-            workers_complete,       # 31
-            workers_complete_cycle,  # 32
-            free_day_complete_cycle,  # 33
-        )
+        return {
+            "matriz_calendario_gd" : matriz_calendario_gd,
+            "days_of_year" : days_of_year,
+            "sundays" : sundays,
+            "holidays" : holidays,
+            "special_days" : special_days,
+            "closed_holidays" : closed_holidays,
+            "empty_days" : empty_days,
+            "worker_holiday" : worker_holiday,
+            "missing_days " : missing_days ,
+            "working_days" : working_days,
+            "non_holidays" : non_holidays,
+            "start_weekday" : start_weekday,
+            "week_to_days" : week_to_days,
+            "worker_week_shift" : worker_week_shift,
+            "matriz_colaborador_gd" : matriz_colaborador_gd,
+            "workers" : workers,
+            "contract_type" : contract_type,
+            "total_l" : total_l,
+            "total_l_dom" : total_l_dom,
+            "c2d" : c2d,
+            "c3d" : c3d,
+            "l_d" : l_d,
+            "l_q" : l_q,
+            "cxx" : cxx,
+            "t_lq" : t_lq,
+            "tc" : tc,
+            "matriz_estimativas_gd" : matriz_estimativas_gd,
+            "pess_obj" : pess_obj,
+            "min_workers" : min_workers,
+            "max_workers" : max_workers,
+            "working_shift_2" : working_shift_2,
+            "workers_complete" : workers_complete,
+            "workers_complete_cycle" : workers_complete_cycle,
+            "free_day_complete_cycle" : free_day_complete_cycle,
+        }
         
     except Exception as e:
-        logger.error(f"Error in read_data_alcampo: {e}", exc_info=True)
+        logger.error(f"Error in read_data_alcampo: {e}",  exc_info=True)
         raise
 
 

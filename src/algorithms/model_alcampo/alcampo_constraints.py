@@ -64,7 +64,8 @@ def free_days_special_days(model, shift, special_days, workers, working_days, to
         model.Add(sum(shift[(w, d, "L")] for d in worker_special_days) == total_l_dom.get(w, 0) )
 
 
-def tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days):
+def tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days): #está a aplicar a regra a todos os colabs em vez de so tipo  6,
+                                                                                        #mas pode ser ok se os contadores vierem a 0 para outros tipos de contrato
     # Constraint for TC shifts: only on special days and total equals tc[w]
     
     for w in workers:
@@ -90,7 +91,7 @@ def LQ_attribution(model, shift, workers, working_days, l_q, c2d):
     for w in workers:
         for d in working_days[w]:
             model.Add(sum(shift[(w, d, "LQ")] for d in working_days[w]) == l_q.get(w, 0) + c2d.get(w, 0))
-        
+
 def LD_attribution(model, shift, workers, working_days, l_d):
     # #constraint for maximum of LD days in a year
     for w in workers:
