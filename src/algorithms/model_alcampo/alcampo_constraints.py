@@ -1,9 +1,8 @@
 from base_data_project.log_config import get_logger
+from src.configuration_manager.instance import get_config
 
-# Import project-specific components
-from src.config import PROJECT_NAME
-
-logger = get_logger(PROJECT_NAME)
+_config_manager = get_config()
+logger = get_logger(_config_manager.project_name)
 
 
 """This file contains the constraints for the Alcampo shift scheduler."""
@@ -95,7 +94,7 @@ def free_days_special_days(model, shift, special_days, workers, working_days, to
         model.Add(sum(shift[(w, d, "L")] for d in worker_special_days) == total_l_dom.get(w, 0) )
 
 
-def tc_atribution(model, shift, workers, days_of_year, tc, special_days, working_days): #está a aplicar a regra a todos os colabs em vez de so tipo  6,
+def tc_atribution(model, shift, workers, tc, special_days, working_days): #está a aplicar a regra a todos os colabs em vez de so tipo  6,
                                                                                         #mas pode ser ok se os contadores vierem a 0 para outros tipos de contrato
     # Constraint for TC shifts: only on special days and total equals tc[w]
     

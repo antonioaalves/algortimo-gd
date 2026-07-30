@@ -1,12 +1,10 @@
-
-#----------------------------------------DECISION VARIABLES----------------------------------------
-
-from src.config import PROJECT_NAME
+from src.configuration_manager.instance import get_config
 from base_data_project.log_config import get_logger
 
-logger = get_logger(PROJECT_NAME)
+_config_manager = get_config()
+logger = get_logger(_config_manager.project_name)
 
-
+#----------------------------------------DECISION VARIABLES----------------------------------------
 
 def add_var(model, shift, w, days, code, start_weekday):
     for d in days:

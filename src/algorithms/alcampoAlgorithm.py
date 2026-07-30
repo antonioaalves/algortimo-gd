@@ -43,7 +43,8 @@ from src.helpers import (_create_empty_results, _calculate_comprehensive_stats,
 
 
 # Initialize logger with project name from config
-logger = get_logger(get_config_manager().project_name)
+logger = get_logger(get_config_manager().system.project_name)
+root_dir = get_config_manager().system.project_root_dir
 
 class AlcampoAlgorithm(BaseAlgorithm):
     """
@@ -93,11 +94,8 @@ class AlcampoAlgorithm(BaseAlgorithm):
             default_parameters.update(parameters)
         
         # Validate algorithm is available
-        if not self.config.system.has_algorithm(algo_name):
-            available = self.config.system.get_algorithm_list()
-            error_msg = f"Algorithm '{algo_name}' not available. Available algorithms: {available}"
-            self.logger.error(error_msg)
-            raise ValueError(error_msg)
+        if project_name is None:
+            project_name = get_config_manager().system.project_name
         
         # Store algorithm configuration
         self.algo_name = algo_name
@@ -105,20 +103,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
         self.process_id = process_id
         self.start_date = start_date
         self.end_date = end_date
-        
-        # Merge parameters with defaults
-        if parameters is None:
-            self.parameters = self.config.parameters.get_algorithm_config(algo_name)
-        else:
-            # Merge with algorithm-specific defaults
-            algo_defaults = self.config.parameters.get_algorithm_config(algo_name)
-            self.parameters = {**algo_defaults, **parameters}
-        
         # Initialize parent class
-        super().__init__(
-            algo_name=algo_name,
-            parameters=self.parameters
-        )
+        super().__init__(algo_name=algo_name, parameters=default_parameters, project_name=project_name)
+
         
         self.logger.info(f"Algorithm {algo_name} initialized successfully")
         self.logger.debug(f"Parameters: {self.parameters}")
@@ -194,56 +181,12 @@ class AlcampoAlgorithm(BaseAlgorithm):
             from src.algorithms.model_alcampo.read_alcampos import read_data_alcampo
             
             processed_data = read_data_alcampo(medium_dataframes)
+            data_dict = processed_data
             
             # =================================================================
             # 4. UNPACK AND VALIDATE PROCESSED DATA
             # =================================================================
             self.logger.info("Unpacking processed data")
-            
-            try:
-                data_dict = {
-                    'matriz_calendario_gd': processed_data[0],
-                    'days_of_year': processed_data[1],
-                    'sundays': processed_data[2],
-                    'holidays': processed_data[3],
-                    'special_days': processed_data[4],
-                    'closed_holidays': processed_data[5],
-                    'empty_days': processed_data[6],
-                    'worker_holiday': processed_data[7],
-                    'missing_days': processed_data[8],
-                    'working_days': processed_data[9],
-                    'non_holidays': processed_data[10],
-                    'start_weekday': processed_data[11],
-                    'week_to_days': processed_data[12],
-                    'worker_week_shift': processed_data[13],
-                    'matriz_colaboradores_gd': processed_data[14],
-                    'workers': processed_data[15],
-                    'contract_type': processed_data[16],
-                    'total_l': processed_data[17],
-                    'total_l_dom': processed_data[18],
-                    'c2d': processed_data[19],
-                    'c3d': processed_data[20],
-                    'l_d': processed_data[21],
-                    'l_q': processed_data[22],
-                    'cxx': processed_data[23],
-                    't_lq': processed_data[24],
-                    'tc': processed_data[25],
-                    'matriz_estimativas_gd': processed_data[26],
-                    'pessObj': processed_data[27],
-                    'min_workers': processed_data[28],
-                    'max_workers': processed_data[29],
-                    'working_shift_2': processed_data[30],
-                    'workers_complete': processed_data[31],
-                    'workers_complete_cycle': processed_data[32],
-                    'free_day_complete_cycle': processed_data[33],
-                    'first_day' : processed_data[34],
-                    'last_day' : processed_data[35],
-                    'fixed_days_off': processed_data[36]
-                }
-
-            except IndexError as e:
-                self.logger.error(f"Error unpacking processed data: {e}")
-                raise ValueError(f"Invalid data structure returned from processing function: {e}")
             
             # =================================================================
             # 5. FINAL VALIDATION AND LOGGING
@@ -329,15 +272,15 @@ class AlcampoAlgorithm(BaseAlgorithm):
             cxx = adapted_data['cxx']
             t_lq = adapted_data['t_lq']
             tc = adapted_data['tc']
-            pessObj = adapted_data['pessObj']
+            pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
             max_workers = adapted_data['max_workers']
             working_shift_2 = adapted_data['working_shift_2']
             workers_complete = adapted_data['workers_complete']
             workers_complete_cycle = adapted_data['workers_complete_cycle']
             free_day_complete_cycle = adapted_data['free_day_complete_cycle']
-            first_day = adapted_data['first_day']
-            last_day = adapted_data['last_day']
+            first_day = adapted_data['first_registered_day']
+            last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
 
             # Extract algorithm parameters
@@ -412,8 +355,16 @@ class AlcampoAlgorithm(BaseAlgorithm):
 
             # Solve Stage 1
             self.logger.info("Solving Stage 1 model")
-            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'),
+            schedule_df = solve(model, days_of_year, workers_complete, special_days, shift, shifts, self.process_id, output_filename=os.path.join(root_dir, 'data', 'output', f'working_schedule_{self.process_id}-stage1.xlsx'),
                                 debug_vars=debug_vars)
+            work_day_hours = {}
+            h_plus = {}
+            eci_sibling_results_flag = {}
+            schedule_df, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, real_working_shift, work_day_hours, pessObj,
+                                                     workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
+                                                     pd.Series(['Worker'] + (unique_dates)),
+                                                     output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'))
+                        
             self.schedule_stage1 = pd.DataFrame(schedule_df).copy()
             
             # =================================================================
@@ -441,7 +392,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Solve Stage 2
             self.logger.info("Solving Stage 2 model")
-            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(ROOT_DIR, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'),
+            final_schedule_df = solve(new_model, days_of_year, workers_complete, special_days, new_shift, shifts, self.process_id, output_filename=os.path.join(root_dir, 'data', 'output', f'working_schedule_{self.process_id}-stage2.xlsx'),
                                        debug_vars=debug_vars)
             #final_schedule_df = solve_alcampo(adapted_data, shifts, check_shift, check_shift_special, working_shift, max_continuous_days)
             self.final_schedule = pd.DataFrame(final_schedule_df).copy()
@@ -614,7 +565,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
                 'constraint_validation': constraint_validation,
                 'quality_metrics': quality_metrics,
                 'validation': _validate_solution(algorithm_results),
-                'export_info': _create_export_info(self.process_id, ROOT_DIR),
+                'export_info': _create_export_info(self.process_id, root_dir),
                 'summary': {
                     'status': 'completed',
                     'message': f'Successfully scheduled {stats["workers"]["total_workers"]} workers over {stats["time_coverage"]["total_days"]} days using SALSA algorithm',

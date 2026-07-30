@@ -4,7 +4,6 @@ import numpy as np
 from typing import Dict, Any, List, Tuple, Optional
 import logging
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
 from datetime import datetime
 from src.configuration_manager.instance import get_config as get_config_manager
 
@@ -58,7 +57,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
         # =================================================================
-        required_colaborador_cols = ['matricula', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'L_RES', 'L_RES2']
+        required_colaborador_cols = ['employee_id', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'L_RES', 'L_RES2']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
         required_calendario_cols = ['employee_id', 'wd', 'dia_tipo', 'tipo_turno']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
@@ -305,7 +304,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
             first_date_row = matriz_calendario_sorted.iloc[0]
 
             # Get the year from the first date and create January 1st of that year
-            year = first_date_row['data'].year
+            year = first_date_row['schedule_day'].year
             january_1st = pd.Timestamp(year=year, month=1, day=1)
 
             # If your system uses 1=Monday, 7=Sunday, add 1:
@@ -359,8 +358,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
         logger.info("Processing worker-specific data")
         
         # Get the date range from matriz_calendario for validation
-        min_calendar_date = matriz_calendario_gd['data'].min()
-        max_calendar_date = matriz_calendario_gd['data'].max()
+        min_calendar_date = matriz_calendario_gd['schedule_day'].min()
+        max_calendar_date = matriz_calendario_gd['schedule_day'].max()
         min_day_of_year = min_calendar_date.dayofyear
         max_day_of_year = max_calendar_date.dayofyear
 
@@ -381,7 +380,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
         
         # Process each worker
         for w in workers_complete:
-            worker_calendar = matriz_calendario_gd[matriz_calendario_gd['colaborador'] == w]
+            worker_calendar = matriz_calendario_gd[matriz_calendario_gd['employee_id'] == w]
             
             if worker_calendar.empty:
                 logger.warning(f"No calendar data found for worker {w}")
@@ -392,14 +391,14 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
                 continue
             
             # Find days with specific statuses
-            worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['data'].dt.dayofyear.tolist()
-            worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['data'].dt.dayofyear.tolist()
-            w_holiday = worker_calendar[worker_calendar['tipo_turno'] == 'A']['data'].dt.dayofyear.tolist()
-            worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['data'].dt.dayofyear.tolist()
-            f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['data'].dt.dayofyear.tolist()
+            worker_empty = worker_calendar[worker_calendar['tipo_turno'] == '-']['schedule_day'].dt.dayofyear.tolist()
+            worker_missing = worker_calendar[worker_calendar['tipo_turno'] == 'V']['schedule_day'].dt.dayofyear.tolist()
+            w_holiday = worker_calendar[worker_calendar['tipo_turno'] == 'A']['schedule_day'].dt.dayofyear.tolist()
+            worker_fixed_days_off = worker_calendar[(worker_calendar['tipo_turno'] == 'L')]['schedule_day'].dt.dayofyear.tolist()
+            f_day_complete_cycle = worker_calendar[worker_calendar['tipo_turno'].isin(['L', 'L_DOM'])]['schedule_day'].dt.dayofyear.tolist()
 
 
-            worker_present_days = set(worker_calendar['data'].dt.dayofyear.tolist())
+            worker_present_days = set(worker_calendar['schedule_day'].dt.dayofyear.tolist())
             logger.info(f"Worker {w} present days in calendar: {sorted(list(worker_present_days))}")
 
             # Days where worker should potentially appear but doesn't
@@ -415,7 +414,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
             fixed_days_off[w] = worker_fixed_days_off
             free_day_complete_cycle[w] = f_day_complete_cycle
 
-            worker_data=matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
+            worker_data=matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             worker_row = worker_data.iloc[0]
 
             logger.info(f"Worker {w} data from colaborador: fixed days off: {fixed_days_off[w]}, length: {len(fixed_days_off[w])}")
@@ -487,15 +486,15 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
                 data_demissao[w] = 0
             
             # Track first and last registered days
-            if w in matriz_calendario_gd['colaborador'].values:
-                first_registered_day[w] = worker_calendar['data'].dt.dayofyear.min()
+            if w in matriz_calendario_gd['employee_id'].values:
+                first_registered_day[w] = worker_calendar['schedule_day'].dt.dayofyear.min()
                 if first_registered_day[w] < data_admissao[w]:
                     first_registered_day[w] = data_admissao[w]
                 logger.info(f"Worker {w} first registered day: {first_registered_day[w]}")
             else:
                 first_registered_day[w] = 0
-            if w in matriz_calendario_gd['colaborador'].values:
-                last_registered_day[w] = worker_calendar['data'].dt.dayofyear.max()
+            if w in matriz_calendario_gd['employee_id'].values:
+                last_registered_day[w] = worker_calendar['schedule_day'].dt.dayofyear.max()
                 # Only adjust if there's an actual dismissal date (not 0)
                 if data_demissao[w] > 0 and last_registered_day[w] > data_demissao[w]:
                     last_registered_day[w] = data_demissao[w]
@@ -547,7 +546,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
         tc = {}
         
         for w in workers:
-            worker_data = matriz_colaborador_gd[matriz_colaborador_gd['matricula'] == w]
+            worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
             
             if worker_data.empty:
                 logger.warning(f"No contract data found for worker {w}")
@@ -759,8 +758,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
                         if day in working_days[w]:
                             # Get calendar entry for this worker and day
                             day_entries = matriz_calendario_gd[
-                                (matriz_calendario_gd['colaborador'] == w) & 
-                                (matriz_calendario_gd['data'].dt.dayofyear == day)
+                                (matriz_calendario_gd['employee_id'] == w) & 
+                                (matriz_calendario_gd['schedule_day'].dt.dayofyear == day)
                             ]                            
                             # Count as working day if it's M, T, or TC shift
                             if not day_entries.empty:
@@ -842,8 +841,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame]) -> Dict[str, A
             "closed_holidays" : closed_holidays,
             "empty_days" : empty_days,
             "worker_holiday" : worker_holiday,
-            "missing_days " : missing_days ,
-            "working_days" : working_days,
+            "missing_days" : missing_days ,
+            "working_days" : working_days,\
             "non_holidays" : non_holidays,
             "start_weekday" : start_weekday,
             "week_to_days" : week_to_days,

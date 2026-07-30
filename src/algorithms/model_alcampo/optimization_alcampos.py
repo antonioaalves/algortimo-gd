@@ -1,8 +1,9 @@
+from src.configuration_manager.instance import get_config
 from base_data_project.log_config import get_logger
-from src.config import PROJECT_NAME
 
-# Set up logger
-logger = get_logger(PROJECT_NAME)
+_config_manager = get_config()
+logger = get_logger(_config_manager.project_name)
+
 
 
 def optimization_prediction(model,days_of_year, workers, workers_complete_cycle, working_shift, shift, pessObj, min_workers, closed_holidays, week_to_days,  working_days, contract_type, special_days):
