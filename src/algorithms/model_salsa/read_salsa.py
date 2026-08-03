@@ -8,7 +8,7 @@ from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
 from collections import defaultdict
 from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atributtion, populate_week_template, populate_week_fixed_days_off, joining_template_with_contract_per_week,
-                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic, first_not_A_value)
+                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic, first_not_A_value,  extend_deadline)
 
 
 # Set up logger
@@ -240,14 +240,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 (matriz_estimativas_gd['schedule_day'].dt.month == 6) &
                 (matriz_estimativas_gd['schedule_day'].dt.day == 25),
                 'schedule_day'].dt.year.iloc[0]
-            january_1st = pd.Timestamp(year=year, month=1, day=1)
 
             # If your system uses 1=Monday, 7=Sunday, add 1:
             start_weekday = 1
         
             
             logger.info(f"First date in dataset: {first_date_row['schedule_day']}")
-            logger.info(f"Year: {year}, January 1st: {january_1st}")
             logger.info(f"Start weekday (January 1st): {start_weekday}")
             
             # Create week to days mapping using WW column and day of year
@@ -621,6 +619,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 continue
             
             # Find days with specific statuses
+            dynamic_empty[w] = set()
             empty_days[w] = worker_calendar[worker_calendar['horario'].isin(['-', 'A-', 'V-' , '0'])]['index'].tolist()
             vacation_days[w] = worker_calendar[worker_calendar['horario'].isin(['V', 'V-'])]['index'].tolist()
             worker_absences[w] = worker_calendar[worker_calendar['horario'].isin(['AP', 'A-', 'A'])]['index'].tolist()
@@ -929,9 +928,17 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                     }
                     if w in holiday_past_lds:
                         for d in holiday_past_lds[w]["days_&_limit"]:
+                            holiday_past_lds[w]["days_&_limit"][d] += extend_deadline(w, holiday_past_lds[w]["days_&_limit"][d],
+                                                                                      empty_days[w], vacation_days[w], worker_absences[w], dynamic_empty[w],
+                                                                                      day_of_year_dict_inverted[index_to_date[d]] + 399 + min_day_year,
+                                                                                      year, pd.to_datetime(index_to_date[d]).year, period[0])
                             holiday_past_lds[w]["days_&_limit"][d] = holiday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
                     if w in sunday_past_lds:
                         for d in sunday_past_lds[w]["days_&_limit"]:
+                            sunday_past_lds[w]["days_&_limit"][d] += extend_deadline(w, sunday_past_lds[w]["days_&_limit"][d],
+                                                                                     empty_days[w], vacation_days[w], worker_absences[w], dynamic_empty[w],
+                                                                                     day_of_year_dict_inverted[index_to_date[d]] + 399 + min_day_year,
+                                                                                     year, pd.to_datetime(index_to_date[d]).year, period[0])
                             sunday_past_lds[w]["days_&_limit"][d] = sunday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
 
             logger.info(f"past holiday : {holiday_past_lds}")
