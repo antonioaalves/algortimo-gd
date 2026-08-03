@@ -449,3 +449,24 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
             compensation_days.extend(available_days)
 
     return compensation_days
+
+def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, current_year, original_year, calendar_day_0):
+    """
+        Extend compensation deadline because of off days. Needs to take in account if the worked day to compensate is in current year
+        or previous year because day_start is transformed to int and a previous year day is transformed to a day already atributed to
+        a day of current year.
+        The min() is necessary because counting till deadline would make it count twice the same holidays (here and in restrictions)
+        for cases where deadline goes over period start. But in cases where the deadline ends before period 0 would make it count
+        too many days. Total is contained to be less than deadline, the theoretical best case of deadline extension.
+    """
+    if current_year == original_year:
+        total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline)])
+    else:
+        total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if days < calendar_day_0])
+    if total > deadline:
+        logger.warning(f"Worker {w} got a total of {total} days, too big to trust.")
+    if 0 < total <= deadline:
+        logger.info(f"Worker {w} got {total} days longer deadline.")
+    else:
+        total = 0
+    return total
