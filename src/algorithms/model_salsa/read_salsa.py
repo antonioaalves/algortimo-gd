@@ -8,7 +8,7 @@ from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
 from collections import defaultdict
 from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atributtion, populate_week_template, populate_week_fixed_days_off, joining_template_with_contract_per_week,
-                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic, first_not_A_value,  extend_deadline)
+                                                                check_5_6_pattern_consistency, absences_to_empty, fixed_to_dynamic, first_not_A_value,  extend_deadline, first_week_for_non_defined, previous_dummy)
 
 
 # Set up logger
@@ -358,6 +358,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         min_work_days = {}
         max_work_days = {}
         workers_no_contract_changes = []
+        week_workload = {}
 
         for w in workers_complete:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
@@ -375,6 +376,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 week_compensation_limit[w] = 0
                 min_work_days[w] = 0
                 max_work_days[w] = 0
+                week_workload[w] = 0
             else:
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
                 # Extract contract information
@@ -387,6 +389,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 max_work_days[w] = int(worker_row.get('max_dia_trab', 0))
                 first_week_5_6[w] = int(worker_row.get('seed_5_6', 0))
                 week_compensation_limit[w] = int(worker_row.get('n_sem_a_folga', 0))
+                week_workload[w] = int(worker_row.get('maximumworkload', 0))
                 # MODIFIED: Fix date handling - don't convert Timestamp to datetime
                 admissao_value = worker_row.get('data_admissao', None)
                 logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
@@ -677,6 +680,9 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         workers = workers_list_with_dummy
         workers_complete = workers_complete_with_dummy
 
+        workers_first_week_defined = []
+        workers_non_defined = []
+
         for w in workers_complete:
             # Mark all remaining days after last_registered_day as 'A' (absent)
             if first_registered_day[w] > 0 or last_registered_day[w] > 0:  # Ensure worker was registered at some point
@@ -698,7 +704,20 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                     work_days_per_week[w] = populate_week_template(int(week_template[w][week]), week - 1, nbr_weeks)
                 else:
                     work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period, nbr_weeks)
-                check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
+                print(work_days_per_week[w])
+                if np.all(work_days_per_week[w] == 5) and w in dummy_workers:
+                    previous_w = previous_dummy(dummy_workers, dummy_workers[w]["layer"] - 1, dummy_workers[w]["parent"])
+                    if contract_type[previous_w] == 8:
+                        logger.info(f"Worker {w} had previous contract type 8 (5/6) as worker {previous_w}"
+                                    f"if possible, week sequence will be made accordingly")
+                        work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[previous_w], fixed_LQs[previous_w], week_to_days_salsa, period, nbr_weeks)
+
+                if np.all(work_days_per_week[w] == 5):
+                    workers_non_defined.append(w)
+                    logger.info(f"Detected {w} with no first week defined")
+                else:
+                    workers_first_week_defined.append(w)
+                #check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
             else:
                 work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
             work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w, contract_type[w])
@@ -708,7 +727,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
-       
+        if len(workers_non_defined) > 0:
+            work_days_per_week = first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks)
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
         for w in workers:
             if contract_type[w] <= 4:
