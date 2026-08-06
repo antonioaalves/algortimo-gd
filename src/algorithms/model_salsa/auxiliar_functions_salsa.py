@@ -252,16 +252,16 @@ def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, 
             first_week_6_load += week_workload[w]
 
     non_defined_rev_sorted_workload = sorted(workers_non_defined, key = lambda w: week_workload[w], reverse = True)
-    print(first_week_5_load, first_week_6_load)
+    logger.info(f"First week 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
     for w in non_defined_rev_sorted_workload:
-        if first_week_5_load >= first_week_6_load:
+        if first_week_5_load <= first_week_6_load:
             work_days_per_week[w] = np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
             first_week_5_load += week_workload[w]
-            print(f"{w} went to group of 5 first week, score: {first_week_5_load}-{first_week_6_load}")
+            logger.info(f"{w} went to group of 5 first week, score: {first_week_5_load}/{first_week_6_load}")
         else:
             work_days_per_week[w] = np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
-            print(f"{w} went to group of 6 first week, score: {first_week_5_load}-{first_week_6_load}")
             first_week_6_load += week_workload[w]
+            logger.info(f"{w} went to group of 6 first week, score: {first_week_5_load}/{first_week_6_load}")
     return work_days_per_week
 
 

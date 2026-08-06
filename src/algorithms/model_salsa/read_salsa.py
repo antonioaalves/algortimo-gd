@@ -480,6 +480,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                         max_work_days[new_w] = int(worker_row.get('max_dia_trab', 0))
                         first_week_5_6[new_w] = int(worker_row.get('seed_5_6', 0))
                         week_compensation_limit[new_w] = int(worker_row.get('n_sem_a_folga', 0))
+                        week_workload[new_w] = int(worker_row.get('maximumworkload', 0))
+
                         admissao_value = worker_row.get('begin_date', None)
                         logger.info(f"Processing worker {new_w} with data_admissao: {admissao_value}")
                         demissao_value = worker_row.get('end_date', None)
@@ -704,12 +706,11 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                     work_days_per_week[w] = populate_week_template(int(week_template[w][week]), week - 1, nbr_weeks)
                 else:
                     work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period, nbr_weeks)
-                print(work_days_per_week[w])
                 if np.all(work_days_per_week[w] == 5) and w in dummy_workers:
                     previous_w = previous_dummy(dummy_workers, dummy_workers[w]["layer"] - 1, dummy_workers[w]["parent"])
                     if contract_type[previous_w] == 8:
-                        logger.info(f"Worker {w} had previous contract type 8 (5/6) as worker {previous_w}"
-                                    f"if possible, week sequence will be made accordingly")
+                        logger.info(f"Worker {w} had previous contract type 8 (5/6) as worker {previous_w}, "
+                                    f"if possible, week sequence will continue accordingly")
                         work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[previous_w], fixed_LQs[previous_w], week_to_days_salsa, period, nbr_weeks)
 
                 if np.all(work_days_per_week[w] == 5):
