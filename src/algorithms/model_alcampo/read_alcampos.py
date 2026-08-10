@@ -282,7 +282,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                    (matriz_estimativas_gd['schedule_day'].dt.month == 6) &
                    (matriz_estimativas_gd['schedule_day'].dt.day == 25),
                    'schedule_day'].dt.year.iloc[0]
-            january_1st = pd.Timestamp(year=year, month=1, day=1)
 
             # If your system uses 1=Monday, 7=Sunday, add 1:
             start_weekday = 1
@@ -373,7 +372,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         last_registered_day = {}
         first_registered_day = {}
         work_days_per_week = {}
-        week_compensation_limit = {}
         dummy_workers = {}
         workers_with_dummy = defaultdict(dict)
         workers_complete_with_dummy = workers_complete.copy()
@@ -703,8 +701,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 empty_days[w] -= shift_data[f"shift_{value}"][w]
             worker_absences[w] = set(worker_absences[w]) - closed_holidays
             vacation_days[w] = set(vacation_days[w]) - closed_holidays
-
-            work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], w, contract_type[w])
+            work_days_per_week[w] = joining_template_with_contract_per_week(np.full(nbr_weeks, contract_type[w]), week_template[w], w, contract_type[w])
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
 
@@ -787,7 +784,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                          # Use WW column instead of isocalendar().week for consistency
                         shift_entries = matriz_calendario_gd[
                             (matriz_calendario_gd['ww'] == week) & 
-                            (matriz_calendario_gd['schedule_day'].dt.day_of_year == day) & 
+                            (matriz_calendario_gd['index'] == day) & 
                             (matriz_calendario_gd['employee_id'] == w)
                         ]
                         
@@ -855,6 +852,12 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "workers_with_dummy": workers_with_dummy,
             "unique_dates": unique_dates,
             "index_to_date": index_to_date,
+            "fixed_LQs": fixed_LQs,
+            "shift_data": shift_data,
+            "fixed_compensation_days": fixed_compensation_days,
+            "locked_days": locked_days,
+            "forced_work_days": forced_work_days,
+            "complete_cycle_days": complete_cycle_days,
         }
         
     except Exception as e:

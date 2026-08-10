@@ -6,9 +6,9 @@ logger = get_logger(_config_manager.project_name)
 
 #----------------------------------------DECISION VARIABLES----------------------------------------
 
-def add_var(model, shift, w, days, code, start_weekday):
+def add_var(model, shift, w, days, code):
     for d in days:
-        if (code == 'L' and (d + start_weekday - 2) % 7 == 5 and d + 1 in days):
+        if (code == 'L' and d % 7 == 5 and d + 1 in days):
             shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_'LQ'")
             model.Add(shift[(w, d, 'LQ')] == 1)
         else:
@@ -16,43 +16,125 @@ def add_var(model, shift, w, days, code, start_weekday):
             model.Add(shift[(w, d, code)] == 1)
 
 
-def decision_variables(model, days_of_year, workers, shifts, first_day, last_day, absences, missing_days, empty_days, closed_holidays, fixed_days_off,  start_weekday):
+def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, empty_days,
+                       closed_holidays, fixed_days_off, fixed_LQs, shift_data, past_workers, fixed_compensation_days,
+                       locked_days, forced_work_days, contract_type, complete_cycle_days, real_working_shift):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
+
+    closed_set = set(closed_holidays)
+    logger.info(f"\tDEBUG closed days (everyone) {sorted(closed_set)}")
+    for w in past_workers:
+        empty_set = empty_days[w]
+        vacation = vacation_days[w]
+        fixed_LQs_set = fixed_LQs[w]
+        fixed_days_set = fixed_days_off[w]
+        absence_set = absences[w]
+        fixed_LD_set = fixed_compensation_days[w]
+
+        mot = set.intersection(*(set(shift_data[f"shift_{value}"][w]) for value in real_working_shift))
+        if mot is not None:
+            shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) - mot for value in real_working_shift}
+            for d in mot:
+                for value in real_working_shift:
+                    shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
+                model.add_exactly_one([shift[(w, d, value)] for value in real_working_shift])
+        else:
+            shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) for value in real_working_shift}
+
+        logger.info(f"For PAST WORKER {w}:")
+        logger.info(f"\tDEBUG empty days {sorted(empty_set)}")
+        logger.info(f"\tDEBUG vacation {sorted(vacation)}")
+        logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
+        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
+        logger.info(f"\tDEBUG absence {sorted(absence_set)}")
+        logger.info(f"\tDEBUG fixed LDs {sorted(fixed_LD_set)}")
+
+        add_var(model, shift, w, fixed_LD_set, 'LD')
+        for value in real_working_shift:
+            add_var(model, shift, w, shift_set[f"shift_{value}_set"], value)
+        add_var(model, shift, w, vacation, 'V')
+        add_var(model, shift, w, absence_set, 'A')
+        add_var(model, shift, w, fixed_days_set, 'L')
+        add_var(model, shift, w, fixed_LQs_set, 'LQ')
+        add_var(model, shift, w, closed_set, 'F')
+        add_var(model, shift, w, empty_set, '-')
+
     shifts2 = shifts.copy()
     shifts2.remove('A')
     shifts2.remove('V')
     shifts2.remove('F')
     shifts2.remove('-')
- 
-    closed_set = set(closed_holidays)
+    shifts2.remove('LQ')
+    shifts2 = [x for x in shifts2 if x not in real_working_shift]
+
     for w in workers:
- 
-        
-        empty_days_set = set(empty_days[w])
-        missing_set = (set(missing_days[w]) | empty_days_set) - closed_set
-        fixed_days_set = set(fixed_days_off[w]) - missing_set - closed_set
-        absence_set = set(absences[w]) - fixed_days_set - closed_set  - missing_set
-        logger.info(f"DEBUG worker {w}")
-        logger.info(f"DEBUG len {len(empty_days_set)} empty days {empty_days_set}")
-        logger.info(f"DEBUG len {len(missing_set)} missing {missing_set}")
-        logger.info(f"DEBUG len {len(fixed_days_set)} fixed days {fixed_days_set}")
-        logger.info(f"DEBUG len {len(absence_set)} absence {absence_set}")
-        logger.info(f"DEBUG len {len(closed_set)} closed {closed_set}")
 
-        blocked_days = absence_set | missing_set | empty_days_set | closed_set | fixed_days_set 
+        empty_set = empty_days[w]
+        vacation = vacation_days[w] - empty_set
+        fixed_LQs_set = fixed_LQs[w] - vacation - closed_holidays
+        fixed_days_set = fixed_days_off[w] - vacation - fixed_LQs_set
+        absence_set = absences[w] - fixed_days_set - fixed_LQs_set - vacation - empty_set
+        forced_set = set(forced_work_days[w])
+        shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set for value in real_working_shift}
+        fixed_LD_set = set(fixed_compensation_days[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set
+        complete_set = set(complete_cycle_days[w])
 
-        logger.info(f"shiftsin decision variables: {shifts}, worker {w} blocked days {blocked_days}")
+        SET_CODE_PRIORITY = [
+            ("-", empty_set),
+            ("V", vacation),
+            ("LQ", fixed_LQs_set),
+            ("L", fixed_days_set),
+            ("A", absence_set),
+            ("LD", fixed_LD_set),
+        ]
+        for value in real_working_shift:
+            SET_CODE_PRIORITY.append((value, shift_set[f"shift_{value}_set"]))
+
+        logger.info(f"For worker {w}:")
+        logger.info(f"\tDEBUG empty days {sorted(empty_set)}")
+        logger.info(f"\tDEBUG vacation {sorted(vacation)}")
+        logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
+        logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
+        logger.info(f"\tDEBUG absence {sorted(absence_set)}")
+        logger.info(f"\tDEBUG forced work days {sorted(forced_set)}")
+        logger.info(f"\tDEBUG fixed lds {sorted(fixed_LD_set)}\n")
+        if len(locked_days[w]) > 0:
+            logger.info(f"\tDEBUG locked days {sorted(locked_days[w])}\n")
+        if len(complete_set) > 0:
+            logger.info(f"\tDEBUG complete cycle days {sorted(complete_set)}\n")
  
+        blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set
+
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
+                if d in locked_days[w]:
+                    for code, possible_shift in SET_CODE_PRIORITY:
+                        if d in possible_shift:
+                            shift[(w, d, code)] = model.NewBoolVar(f"{w}_Day{d}_{code}")
+                            model.Add(shift[(w, d, code)] == 1)
+                            break
+                    continue
+                if d in forced_set:
+                    for value in real_working_shift:
+                        if d in shift_set[f"shift_{value}_set"]:
+                            shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
+                    continue
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
+                if contract_type.get(w, 0) <= 4:
+                    shift[(w, d, '-')] = model.NewBoolVar(f"{w}_Day{d}_-")
+                for value in real_working_shift:
+                    if d in shift_set[f"shift_{value}_set"]:
+                        shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
+                if d % 7 == 6:
+                    shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_LQ")
 
-        add_var(model, shift, w, missing_set - absence_set - closed_set - fixed_days_set  - empty_days_set, 'V', start_weekday)
-        add_var(model, shift, w, absence_set - closed_set - fixed_days_set  - empty_days_set, 'A', start_weekday)
-        add_var(model, shift, w, fixed_days_set - closed_set  - empty_days_set, 'L', start_weekday)
-        add_var(model, shift, w, closed_set - empty_days_set, 'F', start_weekday)
-        add_var(model, shift, w, empty_days_set, '-', start_weekday)
-    #52332 vs 31555 vs 25489
+        add_var(model, shift, w, absence_set, 'A')
+        add_var(model, shift, w, vacation - fixed_days_set - fixed_LQs_set, 'V')
+        add_var(model, shift, w, fixed_days_set - empty_set, 'L')
+        add_var(model, shift, w, fixed_LQs_set - empty_set, 'LQ')
+        add_var(model, shift, w, fixed_LD_set - empty_set, 'LD')
+        add_var(model, shift, w, closed_holidays - empty_set, 'F')
+        add_var(model, shift, w, empty_set, '-')
     return shift
