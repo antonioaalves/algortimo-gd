@@ -7,7 +7,7 @@ from base_data_project.log_config import get_logger
 from datetime import datetime
 from collections import defaultdict
 from src.configuration_manager.instance import get_config as get_config_manager
-from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atributtion, joining_template_with_contract_per_week)
+from src.algorithms.model_alcampo.auxiliar_functions_alcampo import (days_off_atributtion, joining_template_with_contract_per_week)
 
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
@@ -47,6 +47,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         matriz_estimativas_gd = medium_dataframes['df_estimativas'].copy()
         matriz_calendario_gd = medium_dataframes['df_calendario'].copy()
         matriz_feriados_gd = algorithm_treatment_params['df_feriados'].copy()
+        matriz_annual_variables = algorithm_treatment_params["df_annual_variables"]
+
 
 
         start_date = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == algorithm_treatment_params['start_date'], "index"].iloc[0]
@@ -367,6 +369,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         cxx = {}
         t_lq = {}
         tc = {}
+        total_l_sab = {}
+        total_l_dom_or_sab = {}
         data_admissao = {}
         data_demissao = {}
         last_registered_day = {}
@@ -804,6 +808,74 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 
             if not worker_week_shift:
                 logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
+        # =================================================================
+        # 14. ANNUAL VARIABLES
+        # =================================================================
+        matriz_annual_variables.columns = matriz_annual_variables.columns.str.lower()
+        required_cols_annual = {"begin_date", "end_date", "l_dom", "c2d", "l_sab", "l_dom_or_sab", "apply_l_dom", "apply_c2d", "apply_l_sab", "apply_l_dom_or_sab"}
+        annual_variables = defaultdict(dict)
+        if not required_cols_annual.issubset(matriz_annual_variables.columns):
+            logger.warning("Missing required columns for annual variables data")
+        else:
+            #se alguma vez worker_calendar nao tiver garantido todos os dias dentro, poderá dar erro
+            matriz_annual_variables['employee_id'] = matriz_annual_variables['employee_id'].astype(int)
+            for w in workers_complete:
+                worker_data = matriz_annual_variables[matriz_annual_variables['employee_id'] == w]
+                if worker_data.empty:
+                    total_l[w] = 0
+                    total_l_dom[w] = 0
+                    total_l_sab[w] = 0
+                    total_l_dom_or_sab[w] = 0
+                    c2d[w] = 0
+                    c3d[w] = 0
+                    l_d[w] = 0
+                    cxx[w] = 0
+                    tc[w] = 0
+
+                    continue
+                worker_row = worker_data.iloc[0]
+                start_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("begin_date", None), 'index'].iloc[0]
+                end_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("end_date", None), 'index'].iloc[0]
+                annual_variables[w][range(start_date, end_date + 1)] = {
+                    "apply_l_dom": worker_row.get("apply_l_dom", True), 
+                    "apply_c2d": worker_row.get("apply_c2d", True), 
+                    "apply_l_sab": worker_row.get("apply_l_sab", True),
+                    "apply_l_dom_or_sab": worker_row.get("apply_l_dom_or_sab", True),
+                    "apply_total_l": worker_row.get("apply_total_l", True),
+                    "apply_c3d": worker_row.get("apply_c3d", True),
+                    "apply_l_d": worker_row.get("apply_l_d", True),
+                    "apply_cxx": worker_row.get("apply_cxx", True),
+                    "apply_tc": worker_row.get("apply_tc", True),
+
+                }
+                total_l[w] = int(worker_row.get('l_total', 0))
+                total_l_dom[w] = int(worker_row.get('l_dom', 0))
+                total_l_sab[w] = int(worker_row.get('l_sab', 0))
+                total_l_dom_or_sab[w] = int(worker_row.get('l_dom_or_sab', 0))
+                c2d[w] = int(worker_row.get('c2d', 0))
+                c3d[w] = int(worker_row.get('c3d', 0))
+                l_d[w] = int(worker_row.get('l_d', 0))
+                cxx[w] = int(worker_row.get('cxx', 0))
+                tc[w] = int(worker_row.get('dofhc', 0))
+
+                size = len(worker_data)
+                if size > 1:
+                    for row in range(1, size):
+                        worker_row = worker_data.iloc[row]
+                        start_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("begin_date", None), 'index'].iloc[0]
+                        end_date = worker_calendar.loc[worker_calendar['schedule_day'] == worker_row.get("end_date", None), 'index'].iloc[0]
+                        annual_variables[w][range(start_date, end_date + 1)] = {
+                            "apply_l_dom": worker_row.get("apply_l_dom", True), 
+                            "apply_c2d": worker_row.get("apply_c2d", True), 
+                            "apply_l_sab": worker_row.get("apply_l_sab", True), 
+                            "apply_l_dom_or_sab": worker_row.get("apply_l_dom_or_sab", True),
+                            "apply_total_l": worker_row.get("apply_total_l", True),
+                            "apply_c3d": worker_row.get("apply_c3d", True),
+                            "apply_l_d": worker_row.get("apply_l_d", True),
+                            "apply_cxx": worker_row.get("apply_cxx", True),
+                            "apply_tc": worker_row.get("apply_tc", True),
+                        }
+        logger.info(f"annual variables: {annual_variables}")
 
         logger.info("[OK] Data processing completed successfully")
         
@@ -820,7 +892,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "empty_days" : empty_days,
             "worker_absences" : worker_absences,
             "vacation_days" : vacation_days ,
-            "working_days" : working_days,\
+            "working_days" : working_days,
             "non_holidays" : non_holidays,
             "start_weekday" : start_weekday,
             "week_to_days" : week_to_days,
@@ -858,6 +930,11 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "locked_days": locked_days,
             "forced_work_days": forced_work_days,
             "complete_cycle_days": complete_cycle_days,
+            "workers_no_contract_changes": workers_no_contract_changes,
+            "year_range": year_range,
+            "annual_variables": annual_variables,
+            "workers_with_dummy": workers_with_dummy,
+            "work_days_per_week": work_days_per_week,
         }
         
     except Exception as e:

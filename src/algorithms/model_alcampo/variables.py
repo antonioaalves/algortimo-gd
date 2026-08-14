@@ -18,7 +18,7 @@ def add_var(model, shift, w, days, code):
 
 def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, empty_days,
                        closed_holidays, fixed_days_off, fixed_LQs, shift_data, past_workers, fixed_compensation_days,
-                       locked_days, forced_work_days, contract_type, complete_cycle_days, real_working_shift):
+                       locked_days, forced_work_days, contract_type, complete_cycle_days, real_working_shift, special_days, work_special_days):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 
@@ -59,6 +59,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         add_var(model, shift, w, fixed_LQs_set, 'LQ')
         add_var(model, shift, w, closed_set, 'F')
         add_var(model, shift, w, empty_set, '-')
+        add_var(model, shift, w, empty_set, 'TC')
 
     shifts2 = shifts.copy()
     shifts2.remove('A')
@@ -66,12 +67,14 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
     shifts2.remove('F')
     shifts2.remove('-')
     shifts2.remove('LQ')
+    shifts2.remove('TC')
     shifts2 = [x for x in shifts2 if x not in real_working_shift]
 
     for w in workers:
 
         empty_set = empty_days[w]
         vacation = vacation_days[w] - empty_set
+        work_special_set = work_special_days[w] - empty_set
         fixed_LQs_set = fixed_LQs[w] - vacation - closed_holidays
         fixed_days_set = fixed_days_off[w] - vacation - fixed_LQs_set
         absence_set = absences[w] - fixed_days_set - fixed_LQs_set - vacation - empty_set
@@ -87,6 +90,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
             ("L", fixed_days_set),
             ("A", absence_set),
             ("LD", fixed_LD_set),
+            ("TC", work_special_set)
         ]
         for value in real_working_shift:
             SET_CODE_PRIORITY.append((value, shift_set[f"shift_{value}_set"]))
@@ -127,8 +131,10 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                 for value in real_working_shift:
                     if d in shift_set[f"shift_{value}_set"]:
                         shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
-                if d % 7 == 6:
+                if d % 7 == 6: #preciso alterar isto, sexta e segunda tb podem ser lq 
                     shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_LQ")
+                if d in special_days:
+                    shift[(w, d, 'TC')] = model.NewBoolVar(f"{w}_Day{d}_TC")
 
         add_var(model, shift, w, absence_set, 'A')
         add_var(model, shift, w, vacation - fixed_days_set - fixed_LQs_set, 'V')
@@ -136,5 +142,6 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         add_var(model, shift, w, fixed_LQs_set - empty_set, 'LQ')
         add_var(model, shift, w, fixed_LD_set - empty_set, 'LD')
         add_var(model, shift, w, closed_holidays - empty_set, 'F')
+        add_var(model, shift, w, work_special_set - empty_set, 'TC')
         add_var(model, shift, w, empty_set, '-')
     return shift

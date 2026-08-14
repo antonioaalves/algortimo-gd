@@ -203,7 +203,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         
         closed_holidays = set(matriz_feriados_gd[(matriz_feriados_gd['tipo_feriado'] == 'F')
                              ]['index'].unique().tolist())
-        special_days = sorted(set(holidays))
+        special_days = set(holidays) | set(sundays)
         logger.info(f"Special days identified:")
         logger.info(f"  - Sundays: {len(sundays)} days")
         logger.info(f"  - Holidays (non-Sunday): {len(holidays)} days")
@@ -373,10 +373,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
                 # Extract contract information
                 contract_type[w] = int(worker_row.get('tipo_contrato', 0))
-                total_l[w] = int(worker_row.get('l_total', 0))
-                c3d[w] = int(worker_row.get('c3d', 0))
-                l_d[w] = int(worker_row.get('l_d', 0))
-                cxx[w] = int(worker_row.get('cxx', 0))
                 min_work_days[w] = int(worker_row.get('min_dia_trab', 0))
                 max_work_days[w] = int(worker_row.get('max_dia_trab', 0))
                 # MODIFIED: Fix date handling - don't convert Timestamp to datetime
@@ -457,14 +453,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                             original_end_date = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0]) - 1
                         # Extract contract information
                         contract_type[new_w] = int(worker_row.get('tipo_contrato', 'Contract Error'))
-                        total_l[new_w] = int(worker_row.get('l_total', 0))
-                        total_l_dom[new_w] = int(worker_row.get('l_dom', 0))
-                        total_l_sab[w] = int(worker_row.get('l_sab', 0))
-                        total_l_dom_or_sab[w] = int(worker_row.get('l_dom_or_sab', 0))
-                        c2d[new_w] = int(worker_row.get('c2d', 0))
-                        c3d[new_w] = int(worker_row.get('c3d', 0))
-                        l_d[new_w] = int(worker_row.get('l_d', 0))
-                        cxx[new_w] = int(worker_row.get('cxx', 0))
                         min_work_days[new_w] = int(worker_row.get('min_dia_trab', 0))
                         max_work_days[new_w] = int(worker_row.get('max_dia_trab', 0))
                         admissao_value = worker_row.get('begin_date', None)

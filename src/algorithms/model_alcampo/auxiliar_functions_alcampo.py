@@ -280,6 +280,21 @@ def get_annual_variables(annual_variables, w, d, variable):
             elif variable == "l_dom_or_sab":
                 #logger.info(f"Getting variable l_dom_or_sab {annual_variables[w][range]['apply_l_dom_or_sab']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_l_dom_or_sab"]
+            elif variable == "total_l":
+                #logger.info(f"Getting variable total_l {annual_variables[w][range]['apply_total_l']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_total_l"]
+            elif variable == "c3d":
+                #logger.info(f"Getting variable c3d {annual_variables[w][range]['apply_c3d']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_c3d"]
+            elif variable == "l_d":
+                #logger.info(f"Getting variable l_d {annual_variables[w][range]['apply_l_d']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_l_d"]
+            elif variable == "cxx":
+                #logger.info(f"Getting variable cxx {annual_variables[w][range]['apply_cxx']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_cxx"]
+            elif variable == "tc":
+                #logger.info(f"Getting variable tc {annual_variables[w][range]['apply_tc']}, for {w} in day {d}, that got range{range}")
+                return annual_variables[w][range]["apply_tc"]
     return True
                 
 def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days,
