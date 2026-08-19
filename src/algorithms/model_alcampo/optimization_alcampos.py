@@ -25,19 +25,15 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
     ADJACENT_FREE_SHIFTS_PENALTY = 5  # Adjust this value as needed
 
-
-
-
-
     # 1. Penalize deviations from pessObj
     for d in days_of_year:
         for s in working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
+            assigned_workers = sum(shift[(w, d, s)] * 8 for w in workers if (w, d, s) in shift)
             
             # Create variables to represent the positive and negative deviations from the target
-            pos_diff = model.NewIntVar(0, len(workers), f"pos_diff_{d}_{s}")
-            neg_diff = model.NewIntVar(0, len(workers), f"neg_diff_{d}_{s}")
+            pos_diff = model.NewIntVar(0, len(workers) * 80, f"pos_diff_{d}_{s}")
+            neg_diff = model.NewIntVar(0, len(workers) * 80, f"neg_diff_{d}_{s}")
             
             # Store the variables in dictionaries
             pos_diff_dict[(d, s)] = pos_diff

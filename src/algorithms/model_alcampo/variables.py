@@ -31,6 +31,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         fixed_days_set = fixed_days_off[w]
         absence_set = absences[w]
         fixed_LD_set = fixed_compensation_days[w]
+        work_special_set = work_special_days[w]
 
         mot = set.intersection(*(set(shift_data[f"shift_{value}"][w]) for value in real_working_shift))
         if mot is not None:
@@ -59,7 +60,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         add_var(model, shift, w, fixed_LQs_set, 'LQ')
         add_var(model, shift, w, closed_set, 'F')
         add_var(model, shift, w, empty_set, '-')
-        add_var(model, shift, w, empty_set, 'TC')
+        add_var(model, shift, w, work_special_set, 'TC')
 
     shifts2 = shifts.copy()
     shifts2.remove('A')
@@ -131,7 +132,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                 for value in real_working_shift:
                     if d in shift_set[f"shift_{value}_set"]:
                         shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
-                if d % 7 == 6: #preciso alterar isto, sexta e segunda tb podem ser lq 
+                if d % 7 in [1, 5, 6]: #preciso alterar isto, sexta e segunda tb podem ser lq 
                     shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_LQ")
                 if d in special_days:
                     shift[(w, d, 'TC')] = model.NewBoolVar(f"{w}_Day{d}_TC")
