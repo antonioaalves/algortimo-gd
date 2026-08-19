@@ -12,14 +12,13 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
     last_compensation_f = 1
     last_compensation_d = 1
     for w in workers:
-        last_day = period[1]
         if w in holiday_rules:
             last_compensation_f = holiday_rules[w]["compensation_limit"][max(holiday_rules[w]["compensation_limit"])]
         if w in sunday_rules:
             last_compensation_d = sunday_rules[w]["compensation_limit"][max(sunday_rules[w]["compensation_limit"])]
         biggest_limit = last_compensation_f if last_compensation_f > last_compensation_d else last_compensation_d
 
-        last_day = max(working_days[w])
+        last_day = max(period[1], max(working_days[w]))
         for d in range(last_day + 1, last_day + biggest_limit + 1):
             shift[(w, d, 'LD')] = model.NewBoolVar(f"{w}_Day{d}_LD")
 
