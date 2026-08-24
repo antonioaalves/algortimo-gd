@@ -6339,10 +6339,10 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
                     np.where(current_horario == 'V', 'V-', '-')
                 )
             
-            # Process 'L' values: L can override A's and V's (but not F's)
-            l_mask = valid_ciclos_mask & ~preserve_f_mask & (mapped_values == 'L')
+            # Process day-off values: L / L_DOM can override A's and V's (but not F's)
+            l_mask = valid_ciclos_mask & ~preserve_f_mask & mapped_values.isin(['L', 'L_DOM'])
             if l_mask.any():
-                df_result.loc[l_mask, 'horario'] = 'L'
+                df_result.loc[l_mask, 'horario'] = mapped_values[l_mask]
 
             # M/T/MoT/NLM/NLT: assign per tipo_turno row (same rules as add_shift_info_from_ciclos)
             shift_code_mask = (
@@ -6377,8 +6377,7 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             # Other codes (P, NL, LD, …): same value on both tipo_turno rows
             other_mask = (
                 valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask
-                & (mapped_values != '-') & (mapped_values != 'L')
-                & ~mapped_values.isin(['M', 'T', 'MoT', 'NLM', 'NLT'])
+                & ~mapped_values.isin(['-', 'L', 'L_DOM', 'M', 'T', 'MoT', 'NLM', 'NLT'])
             )
             if other_mask.any():
                 df_result.loc[other_mask, 'horario'] = mapped_values[other_mask]
