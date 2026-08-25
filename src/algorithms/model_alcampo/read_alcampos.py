@@ -93,7 +93,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         # =================================================================
         # 2. VALIDATE REQUIRED COLUMNS
         # =================================================================
-        required_colaborador_cols = ['employee_id', 'L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'L_RES', 'L_RES2']
+        required_colaborador_cols = ['employee_id', 'VZ', 'L_RES', 'L_RES2']
         required_colaborador_cols = [s.lower() for s in required_colaborador_cols]
         required_calendario_cols = ['employee_id', 'wd', 'dia_tipo', 'horario']
         required_calendario_cols = [s.lower() for s in required_calendario_cols]
@@ -117,34 +117,34 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         # =================================================================
         # 3. CALCULATE L_Q FOR colaborador data
         # =================================================================
-        logger.info("Calculating L_Q values for workers")
+        #logger.info("Calculating L_Q values for workers")
         
-        # Check for missing values in required columns
-        numeric_cols = ['L_TOTAL', 'L_DOM', 'C2D', 'C3D', 'L_D', 'CXX', 'VZ', 'L_RES', 'L_RES2']
-        numeric_cols = [s.lower() for s in numeric_cols]
+        ## Check for missing values in required columns
+        #numeric_cols = ['VZ', 'L_RES', 'L_RES2']
+        #numeric_cols = [s.lower() for s in numeric_cols]
 
 
 
-        for col in numeric_cols:
-            if matriz_colaborador_gd[col].isna().any():
-                logger.warning(f"Found NaN values in column {col}, filling with 0")
-                matriz_colaborador_gd[col] = matriz_colaborador_gd[col].fillna(0)
+        #for col in numeric_cols:
+        #    if matriz_colaborador_gd[col].isna().any():
+        #        logger.warning(f"Found NaN values in column {col}, filling with 0")
+        #        matriz_colaborador_gd[col] = matriz_colaborador_gd[col].fillna(0)
 
+
+
+        #matriz_colaborador_gd["l_q"] = (
+        #    matriz_colaborador_gd["l_total"] - 
+        #    matriz_colaborador_gd["l_dom"] - 
+        #    matriz_colaborador_gd["c2d"] - 
+        #    matriz_colaborador_gd["c3d"] - 
+        #    matriz_colaborador_gd["l_d"] - 
+        #    matriz_colaborador_gd["cxx"] - 
+        #    matriz_colaborador_gd["vz"] - 
+        #    matriz_colaborador_gd["l_res"] - 
+        #    matriz_colaborador_gd["l_res2"]
+        #)
         
-        
-        matriz_colaborador_gd["l_q"] = (
-            matriz_colaborador_gd["l_total"] - 
-            matriz_colaborador_gd["l_dom"] - 
-            matriz_colaborador_gd["c2d"] - 
-            matriz_colaborador_gd["c3d"] - 
-            matriz_colaborador_gd["l_d"] - 
-            matriz_colaborador_gd["cxx"] - 
-            matriz_colaborador_gd["vz"] - 
-            matriz_colaborador_gd["l_res"] - 
-            matriz_colaborador_gd["l_res2"]
-        )
-        
-        logger.info(f"L_Q calculated. Range: {matriz_colaborador_gd['l_q'].min():.2f} to {matriz_colaborador_gd['l_q'].max():.2f}")
+        #logger.info(f"L_Q calculated. Range: {matriz_colaborador_gd['l_q'].min():.2f} to {matriz_colaborador_gd['l_q'].max():.2f}")
         
         # =================================================================
         # 4. PROCESS CALENDARIO data
@@ -740,7 +740,9 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             vacation_days[w] = set(vacation_days[w]) - closed_holidays
             fixed_days_off[w] = set(fixed_days_off[w]) - closed_holidays
             work_days_per_week[w] = joining_template_with_contract_per_week(np.full(nbr_weeks, contract_type[w]), week_template[w], w, contract_type[w])
-            worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days, closed_holidays, work_days_per_week[w], year_range)
+            #supostamente nao se faz isto pois nao?
+
+            #worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
 
             if not working_days[w]:
@@ -748,13 +750,11 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
 
 #### Why do this here instead of data treatment and models?
-        for w in workers:
-            worker_special_days = [d for d in special_days if d in working_days[w]]
-            if contract_type[w] == 6:
-                total_l_dom[w] = len(worker_special_days) - l_d[w] - tc[w]
-            elif contract_type[w] in [4,5]:
-                total_l_dom[w] = len(worker_special_days) - l_d[w] - tc[w]
-            logger.info(f"Worker {w} total L DOM adjusted: {total_l_dom[w]} based on special days and contract type {contract_type[w]}")
+        #for w in workers:
+        #    worker_special_days = [d for d in special_days if d in working_days[w]]
+        #    total_l_dom[w] = len(worker_special_days) - l_d[w] - tc[w]
+
+        #    logger.info(f"Worker {w} total L DOM adjusted: {total_l_dom[w]} based on special days and contract type {contract_type[w]}")
 
         for w in workers:
             if contract_type[w] == 6:
@@ -784,9 +784,9 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['index'] == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
-                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 8)
-                        min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 8)
-                        max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 8)
+                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]))
+                        min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]))
+                        max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]))
                     else:
                         pess_obj[(d, s)] = 0
                         min_workers[(d, s)] = 0
@@ -985,7 +985,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
-                tc[w] = int(worker_row.get('dofhc', 0))
+                tc[w] = int(worker_row.get('tc', 0)) #nome anterior da coluna: dofhc
+                t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
 
                 size = len(worker_data)
                 if size > 1:
@@ -1007,7 +1008,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         logger.info(f"annual variables: {annual_variables}")
 
         logger.info("[OK] Data processing completed successfully")
-        
         # =================================================================
         # 13. RETURN ALL PROCESSED data
         # =================================================================

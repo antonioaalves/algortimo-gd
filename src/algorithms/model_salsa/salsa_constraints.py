@@ -913,8 +913,8 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_
                             terms.append(shift[(w, d1, 'L')])
                         if (w, d1, 'LD') in shift:
                             terms.append(shift[(w, d1, 'LD')])
-                        #if len(terms) >= 1 and (w, d2, '-') in shift:
-                        #    model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
+                        if len(terms) >= 1 and (w, d2, '-') in shift:
+                            model.Add(sum(terms) + shift[(w, d2, '-')] <= 1)
             else:
                 days_set = set(days) - dynamic_empty_days[w]
                 model.Add(sum(shift[(w, d, '-')] for d in (days_set - set(empty_set[w])) if (w, d, '-') in shift) == 0)

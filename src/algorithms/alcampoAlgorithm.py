@@ -23,8 +23,7 @@ from src.algorithms.model_alcampo.alcampo_constraints import (
     tc_atribution, working_days_special_days, LQ_attribution, LD_attribution, assign_week_shift,
     working_day_shifts, free_day_next_2c, no_free__days_close, 
     space_LQs, day2_quality_weekend, global_compensation_days, prio_2_3_workers,
-    limits_LDs_week, one_free_day_weekly, maxi_free_days_c3d, maxi_LQ_days_c3d, 
-    day3_quality_weekend
+    limits_LDs_week, day3_quality_weekend, free_days_week, saturday_L_constraint
 )
 from src.algorithms.model_alcampo.optimization_alcampos import optimization_prediction
 from src.algorithms.solver.solver import solve
@@ -304,7 +303,8 @@ class AlcampoAlgorithm(BaseAlgorithm):
             # =================================================================
 
             self.logger.info("Starting Stage 1: Initial scheduling")
-            
+            logger.info(f"Valid workers after processing: {workers}")
+            logger.info(f"Valid past workers after processing: {workers_past}")
             model = cp_model.CpModel()
             self.model_stage1 = model
             
@@ -326,67 +326,66 @@ class AlcampoAlgorithm(BaseAlgorithm):
             maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_continuous_days, period, dummy_workers, workers_with_dummy, complete_cycle_days)
             
             # Constraint to limit maximum continuous working special days
-            maximum_continuous_working_special_days(model, shift, special_days, workers, working_shift, contract_type, 3, period, complete_cycle_days, dummy_workers, workers_with_dummy)
-            #erro aqui em cima
+            maximum_continuous_working_special_days(model, shift, special_days, workers, working_shift, contract_type, 3, period, complete_cycle_days, dummy_workers, workers_with_dummy, locked_days)
+
             # Constraint to limit maximum free days in a year
+            #desativadaaaaaa
             #maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
             
             # Constraint for free days on special days
-            #free_days_sundays(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom, year_range, annual_variables, workers_with_dummy)
+            free_days_sundays(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom, year_range, annual_variables, workers_with_dummy)
             
             # TC attribution constraint
-            #tc_atribution(model, shift, workers, tc, special_days, working_days)
+            tc_atribution(model, shift, workers, tc, special_days, working_days, year_range)
             
             # Working days special days constraint
-            #working_days_special_days(model, shift, special_days, workers, working_days, l_d, contract_type, real_working_shift)
-            
+            working_days_special_days(model, shift, special_days, workers_no_contract_changes, working_days, l_d, contract_type, real_working_shift, workers_with_dummy, year_range, annual_variables, complete_cycle_days, locked_days)
+
+            # Constrain LQ on saturdays if no L/F on sunday
+            saturday_L_constraint(model, shift, workers, working_days, period, working_shift)
+
             # LQ attribution constraint
-            #LQ_attribution(model, shift, workers_no_contract_changes, working_days, l_q, c2d, year_range, annual_variables, workers_with_dummy)
-            
+            LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq, year_range, annual_variables, workers_with_dummy)
+
             # LD attribution constraint
-            #LD_attribution(model, shift, workers_no_contract_changes, working_days, l_d, year_range, workers_with_dummy)
+            LD_attribution(model, shift, workers_no_contract_changes, working_days, l_d, year_range, workers_with_dummy)
             
             # Worker week shift assignments #####
+            #desativadaaaaaaaa
             #assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
 
-            #working_day_shifts(model, shift, workers, working_days, check_shift, period)
+            working_day_shifts(model, shift, workers, working_days, check_shift, period)
             
             # Free days adjacent to weekends
-            #free_day_next_2c(model, shift, workers, working_days, closed_holidays)
+            free_day_next_2c(model, shift, workers, working_days, closed_holidays)
             
             # Limit consecutive free days during the week
-            #no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year)
+            no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period)
             
             # Day2 quality weekends
-            #day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays)
+            day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range)
             
             # Space LQs constraint
-            #space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
+            space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
             
             # # Priority 2-3 workers constraint
-            #prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, week_to_days, contract_type, working_shift)
+            prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, week_to_days, contract_type, working_shift)
             
             # Compensation days constraint
             contingente_f = []
             contingente_d = []
-            #contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
-            #                                                        fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
-            #                                                        sunday_past_lds, closed_holidays, dummy_workers, workers_with_dummy)
+            contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
+                                                                    fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
+                                                                    sunday_past_lds, closed_holidays, dummy_workers, workers_with_dummy)
             
             # Limits LDs per week
-            #limits_LDs_week(model, shift, week_to_days, workers, special_days)
+            limits_LDs_week(model, shift, week_to_days, workers, special_days)
         
             # One free day weekly
-            #one_free_day_weekly(model, shift, week_to_days, workers, working_days, contract_type, closed_holidays)           
+            free_days_week(model, shift, workers, week_to_days, working_days, None, first_day, last_day, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days)           
 
-            # Constraint for maximum free days in a year
-            #maxi_free_days_c3d(model, shift, workers, days_of_year, total_l, period)
-            
-            # Constraint for maximum LQ days in a year
-            #maxi_LQ_days_c3d(model, shift, workers, working_days, l_q, c2d, c3d)
-            
             # Constraint for 3-day quality weekends
-            #day3_quality_weekend(model, shift, workers, working_days, c3d, contract_type, closed_holidays)
+            day3_quality_weekend(model, shift, workers, working_days, c3d, contract_type, closed_holidays)
             
             # Apply optimization (reusing from Stage 1)
             debug_vars = optimization_prediction(model, days_of_year, workers_complete, workers_complete_cycle,working_shift, shift, pessObj,
