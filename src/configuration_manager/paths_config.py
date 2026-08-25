@@ -154,7 +154,11 @@ class PathsConfig:
             if not filename:
                 continue
             if entity in self._csv_processing_entities:
-                full_path = os.path.join(self.project_root_dir, 'data', 'csvs', filename)
+                # Static, code-bundled resource (e.g. df_messages message templates).
+                # Kept directly under data/ -- NOT data/csvs/, which is excluded by
+                # .dockerignore and shadowed by the ./data/csvs runtime volume mount,
+                # which would make the file disappear inside the container.
+                full_path = os.path.join(self.project_root_dir, 'data', filename)
             else:
                 full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
             self.sql_processing_paths[entity] = full_path

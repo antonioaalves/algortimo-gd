@@ -36,9 +36,11 @@ tests/
 # Runtime artefacts (mounted as volumes)
 logs/
 data/csvs/*
-!data/csvs/messages_df.csv
 data/output/*
 data/intermediate/*
+# NB: df_messages.csv is a static resource and lives at data/df_messages.csv
+# (outside data/csvs/), so it ships in the image and is never shadowed by the
+# ./data/csvs volume mount. Do not move it back under data/csvs/.
 
 # Docs / misc
 *.md
