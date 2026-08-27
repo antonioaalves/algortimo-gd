@@ -249,15 +249,15 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         
         # Define shifts and special days
         
-        sundays = sorted(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['index'].unique().tolist())
+        sundays = set(matriz_calendario_gd[matriz_calendario_gd['wd'] == 'Sun']['index'].unique().tolist())
 
-        holidays = sorted(matriz_feriados_gd[(matriz_feriados_gd['tipo_feriado'] == 'A')
+        holidays = set(matriz_feriados_gd[(matriz_feriados_gd['tipo_feriado'] == 'A')
                          ]['index'].unique().tolist())
         
         closed_holidays = set(matriz_feriados_gd[(matriz_feriados_gd['tipo_feriado'] == 'F')
                              ]['index'].unique().tolist())
         
-        special_days = sorted(list(set(sundays + holidays)))
+        special_days = sorted(list(set(sundays | holidays)))
         
         logger.info(f"Special days identified:")
         logger.info(f"  - Sundays: {len(sundays)} days")

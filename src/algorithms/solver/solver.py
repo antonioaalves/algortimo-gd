@@ -98,8 +98,8 @@ def solve(
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        if not isinstance(special_days, list):
-            error_msg = f"special_days must be a list. special_days: {special_days}, type: {type(special_days)}"
+        if not isinstance(special_days, set):
+            error_msg = f"special_days must be a set. special_days: {special_days}, type: {type(special_days)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         

@@ -21,8 +21,8 @@ from src.algorithms.model_alcampo.alcampo_constraints import (
     shift_day_constraint, week_working_days_constraint, maximum_continuous_working_days,
     maximum_continuous_working_special_days, maximum_free_days, free_days_sundays, 
     tc_atribution, working_days_special_days, LQ_attribution, LD_attribution, assign_week_shift,
-    working_day_shifts, free_day_next_2c, no_free__days_close, 
-    space_LQs, day2_quality_weekend, global_compensation_days, prio_2_3_workers,
+    working_day_shifts, free_day_next_2c, no_free__days_close, free_days_week_2_3,
+    space_LQs, day2_quality_weekend, global_compensation_days,
     limits_LDs_week, day3_quality_weekend, free_days_week, saturday_L_constraint
 )
 from src.algorithms.model_alcampo.optimization_alcampos import optimization_prediction
@@ -354,7 +354,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             #desativadaaaaaaaa
             #assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
 
-            working_day_shifts(model, shift, workers, working_days, check_shift, period)
+            working_day_shifts(model, shift, workers, working_days, check_shift, period, contract_type)
             
             # Free days adjacent to weekends
             free_day_next_2c(model, shift, workers, working_days, closed_holidays)
@@ -368,8 +368,10 @@ class AlcampoAlgorithm(BaseAlgorithm):
             # Space LQs constraint
             space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
             
-            # # Priority 2-3 workers constraint
-            prio_2_3_workers(model, shift, workers, working_days, special_days, start_weekday, week_to_days, contract_type, working_shift)
+            # Priority 2-3 workers constraint
+            #prio_2_3_workers(model, shift, workers, working_days, holidays, week_to_days, contract_type, working_shift)
+
+            free_days_week_2_3(model, shift, workers, working_days, holidays, week_to_days, contract_type, working_shift, closed_holidays)
             
             # Compensation days constraint
             contingente_f = []
@@ -388,8 +390,8 @@ class AlcampoAlgorithm(BaseAlgorithm):
             day3_quality_weekend(model, shift, workers, working_days, c3d, contract_type, closed_holidays)
             
             # Apply optimization (reusing from Stage 1)
-            debug_vars = optimization_prediction(model, days_of_year, workers_complete, workers_complete_cycle,working_shift, shift, pessObj,
-                                                 min_workers, closed_holidays, week_to_days, working_days, contract_type, special_days)
+            debug_vars = optimization_prediction(model, days_of_year, workers_complete, workers_complete_cycle, shift, pessObj,
+                                                 min_workers, closed_holidays, week_to_days, working_days, contract_type, special_days, workers_past, real_working_shift)
 
             # Solve Stage 
             work_day_hours = {}
