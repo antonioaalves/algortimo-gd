@@ -618,6 +618,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         week_template = {}
         fixed_compensation_days = {}
         work_special_days = {}
+        mot_days = {}
 
         shift_data = {f"shift_{value}": {} for value in shifts}
 
@@ -685,6 +686,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
             work_special_days[w] = set(worker_calendar[worker_calendar['horario'] == 'TC']['index'].tolist())
+            mot_days[w] = set(worker_calendar[worker_calendar['mot'] == True]['index'].tolist())
 
 
         for w in week_template_temp:
@@ -784,9 +786,9 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                     day_shift_data = matriz_estimativas_gd[(matriz_estimativas_gd['index'] == d) & (matriz_estimativas_gd['turno'] == s)]
                     if not day_shift_data.empty:
                         # Convert float to integer for OR-Tools compatibility
-                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]))
-                        min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]))
-                        max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]))
+                        pess_obj[(d, s)] = int(round(day_shift_data['pess_obj'].values[0]) * 10)
+                        min_workers[(d, s)] = int(round(day_shift_data['min_turno'].values[0]) * 10)
+                        max_workers[(d, s)] = int(round(day_shift_data['max_turno'].values[0]) * 10)
                     else:
                         pess_obj[(d, s)] = 0
                         min_workers[(d, s)] = 0
@@ -1070,6 +1072,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "override_holiday_sunday": override_holiday_sunday,
             "holiday_past_lds": holiday_past_lds,
             "sunday_past_lds": sunday_past_lds,
+            "mot_days": mot_days,
         }
         
     except Exception as e:

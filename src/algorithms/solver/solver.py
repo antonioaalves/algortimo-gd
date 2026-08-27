@@ -287,7 +287,18 @@ def solve(
                             if w in work_day_hours:
                                 time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
                             else:
-                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 1
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 10
+                    elif day_assignment == 'MoT':
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        if d - 1 <= ammount_of_days:
+                            if w in work_day_hours:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += work_day_hours[w].get(d, 8) // 2
+                            else:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += 5
 
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
@@ -380,7 +391,18 @@ def solve(
                             if w in work_day_hours:
                                 time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
                             else:
-                                time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += 1
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 10
+                    elif day_assignment == 'MoT':
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        if d - 1 <= ammount_of_days:
+                            if w in work_day_hours:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += work_day_hours[w].get(d, 8) // 2
+                            else:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += 5
 
                 if contingente_feriados:
                     if w in contingente_feriados and len(contingente_feriados[w]) > 0:

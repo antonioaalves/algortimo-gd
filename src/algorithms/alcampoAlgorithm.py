@@ -74,7 +74,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
         default_parameters = {
             "shifts": ['M', 'T', 'L', 'LQ', 'F', 'V', 'LD', 'A', 'TC', '-'],
             "check_shifts": ['M', 'T', 'L', 'LQ', "LD", "TC"],
-            "working_shifts": ['M', 'T', 'TC'],
+            "working_shifts": ['M', 'T', 'TC', 'MoT'],
             "real_working_shifts": ['M', 'T'],
             "max_continuous_working_days": 10,
         }
@@ -123,9 +123,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
 
             self.parameters = {
                 "real_working_shifts": real_shifts,
-                "working_shifts": real_shifts + ['TC'],
-                "check_shifts": real_shifts + ['L', 'LQ', 'LD', 'TC'],
-                "shifts": real_shifts + ['L', 'LQ', 'F', 'V', 'LD', 'A', 'TC', '-'],
+                "working_shifts": real_shifts + ['TC', 'MoT'],
+                "check_shifts": real_shifts + ['L', 'LQ', 'LD', 'TC', 'MoT'],
+                "shifts": real_shifts + ['L', 'LQ', 'F', 'V', 'LD', 'A', 'TC', '-', 'MoT'],
                 "max_continuous_working_days": 10,
                 "settings":{
                     #F days affect c2d and cxx
@@ -290,6 +290,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             override_holiday_sunday = adapted_data["override_holiday_sunday"]
             holiday_past_lds = adapted_data["holiday_past_lds"]
             sunday_past_lds = adapted_data["sunday_past_lds"]
+            mot_days = adapted_data["mot_days"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -312,8 +313,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
 
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences, vacation_days, empty_days, 
-                                       closed_holidays, fixed_days_off, fixed_LQs, shift_data, workers_past, fixed_compensation_days,
-                                       locked_days, forced_work_days, contract_type, complete_cycle_days, real_working_shift, special_days, work_special_days)
+                                       closed_holidays, fixed_days_off, fixed_LQs, shift_data, workers_past, fixed_compensation_days, locked_days,
+                                       forced_work_days, contract_type, complete_cycle_days, real_working_shift, special_days, work_special_days, mot_days)
+
             self.logger.info("Decision variables created for Stage 1")
             
             # Apply all constraints

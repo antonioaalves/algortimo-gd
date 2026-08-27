@@ -41,7 +41,8 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     for d in days_of_year:
         for s in real_working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] for w in all_workers if (w, d, s) in shift)
+            assigned_workers = sum(shift[(w, d, s)] * 10 for w in all_workers if (w, d, s) in shift)
+            assigned_workers += sum(shift[(w, d, 'MoT')] * 5 for w in all_workers if (w, d, 'Mot') in shift)
             if d in special_days:
                 effective_shift = tc_to_shift[d][f"shift_{s}"] + assigned_workers
             else:
@@ -73,6 +74,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
                 if pessObj.get((d, s), 0) > 0:  # Only penalize when pessObj exists
                     # Calculate the number of assigned workers for this day and shift
                     assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
+                    assigned_workers += sum(shift[(w, d, 'MoT')] for w in all_workers if (w, d, 'Mot') in shift)
                     
                     # Create a boolean variable to indicate if there are no workers
                     no_workers = model.NewBoolVar(f"no_workers_{d}_{s}")
@@ -91,7 +93,8 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
+                assigned_workers = sum(shift[(w, d, s)] * 10 for w in workers if (w, d, s) in shift)
+                assigned_workers += sum(shift[(w, d, 'MoT')] * 5 for w in all_workers if (w, d, 'Mot') in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")

@@ -530,30 +530,26 @@ def tc_atribution(model, shift, workers, tc, special_days, working_days, year_ra
         if worker_special_days:
             model.Add(sum(shift[(w, d, "TC")] for d in worker_special_days) == tc.get(w, 0))
 
-def working_days_special_days(model, shift, special_days, workers_no_contract_changes, working_days, l_d, contract_type, real_working_shift, workers_with_dummy, year_range, annual_variables, complete_cycle_days, locked_days):
+def working_days_special_days(model, shift, special_days, workers_no_contract_changes, working_days, l_d, contract_type, working_shift, workers_with_dummy, year_range, annual_variables, complete_cycle_days, locked_days):
     for w in workers_no_contract_changes:
         if l_d.get(w, 0) == 0:
             continue
         worker_special_days = [d for d in special_days if d in working_days[w] and year_range[0] < d < year_range[1]]
         if len([d for d in worker_special_days if d in locked_days[w] or d in complete_cycle_days[w]]) >= l_d.get(w, 0):
             continue
-        if contract_type[w] in [4, 5]:
+        if contract_type[w] in [4, 5, 6]:
             # Only consider special days that are in this worker's working days
-            model.Add(sum(shift[(w, d, s)] for d in worker_special_days  for s in real_working_shift if (w, d, s) in shift) == l_d.get(w, 0))
-        elif contract_type[w] == 6:
-            model.Add(sum(shift[(w, d, s)] for d in worker_special_days for s in real_working_shift + ['TC'] if (w, d, s) in shift) == l_d.get(w, 0))
+            model.Add(sum(shift[(w, d, s)] for d in worker_special_days  for s in working_shift if (w, d, s) in shift) == l_d.get(w, 0))
     for w in workers_with_dummy:
         if l_d.get(w, 0) == 0:
             continue
-        worker_special_days = [d for d in special_days for s in real_working_shift if d in working_days[get_dummy(workers_with_dummy, w, d)] and year_range[0] < d < year_range[1] \
+        worker_special_days = [d for d in special_days for s in working_shift if d in working_days[get_dummy(workers_with_dummy, w, d)] and year_range[0] < d < year_range[1] \
                                and get_annual_variables(annual_variables, w, d, "l_d") == True and (get_dummy(workers_with_dummy, w, d), d, s) in shift]
         if len([d for d in worker_special_days if d in locked_days[get_dummy(workers_with_dummy, w, d)] or d in complete_cycle_days[get_dummy(workers_with_dummy, w, d)]]) >= l_d.get(w, 0):
             continue
-        if contract_type[w] in [4, 5]:
+        if contract_type[w] in [4, 5, 6]:
             # Only consider special days that are in this worker's working days
-            model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_special_days for s in real_working_shift if (get_dummy(workers_with_dummy, w, d), d, s) in shift) == l_d.get(w, 0))
-        elif contract_type[w] == 6:
-            model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_special_days for s in real_working_shift + ['TC'] if (get_dummy(workers_with_dummy, w, d), d, s) in shift) == l_d.get(w, 0))
+            model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_special_days for s in working_shift if (get_dummy(workers_with_dummy, w, d), d, s) in shift) == l_d.get(w, 0))
 
 def saturday_L_constraint(model, shift, workers, working_days, period, working_shifts):
     # For each worker, constrain L on Saturday if L on Sunday
@@ -615,7 +611,7 @@ def working_day_shifts(model, shift, workers, working_days, check_shift, period,
             if contract_type[w] > 3:
                 model.add_exactly_one(shift[(w, d, s)] for s in check_shift if (w, d, s) in shift)
             else:
-                    model.add_exactly_one(shift[(w, d, s)] for s in check_shift + ['-'] if (w, d, s) in shift)
+                model.add_exactly_one(shift[(w, d, s)] for s in check_shift + ['-'] if (w, d, s) in shift)
 
 def free_day_next_2c(model, shift, workers, working_days, closed_holidays):
     for w in workers:
@@ -771,9 +767,7 @@ def no_free__days_close(model, shift, workers, working_days, cxx, contract_type,
                     
                     # Sum of all free shift types
                     free_shift_sum = sum(
-                        shift.get((w, d, shift_type), 0) 
-                        for shift_type in ["L", "LD", "LQ", "F"]
-                        if (w, d, shift_type) in shift
+                        shift.get((w, d, shift_type), 0) for shift_type in ["L", "LD", "LQ", "F"]
                     )
                     
                     model.Add(free_shift_sum >= 1).OnlyEnforceIf(free_day)
@@ -898,7 +892,6 @@ def free_days_week_2_3(model, shift, workers, working_days, holidays, week_to_da
                 worked_holidays = sum([shift.get((w, d, s), 0) for d in days for s in working_shift if d in holidays])
                 days_off = sum([shift.get((w, d, s), 0) for d in days for s in ['L', 'LQ'] if d not in holidays])
                 model.Add(worked_holidays == days_off)
-                print(worked_holidays, days_off)
                 empty_days = sum([shift.get((w, d, '-'), 0) for d in days])
                 model.Add(days_off + empty_days + closed_in_week == 7 - contract_type[w])
 

@@ -16,9 +16,9 @@ def add_var(model, shift, w, days, code):
             model.Add(shift[(w, d, code)] == 1)
 
 
-def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, empty_days,
-                       closed_holidays, fixed_days_off, fixed_LQs, shift_data, past_workers, fixed_compensation_days,
-                       locked_days, forced_work_days, contract_type, complete_cycle_days, real_working_shift, special_days, work_special_days):
+def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, empty_days, closed_holidays, 
+                       fixed_days_off, fixed_LQs, shift_data, past_workers, fixed_compensation_days, locked_days, forced_work_days, 
+                       contract_type, complete_cycle_days, real_working_shift, special_days, work_special_days, mot_days):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 
@@ -69,6 +69,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
     shifts2.remove('-')
     shifts2.remove('LQ')
     shifts2.remove('TC')
+    shifts2.remove('MoT')
     shifts2 = [x for x in shifts2 if x not in real_working_shift]
 
     for w in workers:
@@ -83,6 +84,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) - fixed_days_set - closed_set - fixed_LQs_set - vacation - absence_set for value in real_working_shift}
         fixed_LD_set = set(fixed_compensation_days[w]) - fixed_days_set - fixed_LQs_set - vacation - absence_set
         complete_set = set(complete_cycle_days[w])
+        mot_set = set(mot_days[w])
 
         SET_CODE_PRIORITY = [
             ("-", empty_set),
@@ -103,6 +105,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         logger.info(f"\tDEBUG fixed days {sorted(fixed_days_set)}")
         logger.info(f"\tDEBUG absence {sorted(absence_set)}")
         logger.info(f"\tDEBUG forced work days {sorted(forced_set)}")
+        logger.info(f"\tDEBUG MoT days {sorted(mot_set)}")
         logger.info(f"\tDEBUG fixed lds {sorted(fixed_LD_set)}\n")
         if len(locked_days[w]) > 0:
             logger.info(f"\tDEBUG locked days {sorted(locked_days[w])}\n")
@@ -129,9 +132,12 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
                 if contract_type.get(w, 0) <= 4:
                     shift[(w, d, '-')] = model.NewBoolVar(f"{w}_Day{d}_-")
-                for value in real_working_shift:
-                    if d in shift_set[f"shift_{value}_set"]:
-                        shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
+                if d in mot_set:
+                    shift[(w, d, 'MoT')] = model.NewBoolVar(f"{w}_Day{d}_MoT")
+                else:
+                    for value in real_working_shift:
+                        if d in shift_set[f"shift_{value}_set"]:
+                            shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
                 if d % 7 in [1, 5, 6]: #sexta e segunda tb podem ser lq 
                     shift[(w, d, 'LQ')] = model.NewBoolVar(f"{w}_Day{d}_LQ")
                 if d in special_days and contract_type[w] == 6:
