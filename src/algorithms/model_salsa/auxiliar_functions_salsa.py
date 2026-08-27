@@ -242,28 +242,35 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period
             work_days_per_week = np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
     return work_days_per_week.astype(int)
 
-def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks):
-    first_week_5_load = 0
-    first_week_6_load = 0
-    for w in workers_first_week_defined:
-        if work_days_per_week[w][0] == 5:
-            first_week_5_load += week_workload[w]
-        else:
-            first_week_6_load += week_workload[w]
+def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks, first_registered_day):
 
-    non_defined_rev_sorted_workload = sorted(workers_non_defined, key = lambda w: week_workload[w], reverse = True)
-    logger.info(f"First week 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
-    for w in non_defined_rev_sorted_workload:
-        if first_week_5_load <= first_week_6_load:
-            work_days_per_week[w] = np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
-            first_week_5_load += week_workload[w]
-            logger.info(f"{w} went to group of 5 first week, score: {first_week_5_load}/{first_week_6_load}")
-        else:
-            work_days_per_week[w] = np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
-            first_week_6_load += week_workload[w]
-            logger.info(f"{w} went to group of 6 first week, score: {first_week_5_load}/{first_week_6_load}")
+    workers_by_first_day = defaultdict(list)
+    workers_non_defined_set = set(workers_non_defined)
+    for w in workers_non_defined + workers_first_week_defined:
+        workers_by_first_day[first_registered_day[w]].append(w)
+    for date in workers_by_first_day:
+        first_week_5_load = 0
+        first_week_6_load = 0
+        
+        for w in workers_by_first_day[date]:
+            if w in workers_first_week_defined:
+                if work_days_per_week[w][0] == 5:
+                    first_week_5_load += week_workload[w]
+                else:
+                    first_week_6_load += week_workload[w]
+
+        non_defined_rev_sorted_workload = sorted(workers_non_defined_set.intersection(set(workers_by_first_day[date])), key = lambda w: week_workload[w], reverse = True)
+        logger.info(f"first day {date} of week 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
+        for w in non_defined_rev_sorted_workload:
+            if first_week_5_load <= first_week_6_load:
+                work_days_per_week[w] = np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+                first_week_5_load += week_workload[w]
+                logger.info(f"{w} went to group of 5 first week, score: {first_week_5_load}/{first_week_6_load}")
+            else:
+                work_days_per_week[w] = np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+                first_week_6_load += week_workload[w]
+                logger.info(f"{w} went to group of 6 first week, score: {first_week_5_load}/{first_week_6_load}")
     return work_days_per_week
-
 
 def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, work_days_per_week):
     for week, days in week_to_days.items():
