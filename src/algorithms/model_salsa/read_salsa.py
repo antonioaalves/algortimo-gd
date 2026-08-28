@@ -729,7 +729,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
         if len(workers_non_defined) > 0:
-            work_days_per_week = first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks)
+            work_days_per_week = first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks, first_registered_day)
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
         for w in workers:
             if contract_type[w] <= 4:
