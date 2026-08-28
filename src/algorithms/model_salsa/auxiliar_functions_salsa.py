@@ -247,7 +247,7 @@ def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, 
     workers_by_first_day = defaultdict(list)
     workers_non_defined_set = set(workers_non_defined)
     for w in workers_non_defined + workers_first_week_defined:
-        workers_by_first_day[first_registered_day[w]].append(w)
+        workers_by_first_day[first_registered_day[w] // 7].append(w)
     for date in workers_by_first_day:
         first_week_5_load = 0
         first_week_6_load = 0
@@ -260,7 +260,7 @@ def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, 
                     first_week_6_load += week_workload[w]
 
         non_defined_rev_sorted_workload = sorted(workers_non_defined_set.intersection(set(workers_by_first_day[date])), key = lambda w: week_workload[w], reverse = True)
-        logger.info(f"first day {date} of week 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
+        logger.info(f"week {date}: 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
         for w in non_defined_rev_sorted_workload:
             if first_week_5_load <= first_week_6_load:
                 work_days_per_week[w] = np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
