@@ -507,12 +507,12 @@ sys.exit(0)
 # ============================================================================
 """
 SEQUENTIAL (Current):
-Time →
+Time ->
 Thread 1: [========Process 1========] [========Process 2========] [========Process 3========]
 Total time: Process1 + Process2 + Process3
 
 PARALLEL (Multithreaded):
-Time →
+Time ->
 Thread 1: [========Process 1========]
 Thread 2: [========Process 2========]
 Thread 3: [========Process 3========]

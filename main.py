@@ -6,7 +6,8 @@ import logging
 import sys
 import os
 import subprocess
-import winreg
+if sys.platform == "win32":
+    import winreg  # noqa: F401  (Windows-only, only used by interactive flows)
 from pathlib import Path
 from datetime import datetime
 

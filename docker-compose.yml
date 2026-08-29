@@ -1,0 +1,76 @@
+x-common-env: &common-env
+  # System
+  ENVIRONMENT: ${ENVIRONMENT:-salsa_prd}
+  USE_DB: ${USE_DB:-true}
+  PROJECT_NAME: ${PROJECT_NAME:-algoritmo_GD}
+
+  # Oracle Database (provide either ORACLE_DB_DSN or the HOST/PORT/SERVICE_NAME trio)
+  ORACLE_DB_USER: ${ORACLE_DB_USER}
+  ORACLE_DB_PASSWORD: ${ORACLE_DB_PASSWORD}
+  ORACLE_DB_DSN: ${ORACLE_DB_DSN:-}
+  ORACLE_DB_HOST: ${ORACLE_DB_HOST:-}
+  ORACLE_DB_PORT: ${ORACLE_DB_PORT:-1521}
+  ORACLE_DB_SERVICE_NAME: ${ORACLE_DB_SERVICE_NAME:-}
+  ORACLE_DB_SCHEMA: ${ORACLE_DB_SCHEMA:-WFM}
+  ORACLE_DB_CLIENT: /opt/instantclient_23_7
+
+  # Solver (CP-SAT / PuLP)
+  SOLVER_MAX_TIME: ${SOLVER_MAX_TIME:-600}
+  SOLVER_NUM_WORKERS: ${SOLVER_NUM_WORKERS:-8}
+  SOLVER_PRESOLVE: ${SOLVER_PRESOLVE:-true}
+
+  # Logging
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_DIR: logs
+  LOG_CONSOLE_OUTPUT: "true"
+
+x-common-volumes: &common-volumes
+  - ./logs:/app/logs
+  - ./data/output:/app/data/output
+  - ./data/csvs:/app/data/csvs
+
+services:
+  orchestrator:
+    build: .
+    image: algoritmo-gd:latest
+    container_name: algoritmo-gd-orchestrator
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      GLOBAL_MAX_CONCURRENT_PROCESSES: ${GLOBAL_MAX_CONCURRENT_PROCESSES:-3}
+      LOCAL_MAX_CONCURRENT_PROCESSES: ${LOCAL_MAX_CONCURRENT_PROCESSES:-1}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      RETRY_WAIT_TIME: ${RETRY_WAIT_TIME:-1000}
+    volumes: *common-volumes
+
+  api:
+    build: .
+    image: algoritmo-gd:latest
+    container_name: algoritmo-gd-api
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      PORT: ${API_PORT:-5000}
+    ports:
+      - "${API_PORT:-5000}:5000"
+    volumes: *common-volumes
+    command: ["python", "routes.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  batch:
+    build: .
+    image: algoritmo-gd:latest
+    container_name: algoritmo-gd-batch
+    profiles: ["cli"]
+    environment:
+      <<: *common-env
+    volumes: *common-volumes
+    command:
+      - python
+      - batch_process.py
+      - --algorithm=${ALGORITHM:-salsa_algorithm}

@@ -1,0 +1,53 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+dist
+build
+
+# Virtualenvs
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+*.env.local
+
+# Tests and notebooks
+tests/
+*.ipynb
+.ipynb_checkpoints
+
+# Runtime artefacts (mounted as volumes)
+logs/
+data/csvs/*
+data/output/*
+data/intermediate/*
+# NB: df_messages.csv is a static resource and lives at data/df_messages.csv
+# (outside data/csvs/), so it ships in the image and is never shadowed by the
+# ./data/csvs volume mount. Do not move it back under data/csvs/.
+
+# Docs / misc
+*.md
+LICENSE
+RELEASES.txt
+log.txt
+
+# OS
+.DS_Store
+Thumbs.db

@@ -325,8 +325,8 @@ for week, days in week_to_days.items():
 ```
 
 **Estruturas criadas**:
-- **week_to_days**: mapeamento completo semana → todos os dias
-- **week_to_days_salsa**: mapeamento semana → apenas dias úteis (seg-sex)
+- **week_to_days**: mapeamento completo semana -> todos os dias
+- **week_to_days_salsa**: mapeamento semana -> apenas dias úteis (seg-sex)
 - **start_weekday**: dia da semana do primeiro dia (para cálculos correctos)
 
 ## 5. Processamento Detalhado por Colaborador
@@ -441,7 +441,7 @@ O modelo de programação por restrições utiliza um sistema sofisticado de var
 
 ### 1.1 Estrutura Tridimensional
 ```python
-shift[(worker, day, shift_type)] → cp_model.IntVar
+shift[(worker, day, shift_type)] -> cp_model.IntVar
 ```
 
 **Dimensões explicadas**:
@@ -611,14 +611,14 @@ Exemplo: 50 workers × 365 days × 8 shifts × 0.7 = ~102,200 variáveis
 
 ### 3.1 Mapeamentos de Suporte
 ```python
-# Mapeamento inverso: dia → colaboradores activos
+# Mapeamento inverso: dia -> colaboradores activos
 day_to_workers = {}
 for (w, d, s), var in shift.items():
     if d not in day_to_workers:
         day_to_workers[d] = set()
     day_to_workers[d].add(w)
 
-# Mapeamento inverso: colaborador → dias activos
+# Mapeamento inverso: colaborador -> dias activos
 worker_to_days = {}
 for (w, d, s), var in shift.items():
     if w not in worker_to_days:
@@ -844,22 +844,22 @@ def closed_holiday_attribution(model, shift, workers_complete, closed_holidays):
 def holiday_missing_day_attribution(model, shift, workers_complete, worker_holiday, 
                                   missing_days, empty_days, free_day_complete_cycle):
     for w in workers_complete:
-        # Dias vazios → V
+        # Dias vazios -> V
         for d in empty_days[w]:
             if (w, d, "V") in shift:
                 model.Add(shift[(w, d, "V")] == 1)
         
-        # Folgas de ciclo completo → L
+        # Folgas de ciclo completo -> L
         for d in free_day_complete_cycle[w]:
             if (w, d, "L") in shift:
                 model.Add(shift[(w, d, "L")] == 1)
 ```
 
 **Categorias de pré-atribuição**:
-- **empty_days**: colaborador indisponível (atribuição → "V")
-- **free_day_complete_cycle**: folgas predefinidas para ciclo completo (atribuição → "L")
-- **worker_holiday**: ausências confirmadas (atribuição → "A") [comentado no código]
-- **missing_days**: faltas/vazios (atribuição → "V") [comentado no código]
+- **empty_days**: colaborador indisponível (atribuição -> "V")
+- **free_day_complete_cycle**: folgas predefinidas para ciclo completo (atribuição -> "L")
+- **worker_holiday**: ausências confirmadas (atribuição -> "A") [comentado no código]
+- **missing_days**: faltas/vazios (atribuição -> "V") [comentado no código]
 
 ### 2.3 `LQ_attribution()` - Quota Mínima de Fins de Semana de Qualidade
 ```python
@@ -1041,7 +1041,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, start_weekd
 ```
 
 **Regra de coordenação**:
-- **Implicação direccional**: domingo L → sábado L
+- **Implicação direccional**: domingo L -> sábado L
 - **Lógica**: evita padrão "sábado trabalho + domingo folga"
 - **Benefício**: promove fins de semana completos de descanso
 
