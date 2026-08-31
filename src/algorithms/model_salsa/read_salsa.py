@@ -713,23 +713,26 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                                     f"if possible, week sequence will continue accordingly")
                         work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[previous_w], fixed_LQs[previous_w], week_to_days_salsa, period, nbr_weeks)
 
-                if np.all(work_days_per_week[w] == 5):
+                if not np.all(work_days_per_week[w] == 5):
+                    logger.info(f"{w} is defined as first week {work_days_per_week[w][0]}")
+                    workers_first_week_defined.append(w)
+                else:
                     workers_non_defined.append(w)
                     logger.info(f"Detected {w} with no first week defined")
-                else:
-                    workers_first_week_defined.append(w)
                 #check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
             else:
                 work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
             work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w, contract_type[w])
-            worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
+            worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w],
+                                                                                                         week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range)
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
 
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
             if not working_days[w]:
                 logger.warning(f"Worker {w} has no working days after processing. This may indicate an issue with the data.")
         if len(workers_non_defined) > 0:
-            work_days_per_week = first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks, first_registered_day)
+            work_days_per_week = first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, 
+                                                            nbr_weeks, first_registered_day, dummy_workers, contract_type)
         logger.info(f"Worker-specific data processed for {len(workers)} workers")
         for w in workers:
             if contract_type[w] <= 4:
