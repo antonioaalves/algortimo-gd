@@ -242,26 +242,43 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period
             work_days_per_week = np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
     return work_days_per_week.astype(int)
 
-def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks, first_registered_day):
+def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks,
+                               first_registered_day, dummy_workers, contract_type):
 
     workers_by_first_day = defaultdict(list)
     workers_non_defined_set = set(workers_non_defined)
-    for w in workers_non_defined + workers_first_week_defined:
+    for w in workers_non_defined_set | set(workers_first_week_defined):
         workers_by_first_day[first_registered_day[w] // 7].append(w)
-    for date in workers_by_first_day:
+    for date in sorted(workers_by_first_day):
         first_week_5_load = 0
         first_week_6_load = 0
         
         for w in workers_by_first_day[date]:
-            if w in workers_first_week_defined:
+            if w in set(workers_first_week_defined):
                 if work_days_per_week[w][0] == 5:
                     first_week_5_load += week_workload[w]
                 else:
                     first_week_6_load += week_workload[w]
 
         non_defined_rev_sorted_workload = sorted(workers_non_defined_set.intersection(set(workers_by_first_day[date])), key = lambda w: week_workload[w], reverse = True)
-        logger.info(f"week {date}: 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
+        logger.info(f"week {date}: workers: {non_defined_rev_sorted_workload}, 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
+        non_defined_temp = non_defined_rev_sorted_workload.copy()
         for w in non_defined_rev_sorted_workload:
+            if w in dummy_workers:
+                previous_w = previous_dummy(dummy_workers, dummy_workers[w]["layer"] - 1, dummy_workers[w]["parent"])
+                if contract_type[previous_w] == 8 and not np.all(work_days_per_week[previous_w] == 5):
+                    logger.info(f"More information is known now, previous worker {previous_w} is defined"
+                                f" and {w} will continue the sequence.")
+                    
+                    work_days_per_week[w] = work_days_per_week[previous_w]
+                    if not np.all(work_days_per_week[w] == 5):
+                        logger.info(f"{w} went to group of {work_days_per_week[w][0]} first week.")
+                        if work_days_per_week[w][0] == 5:
+                            first_week_5_load += week_workload[w]
+                        else:
+                            first_week_6_load += week_workload[w]
+                    non_defined_temp.remove(w)
+        for w in non_defined_temp:
             if first_week_5_load <= first_week_6_load:
                 work_days_per_week[w] = np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
                 first_week_5_load += week_workload[w]
