@@ -389,6 +389,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         workers_complete_with_dummy = workers_complete.copy()
         workers_list_with_dummy = workers.copy()
         workers_no_contract_changes = []
+        out_workers = {}
         
         for w in workers:
             worker_data = matriz_colaborador_gd[matriz_colaborador_gd['employee_id'] == w]
@@ -420,6 +421,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 cxx[w] = int(worker_row.get('cxx', 0))
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
                 tc[w] = int(worker_row.get('dofhc', 0))
+                out_workers[w] = int(worker_row.get('out', 0))
 
                 logger.info(f"Worker {w} contract information extracted: "
                             f"Contract Type: {contract_type[w]}, "
@@ -519,6 +521,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                         c3d[new_w] = int(worker_row.get('c3d', 0))
                         l_d[new_w] = int(worker_row.get('l_d', 0))
                         cxx[new_w] = int(worker_row.get('cxx', 0))
+                        out_workers[new_w] = int(worker_row.get('out', 0))
                         admissao_value = worker_row.get('begin_date', None)
                         logger.info(f"Processing worker {new_w} with data_admissao: {admissao_value}")
                         demissao_value = worker_row.get('end_date', None)
@@ -1073,6 +1076,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "holiday_past_lds": holiday_past_lds,
             "sunday_past_lds": sunday_past_lds,
             "mot_days": mot_days,
+            "out_workers": out_workers,
         }
         
     except Exception as e:

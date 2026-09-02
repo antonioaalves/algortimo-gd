@@ -7,7 +7,7 @@ logger = get_logger(_config_manager.project_name)
 
 
 def optimization_prediction(model,days_of_year, workers, workers_complete_cycle, shift, pessObj, min_workers, closed_holidays, week_to_days,  working_days, contract_type, special_days,
-                            workers_past, real_working_shift):
+                            workers_past, real_working_shift, out_workers):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
@@ -199,5 +199,9 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
                     # Add a penalty term to the objective for adjacent free shifts
                     # Since we're minimizing, this will discourage adjacent free shifts
                     objective_terms.append(ADJACENT_FREE_SHIFTS_PENALTY * adjacent_free_shifts)
+
+    # 6 Penalize having workers working on the same days as their OuT partner
+    for d in days_of_year:
+
     model.Minimize(sum(objective_terms))
     return debug_vars
