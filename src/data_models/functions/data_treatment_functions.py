@@ -4705,8 +4705,11 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     if period_end_idx is None:
         period_end_idx = int(emp_cal['index'].max())
     year_range = [period_begin_idx, period_end_idx]
-    period = [period[0].dayofyear + period_begin_idx - 1, period[1].dayofyear + period_begin_idx - 1]
-    days_off_atributtion(
+    period = [
+        idx_by_date.get(pd.Timestamp(period[0]).normalize(), period_begin_idx),
+        idx_by_date.get(pd.Timestamp(period[1]).normalize(), period_end_idx),
+    ]
+    worker_absences, vacation_days, fixed_days_off, fixed_LQs = days_off_atributtion(
         str(employee_id),
         worker_absences,
         vacation_days,
