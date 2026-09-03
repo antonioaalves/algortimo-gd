@@ -685,10 +685,10 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 # Calculate proportional requirement based on actual days in the week
                 # Standard week has 7 days and requires 2 free days
                 # Proportion: (actual_days / 7) * 2
-                #week_work_days2 = sorted(set(days).intersection(working_days[w].union(dynamic_empty[w])))
-                #if week_work_days != week_work_days2:
-                #    logger.warning(f"Worker {w} got diff work week days because of dynamic_empty {week_work_days} - {week_work_days2}")
-                actual_days_in_week = len(week_work_days)  # Total days in this week
+                week_work_days2 = sorted(set(days).intersection(working_days[w].union(dynamic_empty[w])))
+                if week_work_days != week_work_days2:
+                    logger.warning(f"Worker {w} got diff work week days because of dynamic_empty {week_work_days} - {week_work_days2}")
+                actual_days_in_week = len(week_work_days2)  # Total days in this week
                 
                 if tipo_contrato >= 5:
                     if 4 <= actual_days_in_week <= 5:
