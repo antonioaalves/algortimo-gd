@@ -261,6 +261,7 @@ def finalize_worker_calendar_sets(
         closed_holidays,
         work_days_per_week,
         year_range,
+        period,
     )
 
     working_days = (

@@ -647,7 +647,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, period):
                         model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao,
-                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days):
+                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, dynamic_empty):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -661,7 +661,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 d for d in days 
                 if d in working_days[w]
             ]
-            
+
             # Sort days to ensure they're in chronological order
             week_work_days.sort()
             # Skip if no working days for this worker in this week
@@ -685,6 +685,10 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 # Calculate proportional requirement based on actual days in the week
                 # Standard week has 7 days and requires 2 free days
                 # Proportion: (actual_days / 7) * 2
+                week_work_days2 = sorted(set(days).intersection(working_days[w].union(dynamic_empty[w])))
+                if week_work_days != week_work_days2:
+                    logger.warning(f"Worker {w} got diff work week days because of dynamic_empty {week_work_days} - {week_work_days2}")
+                actual_days_in_week = len(week_work_days2)  # Total days in this week
                 
                 if tipo_contrato >= 5:
                     if 4 <= actual_days_in_week <= 5:
