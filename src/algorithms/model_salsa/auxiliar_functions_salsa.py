@@ -105,9 +105,10 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
             
     return absences, vacations, fixed_days_off, fixed_LQs
 
-def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range):
+def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period):
+    print("\n\n\n\n\n\n\naaaaahhhhhhhhhhhhhhhhhh", period, "\n\n\n\n\n\n\n\n")
     for week, days in week_to_days_salsa.items():
-        if len(days) <= 6:
+        if len(days) <= 6 or days[-1] < period[0] or days[0] > period[1]:
             continue
 
         days_set = set(days)

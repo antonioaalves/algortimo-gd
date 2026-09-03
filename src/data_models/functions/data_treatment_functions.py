@@ -4618,6 +4618,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     df_ausencias_ferias: Optional[pd.DataFrame],
     period_begin: pd.Timestamp,
     period_end: pd.Timestamp,
+    period: list[int]
 ) -> dict:
     """
     Mirror read_salsa days_off_atributtion for feasibility-cap weekly quota.
@@ -4704,7 +4705,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     if period_end_idx is None:
         period_end_idx = int(emp_cal['index'].max())
     year_range = [period_begin_idx, period_end_idx]
-
+    period = [period[0].dayofyear + period_begin_idx - 1, period[1].dayofyear + period_begin_idx - 1]
     days_off_atributtion(
         str(employee_id),
         worker_absences,
@@ -4715,6 +4716,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
         closed_holidays,
         work_days_per_week,
         year_range,
+        period,
     )
 
     weekly_rest_quota = _indices_to_schedule_days(
@@ -5719,6 +5721,7 @@ def apply_annual_dayoff_feasibility_cap(
                 df_ausencias_ferias=df_ausencias_ferias,
                 period_begin=annual_begin,
                 period_end=annual_end,
+                period=[cap_exec_begin, cap_exec_end]
             )
             weekly_rest_for_quota = (
                 cap_attribution['weekly_rest_quota']
