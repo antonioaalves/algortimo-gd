@@ -457,7 +457,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")
-                    one_colab_min_constraint(model, shift, workers_past, workers, real_working_shift, days_of_year, shift_data, period, closed_holidays)
+                    #one_colab_min_constraint(model, shift, workers_past, workers, real_working_shift, days_of_year, shift_data, period, closed_holidays)
                 else:
                     self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
 
