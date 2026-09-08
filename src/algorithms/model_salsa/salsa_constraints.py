@@ -834,7 +834,7 @@ def free_days_special_days(model, shift, sundays, workers_no_contract_changes, w
         logger.info(f"Worker contract changes {w}, Sundays {worker_saturdays}, total {total_l_dom_or_sab.get(w, 0)}")
         model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (get_dummy(workers_with_dummy, w, d), d, s) in shift) >= total_l_dom_or_sab.get(w, 0))
 
-def one_colab_min_constraint(model, shift, workers_past, workers, working_shift, days_of_year, shift_data, period, closed_days):
+def one_colab_min_constraint(model, shift, workers_past, workers, working_shift, days_of_year, shift_data, period, closed_days, contract_type):
     all_workers = workers_past + workers
     if len(all_workers) > 1:
         for day in days_of_year:
@@ -846,7 +846,10 @@ def one_colab_min_constraint(model, shift, workers_past, workers, working_shift,
                     if value == 'LD':
                         continue
                     if day in shift_data[f"shift_{value}"][w]:
-                        available_workers += 1
+                        if contract_type[w] < 5:
+                            available_workers += 0.5
+                        else:
+                            available_workers += 1
                         break
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in all_workers for s in working_shift if (w, day, s) in shift) >= 1)
