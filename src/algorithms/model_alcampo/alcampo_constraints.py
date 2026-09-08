@@ -571,7 +571,7 @@ def LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq
     for w in workers_with_dummy:
         if t_lq.get(w, 0) == 0:
             continue
-        worker_saturdays = [d for d in range(year_range) if d in working_days[get_dummy(workers_with_dummy, w, d)] \
+        worker_saturdays = [d for d in range(year_range[0], year_range[1]) if d in working_days[get_dummy(workers_with_dummy, w, d)] \
                             and get_annual_variables(annual_variables, w, d, "c2d") == True and (get_dummy(workers_with_dummy, w, d), d, "LQ") in shift]
         model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, "LQ")] for d in worker_saturdays if (get_dummy(workers_with_dummy, w, d), d, 'LQ') in shift) == t_lq.get(w, 0))
     
@@ -585,7 +585,7 @@ def LD_attribution(model, shift, workers_no_contract_changes, working_days, l_d,
     for w in workers_with_dummy:
         if l_d.get(w, 0) == 0:
             continue
-        worker_possible_days = [d for d in range(year_range) if d in working_days[get_dummy(workers_with_dummy, w, d)]]
+        worker_possible_days = [d for d in range(year_range[0], year_range[1]) if d in working_days[get_dummy(workers_with_dummy, w, d)]]
         model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, "LD")] for d in worker_possible_days if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift) == l_d.get(w, 0))
 
 def assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift):

@@ -421,7 +421,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 cxx[w] = int(worker_row.get('cxx', 0))
                 t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
                 tc[w] = int(worker_row.get('dofhc', 0))
-                out_workers[w] = int(worker_row.get('out', 0))
+                out_workers[w] = [int(worker_row.get('out', 0) if not pd.isna(worker_row.get('out', 0)) else 0)]
 
                 logger.info(f"Worker {w} contract information extracted: "
                             f"Contract Type: {contract_type[w]}, "
@@ -460,6 +460,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
 
                 # Convert data_demissao to day of year
                 data_demissao[w] = max_day + 1
+                print("1", w, data_demissao[w])
                 if demissao_value is not None and not pd.isna(demissao_value):
                     if isinstance(demissao_value, (datetime, pd.Timestamp)):
                         demissao_date = demissao_value
@@ -475,6 +476,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             logger.info(f"Worker {w} data_demissao: {demissao_date.date()} -> day of year {demissao_day_of_year}")
                         else:
                             logger.info(f"Worker {w} data_demissao {demissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
+                print("2", w, data_demissao[w])
 
                 # Track first and last registered days
                 if w in matriz_calendario_gd['employee_id'].values:
@@ -521,7 +523,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                         c3d[new_w] = int(worker_row.get('c3d', 0))
                         l_d[new_w] = int(worker_row.get('l_d', 0))
                         cxx[new_w] = int(worker_row.get('cxx', 0))
-                        out_workers[new_w] = int(worker_row.get('out', 0))
+                        out_workers[new_w] = [int(worker_row.get('out', 0) if not pd.isna(worker_row.get('out', 0)) else 0)]
                         admissao_value = worker_row.get('begin_date', None)
                         logger.info(f"Processing worker {new_w} with data_admissao: {admissao_value}")
                         demissao_value = worker_row.get('end_date', None)
@@ -568,6 +570,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             if layer == 1:
                                 original_end_date = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0]) - 1
                             data_demissao[w] = original_end_date
+                            print("3", w, data_demissao[w])
+
                             last_registered_day[w] = data_demissao[w]
                         # Track first and last registered days
                         if w in matriz_calendario_gd['employee_id'].values:
@@ -594,7 +598,12 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             'end_date': data_demissao[new_w],
                         }
                         layer += 1
-
+        if out_workers:
+            for w in out_workers:
+                out_worker = out_workers[w][0]
+                if out_worker in workers_with_dummy:
+                    out_workers[w].extend(workers_with_dummy[out_worker].values())
+        logger.info(f"out workers: {out_workers}")
         for w in workers:
             if contract_type[w] == 0:
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
@@ -610,8 +619,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         worker_absences = {}
         vacation_days = {}
         working_days = {}
-        data_admissao = {}
-        data_demissao = {}
         fixed_days_off = {}
         fixed_LQs = {}
         locked_days = {}
@@ -713,6 +720,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             locked_days[dummy] = {d for d in locked_days[original] if start <= d <= end}
             complete_cycle_days[dummy] = {d for d in complete_cycle_days[original] if start <= d <= end}
             fixed_compensation_days[dummy] = {d for d in fixed_compensation_days[original] if start <= d <= end}
+            mot_days[dummy] = {d for d in mot_days[original] if start <= d <= end}
             week_template[dummy] = week_template[original]
 
         for original in workers_with_dummy:
@@ -725,6 +733,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             worker_absences[original] = {d for d in worker_absences[original] if d <= data_demissao[original]}
             forced_work_days[original] = {d for d in forced_work_days[original] if d <= data_demissao[original]}
             work_special_days[original] = {d for d in work_special_days[original] if d <= data_demissao[original]}
+            mot_days[original] = {d for d in mot_days[original] if d <= data_demissao[original]}
             locked_days[original] = {d for d in locked_days[original] if d <= data_demissao[original]}
             complete_cycle_days[original] = {d for d in complete_cycle_days[original] if d <= data_demissao[original]}
             fixed_compensation_days[original] = {d for d in fixed_compensation_days[original] if d <= data_demissao[original]}
@@ -1067,7 +1076,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "workers_no_contract_changes": workers_no_contract_changes,
             "year_range": year_range,
             "annual_variables": annual_variables,
-            "workers_with_dummy": workers_with_dummy,
             "work_days_per_week": work_days_per_week,
             "work_special_days": work_special_days,
             "holiday_rules": holiday_rules,

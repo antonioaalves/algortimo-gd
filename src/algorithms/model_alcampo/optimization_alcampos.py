@@ -25,6 +25,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     MIN_WORKER_PENALTY = 5  # Penalty for breaking minimum worker requirements
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
     ADJACENT_FREE_SHIFTS_PENALTY = 5  # Adjust this value as needed
+    WORKED_SAME_DAY_PENALTY = 50
 
     all_workers = workers + workers_past
     # 1. Penalize deviations from pessObj
@@ -201,7 +202,25 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
                     objective_terms.append(ADJACENT_FREE_SHIFTS_PENALTY * adjacent_free_shifts)
 
     # 6 Penalize having workers working on the same days as their OuT partner
-    for d in days_of_year:
+    if out_workers:
+        for d in days_of_year:
+            for w in all_workers:
+                if w in out_workers:
+                    w_shifts = sum(shift.get((w, d, s), 0) for s in real_working_shift +  ['Mot', 'TC'])
+                    w_worked_day = model.NewBoolVar(f"worked_same_day_{w}_{d}")
+                    model.Add(w_shifts >= 1).OnlyEnforceIf(w_worked_day)
+                    model.Add(w_shifts == 0).OnlyEnforceIf(w_worked_day.Not())
+                    for outie in out_workers[w]:
+                        w_shifts = sum(shift.get((outie, d, s), 0) for s in real_working_shift +  ['Mot', 'TC'])
+                        outie_worked_day = model.NewBoolVar(f"worked_same_day_{w}_{outie}_{d}")
+                        model.Add(w_shifts >= 1).OnlyEnforceIf(outie_worked_day)
+                        model.Add(w_shifts == 0).OnlyEnforceIf(outie_worked_day.Not())
+
+                        worked_same_day = model.NewBoolVar(f"worked_same_day_{w}_{outie}_{d}")
+                        model.AddBoolAnd([w_worked_day, outie_worked_day]).OnlyEnforceIf(worked_same_day)
+                        model.AddBoolOr([w_worked_day.Not(), outie_worked_day.Not()]).OnlyEnforceIf(worked_same_day.Not())
+
+                        objective_terms.append(WORKED_SAME_DAY_PENALTY * worked_same_day)
 
     model.Minimize(sum(objective_terms))
     return debug_vars
