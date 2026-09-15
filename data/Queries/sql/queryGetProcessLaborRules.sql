@@ -2,6 +2,7 @@ SELECT
     cplr.PROCESS_ID,
     cplr.LABOR_UNION_ID,
     cplr.CONTRACT_ID,
+    cplr.EMPLOYEE_ID,
     cplr.BEGIN_DATE,
     cplr.END_DATE,
     cplr.RULE_CODE,

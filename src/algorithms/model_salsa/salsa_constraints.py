@@ -49,6 +49,8 @@ def compensation_days(model, shift, workers, working_days, special_days, special
             for d in [day for day in special_days if (day in working_days[original] - off - LQs) and period[0] <= day <= period[1]]:
                 if d not in special_day_rules[w]["compensation_limit"]:
                     continue
+                elif special_day_rules[w]["compensation_limit"][d] == 0:
+                    continue
                 if d in special_days_2:
                     if w in override_holiday_sunday:
                         if day_type == "holiday":
@@ -645,7 +647,7 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, period):
                         model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao,
-                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days):
+                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, dynamic_empty):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
         worker_demissao = data_demissao.get(w, 0)
@@ -659,7 +661,7 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 d for d in days 
                 if d in working_days[w]
             ]
-            
+
             # Sort days to ensure they're in chronological order
             week_work_days.sort()
             # Skip if no working days for this worker in this week
@@ -683,6 +685,10 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                 # Calculate proportional requirement based on actual days in the week
                 # Standard week has 7 days and requires 2 free days
                 # Proportion: (actual_days / 7) * 2
+                week_work_days2 = sorted(set(days).intersection(working_days[w].union(dynamic_empty[w])))
+                if week_work_days != week_work_days2:
+                    logger.warning(f"Worker {w} got diff work week days because of dynamic_empty {week_work_days} - {week_work_days2}")
+                actual_days_in_week = len(week_work_days2)  # Total days in this week
                 
                 if tipo_contrato >= 5:
                     if 4 <= actual_days_in_week <= 5:
@@ -828,7 +834,7 @@ def free_days_special_days(model, shift, sundays, workers_no_contract_changes, w
         logger.info(f"Worker contract changes {w}, Sundays {worker_saturdays}, total {total_l_dom_or_sab.get(w, 0)}")
         model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (get_dummy(workers_with_dummy, w, d), d, s) in shift) >= total_l_dom_or_sab.get(w, 0))
 
-def one_colab_min_constraint(model, shift, workers_past, workers, working_shift, days_of_year, shift_data, period, closed_days):
+def one_colab_min_constraint(model, shift, workers_past, workers, working_shift, days_of_year, shift_data, period, closed_days, contract_type):
     all_workers = workers_past + workers
     if len(all_workers) > 1:
         for day in days_of_year:
@@ -840,7 +846,10 @@ def one_colab_min_constraint(model, shift, workers_past, workers, working_shift,
                     if value == 'LD':
                         continue
                     if day in shift_data[f"shift_{value}"][w]:
-                        available_workers += 1
+                        if contract_type[w] < 5:
+                            available_workers += 0.5
+                        else:
+                            available_workers += 1
                         break
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in all_workers for s in working_shift if (w, day, s) in shift) >= 1)

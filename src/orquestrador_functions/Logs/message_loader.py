@@ -117,21 +117,60 @@ def get_df_messages_path(project_root_dir: str | None = None) -> str:
     except Exception:
         pass
     root = project_root_dir or ''
-    return os.path.join(root, 'data', 'csvs', 'df_messages.csv') if root else 'data/csvs/df_messages.csv'
+    return os.path.join(root, 'data', 'df_messages.csv') if root else 'data/df_messages.csv'
+
+
+def get_df_messages_candidate_paths(project_root_dir: str | None = None) -> list[str]:
+    """
+    Ordered df_messages.csv lookup paths: explicit per-client override first,
+    bundled default last. The default is always shipped in the image, so error
+    logging never breaks just because a client did not provide a custom file.
+
+    1. DF_MESSAGES_PATH env var -> client mounts a custom file anywhere and
+       points to it. Falls through to the default if missing/empty/unreadable.
+    2. configured path          -> bundled default (data/df_messages.csv),
+       resolved from sql_processing_paths so it still honours config overrides.
+    """
+    candidates: list[str] = []
+    env_path = os.environ.get('DF_MESSAGES_PATH', '').strip()
+    if env_path:
+        candidates.append(env_path)
+    candidates.append(get_df_messages_path(project_root_dir))
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for path in candidates:
+        if path and path not in seen:
+            seen.add(path)
+            ordered.append(path)
+    return ordered
 
 
 def load_df_messages(project_root_dir: str | None = None) -> pd.DataFrame:
-    """Load df_messages from the path configured in system settings."""
-    path = get_df_messages_path(project_root_dir)
-    try:
-        df_msg = pd.read_csv(path, sep=',', encoding='utf-8')
+    """Load df_messages, trying client overrides first then the bundled default.
+
+    Falls through to the next candidate when a file is missing, unreadable or
+    empty, so a broken/absent override never silently disables process-error
+    logging (which is gated on df_messages being non-empty).
+    """
+    for path in get_df_messages_candidate_paths(project_root_dir):
+        if not os.path.exists(path):
+            continue
+        try:
+            df_msg = pd.read_csv(path, sep=',', encoding='utf-8')
+        except Exception as e:
+            print(f"Error loading df_messages from {path}: {e}")
+            continue
+        if df_msg.empty:
+            print(f"df_messages at {path} is empty, trying next candidate")
+            continue
         first_col = str(df_msg.columns[0])
         if first_col != 'VAR':
             df_msg.rename(columns={first_col: 'VAR'}, inplace=True)
+        print(f"Loaded df_messages from {path} ({len(df_msg)} rows)")
         return df_msg
-    except Exception as e:
-        print(f"Error loading df_messages from {path}: {e}")
-        return pd.DataFrame()
+    print("Error loading df_messages: no usable file found in any candidate path")
+    return pd.DataFrame()
 
 
 def _resolve_message_template(message_row: pd.Series, df_msg: pd.DataFrame, lang: str) -> str:
