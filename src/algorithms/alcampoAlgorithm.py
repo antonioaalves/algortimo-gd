@@ -393,8 +393,8 @@ class AlcampoAlgorithm(BaseAlgorithm):
             day3_quality_weekend(model, shift, workers, working_days, c3d, contract_type, closed_holidays)
             
             # Apply optimization (reusing from Stage 1)
-            debug_vars = optimization_prediction(model, days_of_year, workers_complete, workers_complete_cycle, shift, pessObj, min_workers, closed_holidays,
-                                                 week_to_days, working_days, contract_type, special_days, workers_past, real_working_shift, out_workers)
+            optimization_prediction(model, days_of_year, workers_complete, workers_complete_cycle, shift, pessObj, min_workers, closed_holidays,
+                                    week_to_days, working_days, contract_type, special_days, workers_past, real_working_shift, out_workers)
 
             # Solve Stage 
             work_day_hours = {}

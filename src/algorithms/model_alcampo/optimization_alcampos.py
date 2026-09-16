@@ -15,7 +15,6 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     min_workers_penalties = {}
     inconsistent_shift_penalties = {}
     consecutive_special_vars = {}  # Add this to store the consecutive special variables
-    debug_vars = {}
 
     # Create the objective function with heavy penalties
     objective_terms = []
@@ -223,4 +222,3 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
                         objective_terms.append(WORKED_SAME_DAY_PENALTY * worked_same_day)
 
     model.Minimize(sum(objective_terms))
-    return debug_vars
