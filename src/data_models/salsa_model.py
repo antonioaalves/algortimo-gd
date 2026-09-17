@@ -267,6 +267,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.warning("DEBUGGING: df_messages is empty - set_process_errors will be skipped")
         else:
             self.logger.info(f"DEBUGGING: df_messages has {len(df_messages)} rows - set_process_errors will work")
+        self.auxiliary_data['df_messages'] = df_messages.copy()
 
         try:
             self.logger.info("Loading process data from data manager")
@@ -537,6 +538,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                     start_date=first_day_passado, 
                     end_date=last_day_passado)
                 self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
+                if df_feriados is None or df_feriados.empty:
+                    self.logger.error("df_feriados is empty: no holidays configured")
+                    return False, "ERR_LOAD_FERIADOS_EMPTY", str(unit_id)
             except Exception as e:
                 self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
