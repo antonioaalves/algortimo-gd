@@ -46,7 +46,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
         off = set(fixed_days_off[original])
         LQs = set(fixed_LQs[original])
         if w in special_day_rules:
-            for d in [day for day in special_days if (day in working_days[original] - off - LQs) and period[0] <= day <= period[1]]:
+            for d in [day for day in special_days if period[0] <= day <= period[1]]: #cuidado aqui
                 if d not in special_day_rules[w]["compensation_limit"]:
                     continue
                 elif special_day_rules[w]["compensation_limit"][d] == 0:
@@ -63,7 +63,14 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                 amount_lds[w][d] = special_day_rules[w]["amount"][d]
                 worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
                 worked_special_days[w][d] = worked_special_day
-                special_day_shift_vars = [shift.get((original, d, s)) for s in working_shift if (original, d, s) in shift]
+                shifts_earn_ld = working_shift.copy()
+                if special_day_rules[w]["day_off_count"][d] == True:
+                    shifts_earn_ld += ['L', 'LD', 'LQ']
+                if special_day_rules[w]["empty_day_count"][d] == True:
+                    shifts_earn_ld += ['-']
+                if shifts_earn_ld != working_shift:
+                    logger.info(f"alteração de shifts ficou: {w}, day {d}, {shifts_earn_ld}")
+                special_day_shift_vars = [shift.get((original, d, s)) for s in shifts_earn_ld if (original, d, s) in shift]
 
                 # If there are shift variables for this day, add a constraint
                 if special_day_shift_vars:
@@ -647,10 +654,19 @@ def salsa_saturday_L_constraint(model, shift, workers, working_days, period):
                         model.Add(shift[(w, day, "L")] + shift[(w, day + 1, "L")] <= 1)
 
 def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao,
-                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, dynamic_empty):
+                           data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, dynamic_empty, dummy_workers, workers_with_dummy):
     for w in workers:
         worker_admissao = data_admissao.get(w, 0)
-        worker_demissao = data_demissao.get(w, 0)
+        if w in workers_with_dummy:
+            latest_range, latest_value = next(reversed(workers_with_dummy[w].items()))
+            worker_demissao = data_demissao.get(latest_value, 0)
+        elif w in dummy_workers:
+            first_worker = dummy_workers[w]['parent']
+            worker_admissao = data_admissao.get(first_worker, 0)
+            latest_range, latest_value = next(reversed(workers_with_dummy[first_worker].items()))
+            worker_demissao = data_demissao.get(latest_value, 0)
+        else:
+            worker_demissao = data_demissao.get(w, 0)
         #logger.info(f"Worker {w}, Admissao: {worker_admissao}, Demissao: {worker_demissao}, Working Days: {working_days[w]}, Week Days: {week_to_days_salsa}")
 
         # Create variables for free days (L, F, LQ) by week
@@ -834,7 +850,7 @@ def free_days_special_days(model, shift, sundays, workers_no_contract_changes, w
         logger.info(f"Worker contract changes {w}, Sundays {worker_saturdays}, total {total_l_dom_or_sab.get(w, 0)}")
         model.Add(sum(shift[(get_dummy(workers_with_dummy, w, d), d, s)] for d in worker_saturdays for s in ["L", "LQ"] if (get_dummy(workers_with_dummy, w, d), d, s) in shift) >= total_l_dom_or_sab.get(w, 0))
 
-def one_colab_min_constraint(model, shift, workers_past, workers, working_shift, days_of_year, shift_data, period, closed_days):
+def one_colab_min_constraint(model, shift, workers_past, workers, working_shift, days_of_year, shift_data, period, closed_days, contract_type):
     all_workers = workers_past + workers
     if len(all_workers) > 1:
         for day in days_of_year:
@@ -846,7 +862,10 @@ def one_colab_min_constraint(model, shift, workers_past, workers, working_shift,
                     if value == 'LD':
                         continue
                     if day in shift_data[f"shift_{value}"][w]:
-                        available_workers += 1
+                        if contract_type[w] < 5:
+                            available_workers += 0.5
+                        else:
+                            available_workers += 1
                         break
             if available_workers > 1:
                 model.Add(sum(shift[(w, day, s)] for w in all_workers for s in working_shift if (w, day, s) in shift) >= 1)

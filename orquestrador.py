@@ -50,6 +50,7 @@ from src.orquestrador_functions.Logs.message_loader import (
     set_messages,
     set_runtime_message_lang,
 )
+from src.orquestrador_functions.Logs.run_log_utils import discard_run_log_file
 from src.orquestrador_functions.Classes.AlgorithmPrepClasses.ConnectionHandler import ConnectionHandler
 
 # Setup database connection (uses config_manager credentials - no path required)
@@ -286,5 +287,8 @@ if not sec_to_proc.empty:
         )
         
 # Database connection remains active for parent process
-logger.info("Parent process completed successfully - subprocess is independent")
+if sec_to_proc.empty:
+    discard_run_log_file(logger)
+else:
+    logger.info("Parent process completed successfully - subprocess is independent")
 sys.exit(0)

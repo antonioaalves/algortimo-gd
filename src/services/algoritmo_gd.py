@@ -260,6 +260,7 @@ class AlgoritmoGDService(BaseService):
                 )
 
             valid_process_loading, error_code, error_message = self.data_model.load_process_data(self.data_manager, load_entities_dict)
+            df_messages = self.data_model.auxiliary_data.get('df_messages', df_messages)
 
             if not valid_process_loading:
                 if self.stage_handler:
