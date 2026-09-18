@@ -8568,14 +8568,37 @@ def add_pessoa_obj_whole_day(
 # =============================================================================
 
 # Annual day-off rules (l_dom, c2d, …) come from core_pro_emp_annual_variables (STRSOL-1279).
-# core_process_labor_rules must only carry compensatory LD rules for STRSOL-1372.
+# core_process_labor_rules must only carry compensatory LD rules (STRSOL-1372 / STRSOL-1776).
 COMPENSATORY_LABOR_RULE_CODES = frozenset({
     'COMPENSATORY_TIME_OFF_SUNDAYS',
     'COMPENSATORY_TIME_OFF_HOLIDAYS',
+    'COMP_TIME_OFF_EMPTY_ON_HOLY',
+    'COMP_TIME_OFF_REST_ON_HOLY',
 })
 COMPENSATORY_LABOR_RULE_CODE_MAP = {
     'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
     'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
+    'COMP_TIME_OFF_EMPTY_ON_HOLY': 'ld_empty_day',
+    'COMP_TIME_OFF_REST_ON_HOLY': 'ld_holiday_dayoff',
+}
+# WFM RULE_CODE values written to INT_EMP_PROCESS_MOV (inverse of internal ld_* where applicable).
+COMPENSATORY_WFM_RULE_CODE_BY_GROUP = {
+    'feriados': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
+    'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
+    'ld_empty_day': 'COMP_TIME_OFF_EMPTY_ON_HOLY',
+    'ld_holiday_dayoff': 'COMP_TIME_OFF_REST_ON_HOLY',
+}
+COMPENSATORY_INTERNAL_RULE_CODE_BY_GROUP = {
+    'feriados': 'ld_holiday',
+    'domingos': 'ld_sunday',
+    'ld_empty_day': 'ld_empty_day',
+    'ld_holiday_dayoff': 'ld_holiday_dayoff',
+}
+COMPENSATORY_INTERNAL_TO_WFM_RULE_CODE = {
+    'LD_SUNDAY': 'COMPENSATORY_TIME_OFF_SUNDAYS',
+    'LD_HOLIDAY': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
+    'LD_EMPTY_DAY': 'COMP_TIME_OFF_EMPTY_ON_HOLY',
+    'LD_HOLIDAY_DAYOFF': 'COMP_TIME_OFF_REST_ON_HOLY',
 }
 
 _NULL_ID_SENTINEL = '__NULL__'
@@ -9195,12 +9218,11 @@ def treat_df_pro_emp_mov(
         df_result['schedule_day'] = pd.to_datetime(df_result['schedule_day'], errors='coerce')
         df_result['n_lds_pending'] = pd.to_numeric(df_result['value'], errors='coerce').fillna(0)
 
-        RULE_CODE_MAP = {
-            'COMPENSATORY_TIME_OFF_HOLIDAYS': 'ld_holiday',
-            'COMPENSATORY_TIME_OFF_SUNDAYS': 'ld_sunday',
-        }
         df_result['rule_code'] = (
-            df_result['rule_code'].astype(str).str.strip().str.upper().map(RULE_CODE_MAP).fillna(df_result['rule_code'])
+            df_result['rule_code']
+            .astype(str).str.strip().str.upper()
+            .map(COMPENSATORY_LABOR_RULE_CODE_MAP)
+            .fillna(df_result['rule_code'])
         )
 
         df_result = df_result[
@@ -9321,10 +9343,7 @@ def build_compensatory_output(
             logger.info("build_compensatory_output: empty compensatory_dict, returning empty DataFrame")
             return True, pd.DataFrame(), ""
 
-        rule_code_map = {
-            'feriados': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
-            'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
-        }
+        rule_code_map = COMPENSATORY_WFM_RULE_CODE_BY_GROUP
 
         # --- Step 1: explode compensatory_dict into a flat DataFrame ---
         # The loop is only responsible for shape transformation (nested dict -> rows).
@@ -9391,10 +9410,7 @@ def build_compensatory_output(
         #   'COMPENSATORY_TIME_OFF_HOLIDAYS' -> 'ld_holiday'
         # We reverse that mapping so the join key aligns with df_output['RULE_CODE'],
         # which must carry the original database values used in the integration rows.
-        _RULE_CODE_REVERSE = {
-            'LD_SUNDAY':  'COMPENSATORY_TIME_OFF_SUNDAYS',
-            'LD_HOLIDAY': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
-        }
+        _RULE_CODE_REVERSE = COMPENSATORY_INTERNAL_TO_WFM_RULE_CODE
         if df_process_rules_merged is not None and not df_process_rules_merged.empty:
             perm = df_process_rules_merged.copy()
             perm.columns = [str(c).strip().upper() for c in perm.columns]
@@ -9530,10 +9546,7 @@ def apply_compensatory_sched_types(
             logger.warning("apply_compensatory_sched_types: sched_type/sched_subtype not in final_df - skipping")
             return final_df
 
-        rule_code_map = {
-            'feriados': 'ld_holiday',
-            'domingos': 'ld_sunday',
-        }
+        rule_code_map = COMPENSATORY_INTERNAL_RULE_CODE_BY_GROUP
 
         # Day-level lookup: (employee_id, rule_code, day) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
         # Employee-level fallback when day is missing from merged rules.
