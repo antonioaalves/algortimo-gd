@@ -145,10 +145,24 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     num_days_deficit_over_q_worst_case = 1
     deficit_over_q_day_weight = int(scale * percentage_of_importance_day_deficit_over_q / num_days_deficit_over_q_worst_case)
 
+    out_worst_scenario = 1
+    percentage_of_importance_out = 1 
+    out_weight = int(scale * percentage_of_importance_out / out_worst_scenario)
+
     all_workers = workers + workers_past
 
+    tc_to_shift     = {}
+    effective_shift = {}
+    total_TC        = {}
+    for d in special_days:
+        total_TC[d] = sum(shift.get((w, d, "TC"), 0) for w in all_workers)
+        tc_to_shift[d] = {}
+        for s in real_working_shift:
+            tc_to_shift[d][f"shift_{s}"] = model.NewIntVar(0, len(all_workers),f"tc_to_{s}_{d}")
+        model.Add(sum([tc_to_shift[d][f"shift_{s}"] for s in real_working_shift]) == total_TC[d])
+    
     # ===============================
-    # 3.1 Total excess and deficit 
+    # 1.1 Total excess and deficit 
     # ===============================
 
     excess_diff_vars  = []
@@ -156,13 +170,18 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     for d in days_of_year:
         for s in real_working_shift:
             target = pessObj.get((d, s), 0)
-            assigned_workers = sum(shift[(w, d, s)] for w in all_workers if (w, d, s) in shift)
+            assigned_workers = sum(shift[(w, d, s)] * 10 for w in all_workers if (w, d, s) in shift)
+            assigned_workers += sum(shift[(w, d, 'MoT')] * 5 for w in all_workers if (w, d, 'Mot') in shift)
 
-            excess  = model.NewIntVar(0, len(all_workers)*80, f'excess_{d}_{s}')
-            deficit = model.NewIntVar(0, target*80, f'deficit_{d}_{s}')
+            if d in special_days:
+                effective_shift = tc_to_shift[d][f"shift_{s}"] + assigned_workers
+            else:
+                effective_shift = assigned_workers
+            excess  = model.NewIntVar(0, len(all_workers) * 10, f'excess_{d}_{s}')
+            deficit = model.NewIntVar(0, target * 10, f'deficit_{d}_{s}')
 
-            model.Add(excess >= assigned_workers - target)
-            model.Add(deficit >= target - assigned_workers)
+            model.Add(excess >= effective_shift - target)
+            model.Add(deficit >= target - effective_shift)
 
             excess_diff_vars.append((d, s, excess))
             deficit_diff_vars.append((d, s, deficit))
@@ -171,7 +190,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     objective_terms.append(sum(deficit for (d, _, deficit) in deficit_diff_vars if d in days_of_year_working) * deficit_weight)        
 
     # ===============================
-    # 3.2. Max deficit across all shifts
+    # 1.2. Max deficit across all shifts
     # ===============================
 
     daily_deficit              = {}
@@ -186,7 +205,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         model.Add(daily_excess[d]  == sum(excess for (dd, s, excess) in excess_diff_vars if dd == d))
 
     # ===============================
-    # 3.3. Max deficit across all shifts
+    # 1.3. Max deficit across all shifts
     # ===============================
 
     max_deficit = model.NewIntVar(0, max_daily_deficit_possible, 'max_deficit')
@@ -198,7 +217,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     objective_terms.append(max_deficit * max_deficit_weight)
 
     # ===============================
-    # 3.3. Exces and deficit at the same day
+    # 1.4. Exces and deficit at the same day
     # ===============================
 
     day_has_excess  = {}
@@ -231,7 +250,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     objective_terms.append(sum(penalty_vars) * excess_and_deficit_weight)
 
     # ===============================
-    # 3.4. Number of days with deficit over certain values
+    # 1.5. Number of days with deficit over certain values
     # ===============================
 
     deficit_cases = {
@@ -260,13 +279,13 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(num_days * weight)
 
     # ===============================
-    # 3.5. Weekly difference balancing
+    # 1.6. Weekly difference balancing
     # ===============================
 
     weekly_diff_vars         = []
     weekly_diff_vars_per_day = []
     sorted_weeks             = sorted(week_to_days.keys())
-    safe_limit               = len(all_workers) * 80 * len(real_working_shift)
+    safe_limit               = len(all_workers) * 10 * len(real_working_shift)
 
     for week in sorted_weeks:
         days = set(week_to_days[w])
@@ -303,8 +322,8 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         model.AddMinEquality(min_var, window_vars)
 
         # max and min of the week
-        max_var_per_day = model.NewIntVar(-2*safe_limit, 2*safe_limit, f'week_{week}_max_per_day')
-        min_var_per_day = model.NewIntVar(-2*safe_limit, 2*safe_limit, f'week_{week}_min_per_day')
+        max_var_per_day = model.NewIntVar(-2 * safe_limit, 2 * safe_limit, f'week_{week}_max_per_day')
+        min_var_per_day = model.NewIntVar(-2 * safe_limit, 2 * safe_limit, f'week_{week}_min_per_day')
         model.AddMaxEquality(max_var_per_day, window_vars_per_day)
         model.AddMinEquality(min_var_per_day, window_vars_per_day)
 
@@ -332,7 +351,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
                 objective_terms.append(total_weekly_diff_per_day * weekly_diff_weight_per_day)
 
     # ===============================
-    # 4 No workers in a day
+    # 2 No workers in a day
     # ===============================
     
     zero_assigned_vars = []
@@ -340,11 +359,15 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         for s in real_working_shift:  
             target = pessObj.get((d, s), 0)
             assigned_workers = sum(shift[(w, d, s)] for w in all_workers if (w, d, s) in shift)
-
+            assigned_workers += sum(shift[(w, d, 'MoT')] for w in all_workers if (w, d, 'Mot') in shift)
+            if d in special_days:
+                effective_shift = tc_to_shift[d][f"shift_{s}"] + assigned_workers
+            else:
+                effective_shift = assigned_workers
             if target > 0:
                 zero_assigned = model.NewBoolVar(f'zero_assigned_{d}_{s}')
-                model.Add(assigned_workers == 0).OnlyEnforceIf(zero_assigned)
-                model.Add(assigned_workers >= 1).OnlyEnforceIf(zero_assigned.Not())
+                model.Add(effective_shift == 0).OnlyEnforceIf(zero_assigned)
+                model.Add(effective_shift >= 1).OnlyEnforceIf(zero_assigned.Not())
                 zero_assigned_vars.append(zero_assigned)
 
     objective_zero = sum(zero_assigned_vars)
@@ -352,7 +375,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(objective_zero * no_workers_weight)
 
     # ===============================
-    # 5.1 Balancing number of free sundays across the workers 
+    # 3.1 Balancing number of free sundays across the workers 
     # ===============================
     
     for qi, workers_q in q_groups.items():
@@ -380,7 +403,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(sunday_diff_q * sundays_diff_weight)
 
     # ===============================
-    # 5.2 Balancing number of free saturdays across the workers 
+    # 3.2 Balancing number of free saturdays across the workers 
     # ===============================
     
     for qi, workers_q in q_groups.items():
@@ -408,7 +431,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(saturday_diff_q * sundays_diff_weight)
 
     # ===============================
-    # 6. Balancing number of free LQ across the workers 
+    # 4. Balancing number of free LQ across the workers 
     # ===============================
     
     for qi, workers_q in q_groups.items():
@@ -435,7 +458,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(LQs_diff_q * LQs_diff_weight)
 
     # ===============================
-    # 8. Try not to assign too many free days on the same day with deficit. 
+    # 5. Try not to assign too many free days on the same day with deficit. 
     # ===============================
 
     is_free_dict        = {} 
@@ -480,7 +503,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(total_exceeded_days * total_exceeded_days_weight)
 
     # ===============================
-    # 9. Try not to assign too many free days on Sundays with deficit
+    # 6. Try not to assign too many free days on Sundays with deficit
     # ===============================
 
     exceeded               = {}
@@ -512,7 +535,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(total_exceeded_sundays * total_exceeded_sundays_weight)
 
     # ===============================
-    # 10.1 Control the periodicity of free Sundays
+    # 7.1 Control the periodicity of free Sundays
     # ===============================
     
     excess_free_sundays_per_worker = {}
@@ -552,7 +575,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         objective_terms.append(total_excess_free_sundays * sunday_imbalance_weight_periodicity)
 
     # ===============================
-    # 11. Balancing LQ's across the year
+    # 8. Balancing LQ's across the year
     # ===============================
 
     parts = np.array_split(days_of_year_real, 6) 
@@ -575,7 +598,7 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
             objective_terms.append(semester_diff*LQ_imbalance_weight_average)  
 
     # ===============================
-    # 12. Control the worst-case outcome LQs 
+    # 9. Control the worst-case outcome LQs 
     # ===============================
 
     diff_per_worker_LQ = []
@@ -612,5 +635,31 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
         max_diff_LQ = model.NewIntVar(0, len(sundays), "max_diff_LQ")
         model.AddMaxEquality(max_diff_LQ, diff_per_worker_LQ)
         objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
+
+    # ===============================
+    # 10. Penalize having workers working on the same days as their OuT partner
+    # ===============================
+
+    if out_workers:
+        for d in days_of_year:
+            for w in all_workers:
+                if w in out_workers:
+                    w_shifts = sum(shift.get((w, d, s), 0) for s in real_working_shift +  ['Mot', 'TC'])
+                    w_worked_day = model.NewBoolVar(f"worked_same_day_{w}_{d}")
+                    model.Add(w_shifts >= 1).OnlyEnforceIf(w_worked_day)
+                    model.Add(w_shifts == 0).OnlyEnforceIf(w_worked_day.Not())
+                    for outie in out_workers[w]:
+                        if outie in workers_past and w in workers_past:
+                            continue
+                        w_shifts = sum(shift.get((outie, d, s), 0) for s in real_working_shift +  ['Mot', 'TC'])
+                        outie_worked_day = model.NewBoolVar(f"worked_same_day_{w}_{outie}_{d}")
+                        model.Add(w_shifts >= 1).OnlyEnforceIf(outie_worked_day)
+                        model.Add(w_shifts == 0).OnlyEnforceIf(outie_worked_day.Not())
+
+                        worked_same_day = model.NewBoolVar(f"worked_same_day_{w}_{outie}_{d}")
+                        model.AddBoolAnd([w_worked_day, outie_worked_day]).OnlyEnforceIf(worked_same_day)
+                        model.AddBoolOr([w_worked_day.Not(), outie_worked_day.Not()]).OnlyEnforceIf(worked_same_day.Not())
+
+                        objective_terms.append(out_weight * worked_same_day)
               
     model.Minimize(sum(objective_terms))
