@@ -98,8 +98,8 @@ def solve(
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        if not isinstance(special_days, list):
-            error_msg = f"special_days must be a list. special_days: {special_days}, type: {type(special_days)}"
+        if not isinstance(special_days, set):
+            error_msg = f"special_days must be a set. special_days: {special_days}, type: {type(special_days)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
@@ -128,7 +128,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600
+        solver.parameters.max_time_in_seconds = 300
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -284,7 +284,21 @@ def solve(
                             special_days_worked[w].append(d)
                             special_days_count += 1
                         if d - 1 <= ammount_of_days:
-                            time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            if w in work_day_hours:
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            else:
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 10
+                    elif day_assignment == 'MoT':
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        if d - 1 <= ammount_of_days:
+                            if w in work_day_hours:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += work_day_hours[w].get(d, 8) // 2
+                            else:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += 5
 
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
@@ -374,7 +388,21 @@ def solve(
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
                         if d - 1 <= ammount_of_days:
-                            time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            if w in work_day_hours:
+                                time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            else:
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 10
+                    elif day_assignment == 'MoT':
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        if d - 1 <= ammount_of_days:
+                            if w in work_day_hours:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += work_day_hours[w].get(d, 8) // 2
+                            else:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += 5
 
                 if contingente_feriados:
                     if w in contingente_feriados and len(contingente_feriados[w]) > 0:

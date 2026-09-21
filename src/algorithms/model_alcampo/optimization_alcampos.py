@@ -1,10 +1,20 @@
-def optimization_prediction(model,days_of_year, workers, workers_complete_cycle, working_shift, shift, pessObj, min_workers, closed_holidays, week_to_days,  working_days, contract_type):
+from src.configuration_manager.instance import get_config
+from base_data_project.log_config import get_logger
+
+_config_manager = get_config()
+logger = get_logger(_config_manager.project_name)
+
+
+
+def optimization_prediction(model,days_of_year, workers, workers_complete_cycle, shift, pessObj, min_workers, closed_holidays, week_to_days,  working_days, contract_type, special_days,
+                            workers_past, real_working_shift, out_workers):
     # Store the pos_diff and neg_diff variables for later access
     pos_diff_dict = {}
     neg_diff_dict = {}
     no_workers_penalties = {}
     min_workers_penalties = {}
     inconsistent_shift_penalties = {}
+    consecutive_special_vars = {}  # Add this to store the consecutive special variables
 
     # Create the objective function with heavy penalties
     objective_terms = []
@@ -14,30 +24,43 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     MIN_WORKER_PENALTY = 5  # Penalty for breaking minimum worker requirements
     INCONSISTENT_SHIFT_PENALTY = 3  # Penalty for inconsistent shift types
     ADJACENT_FREE_SHIFTS_PENALTY = 5  # Adjust this value as needed
+    WORKED_SAME_DAY_PENALTY = 50
 
-
-
-
-
+    all_workers = workers + workers_past
     # 1. Penalize deviations from pessObj
+    tc_to_shift = {}
+    effective_shift = {}
+    total_TC = {}
+    for d in special_days:
+        total_TC[d] = sum(shift.get((w, d, "TC"), 0) for w in all_workers)
+        tc_to_shift[d] = {}
+        for s in real_working_shift:
+            tc_to_shift[d][f"shift_{s}"] = model.NewIntVar(0, len(all_workers),f"tc_to_{s}_{d}")
+        model.Add(sum([tc_to_shift[d][f"shift_{s}"] for s in real_working_shift]) == total_TC[d])
+
     for d in days_of_year:
-        for s in working_shift:
+        for s in real_working_shift:
             # Calculate the number of assigned workers for this day and shift
-            assigned_workers = sum(shift[(w, d, s)] for w in workers)
-            
+            assigned_workers = sum(shift[(w, d, s)] * 10 for w in all_workers if (w, d, s) in shift)
+            assigned_workers += sum(shift[(w, d, 'MoT')] * 5 for w in all_workers if (w, d, 'Mot') in shift)
+            if d in special_days:
+                effective_shift = tc_to_shift[d][f"shift_{s}"] + assigned_workers
+            else:
+                effective_shift = assigned_workers
+    
             # Create variables to represent the positive and negative deviations from the target
-            pos_diff = model.NewIntVar(0, len(workers), f"pos_diff_{d}_{s}")
-            neg_diff = model.NewIntVar(0, len(workers), f"neg_diff_{d}_{s}")
+            pos_diff = model.NewIntVar(0, len(all_workers) * 80, f"pos_diff_{d}_{s}")
+            neg_diff = model.NewIntVar(0, len(all_workers) * 80, f"neg_diff_{d}_{s}")
             
             # Store the variables in dictionaries
             pos_diff_dict[(d, s)] = pos_diff
             neg_diff_dict[(d, s)] = neg_diff
             
             # Add constraints to ensure that the positive and negative deviations are correctly computed
-            model.Add(pos_diff >= assigned_workers - pessObj.get((d, s), 0))  # If excess, pos_diff > 0
+            model.Add(pos_diff >= effective_shift - pessObj.get((d, s), 0))  # If excess, pos_diff > 0
             model.Add(pos_diff >= 0)  # Ensure pos_diff is non-negative
             
-            model.Add(neg_diff >= pessObj.get((d, s), 0) - assigned_workers)  # If shortfall, neg_diff > 0
+            model.Add(neg_diff >= pessObj.get((d, s), 0) - effective_shift)  # If shortfall, neg_diff > 0
             model.Add(neg_diff >= 0)  # Ensure neg_diff is non-negative
             
             # Add both positive and negative deviations to the objective function
@@ -47,10 +70,11 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
     # 2. Heavily penalize days with no workers when pessObj != 0
     for d in days_of_year:
         if d not in closed_holidays:  # Skip closed holidays
-            for s in working_shift:
+            for s in real_working_shift:
                 if pessObj.get((d, s), 0) > 0:  # Only penalize when pessObj exists
                     # Calculate the number of assigned workers for this day and shift
-                    assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                    assigned_workers = sum(shift[(w, d, s)] for w in workers if (w, d, s) in shift)
+                    assigned_workers += sum(shift[(w, d, 'MoT')] for w in all_workers if (w, d, 'Mot') in shift)
                     
                     # Create a boolean variable to indicate if there are no workers
                     no_workers = model.NewBoolVar(f"no_workers_{d}_{s}")
@@ -65,11 +89,12 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
 
     # 3. Penalize breaking minimum worker requirements
     for d in days_of_year:
-        for s in working_shift:
+        for s in real_working_shift:
             min_req = min_workers.get((d, s), 0)
             if min_req > 0:  # Only penalize when there's a minimum requirement
                 # Calculate the number of assigned workers for this day and shift
-                assigned_workers = sum(shift[(w, d, s)] for w in workers)
+                assigned_workers = sum(shift[(w, d, s)] * 10 for w in workers if (w, d, s) in shift)
+                assigned_workers += sum(shift[(w, d, 'MoT')] * 5 for w in all_workers if (w, d, 'Mot') in shift)
                 
                 # Create a variable to represent the shortfall from the minimum
                 shortfall = model.NewIntVar(0, min_req, f"min_shortfall_{d}_{s}")
@@ -175,7 +200,25 @@ def optimization_prediction(model,days_of_year, workers, workers_complete_cycle,
                     # Since we're minimizing, this will discourage adjacent free shifts
                     objective_terms.append(ADJACENT_FREE_SHIFTS_PENALTY * adjacent_free_shifts)
 
+    # 6 Penalize having workers working on the same days as their OuT partner
+    if out_workers:
+        for d in days_of_year:
+            for w in all_workers:
+                if w in out_workers:
+                    w_shifts = sum(shift.get((w, d, s), 0) for s in real_working_shift +  ['Mot', 'TC'])
+                    w_worked_day = model.NewBoolVar(f"worked_same_day_{w}_{d}")
+                    model.Add(w_shifts >= 1).OnlyEnforceIf(w_worked_day)
+                    model.Add(w_shifts == 0).OnlyEnforceIf(w_worked_day.Not())
+                    for outie in out_workers[w]:
+                        w_shifts = sum(shift.get((outie, d, s), 0) for s in real_working_shift +  ['Mot', 'TC'])
+                        outie_worked_day = model.NewBoolVar(f"worked_same_day_{w}_{outie}_{d}")
+                        model.Add(w_shifts >= 1).OnlyEnforceIf(outie_worked_day)
+                        model.Add(w_shifts == 0).OnlyEnforceIf(outie_worked_day.Not())
 
+                        worked_same_day = model.NewBoolVar(f"worked_same_day_{w}_{outie}_{d}")
+                        model.AddBoolAnd([w_worked_day, outie_worked_day]).OnlyEnforceIf(worked_same_day)
+                        model.AddBoolOr([w_worked_day.Not(), outie_worked_day.Not()]).OnlyEnforceIf(worked_same_day.Not())
 
+                        objective_terms.append(WORKED_SAME_DAY_PENALTY * worked_same_day)
 
     model.Minimize(sum(objective_terms))
