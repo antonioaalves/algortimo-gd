@@ -8581,18 +8581,24 @@ COMPENSATORY_LABOR_RULE_CODE_MAP = {
     'COMP_TIME_OFF_EMPTY_ON_HOLY': 'ld_empty_day',
     'COMP_TIME_OFF_REST_ON_HOLY': 'ld_holiday_dayoff',
 }
+# Solver output groups (src/algorithms/solver/solver.py `feriados_domingos_compensacao[w]`,
+# populated via auxiliar_functions_salsa.type_of_shift): the special day's *actual* shift
+# on the day it was earned determines the group -
+#   real working shift -> 'feriados' (holiday) / 'domingos' (sunday) - the day was worked
+#   '-'                 -> 'vazios'   - the special day was scheduled empty  (STRSOL-1776 ld_empty_day)
+#   L / LD / LQ         -> 'folgas'   - the special day was already a rest day (STRSOL-1776 ld_holiday_dayoff)
 # WFM RULE_CODE values written to INT_EMP_PROCESS_MOV (inverse of internal ld_* where applicable).
 COMPENSATORY_WFM_RULE_CODE_BY_GROUP = {
     'feriados': 'COMPENSATORY_TIME_OFF_HOLIDAYS',
     'domingos': 'COMPENSATORY_TIME_OFF_SUNDAYS',
-    'ld_empty_day': 'COMP_TIME_OFF_EMPTY_ON_HOLY',
-    'ld_holiday_dayoff': 'COMP_TIME_OFF_REST_ON_HOLY',
+    'vazios': 'COMP_TIME_OFF_EMPTY_ON_HOLY',
+    'folgas': 'COMP_TIME_OFF_REST_ON_HOLY',
 }
 COMPENSATORY_INTERNAL_RULE_CODE_BY_GROUP = {
     'feriados': 'ld_holiday',
     'domingos': 'ld_sunday',
-    'ld_empty_day': 'ld_empty_day',
-    'ld_holiday_dayoff': 'ld_holiday_dayoff',
+    'vazios': 'ld_empty_day',
+    'folgas': 'ld_holiday_dayoff',
 }
 COMPENSATORY_INTERNAL_TO_WFM_RULE_CODE = {
     'LD_SUNDAY': 'COMPENSATORY_TIME_OFF_SUNDAYS',
@@ -9309,15 +9315,19 @@ def build_compensatory_output(
 
     Args:
         compensatory_dict: Solver output dict keyed by worker ID, with structure:
-            {w: {'feriados': {'ld_given':        [(worked_day, day_off), ...],
-                              'no_compensation': [worked_day, ...],
-                              'banco_horas':     []},
-                 'domingos': {'ld_given':        [(worked_day, day_off), ...],
-                              'no_compensation': [worked_day, ...],
-                              'banco_horas':     []}}}
-            ld_given entries always have both dates (no Nones).
-            no_compensation entries are single worked_day values where no day off
-            could be placed inside the execution period.
+            {w: {'feriados': {'ld_given':            [(worked_day, day_off), ...],
+                              'no_compensation':      [worked_day, ...],
+                              'worked_before_period': [(worked_day, day_off), ...]},
+                 'domingos': {...same shape, for Sundays...},
+                 'vazios':   {...same shape, for empty ("-") days on a holiday...},
+                 'folgas':   {...same shape, for holidays that were already a rest
+                              day (L/LD/LQ)...}}}
+            All four groups share the same shape and are processed identically via
+            COMPENSATORY_WFM_RULE_CODE_BY_GROUP. ld_given entries always have both
+            dates (no Nones). no_compensation entries are single worked_day values
+            where no day off could be placed inside the execution period.
+            worked_before_period entries are a subset of ld_given (informational
+            only - not read separately here, since ld_given already contains them).
         process_id: The process ID for the output rows.
         df_process_rules_raw: Raw (pre-pivot) rules DataFrame with columns RULE_CODE,
             RULE_ID, FIELD_CODE, RULE_FIELD_ID. Used ONLY to look up RULE_ID and
@@ -9528,7 +9538,13 @@ def apply_compensatory_sched_types(
         final_df: Output DataFrame after convert_types_out, with sched_type/sched_subtype.
         compensatory_dict: Solver output dict keyed by worker ID:
             {w: {'feriados': {'ld_given': [(worked_day, day_off), ...]},
-                 'domingos': {'ld_given': [(worked_day, day_off), ...]}}}
+                 'domingos': {'ld_given': [(worked_day, day_off), ...]},
+                 'vazios':   {'ld_given': [(worked_day, day_off), ...]},
+                 'folgas':   {'ld_given': [(worked_day, day_off), ...]}}}
+            Groups are resolved to internal rule codes via
+            COMPENSATORY_INTERNAL_RULE_CODE_BY_GROUP ('vazios' -> 'ld_empty_day',
+            'folgas' -> 'ld_holiday_dayoff'), matching the values written to
+            df_process_rules['rule_code'] by treat_df_process_rules.
         df_process_rules: Merged rules DataFrame (from algorithm_treatment_params)
             with columns including RULE_CODE, REST_DAY_TYPE, REST_DAY_SUBTYPE, employee_id.
         employee_col: Employee column name in final_df (default: 'colaborador').
