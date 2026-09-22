@@ -398,8 +398,7 @@ def solve(
                                         compensation_days_off[w].append(day)
                                 else:
                                     if d < period[0]:
-                                        feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados")] \
-                                                                        ["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
+                                        feriados_domingos_compensacao[w]["feriados"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
                                     feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados")] \
                                                                     ["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
@@ -415,8 +414,7 @@ def solve(
                                         compensation_days_off[w].append(day)
                                 else:
                                     if d < period[0]:
-                                        feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos")] \
-                                                                        ["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
+                                        feriados_domingos_compensacao[w]["domingos"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
                                     feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos")] \
                                                                     ["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 

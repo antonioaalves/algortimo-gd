@@ -524,6 +524,8 @@ def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dy
     return total
 
 def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day):
+    if d < 0:
+        return type_of_day
     for sh in shifts:
         if sh in real_working_shift and (w, d, sh) in shift:
             if solver.Value(shift[(w, d, sh)]) == 1:
@@ -534,3 +536,4 @@ def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day):
         elif sh in ['L', 'LD', 'LQ'] and (w, d, sh) in shift:
             if solver.Value(shift[(w, d, sh)]) == 1:
                 return "folgas"
+    logger.warning(f"impossible wrong shift, {w}, {d}, {sh}")
