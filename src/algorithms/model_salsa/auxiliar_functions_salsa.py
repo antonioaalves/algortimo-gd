@@ -537,3 +537,4 @@ def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day):
             if solver.Value(shift[(w, d, sh)]) == 1:
                 return "folgas"
     logger.warning(f"impossible wrong shift, {w}, {d}, {sh}")
+    return type_of_day
