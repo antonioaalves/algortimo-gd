@@ -236,6 +236,8 @@ def solve(
         days_of_year_sorted = sorted(days_of_year)
         time_worked_day_shift = {f"time_worked_day_{value}": [-pessOBJ.get((d, value), 0) for d in days_of_year_sorted] for value in real_working_shift}
         special_days_worked = {}
+        special_empty_days = {}
+        special_off_days = {}
         sun = {}
         compensation_days_off = {}
         feriados_domingos_compensacao = {}
@@ -324,6 +326,8 @@ def solve(
                 special_days_count = 0
                 unassigned_days = 0
                 special_days_worked[w] = []
+                special_off_days[w] = []
+                special_empty_days[w] = []
                 sun[w] = []
                 compensation_days_off[w] = []
 
@@ -366,7 +370,11 @@ def solve(
                         unassigned_days += 1
                     
                     worker_row.append(day_assignment)
-                    
+                    if day_assignment in ['L', 'LD', 'LQ'] and d in special_days or d in sundays:
+                        special_off_days[w].append(index_to_date[d])
+                    if day_assignment == '-' and d in special_days or d in sundays:
+                        special_empty_days[w].append(index_to_date[d])
+
                     # Count different shift types
                     if day_assignment == 'L':
                         l_count += 1
@@ -392,14 +400,14 @@ def solve(
                             if solver.Value(assignment_var) == 1:
                                 if comp_day > period[1]: 
                                     day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados")] \
+                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados", worker_with_dummy)] \
                                                                     ["no_compensation"].append(index_to_date[d])
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
                                     if d < period[0]:
                                         feriados_domingos_compensacao[w]["feriados"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados")] \
+                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados", worker_with_dummy)] \
                                                                     ["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 if contingente_domingos:
@@ -408,18 +416,20 @@ def solve(
                             if solver.Value(assignment_var) == 1:
                                 if comp_day > period[1]:
                                     day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos")] \
+                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos", worker_with_dummy)] \
                                                                     ["no_compensation"].append(index_to_date[d])
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
                                     if d < period[0]:
                                         feriados_domingos_compensacao[w]["domingos"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos")] \
+                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos", worker_with_dummy)] \
                                                                     ["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 logger.info(f"\n\t\tholidays worked      : {len(special_days_worked[w])}, {special_days_worked[w]}"
                             f"\n\t\tsundays worked       : {len(sun[w])}, {sun[w]}"
+                            f"\n\t\tempty days           : {len(special_empty_days[w])}, {special_empty_days[w]}"
+                            f"\n\t\toff days             : {len(special_off_days[w])}, {special_off_days[w]}"
                             f"\n\t\tcompensation days off: {len(compensation_days_off[w])}, {compensation_days_off[w]}\n")
                 logger.info(f"feriados e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['feriados']}")
                 logger.info(f"domingos e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['domingos']}")

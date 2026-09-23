@@ -523,18 +523,20 @@ def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dy
         total = 0
     return total
 
-def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day):
+def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day, workers_with_dummy):
     if d < 0:
         return type_of_day
+    current_dummy = get_dummy(workers_with_dummy, w, d)
     for sh in shifts:
-        if sh in real_working_shift and (w, d, sh) in shift:
-            if solver.Value(shift[(w, d, sh)]) == 1:
+        if sh in real_working_shift and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
                 return type_of_day
-        elif sh == '-' and (w, d, sh) in shift:
-            if solver.Value(shift[(w, d, sh)]) == 1:
+        elif sh == '-' and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                print(f"entrei no vazio {w}, {d}, {sh}")
                 return "vazios"
-        elif sh in ['L', 'LD', 'LQ'] and (w, d, sh) in shift:
-            if solver.Value(shift[(w, d, sh)]) == 1:
+        elif sh in ['L', 'LD', 'LQ'] and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
                 return "folgas"
     logger.warning(f"impossible wrong shift, {w}, {d}, {sh}")
     return type_of_day
