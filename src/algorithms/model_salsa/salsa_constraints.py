@@ -77,6 +77,8 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                     # worked_special_day is true if any shift is assigned
                     model.AddBoolOr(special_day_shift_vars).OnlyEnforceIf(worked_special_day)
                     model.Add(sum(special_day_shift_vars) == 0).OnlyEnforceIf(worked_special_day.Not())
+                if not special_day_shift_vars:
+                    model.Add(worked_special_day == 0)
                 # Determine the week of the special day
                 special_day_week = next((wk for wk, days in week_to_days.items() if d in days), 1) - 1
 
@@ -119,11 +121,11 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                                                                                                          week_to_days, past_special_days_worked[w]["days_&_limit"][d], working_days,
                                                                                                          shift, w, fixed_lds, closed_days, period, d, workers_with_dummy)
                     if len(possible_compensation_days[w][d]) != 0:
-                        worked_special_day = model.NewConstant(1)
+                        worked_special_day2 = model.NewConstant(1)
                     else:
                         logger.error(f"Worker {w} wont receive compensation for this day because no possible compensation days were available")
-                        worked_special_day = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
-                    worked_special_days[w][d] = worked_special_day
+                        worked_special_day2 = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
+                    worked_special_days[w][d] = worked_special_day2
                     amount_lds[w][d] = past_special_days_worked[w]["days_&_amount"][d]       
                     logger.info(f"For {w}: day {d} before period {period[0]} got ammount = {len(possible_compensation_days[w][d])} possible_compensation_days: {possible_compensation_days[w][d]}")
 

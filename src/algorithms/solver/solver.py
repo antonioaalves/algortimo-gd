@@ -370,9 +370,9 @@ def solve(
                         unassigned_days += 1
                     
                     worker_row.append(day_assignment)
-                    if day_assignment in ['L', 'LD', 'LQ'] and d in special_days or d in sundays:
+                    if day_assignment in ['L', 'LD', 'LQ'] and (d in special_days or d in sundays):
                         special_off_days[w].append(index_to_date[d])
-                    if day_assignment == '-' and d in special_days or d in sundays:
+                    if day_assignment == '-' and (d in special_days or d in sundays):
                         special_empty_days[w].append(index_to_date[d])
 
                     # Count different shift types

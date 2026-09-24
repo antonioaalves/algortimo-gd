@@ -905,8 +905,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                     sunday_rules[w] = {
                         "amount": sunday_df_w['time_off_additional'].fillna(1).astype(int).to_dict(),
                         "compensation_limit": sunday_df_w['time_off_deadline'].fillna(15).astype(int).to_dict(),
-                        "day_off_count": {index: index in day_off_df_w.index for index in holiday_df_w.index},
-                        "empty_day_count": {index: index in empty_day_df_w.index for index in holiday_df_w.index},
+                        "day_off_count": {index: index in day_off_df_w.index for index in sunday_df_w.index},
+                        "empty_day_count": {index: index in empty_day_df_w.index for index in sunday_df_w.index},
                     }
                     if not sunday_rules[w]["amount"]:
                         sunday_rules.pop(w, None)
