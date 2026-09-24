@@ -252,6 +252,8 @@ def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp
         if start_date2 is None or end_date2 is None:
             return False, pd.DataFrame(), "Input validation failed: invalid date parameters"
             
+        if not df_closed_days.empty and 'data' not in df_closed_days.columns and 'schedule_day' in df_closed_days.columns:
+            df_closed_days = df_closed_days.rename(columns={'schedule_day': 'data'})
         if not df_closed_days.empty and 'data' not in df_closed_days.columns:
             return False, pd.DataFrame(), "Input validation failed: missing data column"
 

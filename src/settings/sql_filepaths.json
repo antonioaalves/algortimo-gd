@@ -39,5 +39,12 @@
         "df_calendario": "",
         "df_colaborador": "queryGetCoreProEmpContract.sql",
         "df_estimativas": ""
+    },
+    "alcampo_sql_raw_paths": {
+        "df_colaborador": "qry_ma.sql"
+    },
+    "alcampo_sql_auxiliary_paths": {
+        "df_contratos": "queryGetAlcampoContratos.sql",
+        "df_ausencias_ferias": "queryGetAusenciasAlcampo.sql"
     }
 }

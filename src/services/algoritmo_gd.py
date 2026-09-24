@@ -238,8 +238,16 @@ class AlgoritmoGDService(BaseService):
                     "Starting data loading raw"
                 )
             
-            data_model_name =  'salsa_data_model' #'default_data_model'
-            #data_model_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
+            algorithm_name = ''
+            try:
+                algorithm_name = self.config_manager.parameters.get_parameter_defaults().get('GD_algorithmName', '') or ''
+            except Exception:
+                algorithm_name = ''
+            if str(algorithm_name).lower().startswith('alcampo'):
+                data_model_name = 'alcampo_data_model'
+            else:
+                data_model_name = 'salsa_data_model'
+            self.logger.info(f"Data model selected from GD_algorithmName={algorithm_name}: {data_model_name}")
 
             # Create data model instance
             self.data_model = DataModelFactory.create_data_model(
