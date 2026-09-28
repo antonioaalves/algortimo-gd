@@ -4651,6 +4651,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     fixed_LQs = set(emp_cal.loc[horario == 'LQ', 'index'].astype(int))
     vacation_days = set(emp_cal.loc[horario.isin(['V', 'V-']), 'index'].astype(int))
     worker_absences = set(emp_cal.loc[horario.isin(['A', 'AP', 'A-']), 'index'].astype(int))
+    empty_days = set(emp_cal.loc[horario == '-', 'index'].astype(int))
 
     if df_ausencias_ferias is not None and not df_ausencias_ferias.empty:
         emp_col = 'employee_id' if 'employee_id' in df_ausencias_ferias.columns else 'fk_colaborador'
@@ -4720,6 +4721,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
         work_days_per_week,
         year_range,
         period,
+        empty_days,
     )
 
     weekly_rest_quota = _indices_to_schedule_days(

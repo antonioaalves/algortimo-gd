@@ -105,7 +105,7 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
             
     return absences, vacations, fixed_days_off, fixed_LQs
 
-def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period):
+def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period, empty_days):
     for week, days in week_to_days_salsa.items():
         if len(days) <= 6 or days[-1] < period[0] or days[0] > period[1]:
             continue
@@ -132,7 +132,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     continue
             elif nbr_absences < 5:
                 continue
-            atributing_days = sorted(days_set - closed_holidays)
+            atributing_days = sorted(days_set - closed_holidays - empty_days)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]

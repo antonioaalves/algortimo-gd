@@ -725,7 +725,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
             work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w, contract_type[w])
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w],
-                                                                                                         week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range, period)
+                                                                                                         week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range, period, empty_days[w])
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
 
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
