@@ -105,7 +105,7 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
             
     return absences, vacations, fixed_days_off, fixed_LQs
 
-def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period):
+def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period, empty_days):
     for week, days in week_to_days_salsa.items():
         if len(days) <= 6 or days[-1] < period[0] or days[0] > period[1]:
             continue
@@ -132,7 +132,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     continue
             elif nbr_absences < 5:
                 continue
-            atributing_days = sorted(days_set - closed_holidays)
+            atributing_days = sorted(days_set - closed_holidays - empty_days)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]
@@ -523,18 +523,20 @@ def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dy
         total = 0
     return total
 
-def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day):
+def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day, workers_with_dummy):
     if d < 0:
         return type_of_day
+    current_dummy = get_dummy(workers_with_dummy, w, d)
     for sh in shifts:
-        if sh in real_working_shift and (w, d, sh) in shift:
-            if solver.Value(shift[(w, d, sh)]) == 1:
+        if sh in real_working_shift and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
                 return type_of_day
-        elif sh == '-' and (w, d, sh) in shift:
-            if solver.Value(shift[(w, d, sh)]) == 1:
+        elif sh == '-' and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                print(f"entrei no vazio {w}, {d}, {sh}")
                 return "vazios"
-        elif sh in ['L', 'LD', 'LQ'] and (w, d, sh) in shift:
-            if solver.Value(shift[(w, d, sh)]) == 1:
+        elif sh in ['L', 'LD', 'LQ'] and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
                 return "folgas"
     logger.warning(f"impossible wrong shift, {w}, {d}, {sh}")
     return type_of_day
