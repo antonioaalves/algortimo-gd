@@ -31,13 +31,7 @@
             "GD_consideraFestivos": 1,
             "GD_convenioBD": "ALCAMPO",
             "codigos_motivo_ausencia": [
-                2101,
-                8999,
-                3028,
-                100,
-                120,
-                130,
-                150
+                1
             ],
             "l_dom_days": [1]
         }

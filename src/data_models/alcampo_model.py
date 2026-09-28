@@ -32,6 +32,7 @@ from src.data_models.functions.helper_functions import (
     is_eci_unit,
     get_sibling_section_name,
     treat_df_faixa_secao_to_long,
+    get_df_faixa_horario,
 )
 from src.data_models.functions.data_treatment_functions import (
     treat_df_valid_emp,
@@ -40,7 +41,10 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_contratos,
     treat_df_calendario_passado,
     treat_df_ausencias_ferias,
-    treat_df_disponibilidade,
+    treat_df_orcamento,
+    create_df_estimativas,
+    add_pessoa_obj_whole_day,
+    adjust_estimativas_special_days,
     set_tipo_contrato_to_df_colaborador,
     add_prioridade_folgas_to_df_colaborador,
     add_l_d_to_df_colaborador,
@@ -80,6 +84,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_valid_emp_info,
     validate_num_sundays_year,
     validate_df_estrutura_wfm,
+    validate_posto_id,
 )
 from src.data_models.validations.func_inicializa_validations import validate_all_core_dataframes
 
@@ -566,6 +571,308 @@ class AlcampoDataModel(BaseDescansosDataModel):
         df = df.drop(columns=['_seq_key', 'seq_key', 'lq_param', '_cav_lq'], errors='ignore')
         return True, df, ""
 
+    def load_estimativas_info(self, data_manager: BaseDataManager, posto_id: int = 0, start_date: str = '', end_date: str = '') -> Tuple[bool, str, str]:
+        """Load budget slots and the morning/afternoon cut.
+
+        get_df_faixa_horario use_case stays 1 (staffed-day midpoint) until the Alcampo
+        boundary rule is confirmed. Salsa keeps the base method.
+        """
+        try:
+            self.logger.info("Starting load_estimativas_info method.")
+            try:
+                posto_id = self.auxiliary_data['current_posto_id']
+                self.logger.info(f"Loaded information from auxiliary_data into posto_id: {posto_id}")
+            except Exception as e:
+                self.logger.error(f"Error getting posto_id from auxiliary_data: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            if not validate_posto_id(posto_id):
+                self.logger.error(f"posto_id provided is invalid: {posto_id}")
+                return False, "errSubproc", "Invalid posto_id"
+
+            try:
+                first_date_passado = self.auxiliary_data.get('first_date_passado')
+                last_date_passado = self.auxiliary_data.get('last_date_passado')
+                if not first_date_passado or not last_date_passado:
+                    self.logger.warning("first_date_passado or last_date_passado not found in auxiliary_data, falling back to start_date/end_date")
+                    first_date_passado = start_date
+                    last_date_passado = end_date
+                else:
+                    self.logger.info(f"Using extended date range from df_calendario: first_date_passado={first_date_passado}, last_date_passado={last_date_passado}")
+            except Exception as e:
+                self.logger.warning(f"Error getting passado dates from auxiliary_data: {e}, falling back to start_date/end_date")
+                first_date_passado = start_date
+                last_date_passado = end_date
+
+            if start_date == '' or start_date is None or end_date == '' or end_date is None:
+                self.logger.error(f"start_date or end_date provided are empty. start: {start_date}, end_date: {end_date}")
+                return False, "errSubproc", "Invalid date parameters"
+
+            try:
+                self.logger.info("Initializing df_estimativas as an empty dataframe")
+                df_estimativas = pd.DataFrame()
+                columns_select = ['nome', 'matricula', 'employee_id', 'fk_tipo_posto']
+                self.logger.info(f"Columns to select: {columns_select}")
+            except Exception as e:
+                self.logger.error(f"Error initializing estimativas info: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            try:
+                self.logger.info(f"Loading df_turnos from raw_data df_colaborador with columns selected: {columns_select}")
+                df_colaborador = self.raw_data['df_colaborador'].copy()
+                if 'df_valid_emp' in self.auxiliary_data and self.auxiliary_data['df_valid_emp'] is not None:
+                    df_valid_emp = self.auxiliary_data['df_valid_emp']
+                    if not df_valid_emp.empty and 'fk_tipo_posto' in df_valid_emp.columns and 'employee_id' in df_valid_emp.columns:
+                        employees_id_list_from_posto = df_valid_emp[df_valid_emp['fk_tipo_posto'] == posto_id]['employee_id']
+                        if 'employee_id' in df_colaborador.columns:
+                            df_colaborador = df_colaborador[df_colaborador['employee_id'].isin(employees_id_list_from_posto)].copy()
+                            self.logger.info(f"Pre-filtered df_colaborador by posto_id={posto_id}, shape: {df_colaborador.shape}")
+
+                df_turnos = df_colaborador[columns_select].copy()
+                self.logger.info(f"df_turnos shape (rows {df_turnos.shape[0]}, columns {df_turnos.shape[1]}): {df_turnos.columns.tolist()}")
+            except Exception as e:
+                self.logger.error(f"Error processing df_turnos from colaborador data: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            try:
+                self.logger.info("Getting df_feriados from auxiliary_data (already loaded and treated)")
+                df_feriados = self.auxiliary_data.get('df_feriados', pd.DataFrame())
+                if df_feriados.empty:
+                    self.logger.warning("df_feriados not found in auxiliary_data or is empty")
+                else:
+                    self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
+            except Exception as e:
+                self.logger.error(f"Error getting df_feriados from auxiliary_data: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            try:
+                self.logger.info("Loading df_orcamento from data manager")
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_orcamento', '')
+                if query_path == '':
+                    self.logger.warning("df_orcamento query path not found in config")
+                start_date_quoted = "'" + first_date_passado + "'"
+                end_date_quoted = "'" + last_date_passado + "'"
+                df_orcamento = data_manager.load_data(
+                    'df_orcamento',
+                    query_file=query_path,
+                    posto_id=posto_id,
+                    start_date=start_date_quoted,
+                    end_date=end_date_quoted,
+                )
+                self.logger.info(f"df_orcamento shape (rows {df_orcamento.shape[0]}, columns {df_orcamento.shape[1]}): {df_orcamento.columns.tolist()}")
+            except Exception as e:
+                self.logger.error(f"Error loading df_orcamento: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            success, df_orcamento, error_msg = treat_df_orcamento(df_orcamento)
+            if not success:
+                self.logger.error(f"Closed days treatment failed: {error_msg}")
+                return False, "errSubproc", error_msg
+
+            try:
+                df_faixa_secao = self.auxiliary_data.get('df_faixa_secao', pd.DataFrame())
+                if df_faixa_secao.empty:
+                    self.logger.info("df_faixa_secao not in auxiliary_data or empty; get_df_faixa_horario will use internal fallback if needed")
+                success, df_faixa_horario, error_msg = get_df_faixa_horario(
+                    df_orcamento=df_orcamento,
+                    df_turnos=df_turnos,
+                    use_case=1,
+                    df_faixa_secao=df_faixa_secao if not df_faixa_secao.empty else None,
+                )
+                if not success:
+                    self.logger.error(f"Failed to get df_faixa_horario: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.logger.info(f"df_faixa_horario shape (rows {df_faixa_horario.shape[0]}, columns {df_faixa_horario.shape[1]}): {df_faixa_horario.columns.tolist()}")
+            except Exception as e:
+                self.logger.error(f"Error getting df_faixa_horario: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            try:
+                self.logger.info("Loading df_granularidade from data manager")
+                query_path = self.config_manager.paths.sql_auxiliary_paths.get('df_granularidade', '')
+                if query_path == '':
+                    self.logger.warning("df_granularidade query path not found in config")
+                start_date_quoted = "'" + first_date_passado + "'"
+                end_date_quoted = "'" + last_date_passado + "'"
+                df_granularidade = data_manager.load_data(
+                    'df_granularidade',
+                    query_file=query_path,
+                    start_date=start_date_quoted,
+                    end_date=end_date_quoted,
+                    posto_id=posto_id,
+                )
+                self.logger.info(f"df_granularidade shape (rows {df_granularidade.shape[0]}, columns {df_granularidade.shape[1]}): {df_granularidade.columns.tolist()}")
+            except Exception as e:
+                self.logger.error(f"Error loading df_granularidade: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            try:
+                self.logger.info("Saving dataframes to auxiliary_data and raw_data")
+                self.raw_data['df_estimativas'] = df_estimativas.copy()
+                self.auxiliary_data['df_turnos'] = df_turnos.copy()
+                self.auxiliary_data['df_faixa_horario'] = df_faixa_horario.copy()
+                self.auxiliary_data['df_orcamento'] = df_orcamento.copy()
+                self.auxiliary_data['df_granularidade'] = df_granularidade.copy()
+
+                if not self.auxiliary_data:
+                    self.logger.warning("No data was loaded into auxiliary_data")
+                    return False, "errSubproc", "No data loaded into auxiliary_data"
+
+                self.logger.info("load_estimativas_info completed successfully.")
+                return True, "", ""
+            except Exception as e:
+                self.logger.error(f"Error saving dataframes to auxiliary_data and raw_data: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+        except Exception as e:
+            self.logger.error(f"Error in load_estimativas_info method: {e}", exc_info=True)
+            return False, "errSubproc", str(e)
+
+    def load_estimativas_transformations(self) -> Tuple[bool, str, str]:
+        """Build df_estimativas from the budget slots and the faixa cut.
+
+        create_df_estimativas use_case stays 0 (fixed 8-hour divisor) until the Alcampo
+        boundary rule is confirmed. Salsa keeps the base method.
+        """
+        try:
+            self.logger.info("Starting load_estimativas_transformations")
+            try:
+                self.logger.info("Extracting parameters from auxiliary_data and external_data")
+                start_date = self.external_call_data['start_date']
+                end_date = self.external_call_data['end_date']
+                first_date_passado = self.auxiliary_data.get('first_date_passado', start_date)
+                last_date_passado = self.auxiliary_data.get('last_date_passado', end_date)
+                fk_unidade = self.auxiliary_data['unit_id']
+                fk_secao = self.auxiliary_data['secao_id']
+                fk_tipo_posto = self.auxiliary_data['current_posto_id']
+                self.logger.info(f"Parameters extracted - start_date: {start_date}, end_date: {end_date}")
+                self.logger.info(f"Using extended date range for processing - first_date_passado: {first_date_passado}, last_date_passado: {last_date_passado}")
+                self.logger.info(f"Other params - fk_unidade: {fk_unidade}, fk_secao: {fk_secao}, fk_tipo_posto: {fk_tipo_posto}")
+            except KeyError as e:
+                self.logger.error(f"Missing required parameter: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error extracting parameters: {e}", exc_info=True)
+                return False
+
+            try:
+                self.logger.info("Loading DataFrames from existing data")
+                df_turnos = self.auxiliary_data['df_turnos'].copy()
+                df_feriados = self.auxiliary_data['df_feriados'].copy()
+                df_orcamento = self.auxiliary_data['df_orcamento'].copy()
+                df_faixa_horario = self.auxiliary_data['df_faixa_horario'].copy()
+                self.logger.info(f"DataFrames loaded - df_turnos: {df_turnos.shape}, df_feriados: {df_feriados.shape}, df_orcamento: {df_orcamento.shape}, df_faixa_horario: {df_faixa_horario.shape}")
+            except KeyError as e:
+                self.logger.error(f"Missing required DataFrame: {e}", exc_info=True)
+                return False
+            except Exception as e:
+                self.logger.error(f"Error loading DataFrames: {e}", exc_info=True)
+                return False
+
+            try:
+                success, df_estimativas, error_msg = create_df_estimativas(
+                    df_orcamento=df_orcamento,
+                    df_faixa_horario=df_faixa_horario,
+                    use_case=0,
+                )
+                if not success:
+                    self.logger.error(f"Failed to create df_estimativas: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error creating df_estimativas: {e}", exc_info=True)
+                return False
+
+            try:
+                success, df_estimativas, error_msg = add_pessoa_obj_whole_day(
+                    df_estimativas=df_estimativas,
+                    df_orcamento=df_orcamento,
+                )
+                if not success:
+                    self.logger.error(f"Failed to add pessoa_obj_whole_day: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error adding pessoa_obj_whole_day: {e}", exc_info=True)
+                return False
+
+            try:
+                if not df_estimativas.empty:
+                    self.logger.info(f"DEBUG: df_estimativas columns: {df_estimativas.columns.tolist()}")
+                    self.logger.info(f"DEBUG: df_estimativas head:\n{df_estimativas.head()}")
+                success, df_estimativas, error_msg = filter_df_dates(
+                    df=df_estimativas,
+                    first_date_str=first_date_passado,
+                    last_date_str=last_date_passado,
+                    date_col_name='schedule_day',
+                    use_case=1,
+                )
+                if not success:
+                    self.logger.error(f"Failed to filter estimativas by dates: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error filtering estimativas by dates: {e}", exc_info=True)
+                return False
+
+            try:
+                success, df_estimativas, error_msg = fill_estimativas_passado_grid(
+                    df_estimativas=df_estimativas,
+                    first_date_passado=first_date_passado,
+                    last_date_passado=last_date_passado,
+                )
+                if not success:
+                    self.logger.error(f"Failed to fill estimativas passado grid: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error filling estimativas passado grid: {e}", exc_info=True)
+                return False
+
+            try:
+                self.logger.info("Adjusting estimativas for special dates (Christmas/New Year)")
+                success, df_estimativas, error_msg = adjust_estimativas_special_days(
+                    df_estimativas=df_estimativas,
+                    special_days_list=[],
+                    use_case=0,
+                )
+                if not success:
+                    self.logger.error(f"Failed to adjust special dates: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error adjusting for special dates: {e}", exc_info=True)
+                return False
+
+            try:
+                self.logger.info("Adding date-related columns to estimativas (WDAY, WW, WD)")
+                main_year = self.auxiliary_data.get('main_year')
+                success, df_estimativas, error_msg = add_date_related_columns(
+                    df=df_estimativas,
+                    date_col='schedule_day',
+                    add_id_col=False,
+                    use_case=1,
+                    main_year=main_year,
+                    first_date=first_date_passado,
+                    last_date=last_date_passado,
+                )
+                if not success:
+                    self.logger.error(f"Failed to add date-related columns: {error_msg}")
+                    return False
+            except Exception as e:
+                self.logger.error(f"Error adding date-related columns: {e}", exc_info=True)
+                return False
+
+            try:
+                self.logger.info("Storing results in appropriate class attributes")
+                self.raw_data['df_estimativas'] = df_estimativas.copy()
+                if not self.auxiliary_data or not self.raw_data:
+                    self.logger.warning("Data storage verification failed")
+                    return False
+                self.logger.info("load_estimativas_transformations completed successfully")
+                self.logger.info(f"Stored df_estimativas (matrizB_og) with shape: {df_estimativas.shape}")
+                return True
+            except Exception as e:
+                self.logger.error(f"Error storing results in load_estimativas_transformations: {e}", exc_info=True)
+                return False
+        except Exception as e:
+            self.logger.error(f"Error in load_estimativas_transformations method: {e}", exc_info=True)
+            return False
+
     def load_colaborador_info(self, data_manager: BaseDataManager, posto_id: int = 0) -> Tuple[bool, str, str]:
         try:
             employees_id_list_for_posto = self.auxiliary_data['employees_id_by_posto_dict'].get(posto_id, [])
@@ -632,19 +939,9 @@ class AlcampoDataModel(BaseDescansosDataModel):
             if df_contratos is None or df_contratos.empty:
                 return False, "errSubproc", "df_contratos is empty: calendar has no hours contribution"
 
-            df_core_pro_work_shift = pd.DataFrame()
-            try:
-                df_core_pro_work_shift = data_manager.load_data(
-                    entity='df_core_pro_work_shift',
-                    query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_core_pro_work_shift', ''),
-                    process_id=process_id,
-                )
-            except Exception as e:
-                self.logger.warning(f"Error loading df_core_pro_work_shift: {e}")
-
             df_disponibilidade = pd.DataFrame()
             try:
-                df_disponibilidade = data_manager.load_data(
+                loaded_disponibilidade = data_manager.load_data(
                     entity='df_disponibilidade',
                     query_file=self.config_manager.paths.sql_auxiliary_paths.get('df_disponibilidade'),
                     process_id="'" + str(process_id) + "'",
@@ -652,17 +949,14 @@ class AlcampoDataModel(BaseDescansosDataModel):
                     end_date=last_date_passado,
                     colabs_id=create_employee_query_string(past_employees_id_list),
                 )
-                if not df_disponibilidade.empty:
-                    success, df_disponibilidade, error_msg = treat_df_disponibilidade(
-                        df_disponibilidade=df_disponibilidade,
-                        df_core_pro_work_shift=df_core_pro_work_shift,
-                        section_id=posto_id,
+                if loaded_disponibilidade is not None and not loaded_disponibilidade.empty:
+                    self.logger.warning(
+                        "df_disponibilidade has %s rows. Alcampo does not load wfm.core_pro_work_shift, "
+                        "so those windows are not turned into M/T restrictions.",
+                        len(loaded_disponibilidade),
                     )
-                    if not success:
-                        df_disponibilidade = pd.DataFrame()
             except Exception as e:
                 self.logger.warning(f"Error loading df_disponibilidade: {e}")
-                df_disponibilidade = pd.DataFrame()
 
             if not validate_past_employee_id_list(past_employees_id_list, case_type):
                 return False, "errSubproc", "past_employees_id_list is empty"
@@ -1013,6 +1307,7 @@ class AlcampoDataModel(BaseDescansosDataModel):
                 df_colaborador=df_colaborador,
                 start_date=start_date,
                 end_date=end_date,
+                use_case=1,
             )
             if not valid:
                 return False, "errValidation", error_msg
