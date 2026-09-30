@@ -4941,6 +4941,22 @@ def _count_weekly_rest_weekend_days_in_range(
     return count
 
 
+def _take_weekly_free_slot(
+    day: pd.Timestamp,
+    day_to_week: Optional[Dict[pd.Timestamp, int]],
+    remaining: int,
+    claims: Optional[dict],
+) -> bool:
+    """Spend one leftover L/LQ slot in this salsa week. claims is None for a single weekend day."""
+    week = day_to_week.get(day.normalize()) if day_to_week and claims is not None else None
+    left = remaining if week is None else remaining - claims.get(week, 0)
+    if left < 1:
+        return False
+    if week is not None:
+        claims[week] = claims.get(week, 0) + 1
+    return True
+
+
 def _count_eligible_sundays(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
@@ -4955,6 +4971,7 @@ def _count_eligible_sundays(
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
+    slot_claims: Optional[dict] = None,
 ) -> int:
     """
     Count Sundays eligible for l_dom within [begin, effective_end].
@@ -4990,10 +5007,15 @@ def _count_eligible_sundays(
             sunday, adjacent_free, max_consec_free
         ):
             pass
-        elif _remaining_weekly_free_day_slots(
-            sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
-            weekly_quota_ctx=weekly_quota_ctx,
-        ) < 1:
+        elif not _take_weekly_free_slot(
+            sunday,
+            day_to_week,
+            _remaining_weekly_free_day_slots(
+                sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+            ),
+            slot_claims,
+        ):
             pass
         else:
             count += 1
@@ -5040,6 +5062,7 @@ def _count_eligible_saturdays(
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
     employee_id: Optional[str] = None,
+    slot_claims: Optional[dict] = None,
 ) -> int:
     """
     Count Saturdays eligible for l_sab (and l_dom_or_sab pool contribution).
@@ -5086,10 +5109,15 @@ def _count_eligible_saturdays(
             saturday, adjacent_free, max_consec_free
         ):
             pass
-        elif _remaining_weekly_free_day_slots(
-            saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
-            weekly_quota_ctx=weekly_quota_ctx,
-        ) < 1:
+        elif not _take_weekly_free_slot(
+            saturday,
+            day_to_week,
+            _remaining_weekly_free_day_slots(
+                saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+            ),
+            slot_claims,
+        ):
             pass
         else:
             count += 1
@@ -5465,15 +5493,18 @@ def _count_feasibility_cap_for_field(
                 **count_kwargs,
             )
         elif field == 'l_dom_or_sab':
+            slot_claims: Dict[int, int] = {}
             eligible_in_execution = (
                 _count_eligible_sundays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
                     **count_kwargs,
                 )
                 + _count_eligible_saturdays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
                     **count_kwargs,
                 )
             )
