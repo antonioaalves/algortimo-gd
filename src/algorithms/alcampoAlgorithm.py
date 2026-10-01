@@ -292,6 +292,9 @@ class AlcampoAlgorithm(BaseAlgorithm):
             sunday_past_lds = adapted_data["sunday_past_lds"]
             mot_days = adapted_data["mot_days"]
             out_workers = adapted_data["out_workers"]
+            data_demissao = adapted_data["data_demissao"]
+            data_admissao = adapted_data["data_admissao"]
+
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -348,7 +351,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             saturday_L_constraint(model, shift, workers, working_days, period, working_shift)
 
             # LQ attribution constraint
-            LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq, year_range, annual_variables, workers_with_dummy)
+            LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq, year_range, annual_variables, workers_with_dummy, closed_holidays)
 
             # LD attribution constraint
             LD_attribution(model, shift, workers_no_contract_changes, working_days, l_d, year_range, workers_with_dummy)
@@ -360,13 +363,13 @@ class AlcampoAlgorithm(BaseAlgorithm):
             working_day_shifts(model, shift, workers, working_days, check_shift, period, contract_type)
             
             # Free days adjacent to weekends
-            free_day_next_2c(model, shift, workers, working_days, closed_holidays)
+            free_day_next_2c(model, shift, workers, working_days, closed_holidays, period, complete_cycle_days, locked_days)
             
             # Limit consecutive free days during the week
-            no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period)
+            no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period, locked_days, complete_cycle_days)
             
             # Day2 quality weekends
-            day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range)
+            day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range, locked_days, complete_cycle_days)
             
             # Space LQs constraint
             space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
@@ -387,7 +390,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             limits_LDs_week(model, shift, week_to_days, workers, special_days)
         
             # One free day weekly
-            free_days_week(model, shift, workers, week_to_days, working_days, None, first_day, last_day, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days)           
+            free_days_week(model, shift, workers, week_to_days, working_days, None, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, locked_days, closed_holidays)           
 
             # Constraint for 3-day quality weekends
             day3_quality_weekend(model, shift, workers, working_days, c3d, contract_type, closed_holidays)

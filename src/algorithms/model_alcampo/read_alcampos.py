@@ -460,7 +460,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
 
                 # Convert data_demissao to day of year
                 data_demissao[w] = max_day + 1
-                print("1", w, data_demissao[w])
                 if demissao_value is not None and not pd.isna(demissao_value):
                     if isinstance(demissao_value, (datetime, pd.Timestamp)):
                         demissao_date = demissao_value
@@ -476,7 +475,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             logger.info(f"Worker {w} data_demissao: {demissao_date.date()} -> day of year {demissao_day_of_year}")
                         else:
                             logger.info(f"Worker {w} data_demissao {demissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
-                print("2", w, data_demissao[w])
 
                 # Track first and last registered days
                 if w in matriz_calendario_gd['employee_id'].values:
@@ -687,22 +685,26 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             vacation_days[w] = worker_calendar[worker_calendar['horario'].isin(['V', 'V-'])]['index'].tolist()
             worker_absences[w] = worker_calendar[worker_calendar['horario'].isin(['AP', 'A-', 'A'])]['index'].tolist()
             fixed_days_off[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'L_DOM'])]['index'].tolist()
-            week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
+            #week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
+            if 'workload_template' in worker_calendar.columns:
+                week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
+            else:
+                week_template_temp[w] = {index: 'A' for index in worker_calendar['index'].drop_duplicates()}
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             for value in shifts:
-                shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'MoT', 'NL' , f'NL{value}'])]['index'].tolist())
+                shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'NL' , f'NL{value}'])]['index'].tolist())
             forced_work_days[w] = worker_calendar[worker_calendar['horario'].isin(['NL', [f"NL{value}" for value in shifts]])]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
             work_special_days[w] = set(worker_calendar[worker_calendar['horario'] == 'TC']['index'].tolist())
-            mot_days[w] = set(worker_calendar[worker_calendar['mot'] == True]['index'].tolist())
+            mot_days[w] = set(worker_calendar[worker_calendar['horario'] == 'MoT']['index'].tolist())
 
 
         for w in week_template_temp:
-                    week_template[w] = {}
-                    for week, days in week_to_days.items():
-                        week_template[w][week] = week_template_temp[w][days[1]]
+            week_template[w] = {}
+            for week, days in week_to_days.items():
+                week_template[w][week] = week_template_temp[w][days[1]]
 
         for dummy in dummy_workers:
             original = dummy_workers[dummy]["parent"]
@@ -1084,6 +1086,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "sunday_past_lds": sunday_past_lds,
             "mot_days": mot_days,
             "out_workers": out_workers,
+            "data_demissao": data_demissao,
+            "data_admissao": data_admissao,
         }
         
     except Exception as e:
