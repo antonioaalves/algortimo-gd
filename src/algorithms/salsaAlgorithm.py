@@ -363,6 +363,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             contingente_f = []
             contingente_d = []
+            contingente_v = []
+            contingente_o = []
             
             # Basic constraint: each worker has exactly one shift per day
             if constraint_selections.get("shift_day_constraint", {}).get("enabled", True):
@@ -380,7 +382,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "Espanha":
                 self.logger.info("Applying constraint: holiday_compensation_days (Espanha-specific)")
-                contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
+                contingente_f, contingente_d, contingente_v, contingente_o = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
                                                                         fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
                                                                         sunday_past_lds, closed_holidays, dummy_workers, workers_with_dummy, empty_rules, day_off_rules)
             elif country != "Espanha":
@@ -484,7 +486,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # =================================================================
             self.logger.info("Solving SALSA model")
             schedule_df, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, real_working_shift, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
+                                         workers_past, h_plus, contingente_f, contingente_d, contingente_v, contingente_o, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'))
             self.final_schedule = pd.DataFrame(schedule_df).copy()

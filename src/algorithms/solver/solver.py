@@ -37,6 +37,8 @@ def solve(
     h_plus: Dict[int, int],
     contingente_feriados: Dict[int, List[bool]],
     contingente_domingos: Dict[int, List[bool]],
+    contingente_vazios: Dict[int, List[bool]],
+    contingente_off_days: Dict[int, List[bool]],
     eci_sibling_results_flag: bool,
     period: List[int],
     index_to_date: Dict[int, str],
@@ -400,15 +402,13 @@ def solve(
                             if solver.Value(assignment_var) == 1:
                                 if comp_day > period[1]: 
                                     day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados", worker_with_dummy)] \
-                                                                    ["no_compensation"].append(index_to_date[d])
+                                    feriados_domingos_compensacao[w]["feriados"]["no_compensation"].append(index_to_date[d])
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
                                     if d < period[0]:
                                         feriados_domingos_compensacao[w]["feriados"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "feriados", worker_with_dummy)] \
-                                                                    ["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
+                                    feriados_domingos_compensacao[w]["feriados"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 if contingente_domingos:
                     if w in contingente_domingos and len(contingente_domingos[w]) > 0:
@@ -416,15 +416,39 @@ def solve(
                             if solver.Value(assignment_var) == 1:
                                 if comp_day > period[1]:
                                     day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos", worker_with_dummy)] \
-                                                                    ["no_compensation"].append(index_to_date[d])
+                                    feriados_domingos_compensacao[w]["domingos"]["no_compensation"].append(index_to_date[d])
                                     if day not in compensation_days_off[w]:
                                         compensation_days_off[w].append(day)
                                 else:
                                     if d < period[0]:
                                         feriados_domingos_compensacao[w]["domingos"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
-                                    feriados_domingos_compensacao[w][type_of_shift(shift, shifts, solver, w, d, real_working_shift, "domingos", worker_with_dummy)] \
-                                                                    ["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
+                                    feriados_domingos_compensacao[w]["domingos"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
+                if contingente_vazios:
+                    if w in contingente_vazios and len(contingente_vazios[w]) > 0:
+                        for (d, comp_day), assignment_var in contingente_vazios[w].items():
+                            if solver.Value(assignment_var) == 1:
+                                if comp_day > period[1]:
+                                    day = index_to_date.get(comp_day, comp_day)
+                                    feriados_domingos_compensacao[w]["vazios"]["no_compensation"].append(index_to_date[d])
+                                    if day not in compensation_days_off[w]:
+                                        compensation_days_off[w].append(day)
+                                else:
+                                    if d < period[0]:
+                                        feriados_domingos_compensacao[w]["vazios"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
+                                    feriados_domingos_compensacao[w]["vazios"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
+                if contingente_off_days:
+                    if w in contingente_off_days and len(contingente_off_days[w]) > 0:
+                        for (d, comp_day), assignment_var in contingente_off_days[w].items():
+                            if solver.Value(assignment_var) == 1:
+                                if comp_day > period[1]:
+                                    day = index_to_date.get(comp_day, comp_day)
+                                    feriados_domingos_compensacao[w]["folgas"]["no_compensation"].append(index_to_date[d])
+                                    if day not in compensation_days_off[w]:
+                                        compensation_days_off[w].append(day)
+                                else:
+                                    if d < period[0]:
+                                        feriados_domingos_compensacao[w]["folgas"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
+                                    feriados_domingos_compensacao[w]["folgas"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 logger.info(f"\n\t\tholidays worked      : {len(special_days_worked[w])}, {special_days_worked[w]}"
                             f"\n\t\tsundays worked       : {len(sun[w])}, {sun[w]}"
