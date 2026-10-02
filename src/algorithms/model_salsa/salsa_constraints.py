@@ -28,10 +28,10 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
     contingent_d, total_lds_d = compensation_days(model, shift, workers, working_days, set(sundays), set(holidays), override_holiday_sunday, week_to_days, working_shift, sunday_rules, fixed_lds,
                                                   fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "sunday", sunday_past_lds, closed_days, dummy_workers, workers_with_dummy)
 
-    contingent_v, total_lds_v = compensation_days(model, shift, workers, working_days, set(sundays) | set(holidays), [], override_holiday_sunday, week_to_days, working_shift, empty_rules, fixed_lds,
+    contingent_v, total_lds_v = compensation_days(model, shift, workers, working_days, set(holidays), [], override_holiday_sunday, week_to_days, working_shift, empty_rules, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "empty", [], closed_days, dummy_workers, workers_with_dummy)
 
-    contingent_o, total_lds_o = compensation_days(model, shift, workers, working_days, set(sundays) | set(holidays), [], override_holiday_sunday, week_to_days, working_shift, day_off_rules, fixed_lds,
+    contingent_o, total_lds_o = compensation_days(model, shift, workers, working_days, set(holidays), [], override_holiday_sunday, week_to_days, working_shift, day_off_rules, fixed_lds,
                                                       fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "day_off", [], closed_days, dummy_workers, workers_with_dummy)
 
     contingente_falso = {}
