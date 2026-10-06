@@ -18,6 +18,7 @@ from src.configuration_manager.instance import get_config
 from src.data_models.functions.helper_functions import (
     count_dates_per_year,
     get_param_for_posto,
+    resolve_max_solver_time,
     get_valid_emp_info,
     get_first_and_last_day_passado_arguments,
     get_section_employees_id_list,
@@ -474,6 +475,8 @@ class AlcampoDataModel(BaseDescansosDataModel):
             ) or {}
             algorithm_name = ''
             for param_name in params_names_list:
+                if param_name == 'max_solver_time_in_seconds':
+                    continue
                 param_value = retrieved_params.get(param_name, params_defaults.get(param_name))
                 self.auxiliary_data[param_name] = param_value
                 if param_name == 'GD_algorithmName':
@@ -486,6 +489,12 @@ class AlcampoDataModel(BaseDescansosDataModel):
                     algorithm_treatment_params['ld_holiday_param'] = float(param_value)
             algorithm_treatment_params['start_date'] = self.external_call_data['start_date']
             algorithm_treatment_params['end_date'] = self.external_call_data['end_date']
+            max_solver_time, _source = resolve_max_solver_time(
+                retrieved_params.get('max_solver_time_in_seconds'),
+                self.config_manager,
+            )
+            self.auxiliary_data['max_solver_time_in_seconds'] = max_solver_time
+            algorithm_treatment_params['max_solver_time_in_seconds'] = max_solver_time
             self.auxiliary_data['algorithm_name'] = algorithm_name
             self.algorithm_treatment_params = algorithm_treatment_params
             return True, "", ""
