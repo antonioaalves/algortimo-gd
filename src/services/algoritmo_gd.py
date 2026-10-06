@@ -648,14 +648,13 @@ class AlgoritmoGDService(BaseService):
                             message="Invalid result in allocation_cycle substage, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
-                        alloc_error = str(self.data_model.rare_data.get('allocation_error', ''))
-                        if 'INFEASIBLE' in alloc_error.upper():
+                        alloc_error_upper = str(self.data_model.rare_data.get('allocation_error', '')).upper()
+                        if 'INFEASIBLE' in alloc_error_upper:
                             message_key = 'ERR_SOLVER_INFEASIBLE'
-                            placeholder_values = {
-                                '1': child_num,
-                                '2': str(posto_id),
-                                '3': '',
-                            }
+                            placeholder_values = {'1': child_num, '2': str(posto_id), '3': ''}
+                        elif 'STATUS: UNKNOWN' in alloc_error_upper:
+                            message_key = 'ERR_SOLVER_UNKNOWN'
+                            placeholder_values = {'1': child_num, '2': str(posto_id), '3': ''}
                         else:
                             message_key = 'invalidAllocationCycle'
                             placeholder_values = {'1': child_num, '2': ''}
