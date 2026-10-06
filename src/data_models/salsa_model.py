@@ -593,7 +593,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_closed_days = data_manager.load_data(
                     'df_closed_days', 
                     query_file=self.config_manager.paths.sql_processing_paths['df_closed_days'], 
-                    unit_id="'" + str(unit_id) + "'"
+                    unit_id="'" + str(unit_id) + "'",
+                    start_date=first_year_date,
+                    end_date=last_year_date,
                 )
                 self.logger.info(f"df_closed_days shape (rows {df_closed_days.shape[0]}, columns {df_closed_days.shape[1]}): {df_closed_days.columns.tolist()}")
             except Exception as e:

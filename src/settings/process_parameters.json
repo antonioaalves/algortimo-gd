@@ -31,13 +31,7 @@
             "GD_consideraFestivos": 1,
             "GD_convenioBD": "ALCAMPO",
             "codigos_motivo_ausencia": [
-                2101,
-                8999,
-                3028,
-                100,
-                120,
-                130,
-                150
+                1
             ],
             "l_dom_days": [1]
         }
@@ -48,7 +42,9 @@
         "wfm_proc_id": 44650,
         "wfm_user": "WFM",
         "start_date": "2026-09-07",
+        "start_date": "2026-09-07",
         "end_date": "2026-12-31",
+        "wfm_proc_colab": ""
         "wfm_proc_colab": ""
     }
 }
