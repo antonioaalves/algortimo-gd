@@ -65,6 +65,8 @@ class PathsConfig:
         self.sql_processing_paths: Dict[str, str] = {}
         self.sql_auxiliary_paths: Dict[str, str] = {}
         self.sql_raw_paths: Dict[str, str] = {}
+        self.alcampo_sql_raw_paths: Dict[str, str] = {}
+        self.alcampo_sql_auxiliary_paths: Dict[str, str] = {}
         self.csv_filepaths: Dict[str, str] = {}
         
         # Load appropriate path configurations based on use_db
@@ -132,6 +134,8 @@ class PathsConfig:
             self.sql_processing_paths = sql_config.get("sql_processing_paths", {})
             self.sql_auxiliary_paths = sql_config.get("sql_auxiliary_paths", {})
             self.sql_raw_paths = sql_config.get("available_entities_raw", {})
+            self.alcampo_sql_raw_paths = sql_config.get("alcampo_sql_raw_paths", {})
+            self.alcampo_sql_auxiliary_paths = sql_config.get("alcampo_sql_auxiliary_paths", {})
             
             # Build full paths for SQL files
             self._build_sql_file_paths()
@@ -174,6 +178,16 @@ class PathsConfig:
             if filename:
                 full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
                 self.sql_raw_paths[entity] = full_path
+
+        for entity, filename in self.alcampo_sql_raw_paths.items():
+            if filename:
+                full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
+                self.alcampo_sql_raw_paths[entity] = full_path
+
+        for entity, filename in self.alcampo_sql_auxiliary_paths.items():
+            if filename:
+                full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
+                self.alcampo_sql_auxiliary_paths[entity] = full_path
     
     def _validate_sql_paths(self) -> None:
         """

@@ -21,7 +21,8 @@ from src.helpers import (
 )
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
-    get_param_for_posto, 
+    get_param_for_posto,
+    resolve_max_solver_time, 
     load_wfm_scheds, 
     get_valid_emp_info,
     get_first_and_last_day_passado_arguments,
@@ -105,6 +106,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_valid_emp_info,
     validate_num_sundays_year,
     validate_df_estrutura_wfm,
+    validate_treat_label_holiday,
 )
 from src.data_models.validations.func_inicializa_validations import (
     validate_df_calendario_structure,
@@ -345,6 +347,58 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.info(
                 f"Process message language set to {message_lang} "
                 f"(fk_pais={fk_pais_val}, nome_pais={nome_pais})"
+            )
+
+            # STRSOL-1820: country labour law — closed holiday vs day-off on holiday
+            country_label = (nome_pais or '').strip() or 'unknown country'
+            try:
+                fk_pais = int(df_estrutura_wfm['fk_pais'].iloc[0])
+            except (TypeError, ValueError, IndexError):
+                self.logger.error(
+                    f"Invalid fk_pais in df_estrutura_wfm for country {country_label}"
+                )
+                return False, 'errSubproc', country_label
+
+            try:
+                self.logger.info(
+                    f"Loading CORE_LABOR_LAW TREATLABELHOLIDAY for fk_pais={fk_pais}, "
+                    f"nome_pais={country_label}"
+                )
+                df_core_labor_law = data_manager.load_data(
+                    entity='df_core_labor_law_treat_label',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths[
+                        'df_core_labor_law_treat_label'
+                    ],
+                    fk_pais=str(fk_pais),
+                )
+                self.logger.info(
+                    f"df_core_labor_law_treat_label shape "
+                    f"(rows {df_core_labor_law.shape[0]}, columns {df_core_labor_law.shape[1]}): "
+                    f"{df_core_labor_law.columns.tolist()}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error loading CORE_LABOR_LAW TREATLABELHOLIDAY for fk_pais={fk_pais}, "
+                    f"nome_pais={country_label}: {e}",
+                    exc_info=True,
+                )
+                return False, 'ERR_TREAT_LABEL_HOLIDAY_MISSING', country_label
+
+            valid_treat, treat_err_code, treat_label_holiday = validate_treat_label_holiday(
+                df_core_labor_law
+            )
+            if not valid_treat:
+                self.logger.error(
+                    f"TREATLABELHOLIDAY validation failed: {treat_err_code}, "
+                    f"fk_pais={fk_pais}, nome_pais={country_label}, "
+                    f"rows={len(df_core_labor_law) if df_core_labor_law is not None else 0}"
+                )
+                return False, treat_err_code, country_label
+
+            self.algorithm_treatment_params['treat_label_holiday'] = treat_label_holiday
+            self.logger.info(
+                f"treat_label_holiday={treat_label_holiday} for country {country_label} "
+                f"(fk_pais={fk_pais})"
             )
 
             # ECI Unit Detection: check if this is an ECI unit and load sibling section data
@@ -593,7 +647,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_closed_days = data_manager.load_data(
                     'df_closed_days', 
                     query_file=self.config_manager.paths.sql_processing_paths['df_closed_days'], 
-                    unit_id="'" + str(unit_id) + "'"
+                    unit_id="'" + str(unit_id) + "'",
+                    start_date=first_year_date,
+                    end_date=last_year_date,
                 )
                 self.logger.info(f"df_closed_days shape (rows {df_closed_days.shape[0]}, columns {df_closed_days.shape[1]}): {df_closed_days.columns.tolist()}")
             except Exception as e:
@@ -826,6 +882,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)
             for param_name in params_names_list:
+                if param_name == 'max_solver_time_in_seconds':
+                    continue
                 param_value = retrieved_params.get(param_name, params_defaults.get(param_name))
                 self.auxiliary_data[param_name] = param_value
                 self.logger.info(f"Parameter {param_name} = {param_value}")
@@ -846,6 +904,12 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
+            max_solver_time, _source = resolve_max_solver_time(
+                retrieved_params.get('max_solver_time_in_seconds'),
+                self.config_manager,
+            )
+            self.auxiliary_data['max_solver_time_in_seconds'] = max_solver_time
+            algorithm_treatment_params['max_solver_time_in_seconds'] = max_solver_time
             self.logger.info(f"Treating parameters completed successfully")
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name
@@ -1564,7 +1628,15 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False, "errSubproc", error_msg
 
                 # Apply all cycle day-type horario codes to df_calendario
-                success, df_calendario, error_msg = add_ciclos_completos(df_calendario, df_ciclos)
+                treat_label_holiday = int(
+                    self.algorithm_treatment_params.get('treat_label_holiday', 1)
+                )
+
+                success, df_calendario, error_msg = add_ciclos_completos(
+                    df_calendario,
+                    df_ciclos,
+                    treat_label_holiday=treat_label_holiday,
+                )
                 if not success:
                     self.logger.error(f"Adding ciclos failed: {error_msg}")
                     return False, "errSubproc", error_msg
@@ -1576,7 +1648,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False, "errSubproc", error_msg
                 
                 # Add df_calendario_passado to df_calendario
-                success, df_calendario, error_msg = add_calendario_passado(df_calendario, df_calendario_passado)
+                success, df_calendario, error_msg = add_calendario_passado(
+                    df_calendario,
+                    df_calendario_passado,
+                    treat_label_holiday=treat_label_holiday,
+                )
                 if not success:
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
                     return False, "errSubproc", error_msg

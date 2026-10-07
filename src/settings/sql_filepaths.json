@@ -33,11 +33,19 @@
         "df_eci_section_employees": "queryGetEciSectionEmployees.sql",
         "df_eci_sibling_section": "queryGetEciSiblingSectionId.sql",
         "df_process_rules": "queryGetProcessLaborRules.sql",
-        "df_pro_emp_mov": "queryGetCoreProEmpMov.sql"
+        "df_pro_emp_mov": "queryGetCoreProEmpMov.sql",
+        "df_core_labor_law_treat_label": "queryGetCoreLaborLawTreatLabelHoliday.sql"
     },
     "available_entities_raw": {
         "df_calendario": "",
         "df_colaborador": "queryGetCoreProEmpContract.sql",
         "df_estimativas": ""
+    },
+    "alcampo_sql_raw_paths": {
+        "df_colaborador": "qry_ma.sql"
+    },
+    "alcampo_sql_auxiliary_paths": {
+        "df_contratos": "queryGetAlcampoContratos.sql",
+        "df_ausencias_ferias": "queryGetAusenciasAlcampo.sql"
     }
 }
