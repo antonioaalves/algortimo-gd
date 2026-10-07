@@ -2,7 +2,7 @@
 
 # Dependencies
 import pandas as pd
-from typing import List
+from typing import List, Union
 
 # Local stuff
 from base_data_project.log_config import setup_logger
@@ -157,21 +157,26 @@ def validate_df_folgas_ciclos(df_folgas_ciclos: pd.DataFrame) -> bool:
 def validate_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[str]) -> bool:
     """
     Validate df_colaborador structure and employee IDs consistency.
-    
+
+    df_colaborador now has one row per (employee_id, contract_id, begin_date/end_date)
+    period from wfm.core_pro_emp_contract. Multiple rows per employee are expected
+    when an employee has more than one contract period in the process window.
+
     Args:
-        df_colaborador: Employee DataFrame with standardized fields
+        df_colaborador: Employee DataFrame with contract-period rows
         employees_id_list: List of valid employee IDs (as strings)
-        
+
     Returns:
         bool: True if validation passes, False otherwise
     """
     if df_colaborador.empty:
         return False
 
-    needed_columns = ['employee_id', 'loja', 'secao', 'fk_tipo_posto', 'convenio']
-    if not all(col in df_colaborador.columns for col in needed_columns):
+    needed_columns = ['employee_id', 'contract_id', 'begin_date', 'end_date', 'fk_tipo_posto', 'labor_union']
+    missing_columns = [c for c in needed_columns if c not in df_colaborador.columns]
+    if missing_columns:
         logger.error(f"df_colaborador columns: {df_colaborador.columns.tolist()}")
-        logger.error(f"needed_columns not in df_colaborador columns: {needed_columns}")
+        logger.error(f"Missing required columns in df_colaborador: {missing_columns}")
         return False
     if not df_colaborador['employee_id'].isin(employees_id_list).all():
         logger.error(f"employee_id not in employees_id_list: {df_colaborador['employee_id'].unique()}, employees_id_list: {employees_id_list}")
@@ -253,13 +258,20 @@ def validate_treated_df_calendario(df_calendario: pd.DataFrame) -> bool:
         
     return True
 
-def validate_valid_emp_info(unit_id: int, secao_id: int, posto_id_list: List[int], employees_id_list: List[int]) -> bool:
+def validate_valid_emp_info(unit_id: Union[int, str], secao_id: int, posto_id_list: List[int], employees_id_list: List[int]) -> bool:
     """
     Validate valid_emp info.
+    unit_id can be int or str (e.g. numeric or string unit identifiers).
     """
     error_msgs = []
-    if unit_id == 0 or unit_id == None:
-        error_msgs.append("unit_id is 0 or None")
+    if unit_id is None:
+        error_msgs.append("unit_id is None")
+        return False
+    if unit_id == 0:
+        error_msgs.append("unit_id is 0")
+        return False
+    if isinstance(unit_id, str) and (not unit_id or not unit_id.strip()):
+        error_msgs.append("unit_id is empty or whitespace")
         return False
     if secao_id == 0 or secao_id == None:
         error_msgs.append("secao_id is 0 or None")
@@ -299,3 +311,19 @@ def validate_num_sundays_year(num_sundays_year: int) -> bool:
     if not isinstance(num_sundays_year, int) or num_sundays_year < 0:
         return False
     return True
+
+def validate_df_estrutura_wfm(df_estrutura_wfm: pd.DataFrame) -> bool:
+    """
+    Validate df_estrutura_wfm.
+    """
+    if df_estrutura_wfm.empty:
+        return False
+    if 'nome_pais' not in df_estrutura_wfm.columns:
+        return False
+    if 'fk_pais' not in df_estrutura_wfm.columns:
+        return False
+    if df_estrutura_wfm['fk_pais'].nunique() != 1:
+        return False
+    
+    return True
+

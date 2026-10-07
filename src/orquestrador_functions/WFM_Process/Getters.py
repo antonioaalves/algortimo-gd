@@ -12,7 +12,8 @@ THIS IS THE GETTERS FOR THE FUNCTIONS REGARDING THE WFM PROCESSES AND CONTROL OF
 from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 import os
 import pandas as pd
-import cx_Oracle
+import oracledb as cx_Oracle  # oracledb replaces cx_Oracle
+import oracledb as cx_Oracle  # oracledb replaces cx_Oracle
 def get_process_valid_emp(pathOS, process_id,connection):
     """
     Retrieves valid employees for a given process ID from the database.
@@ -31,7 +32,7 @@ def get_process_valid_emp(pathOS, process_id,connection):
         connection = ensure_connection_with_config(connection)
         
         # Read SQL query from file
-        query_file_path = os.path.join(pathOS, 'Data', 'Queries', 'WFM_Process', 'Getters', "get_process_valid_employess.sql")
+        query_file_path = os.path.join(pathOS, 'data', 'Queries', 'WFM_Process', 'Getters', "get_process_valid_employess.sql")
         with open(query_file_path, 'r') as file:
             query = file.read().strip().replace("\n", " ")
         
@@ -63,7 +64,7 @@ def get_process_valid_emp(pathOS, process_id,connection):
         print(f"Error in connection or execution: {e}")
         return pd.DataFrame()  # Return an empty DataFrame if connection fails
 
-def get_process_by_status(pathOS, user, process_type, event_type, status, connection):
+def get_process_by_status(pathOS, user, process_type, event_type, status, connection, use_case: int = 0):
     """
     Retrieves processes by status from the database.
     
@@ -79,27 +80,48 @@ def get_process_by_status(pathOS, user, process_type, event_type, status, connec
         pd.DataFrame: A dataframe containing processes by status.
     """
     try:
-        connection = ensure_connection_with_config(connection)
+        if use_case == 0:
+            connection = ensure_connection_with_config(connection)
 
-        # Read SQL query from file
-        query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters","get_process_by_status.sql")
-        with open(query_file_path, 'r') as file:
-            query = file.read().strip().replace("\n", " ")
-        
-        # Replace placeholders in the query
-        query = query.replace(":user", f"'{user}'")
-        query = query.replace(":process_type", f"'{process_type}'")
-        query = query.replace(":event_type", f"'{event_type}'")
-        query = query.replace(":status", f"'{status}'")
-        print(query)
-        # Execute the query and fetch results into a DataFrame
-        with connection.cursor() as cursor:
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            columns = [col[0] for col in cursor.description]
-            df_data = pd.DataFrame(rows, columns=columns)
-        
-        return df_data
+            # Read SQL query from file
+            query_file_path = os.path.join(pathOS, "data", "Queries", "WFM_Process", "Getters", "get_process_by_status.sql")
+            with open(query_file_path, 'r') as file:
+                query = file.read().strip().replace("\n", " ")
+
+            # Replace placeholders in the query
+            query = query.replace(":user", f"'{user}'")
+            query = query.replace(":process_type", f"'{process_type}'")
+            query = query.replace(":event_type", f"'{event_type}'")
+            query = query.replace(":status", f"'{status}'")
+            print(query)
+            # Execute the query and fetch results into a DataFrame
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                columns = [col[0] for col in cursor.description]
+                df_data = pd.DataFrame(rows, columns=columns)
+
+            return df_data
+        elif use_case == 1:
+            # Read SQL query from file
+            query_file_path = os.path.join(pathOS, "data", "Queries", "sql", "get_process_by_status.sql")
+            with open(query_file_path, 'r') as file:
+                query = file.read().strip().replace("\n", " ")
+
+            # Replace placeholders in the query
+            #query = query.replace(":user", f"'{user}'")
+            #query = query.replace(":process_type", f"'{process_type}'")
+            #query = query.replace(":event_type", f"'{event_type}'")
+            #query = query.replace(":status", f"'{status}'")
+            print(query)
+            # Execute the query and fetch results into a DataFrame
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+                columns = [col[0] for col in cursor.description]
+                df_data = pd.DataFrame(rows, columns=columns)
+
+            return df_data
     
     except Exception as e:
         print(f"Error in get_process_by_status: {e}")
@@ -122,7 +144,7 @@ def get_process_by_id(pathOS, process_id, connection):
         connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
-        query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters", "get_process_by_id.sql")
+        query_file_path = os.path.join(pathOS, "data", "Queries", "WFM_Process","Getters", "get_process_by_id.sql")
         with open(query_file_path, 'r') as file:
             query = file.read().strip().replace("\n", " ")
         
@@ -158,7 +180,7 @@ def get_total_process_by_status(pathOS, connection):
         connection = ensure_connection_with_config(connection)
 
         # Read SQL query from file
-        query_file_path = os.path.join(pathOS, "Data", "Queries", "WFM_PROCESS","Getters", "get_total_process_by_status.sql")
+        query_file_path = os.path.join(pathOS, "data", "Queries", "WFM_Process","Getters", "get_total_process_by_status.sql")
         with open(query_file_path, 'r') as file:
             query = file.read().strip().replace("\n", " ")
         

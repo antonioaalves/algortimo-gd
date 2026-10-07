@@ -28,7 +28,7 @@ DATA FLOW SUMMARY:
 │ STEP 3: add_ausencias_ferias                                                │
 │ ─────────────────────────────────────────────────────────────────────────── │
 │ Source: df_ausencias_ferias (vacation/absence system)                       │
-│ Maps: tipo_ausencia → horario (V=vacation, A=absence)                       │
+│ Maps: tipo_ausencia -> horario (V=vacation, A=absence)                       │
 │ Mode: OVERRIDE (except F's are preserved)                                   │
 │ Match: (employee_id, date)                                                  │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -39,10 +39,10 @@ DATA FLOW SUMMARY:
 │ ─────────────────────────────────────────────────────────────────────────── │
 │ Source: df_ciclos_completos (90-day rotation cycles)                        │
 │ For: Employees with ciclo='Completo' / seq_turno='CICLO'                    │
-│ Maps: codigo_trads/horario_ind → horario (M, T, MoT, L, etc.)               │
+│ Maps: codigo_trads/horario_ind -> horario (M, T, MoT, L, etc.)               │
 │ Mode: OVERRIDE with rules:                                                  │
 │   - F's: NEVER overridden                                                   │
-│   - A's, V's: Preserved from shift codes, but '-' → 'A-'/'V-', 'L' overrides│
+│   - A's, V's: Preserved from shift codes, but '-' -> 'A-'/'V-', 'L' overrides│
 │   - Other values: Override non-F/A/V                                        │
 │ Match: (employee_id, schedule_day)                                          │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -77,10 +77,10 @@ DATA FLOW SUMMARY:
 │ STEP 7: add_folgas_ciclos                                                   │
 │ ─────────────────────────────────────────────────────────────────────────── │
 │ Source: df_folgas_ciclos (cycle day-off patterns)                           │
-│ Maps: tipo_dia → horario ('F'→'L' folga, 'S'→'-' no-work)                   │
+│ Maps: tipo_dia -> horario ('F'->'L' folga, 'S'->'-' no-work)                   │
 │ Mode: OVERRIDE with rules:                                                  │
 │   - F's: NEVER overridden                                                   │
-│   - A's, V's: Preserved from 'L', but '-' → 'A-'/'V-'                       │
+│   - A's, V's: Preserved from 'L', but '-' -> 'A-'/'V-'                       │
 │ Match: (employee_id, schedule_day)                                          │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -135,7 +135,9 @@ from src.data_models.functions.data_treatment_functions import (
     add_calendario_passado,
     add_folgas_ciclos,
     add_days_off,
+    restrict_turnos_by_disponibilidade,
 )
+from src.data_models.functions.helper_functions import convert_ciclos_to_horario
 
 
 # =============================================================================
@@ -274,7 +276,7 @@ class TestAddAusenciasFerias:
     Tests for add_ausencias_ferias function.
     
     BUSINESS LOGIC:
-    - Maps tipo_ausencia → horario (V=vacation, A=absence)
+    - Maps tipo_ausencia -> horario (V=vacation, A=absence)
     - OVERRIDES existing horario values
     - PRESERVES 'F' (closed holidays) - never overridden
     - Match by (employee_id, date)
@@ -361,7 +363,7 @@ class TestAddCiclosCompletos:
     - Fills horario with shift codes (M, T, MoT, L, etc.)
     - PRESERVES 'F' - never overridden
     - PRESERVES 'A', 'V' from regular shift codes, but:
-      - '-' converts 'A' → 'A-', 'V' → 'V-'
+      - '-' converts 'A' -> 'A-', 'V' -> 'V-'
       - 'L' can override A/V
     - Match by (employee_id, schedule_day)
     """
@@ -403,7 +405,7 @@ class TestAddCiclosCompletos:
     
     def test_dash_converts_absence_to_a_dash(self, base_df_calendario):
         """
-        RULE: '-' (no-work) should convert 'A' → 'A-'
+        RULE: '-' (no-work) should convert 'A' -> 'A-'
         """
         # First add an absence
         df_ausencias = pd.DataFrame({
@@ -424,9 +426,98 @@ class TestAddCiclosCompletos:
         
         assert success
         jan2 = df[(df['employee_id'] == '101') & (df['schedule_day'] == '2025-01-02')]
-        # Note: The function should convert A → A- when '-' is applied
+        # Note: The function should convert A -> A- when '-' is applied
         assert 'A-' in jan2['horario'].values or 'A' in jan2['horario'].values, \
             "Absence should be converted to A- or preserved as A"
+
+    def test_splits_nlm_nlt_per_tipo_turno(self, base_df_calendario):
+        """NLM/NLT from cycles should split across M/T rows like M/T codes."""
+        df_ciclos = pd.DataFrame({
+            'employee_id': ['101', '101', '101'],
+            'schedule_day': ['2025-01-02', '2025-01-03', '2025-01-04'],
+            'horario': ['NLM', 'NLT', 'NL'],
+        })
+
+        success, df, _ = add_ciclos_completos(base_df_calendario, df_ciclos)
+
+        assert success
+        nlm_day = df[(df['employee_id'] == '101') & (df['schedule_day'] == '2025-01-02')]
+        nlt_day = df[(df['employee_id'] == '101') & (df['schedule_day'] == '2025-01-03')]
+        nl_day = df[(df['employee_id'] == '101') & (df['schedule_day'] == '2025-01-04')]
+
+        assert set(nlm_day['horario']) == {'NLM', '0'}
+        assert set(nlt_day['horario']) == {'NLT', '0'}
+        assert set(nl_day['horario']) == {'NL'}
+
+
+# =============================================================================
+# TEST: convert_ciclos_to_horario (NLM/NLT)
+# =============================================================================
+
+class TestConvertCiclosToHorario:
+    def test_tipo_dia_n_maps_to_nlm_nlt_or_nl(self):
+        df = pd.DataFrame({
+            'tipo_dia': ['N', 'N', 'N'],
+            'dia_semana': [3, 3, 3],
+            'work_shift': ['M', 'T', 'A'],
+        })
+
+        result = convert_ciclos_to_horario(df, l_dom_days=[])
+
+        assert list(result['horario']) == ['NLM', 'NLT', 'NL']
+
+
+# =============================================================================
+# TEST: restrict_turnos_by_disponibilidade (NLM/NLT)
+# =============================================================================
+
+class TestRestrictTurnosByDisponibilidade:
+    def _calendario_with_forced_work(self, horario_m: str, horario_t: str) -> pd.DataFrame:
+        return pd.DataFrame({
+            'employee_id': ['101', '101'],
+            'schedule_day': ['2025-01-02', '2025-01-02'],
+            'tipo_turno': ['M', 'T'],
+            'horario': [horario_m, horario_t],
+        })
+
+    def test_forced_work_nl_gets_nlm_on_morning_restriction(self):
+        df_cal = self._calendario_with_forced_work('NL', 'NL')
+        df_disp = pd.DataFrame({
+            'employee_id': ['101'],
+            'schedule_day': ['2025-01-02'],
+            'restricao_turno': ['M'],
+        })
+
+        success, df, _ = restrict_turnos_by_disponibilidade(df_cal, df_disp)
+
+        assert success
+        assert set(df['horario']) == {'NLM', '0'}
+
+    def test_forced_work_nlm_gets_nlt_on_afternoon_restriction(self):
+        df_cal = self._calendario_with_forced_work('NLM', '0')
+        df_disp = pd.DataFrame({
+            'employee_id': ['101'],
+            'schedule_day': ['2025-01-02'],
+            'restricao_turno': ['T'],
+        })
+
+        success, df, _ = restrict_turnos_by_disponibilidade(df_cal, df_disp)
+
+        assert success
+        assert set(df['horario']) == {'0', 'NLT'}
+
+    def test_regular_work_day_still_uses_m_t(self):
+        df_cal = self._calendario_with_forced_work('MoT', 'MoT')
+        df_disp = pd.DataFrame({
+            'employee_id': ['101'],
+            'schedule_day': ['2025-01-02'],
+            'restricao_turno': ['M'],
+        })
+
+        success, df, _ = restrict_turnos_by_disponibilidade(df_cal, df_disp)
+
+        assert success
+        assert set(df['horario']) == {'M', '0'}
 
 
 # =============================================================================
@@ -544,7 +635,7 @@ class TestAddFolgasCiclos:
     - Source: tipo_dia = 'L' (folga) or '-' (no-work)
     - OVERRIDE mode - replaces existing horario
     - PRESERVES 'F' - never overridden
-    - PRESERVES 'A', 'V' from 'L' override, but '-' → 'A-'/'V-'
+    - PRESERVES 'A', 'V' from 'L' override, but '-' -> 'A-'/'V-'
     """
     
     def test_applies_day_off_L(self, base_df_calendario):
@@ -581,7 +672,7 @@ class TestAddFolgasCiclos:
     
     def test_dash_converts_vacation_to_v_dash(self, base_df_calendario):
         """
-        RULE: '-' (no-work) should convert 'V' → 'V-'
+        RULE: '-' (no-work) should convert 'V' -> 'V-'
         """
         # First add a vacation
         df_ausencias = pd.DataFrame({

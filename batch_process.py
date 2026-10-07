@@ -3,7 +3,7 @@
 
 import time
 import os
-import cx_Oracle
+import oracledb as cx_Oracle  # oracledb replaces cx_Oracle
 import click
 import sys
 from typing import Dict, Any

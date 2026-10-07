@@ -1,0 +1,41 @@
+{
+    "salsa_tst": {
+        "num_search_workers": {
+            "enabled": true,
+            "value": 8
+        },
+        "max_time_in_seconds": {
+            "enabled": true,
+            "value": 600
+        },
+        "cp_model_presolve": {
+            "enabled": true,
+            "value": true
+        },
+        "interleave_search": {
+            "enabled": false,
+            "value": true
+        },
+        "search_branching": {
+            "enabled": false,
+            "value": true
+        },
+        "cp_model_probing_level": {
+            "enabled": true,
+            "value": true
+        },
+        "symmetry_level": {
+            "enabled": true,
+            "value": true
+        },
+        "linearization_level": {
+            "enabled": true,
+            "value": true
+        },
+        "random_seed": {
+            "enabled": false,
+            "value": 123
+        }
+    } 
+
+}

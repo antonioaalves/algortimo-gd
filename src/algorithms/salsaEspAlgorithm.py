@@ -364,7 +364,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             #     if isinstance(dct, dict):
             #         dct.pop(DROP_W, None)
 
-            # # 3) mapas (w, week, ...) → limpar chaves desse worker
+            # # 3) mapas (w, week, ...) -> limpar chaves desse worker
             # worker_week_shift = {k: v for k, v in worker_week_shift.items() if k[0] != DROP_W}
             
             # =================================================================

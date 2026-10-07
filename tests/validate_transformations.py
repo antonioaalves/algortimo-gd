@@ -30,7 +30,7 @@ def analyze_log(log_path):
                     test_cases.append({
                         'employee': employee_match.group(1),
                         'date': date_match.group(1),
-                        'transformation': '"-" + "A" → "AV"'
+                        'transformation': '"-" + "A" -> "AV"'
                     })
         
         # Track "-" to "VV" (Function 1 - vacation)
@@ -44,7 +44,7 @@ def analyze_log(log_path):
                     test_cases.append({
                         'employee': employee_match.group(1),
                         'date': date_match.group(1),
-                        'transformation': '"-" → "VV" (vacation)'
+                        'transformation': '"-" -> "VV" (vacation)'
                     })
         
         # Track "A" to "AV" (S-type loop)
@@ -74,10 +74,10 @@ def print_report(transformations, test_cases):
     
     print("📊 TRANSFORMATION COUNTS:")
     print("-" * 80)
-    print(f"✅ Empty ('-') + Absence ('A') → 'AV':     {transformations['empty_to_AV']}")
-    print(f"✅ Empty ('-') + Vacation → 'VV':          {transformations['empty_to_VV']}")
-    print(f"✅ 'A' → 'AV' (S-type loop):               {transformations['A_to_AV_stype']}")
-    print(f"✅ 'V' → 'VV' (S-type loop):               {transformations['V_to_VV_stype']}")
+    print(f"✅ Empty ('-') + Absence ('A') -> 'AV':     {transformations['empty_to_AV']}")
+    print(f"✅ Empty ('-') + Vacation -> 'VV':          {transformations['empty_to_VV']}")
+    print(f"✅ 'A' -> 'AV' (S-type loop):               {transformations['A_to_AV_stype']}")
+    print(f"✅ 'V' -> 'VV' (S-type loop):               {transformations['V_to_VV_stype']}")
     print(f"📝 Total S-type records processed:         {transformations.get('s_records_processed', 0)}")
     print()
     
