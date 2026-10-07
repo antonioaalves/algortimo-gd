@@ -25,7 +25,7 @@ from src.configuration_manager.instance import get_config
 from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.data_models.factory import DataModelFactory
-from src.helpers import set_process_errors, log_missing_ciclos_warnings
+from src.helpers import set_process_errors, log_missing_ciclos_warnings, log_unconverted_fd_days
 from src.orquestrador_functions.Logs.message_loader import set_messages
 
 class AlgoritmoGDService(BaseService):
@@ -1756,6 +1756,34 @@ class AlgoritmoGDService(BaseService):
             
             validation_result = self.data_model.validate_format_results()
             self.logger.info(f"format_results returning: {validation_result}")
+            if validation_result:
+                auxiliary_data = getattr(self.data_model, 'auxiliary_data', {}) or {}
+                df_messages = auxiliary_data.get('df_messages', pd.DataFrame())
+                fd_events = auxiliary_data.get('unconverted_fd_day_events', [])
+                if fd_events and self.raw_connection and not df_messages.empty:
+                    self._refresh_raw_connection()
+                    child_num = str(self.external_data.get('child_number', 1))
+                    posto_id = auxiliary_data.get('current_posto_id', None)
+                    process_type = self.external_data.get('process_type', None)
+                    n_logged = log_unconverted_fd_days(
+                        connection=self.raw_connection,
+                        path_os=self.config_manager.system.project_root_dir,
+                        fk_process=self.external_data['current_process_id'],
+                        process_type=process_type,
+                        df_messages=df_messages,
+                        fd_events=fd_events,
+                        child_num=child_num,
+                        posto_id=posto_id,
+                    )
+                    self.logger.info(
+                        f"Logged {n_logged}/{len(fd_events)} unconverted F/D day "
+                        f"warning(s) to esc_processo_erros"
+                    )
+                elif fd_events:
+                    self.logger.warning(
+                        "Unconverted F/D days were logged to the process file only; "
+                        "database messages were skipped"
+                    )
             if self.stage_handler:
                 self.stage_handler.complete_substage(
                     stage_name='processing',

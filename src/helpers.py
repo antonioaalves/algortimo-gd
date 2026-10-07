@@ -344,6 +344,77 @@ def log_missing_ciclos_warnings(
     return logged
 
 
+def log_unconverted_fd_days(
+    connection,
+    path_os: str,
+    fk_process,
+    process_type: str,
+    df_messages: pd.DataFrame,
+    fd_events: List[dict],
+    *,
+    user: str = 'WFM',
+    child_num: str = '1',
+    posto_id=None,
+) -> int:
+    """
+    Persist F/D rows that missed the rule-type conversion to wfm.esc_processo_erros.
+
+    Each event is one warning (type_error='W'): the compensatory day off will be
+    inserted as F/D, with no movement. The process is not failed.
+    """
+    if connection is None or not fd_events or df_messages is None or df_messages.empty:
+        return 0
+
+    logged = 0
+    for event in fd_events:
+        matricula = str(event.get('matricula', '') or '')
+        employee_label = event.get('employee_id')
+        if employee_label is None or str(employee_label).strip() == '':
+            employee_label = matricula or 'n/a'
+            matricula_part = ''
+        else:
+            matricula_part = f", matricula {matricula}" if matricula else ''
+
+        placeholder_values = {
+            '1': child_num,
+            '2': str(employee_label),
+            '3': matricula_part,
+            '4': str(event.get('schedule_day', '')),
+            '5': str(posto_id or ''),
+        }
+        description = set_messages(df_messages, 'WARN_UNCONVERTED_FD', placeholder_values)
+        if not description:
+            description = (
+                f"Subproceso {child_num}: el colaborador {employee_label}{matricula_part} "
+                f"el dia {event.get('schedule_day', '')} queda F/D. "
+                f"No se convirtio al tipo de la regla y el descanso compensatorio "
+                f"se inserta sin movimiento. Puesto {posto_id or ''}"
+            )
+
+        emp_id = event.get('employee_id')
+        try:
+            employee_id = int(emp_id) if emp_id is not None and str(emp_id).strip() != '' else None
+        except (TypeError, ValueError):
+            employee_id = None
+
+        schedule_day = event.get('schedule_day')
+        ok = set_process_errors(
+            connection=connection,
+            pathOS=path_os,
+            user=user,
+            fk_process=fk_process,
+            type_error='W',
+            process_type=process_type,
+            error_code=None,
+            description=description,
+            employee_id=employee_id,
+            schedule_day=str(schedule_day) if schedule_day else None,
+        )
+        if ok:
+            logged += 1
+    return logged
+
+
 def log_max_consecutive_working_days_errors(
     connection,
     path_os: str,
