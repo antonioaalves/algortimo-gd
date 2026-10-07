@@ -252,6 +252,8 @@ def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp
         if start_date2 is None or end_date2 is None:
             return False, pd.DataFrame(), "Input validation failed: invalid date parameters"
             
+        if not df_closed_days.empty and 'data' not in df_closed_days.columns and 'schedule_day' in df_closed_days.columns:
+            df_closed_days = df_closed_days.rename(columns={'schedule_day': 'data'})
         if not df_closed_days.empty and 'data' not in df_closed_days.columns:
             return False, pd.DataFrame(), "Input validation failed: missing data column"
 
@@ -4943,6 +4945,22 @@ def _count_weekly_rest_weekend_days_in_range(
     return count
 
 
+def _take_weekly_free_slot(
+    day: pd.Timestamp,
+    day_to_week: Optional[Dict[pd.Timestamp, int]],
+    remaining: int,
+    claims: Optional[dict],
+) -> bool:
+    """Spend one leftover L/LQ slot in this salsa week. claims is None for a single weekend day."""
+    week = day_to_week.get(day.normalize()) if day_to_week and claims is not None else None
+    left = remaining if week is None else remaining - claims.get(week, 0)
+    if left < 1:
+        return False
+    if week is not None:
+        claims[week] = claims.get(week, 0) + 1
+    return True
+
+
 def _count_eligible_sundays(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
@@ -4957,6 +4975,7 @@ def _count_eligible_sundays(
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
+    slot_claims: Optional[dict] = None,
 ) -> int:
     """
     Count Sundays eligible for l_dom within [begin, effective_end].
@@ -4992,10 +5011,15 @@ def _count_eligible_sundays(
             sunday, adjacent_free, max_consec_free
         ):
             pass
-        elif _remaining_weekly_free_day_slots(
-            sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
-            weekly_quota_ctx=weekly_quota_ctx,
-        ) < 1:
+        elif not _take_weekly_free_slot(
+            sunday,
+            day_to_week,
+            _remaining_weekly_free_day_slots(
+                sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+            ),
+            slot_claims,
+        ):
             pass
         else:
             count += 1
@@ -5042,6 +5066,7 @@ def _count_eligible_saturdays(
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
     employee_id: Optional[str] = None,
+    slot_claims: Optional[dict] = None,
 ) -> int:
     """
     Count Saturdays eligible for l_sab (and l_dom_or_sab pool contribution).
@@ -5088,10 +5113,15 @@ def _count_eligible_saturdays(
             saturday, adjacent_free, max_consec_free
         ):
             pass
-        elif _remaining_weekly_free_day_slots(
-            saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
-            weekly_quota_ctx=weekly_quota_ctx,
-        ) < 1:
+        elif not _take_weekly_free_slot(
+            saturday,
+            day_to_week,
+            _remaining_weekly_free_day_slots(
+                saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+            ),
+            slot_claims,
+        ):
             pass
         else:
             count += 1
@@ -5467,15 +5497,18 @@ def _count_feasibility_cap_for_field(
                 **count_kwargs,
             )
         elif field == 'l_dom_or_sab':
+            slot_claims: Dict[int, int] = {}
             eligible_in_execution = (
                 _count_eligible_sundays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
                     **count_kwargs,
                 )
                 + _count_eligible_saturdays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
                     **count_kwargs,
                 )
             )
@@ -5800,7 +5833,32 @@ def apply_annual_dayoff_feasibility_cap(
         return False, pd.DataFrame(), [], str(e)
 
 
-def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
+# STRSOL-1820: day-off horario codes that may replace closed holiday F when treat_label_holiday == 0
+F_OVERRIDABLE_DAYOFF_HORARIOS = frozenset({'L', 'L_DOM', 'C', 'LQ'})
+
+
+def closed_holiday_preserve_mask(
+    current_horario: pd.Series,
+    incoming_horario: pd.Series,
+    treat_label_holiday: int,
+) -> pd.Series:
+    """
+    True where an existing closed holiday (F) must not be overwritten by incoming_horario.
+    When treat_label_holiday is 0, allowed day-off codes may replace F.
+    """
+    is_f = current_horario == 'F'
+    if int(treat_label_holiday) == 0:
+        incoming_dayoff = incoming_horario.isin(F_OVERRIDABLE_DAYOFF_HORARIOS)
+        return is_f & ~incoming_dayoff
+    return is_f
+
+
+def add_calendario_passado(
+    df_calendario: pd.DataFrame,
+    df_calendario_passado: pd.DataFrame,
+    use_case: int = 1,
+    treat_label_holiday: int = 1,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Populate calendar schedule gaps using historical shift data.
     
@@ -5903,12 +5961,14 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
             # Note: Allow '-' values (from type='N' conversion) to override default '0' values
             valid_passado_mask = mapped_values.notna() & (mapped_values != '')
             
-            # Create mask to preserve F's (closed holidays) and V's (vacations)
-            preserve_f_mask = df_result['horario'] == 'F'
+            # Preserve F (subject to STRSOL-1820) and V
+            preserve_f_mask = closed_holiday_preserve_mask(
+                df_result['horario'], mapped_values, treat_label_holiday
+            )
             preserve_v_mask = df_result['horario'] == 'V'
             preserve_mask = preserve_f_mask | preserve_v_mask
             
-            # Combine masks: override everything except F's and V's where passado has valid data
+            # Combine masks: override everything except preserved F's and V's where passado has valid data
             fill_mask = valid_passado_mask & ~preserve_mask
             
             # Vectorized assignment
@@ -6056,7 +6116,12 @@ def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.Da
         return False, pd.DataFrame(), error_msg
 
 
-def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
+def add_folgas_ciclos(
+    df_calendario: pd.DataFrame,
+    df_core_pro_emp_horario_det: pd.DataFrame,
+    use_case: int = 1,
+    treat_label_holiday: int = 1,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Apply fixed day-off cycles to calendar schedules (override mode).
     
@@ -6170,8 +6235,9 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
             # Vectorized lookup: map day-off values to result positions
             mapped_values = result_index.map(dayoffs_lookup)
             
-            # Create mask to preserve F's (closed holidays) - do not override closed holidays
-            preserve_f_mask = df_result['horario'] == 'F'
+            preserve_f_mask = closed_holiday_preserve_mask(
+                df_result['horario'], mapped_values, treat_label_holiday
+            )
             
             # Create mask for A's and V's - these should only be modified by '-' (becoming A- or V-)
             preserve_av_mask = df_result['horario'].isin(['A', 'V'])
@@ -6213,7 +6279,12 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
 
-def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
+def add_ciclos_completos(
+    df_calendario: pd.DataFrame,
+    df_ciclos_completos: pd.DataFrame,
+    use_case: int = 1,
+    treat_label_holiday: int = 1,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Integrate complete 90-day rotation cycle schedules into calendar.
     
@@ -6326,15 +6397,16 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             # Note: Allow '-' values (skip days from tipo_dia='S') to override default '0' values
             valid_ciclos_mask = mapped_values.notna() & (mapped_values != '')
             
-            # Create mask to preserve F's (closed holidays) - F's should never be overridden
-            preserve_f_mask = df_result['horario'] == 'F'
+            preserve_f_mask = closed_holiday_preserve_mask(
+                df_result['horario'], mapped_values, treat_label_holiday
+            )
             
             # Create mask for A's and V's - these should only be modified by '-' (becoming A- or V-)
             preserve_av_mask = df_result['horario'].isin(['A', 'V'])
             
             # Special handling for '-' values: check if current horario is 'A' or 'V'
             # If inserting '-' and current is 'A' -> 'A-', if current is 'V' -> 'V-', otherwise '-'
-            # Note: F's should never be overridden, even by '-'
+            # Note: F's should never be overridden by '-'
             dash_mask = valid_ciclos_mask & ~preserve_f_mask & (mapped_values == '-')
             if dash_mask.any():
                 # Get current horario values for rows where we're inserting '-'
@@ -6347,8 +6419,12 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
                     np.where(current_horario == 'V', 'V-', '-')
                 )
             
-            # Process day-off values: L / L_DOM can override A's and V's (but not F's)
-            l_mask = valid_ciclos_mask & ~preserve_f_mask & mapped_values.isin(['L', 'L_DOM'])
+            # Process day-off values: may override A/V; may override F when treat_label_holiday == 0
+            l_mask = (
+                valid_ciclos_mask
+                & ~preserve_f_mask
+                & mapped_values.isin(F_OVERRIDABLE_DAYOFF_HORARIOS)
+            )
             if l_mask.any():
                 df_result.loc[l_mask, 'horario'] = mapped_values[l_mask]
 
@@ -6385,7 +6461,9 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             # Other codes (P, NL, LD, …): same value on both tipo_turno rows
             other_mask = (
                 valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask
-                & ~mapped_values.isin(['-', 'L', 'L_DOM', 'M', 'T', 'MoT', 'NLM', 'NLT'])
+                & ~mapped_values.isin(
+                    ['-', 'M', 'T', 'MoT', 'NLM', 'NLT', *F_OVERRIDABLE_DAYOFF_HORARIOS]
+                )
             )
             if other_mask.any():
                 df_result.loc[other_mask, 'horario'] = mapped_values[other_mask]

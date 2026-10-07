@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import datetime as dt
+from decimal import Decimal, InvalidOperation
 from typing import Any, List, Optional, Tuple, Dict, Union
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers import DBDataManager
@@ -241,6 +242,93 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
                 #logger.info(f"DEBUG: Found default param {param_name}:{value}")
     
     return params_dict
+
+
+DEFAULT_MAX_SOLVER_TIME_SECONDS = 600
+
+
+def _parse_whole_seconds(value: Any) -> Optional[int]:
+    """Return a whole number of seconds >= 1, or None when the value cannot be used."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        candidate = text
+    else:
+        candidate = value
+    try:
+        number = Decimal(str(candidate).strip())
+    except (InvalidOperation, ValueError, TypeError, ArithmeticError):
+        return None
+    if not number.is_finite() or number != number.to_integral_value():
+        return None
+    seconds = int(number)
+    if seconds < 1:
+        return None
+    return seconds
+
+
+def resolve_max_solver_time(db_value: Any, config_manager: Any) -> Tuple[int, str]:
+    """
+    Resolve the CP-SAT time limit in seconds.
+
+    Order: core_alg_parameters value, then solver_parameters.json for the
+    current environment, then DEFAULT_MAX_SOLVER_TIME_SECONDS.
+    An invalid value is logged and the next layer is used.
+    """
+    if db_value is not None:
+        parsed = _parse_whole_seconds(db_value)
+        if parsed is not None:
+            logger.info(
+                f"max_solver_time_in_seconds={parsed} source=core_alg_parameters"
+            )
+            return parsed, "core_alg_parameters"
+        logger.warning(
+            f"Invalid max_solver_time_in_seconds from core_alg_parameters: {db_value!r}. "
+            "Falling back to solver_parameters.json."
+        )
+
+    environment = None
+    profile = None
+    algorithm_config = getattr(config_manager, "algorithm", None)
+    system_config = getattr(config_manager, "system", None)
+    if system_config is not None:
+        environment = getattr(system_config, "environment", None)
+    if algorithm_config is not None and environment:
+        profile = algorithm_config.get_solver_profile(environment)
+
+    if isinstance(profile, dict):
+        entry = profile.get("max_time_in_seconds")
+        if isinstance(entry, dict) and entry.get("enabled") is True:
+            parsed = _parse_whole_seconds(entry.get("value"))
+            if parsed is not None:
+                logger.info(
+                    f"max_solver_time_in_seconds={parsed} source=solver_parameters "
+                    f"environment={environment}"
+                )
+                return parsed, "solver_parameters"
+            logger.warning(
+                f"Invalid max_time_in_seconds in solver_parameters.json for "
+                f"environment '{environment}': {entry.get('value')!r}. Falling back to "
+                f"{DEFAULT_MAX_SOLVER_TIME_SECONDS}."
+            )
+        elif isinstance(entry, dict) and entry.get("enabled") is not True:
+            logger.info(
+                f"max_time_in_seconds disabled for environment '{environment}'. "
+                f"Falling back to {DEFAULT_MAX_SOLVER_TIME_SECONDS}."
+            )
+    else:
+        logger.info(
+            f"No solver profile for environment '{environment}'. "
+            f"Falling back to {DEFAULT_MAX_SOLVER_TIME_SECONDS}."
+        )
+
+    logger.info(
+        f"max_solver_time_in_seconds={DEFAULT_MAX_SOLVER_TIME_SECONDS} source=default"
+    )
+    return DEFAULT_MAX_SOLVER_TIME_SECONDS, "default"
 
 def get_value_from_row(row):
     """

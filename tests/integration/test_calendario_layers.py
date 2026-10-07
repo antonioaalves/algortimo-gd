@@ -95,7 +95,8 @@ DATA FLOW SUMMARY:
 
 PRIORITY/OVERRIDE RULES (LATER STEPS WIN):
 ==========================================
-1. 'F' (closed holiday) is SACRED - NEVER overridden by any layer
+1. 'F' (closed holiday): when treat_label_holiday=1 (default), NEVER overridden.
+   When treat_label_holiday=0, only L/L_DOM/C/LQ may replace F (STRSOL-1820).
 2. 'V' (vacation) is preserved by most layers, except:
    - '-' (no-work) converts it to 'V-'
    - Calendario passado preserves it

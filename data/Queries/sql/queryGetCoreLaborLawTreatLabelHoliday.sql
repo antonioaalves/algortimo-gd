@@ -1,0 +1,5 @@
+SELECT
+    cll.COUNTRYID,
+    cll.TREATLABELHOLIDAY
+FROM wfm.CORE_LABOR_LAW cll
+WHERE cll.COUNTRYID = {fk_pais}

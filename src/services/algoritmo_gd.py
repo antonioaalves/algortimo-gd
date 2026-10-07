@@ -25,7 +25,7 @@ from src.configuration_manager.instance import get_config
 from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.data_models.factory import DataModelFactory
-from src.helpers import set_process_errors, log_missing_ciclos_warnings
+from src.helpers import set_process_errors, log_missing_ciclos_warnings, log_unconverted_fd_days
 from src.orquestrador_functions.Logs.message_loader import set_messages
 
 class AlgoritmoGDService(BaseService):
@@ -238,8 +238,16 @@ class AlgoritmoGDService(BaseService):
                     "Starting data loading raw"
                 )
             
-            data_model_name =  'salsa_data_model' #'default_data_model'
-            #data_model_name = self.process_manager.current_decisions.get(2, {}).get('algorithm_name', '') if self.process_manager else ''
+            algorithm_name = ''
+            try:
+                algorithm_name = self.config_manager.parameters.get_parameter_defaults().get('GD_algorithmName', '') or ''
+            except Exception:
+                algorithm_name = ''
+            if str(algorithm_name).lower().startswith('alcampo'):
+                data_model_name = 'alcampo_data_model'
+            else:
+                data_model_name = 'salsa_data_model'
+            self.logger.info(f"Data model selected from GD_algorithmName={algorithm_name}: {data_model_name}")
 
             # Create data model instance
             self.data_model = DataModelFactory.create_data_model(
@@ -648,14 +656,13 @@ class AlgoritmoGDService(BaseService):
                             message="Invalid result in allocation_cycle substage, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
-                        alloc_error = str(self.data_model.rare_data.get('allocation_error', ''))
-                        if 'INFEASIBLE' in alloc_error.upper():
+                        alloc_error_upper = str(self.data_model.rare_data.get('allocation_error', '')).upper()
+                        if 'INFEASIBLE' in alloc_error_upper:
                             message_key = 'ERR_SOLVER_INFEASIBLE'
-                            placeholder_values = {
-                                '1': child_num,
-                                '2': str(posto_id),
-                                '3': '',
-                            }
+                            placeholder_values = {'1': child_num, '2': str(posto_id), '3': ''}
+                        elif 'STATUS: UNKNOWN' in alloc_error_upper:
+                            message_key = 'ERR_SOLVER_UNKNOWN'
+                            placeholder_values = {'1': child_num, '2': str(posto_id), '3': ''}
                         else:
                             message_key = 'invalidAllocationCycle'
                             placeholder_values = {'1': child_num, '2': ''}
@@ -1756,6 +1763,34 @@ class AlgoritmoGDService(BaseService):
             
             validation_result = self.data_model.validate_format_results()
             self.logger.info(f"format_results returning: {validation_result}")
+            if validation_result:
+                auxiliary_data = getattr(self.data_model, 'auxiliary_data', {}) or {}
+                df_messages = auxiliary_data.get('df_messages', pd.DataFrame())
+                fd_events = auxiliary_data.get('unconverted_fd_day_events', [])
+                if fd_events and self.raw_connection and not df_messages.empty:
+                    self._refresh_raw_connection()
+                    child_num = str(self.external_data.get('child_number', 1))
+                    posto_id = auxiliary_data.get('current_posto_id', None)
+                    process_type = self.external_data.get('process_type', None)
+                    n_logged = log_unconverted_fd_days(
+                        connection=self.raw_connection,
+                        path_os=self.config_manager.system.project_root_dir,
+                        fk_process=self.external_data['current_process_id'],
+                        process_type=process_type,
+                        df_messages=df_messages,
+                        fd_events=fd_events,
+                        child_num=child_num,
+                        posto_id=posto_id,
+                    )
+                    self.logger.info(
+                        f"Logged {n_logged}/{len(fd_events)} unconverted F/D day "
+                        f"warning(s) to esc_processo_erros"
+                    )
+                elif fd_events:
+                    self.logger.warning(
+                        "Unconverted F/D days were logged to the process file only; "
+                        "database messages were skipped"
+                    )
             if self.stage_handler:
                 self.stage_handler.complete_substage(
                     stage_name='processing',

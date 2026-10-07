@@ -250,7 +250,7 @@ def validate_df_estimativas_structure(df_estimativas: pd.DataFrame, start_date: 
         return False, error_msg
 
 
-def validate_df_colaborador_structure(df_colaborador: pd.DataFrame) -> Tuple[bool, str]:
+def validate_df_colaborador_structure(df_colaborador: pd.DataFrame, use_case: int = 0) -> Tuple[bool, str]:
     """
     Validate df_colaborador structure and content before func_inicializa cross-dataframe operations.
 
@@ -258,8 +258,13 @@ def validate_df_colaborador_structure(df_colaborador: pd.DataFrame) -> Tuple[boo
     period sourced from wfm.core_pro_emp_contract. Multiple rows per employee are
     expected and valid when an employee has more than one contract period in the window.
 
+    use_case=0 (Salsa): maximumworkload, maximumworkday and carga_diaria live on this frame.
+    use_case=1 (Alcampo): those columns stay on df_contratos; carga_diaria is merged onto
+    df_calendario, so they are not recommended here.
+
     Args:
         df_colaborador: Employee/collaborator dataframe
+        use_case: 0 keeps the contract-workload warning, 1 drops it
 
     Returns:
         Tuple[bool, str]: (is_valid, error_message)
@@ -290,17 +295,25 @@ def validate_df_colaborador_structure(df_colaborador: pd.DataFrame) -> Tuple[boo
         if missing_columns:
             return False, f"df_colaborador missing required columns: {missing_columns}"
 
+        if use_case not in (0, 1):
+            return False, f"df_colaborador validation failed: unsupported use_case {use_case}"
+
         # RECOMMENDED COLUMNS CHECK (warn if missing)
         recommended_columns = [
             'nome',           # Employee display name
             'labor_union',    # Labor agreement / union code
-            'maximumworkload',# Maximum weekly workload (hours)
-            'maximumworkday', # Maximum daily workload (hours)
-            'carga_diaria',   # Derived daily workload cap
+        ]
+        if use_case == 0:
+            recommended_columns.extend([
+                'maximumworkload',  # Maximum weekly workload (hours)
+                'maximumworkday',   # Maximum daily workload (hours)
+                'carga_diaria',     # Derived daily workload cap
+            ])
+        recommended_columns.extend([
             'data_admissao',  # Admission date
             'data_demissao',  # Dismissal date (may be null)
             'fk_tipo_posto',  # Job position type
-        ]
+        ])
 
         missing_recommended = [col for col in recommended_columns if col not in df_colaborador.columns]
         if missing_recommended:
@@ -354,7 +367,8 @@ def validate_all_core_dataframes(
     df_estimativas: pd.DataFrame, 
     df_colaborador: pd.DataFrame,
     start_date: str = None,
-    end_date: str = None
+    end_date: str = None,
+    use_case: int = 0,
 ) -> Tuple[bool, str]:
     """
     Convenience function to validate all three core dataframes at once.
@@ -365,6 +379,8 @@ def validate_all_core_dataframes(
         df_colaborador: Employee/collaborator dataframe
         start_date: Optional start date for validation (YYYY-MM-DD)
         end_date: Optional end date for validation (YYYY-MM-DD)
+        use_case: Passed to validate_df_colaborador_structure. 0 warns when contract
+            workload columns are missing; 1 does not.
         
     Returns:
         Tuple[bool, str]: (all_valid, error_message)
@@ -382,7 +398,7 @@ def validate_all_core_dataframes(
         return False, f"df_estimativas validation failed: {error}"
     
     # Validate df_colaborador
-    valid, error = validate_df_colaborador_structure(df_colaborador)
+    valid, error = validate_df_colaborador_structure(df_colaborador, use_case=use_case)
     if not valid:
         return False, f"df_colaborador validation failed: {error}"
     
