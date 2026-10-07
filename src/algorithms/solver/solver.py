@@ -21,6 +21,29 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import get_dummy, type_
 project_name = get_config_manager().system.project_name
 logger = get_logger(project_name)
 
+DEFAULT_MAX_SOLVER_TIME_SECONDS = 600
+
+
+def configured_max_solver_time(algorithm_treatment_params: Optional[Dict[str, Any]]) -> int:
+    """Read the limit already resolved by the data model. Missing or unusable values use 600."""
+    raw_value = DEFAULT_MAX_SOLVER_TIME_SECONDS
+    if isinstance(algorithm_treatment_params, dict):
+        raw_value = algorithm_treatment_params.get(
+            "max_solver_time_in_seconds",
+            DEFAULT_MAX_SOLVER_TIME_SECONDS,
+        )
+    if isinstance(raw_value, bool):
+        return DEFAULT_MAX_SOLVER_TIME_SECONDS
+    try:
+        seconds = int(raw_value)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_SOLVER_TIME_SECONDS
+    if isinstance(raw_value, float) and not raw_value.is_integer():
+        return DEFAULT_MAX_SOLVER_TIME_SECONDS
+    if seconds < 1:
+        return DEFAULT_MAX_SOLVER_TIME_SECONDS
+    return seconds
+
 #----------------------------------------SOLVER-----------------------------------------------------------
 def solve(
     model: cp_model.CpModel, 
@@ -45,7 +68,7 @@ def solve(
     dummy_workers: Dict[int, Dict[str, int]],
     worker_with_dummy: Dict[int, tuple[int, int]],
     unique_dates_row: pd.core.series.Series,
-    max_time_seconds: int = 600,
+    max_time_seconds: int = DEFAULT_MAX_SOLVER_TIME_SECONDS,
     enumerate_all_solutions: bool = False,
     use_phase_saving: bool = True,
     log_search_progress: bool = 0,
@@ -63,7 +86,7 @@ def solve(
         special_days: List of special days (holidays, sundays)
         shift: Dictionary mapping (worker, day, shift) to decision variables
         shifts: List of available shift types
-        max_time_seconds: Maximum solving time in seconds (default: 120)
+        max_time_seconds: Maximum solving time in seconds (default: 600)
         enumerate_all_solutions: Whether to enumerate all solutions (default: False)
         use_phase_saving: Whether to use phase saving (default: True)
         log_search_progress: Whether to log search progress (default: True)
@@ -100,8 +123,8 @@ def solve(
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        if not isinstance(special_days, list):
-            error_msg = f"special_days must be a list. special_days: {special_days}, type: {type(special_days)}"
+        if not isinstance(special_days, set):
+            error_msg = f"special_days must be a set. special_days: {special_days}, type: {type(special_days)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
@@ -130,7 +153,7 @@ def solve(
 
         # Use only verified OR-Tools parameters
         solver.parameters.num_search_workers = 8
-        solver.parameters.max_time_in_seconds = 600
+        solver.parameters.max_time_in_seconds = max_time_seconds
 
         logger.info(f"  - Days to schedule: {len(days_of_year)} days (from {min(days_of_year)} to {max(days_of_year)})")
         logger.info(f"  - Workers: {len(workers)} workers")
@@ -288,7 +311,21 @@ def solve(
                             special_days_worked[w].append(d)
                             special_days_count += 1
                         if d - 1 <= ammount_of_days:
-                            time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            if w in work_day_hours:
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            else:
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 10
+                    elif day_assignment == 'MoT':
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        if d - 1 <= ammount_of_days:
+                            if w in work_day_hours:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += work_day_hours[w].get(d, 8) // 2
+                            else:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += 5
 
                 logger.info(f"{w}: days worked: {special_days_worked[w]}"
                             f"\n\t\t\t\t\tcompensation days off: {compensation_days_off[w]}")
@@ -394,7 +431,21 @@ def solve(
                             elif d in sundays:
                                 sun[w].append(index_to_date[d])
                         if d - 1 <= ammount_of_days:
-                            time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            if w in work_day_hours:
+                                time_worked_day_shift_after[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
+                            else:
+                                time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 10
+                    elif day_assignment == 'MoT':
+                        if d in special_days:
+                            special_days_worked[w].append(d)
+                            special_days_count += 1
+                        if d - 1 <= ammount_of_days:
+                            if w in work_day_hours:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += work_day_hours[w].get(d, 8) // 2
+                            else:
+                                for s in real_working_shift:
+                                    time_worked_day_shift[f"time_worked_day_{s}"][d - 1] += 5
 
                 if contingente_feriados:
                     if w in contingente_feriados and len(contingente_feriados[w]) > 0:

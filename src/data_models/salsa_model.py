@@ -21,7 +21,8 @@ from src.helpers import (
 )
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
-    get_param_for_posto, 
+    get_param_for_posto,
+    resolve_max_solver_time, 
     load_wfm_scheds, 
     get_valid_emp_info,
     get_first_and_last_day_passado_arguments,
@@ -593,7 +594,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_closed_days = data_manager.load_data(
                     'df_closed_days', 
                     query_file=self.config_manager.paths.sql_processing_paths['df_closed_days'], 
-                    unit_id="'" + str(unit_id) + "'"
+                    unit_id="'" + str(unit_id) + "'",
+                    start_date=first_year_date,
+                    end_date=last_year_date,
                 )
                 self.logger.info(f"df_closed_days shape (rows {df_closed_days.shape[0]}, columns {df_closed_days.shape[1]}): {df_closed_days.columns.tolist()}")
             except Exception as e:
@@ -826,6 +829,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)
             for param_name in params_names_list:
+                if param_name == 'max_solver_time_in_seconds':
+                    continue
                 param_value = retrieved_params.get(param_name, params_defaults.get(param_name))
                 self.auxiliary_data[param_name] = param_value
                 self.logger.info(f"Parameter {param_name} = {param_value}")
@@ -846,6 +851,12 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
+            max_solver_time, _source = resolve_max_solver_time(
+                retrieved_params.get('max_solver_time_in_seconds'),
+                self.config_manager,
+            )
+            self.auxiliary_data['max_solver_time_in_seconds'] = max_solver_time
+            algorithm_treatment_params['max_solver_time_in_seconds'] = max_solver_time
             self.logger.info(f"Treating parameters completed successfully")
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name

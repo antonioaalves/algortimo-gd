@@ -23,7 +23,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
     global_compensation_days, dynamic_empty_day, free_days_sundays, free_days_saturdays
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
-from src.algorithms.solver.solver import solve
+from src.algorithms.solver.solver import configured_max_solver_time, solve
 
 from src.algorithms.helpers_algorithm import (_convert_free_days, _create_empty_results, _calculate_comprehensive_stats, 
                         _validate_constraints, _calculate_quality_metrics, 
@@ -117,6 +117,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             else:
                 self.logger.info(f"Using algorithm treatment parameters: {list(algorithm_treatment_params.keys())}")
                 real_shifts = algorithm_treatment_params.get('real_shifts', ['M', 'T'])
+            self.max_solver_time_in_seconds = configured_max_solver_time(algorithm_treatment_params)
 
             self.parameters = {
                 "real_working_shifts": real_shifts,
@@ -488,6 +489,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             schedule_df, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, real_working_shift, work_day_hours, pessObj,
                                          workers_past, h_plus, contingente_f, contingente_d, contingente_v, contingente_o, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
                                          pd.Series(['Worker'] + (unique_dates)),
+                                         max_time_seconds=self.max_solver_time_in_seconds,
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'))
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")
