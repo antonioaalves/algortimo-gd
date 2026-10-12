@@ -396,6 +396,8 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
 
     return compensation_days
 
@@ -430,10 +432,10 @@ def get_dummy(workers_with_dummy, w, d):
     if w in workers_with_dummy:
         for range, new_w in workers_with_dummy.get(w, {}).items():
             if d in range:
-                if d == range[0]:
-                    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
-                if d == range[-1]:
-                    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
+                #if d == range[0]:
+                #    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
+                #if d == range[-1]:
+                #    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
                 return new_w
     return w
 
@@ -499,7 +501,8 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
-
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
     return compensation_days
 
 def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, current_year, original_year, calendar_day_0):

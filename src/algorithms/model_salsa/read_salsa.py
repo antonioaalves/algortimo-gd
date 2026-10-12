@@ -521,7 +521,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                             logger.info(f"Worker {new_w} last registered day: {last_registered_day[new_w]}")
                         else:
                             last_registered_day[new_w] = 0
-                        workers_with_dummy[w][range(data_admissao[new_w], data_demissao[new_w] + 1)] = new_w
+                        if layer == nbr_of_contracts - 1:
+                            workers_with_dummy[w][range(data_admissao[new_w], 500)] = new_w
+                        else:
+                            workers_with_dummy[w][range(data_admissao[new_w], data_demissao[new_w] + 1)] = new_w
                         dummy_workers[new_w] = {
                             'parent': w,
                             'layer': layer,
