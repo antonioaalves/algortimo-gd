@@ -19,6 +19,11 @@ from src.helpers import (
     log_max_consecutive_working_days_errors,
     log_workload_template_contract_errors,
 )
+from src.orquestrador_functions.Logs.process_message_labels import (
+    format_unit_label,
+    get_process_message_labels,
+    refresh_process_message_labels,
+)
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
     get_param_for_posto,
@@ -594,7 +599,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
                 if df_feriados is None or df_feriados.empty:
                     self.logger.error("df_feriados is empty: no holidays configured")
-                    return False, "ERR_LOAD_FERIADOS_EMPTY", str(unit_id)
+                    return False, "ERR_LOAD_FERIADOS_EMPTY", format_unit_label(df_estrutura_wfm, unit_id)
             except Exception as e:
                 self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -811,6 +816,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['num_feriados_fechados'] = num_feriados_fechados
                 self.auxiliary_data['df_process_rules'] = df_process_rules.copy()
                 self.auxiliary_data['df_process_rules_raw'] = df_process_rules_raw.copy()
+                refresh_process_message_labels(self.auxiliary_data)
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
@@ -1190,6 +1196,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Saving df_colaborador in raw_data")
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
+                refresh_process_message_labels(self.auxiliary_data, raw_data=self.raw_data)
                 self.auxiliary_data['df_pro_emp_mov_raw'] = df_pro_emp_mov_raw.copy()
                 # df_contratos retired — kept as empty DataFrame for backward compatibility
                 self.auxiliary_data['df_contratos'] = pd.DataFrame()
@@ -1909,6 +1916,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 try:
                     self.raw_data['df_colaborador'] = df_colaborador.copy()
+                    refresh_process_message_labels(self.auxiliary_data, raw_data=self.raw_data)
                 except KeyError as e:
                     self.logger.error(f"KeyError when saving df_calendario to raw_data: {e}", exc_info=True)
                     return False, "errSubproc", str(e)
@@ -2173,6 +2181,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                             cap_events=cap_events,
                             child_num=str(self.external_call_data.get('child_number', 1)),
                             posto_id=self.auxiliary_data.get('current_posto_id'),
+                            labels=get_process_message_labels(self.auxiliary_data),
                         )
                         self.logger.info(
                             f"Logged {n_logged}/{len(cap_events)} feasibility cap event(s) to esc_processo_erros"
@@ -2290,6 +2299,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                             error_events=wt_events,
                             child_num=child_num,
                             posto_id=posto_id,
+                            labels=get_process_message_labels(self.auxiliary_data),
                         )
                         self.logger.info(
                             f"Logged {n_logged}/{len(wt_events)} workload_template error(s) "
@@ -2335,6 +2345,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                             error_events=cons_events,
                             child_num=child_num,
                             posto_id=posto_id,
+                            labels=get_process_message_labels(self.auxiliary_data),
                         )
                         self.logger.info(
                             f"Logged {n_logged}/{len(cons_events)} max consecutive working "

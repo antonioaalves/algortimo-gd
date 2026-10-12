@@ -17,6 +17,11 @@ from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
 
 from src.orquestrador_functions.Logs.message_loader import set_messages, get_message_lang
+from src.orquestrador_functions.Logs.process_message_labels import (
+    ProcessMessageLabels,
+    format_posto_label,
+    resolve_employee_labels,
+)
 
 _FEASIBILITY_CAP_DAYOFF_LABELS = {
     'l_dom': {'ES': 'domingos', 'PT': 'domingos', 'EN': 'Sundays'},
@@ -38,6 +43,28 @@ def _feasibility_cap_dayoff_label(field: str, lang: str) -> str:
     labels = _FEASIBILITY_CAP_DAYOFF_LABELS.get(field, {})
     lang = lang.upper()
     return labels.get(lang, labels.get('EN', labels.get('ES', field)))
+
+
+def _label_is_blank(value) -> bool:
+    if value is None:
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    return text == '' or text.lower() in ('none', 'nan', '<na>')
+
+
+def _as_id_text(value) -> str:
+    if _label_is_blank(value):
+        return ''
+    text = str(value).strip()
+    if text.endswith('.0'):
+        text = text[:-2]
+    return text
+
 
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
@@ -157,6 +184,7 @@ def log_feasibility_cap_events(
     user: str = 'WFM',
     child_num: str = '1',
     posto_id=None,
+    labels: Optional[ProcessMessageLabels] = None,
 ) -> int:
     """
     Persist feasibility cap adjustments to wfm.esc_processo_erros (via set_process_errors).
@@ -170,23 +198,28 @@ def log_feasibility_cap_events(
     logged = 0
     for event in cap_events:
         field = str(event.get('field', ''))
+        person_label, matricula_label = resolve_employee_labels(event, labels)
         placeholder_values = {
             '1': child_num,
-            '2': str(event.get('employee_id', '')),
+            '2': person_label,
             '3': _feasibility_cap_dayoff_label(field, lang),
             '4': str(event.get('original_value', '')),
             '5': str(event.get('cap_value', '')),
             '6': str(event.get('period_begin', '')),
             '7': str(event.get('period_end', '')),
-            '8': str(posto_id or ''),
+            '8': matricula_label,
         }
         description = set_messages(df_messages, 'WARN_FEASIBILITY_CAP', placeholder_values)
+        logger.info(
+            "WARN_FEASIBILITY_CAP employee_id=%s posto_id=%s",
+            event.get('employee_id'),
+            posto_id,
+        )
         if not description:
             description = (
-                f"Subproceso {child_num}: folgas {field} empleado "
-                f"{event.get('employee_id')} ajustadas {event.get('original_value')}->"
-                f"{event.get('cap_value')} ({event.get('period_begin')}-{event.get('period_end')}) "
-                f"puesto {posto_id or ''}"
+                f"Subproceso {child_num}: folgas {field} colaborador {person_label}, "
+                f"matrícula {matricula_label} ajustadas {event.get('original_value')}->"
+                f"{event.get('cap_value')} ({event.get('period_begin')}-{event.get('period_end')})"
             )
 
         emp_id = event.get('employee_id')
@@ -223,6 +256,7 @@ def log_workload_template_contract_errors(
     user: str = 'WFM',
     child_num: str = '1',
     posto_id=None,
+    labels: Optional[ProcessMessageLabels] = None,
 ) -> int:
     """
     Persist workload_template vs contract mismatches to wfm.esc_processo_erros.
@@ -234,26 +268,31 @@ def log_workload_template_contract_errors(
 
     logged = 0
     for event in error_events:
-        matricula = str(event.get('matricula', '') or '')
-        matricula_part = f", matrícula {matricula}" if matricula else ''
+        person_label, matricula_label = resolve_employee_labels(event, labels)
+        posto_label = format_posto_label(posto_id=posto_id, labels=labels)
         placeholder_values = {
             '1': child_num,
-            '2': str(event.get('employee_id', '')),
-            '3': matricula_part,
+            '2': person_label,
+            '3': matricula_label,
             '4': str(event.get('workload_template', '')),
             '5': str(event.get('min_dia_trab', '')),
             '6': str(event.get('max_dia_trab', '')),
             '7': str(event.get('week_label', '')),
             '8': str(event.get('period_suffix', '')),
-            '9': str(posto_id or ''),
+            '9': posto_label,
         }
         description = set_messages(df_messages, 'ERR_WORKLOAD_TEMPLATE_CONTRACT', placeholder_values)
+        logger.info(
+            "ERR_WORKLOAD_TEMPLATE_CONTRACT employee_id=%s posto_id=%s",
+            event.get('employee_id'),
+            posto_id,
+        )
         if not description:
             description = event.get('detail_pt') or (
                 f"Subprocesso {child_num}: workload_template={event.get('workload_template')} "
                 f"incompatível com contrato ({event.get('min_dia_trab')}-{event.get('max_dia_trab')}) "
-                f"colaborador {event.get('employee_id')}{matricula_part} "
-                f"{event.get('week_label', '')}{event.get('period_suffix', '')} posto {posto_id or ''}"
+                f"colaborador {person_label}, matrícula {matricula_label} "
+                f"{event.get('week_label', '')}{event.get('period_suffix', '')} posto {posto_label}"
             )
 
         emp_id = event.get('employee_id')
@@ -290,6 +329,7 @@ def log_missing_ciclos_warnings(
     user: str = 'WFM',
     child_num: str = '1',
     posto_id=None,
+    labels: Optional[ProcessMessageLabels] = None,
 ) -> int:
     """
     Persist missing cycle configuration warnings to wfm.esc_processo_erros.
@@ -302,23 +342,28 @@ def log_missing_ciclos_warnings(
 
     logged = 0
     for event in warning_events:
-        matricula = str(event.get('matricula', '') or '')
-        matricula_part = f", matrícula {matricula}" if matricula else ''
+        person_label, matricula_label = resolve_employee_labels(event, labels)
+        posto_label = format_posto_label(posto_id=posto_id, labels=labels)
         placeholder_values = {
             '1': child_num,
-            '2': str(event.get('employee_id', '')),
-            '3': matricula_part,
+            '2': person_label,
+            '3': matricula_label,
             '6': str(event.get('period_begin', '')),
             '7': str(event.get('period_end', '')),
-            '8': str(posto_id or ''),
+            '8': posto_label,
         }
         description = set_messages(df_messages, 'WARN_MISSING_CICLOS', placeholder_values)
+        logger.info(
+            "WARN_MISSING_CICLOS employee_id=%s posto_id=%s",
+            event.get('employee_id'),
+            posto_id,
+        )
         if not description:
             description = (
-                f"Subproceso {child_num}: el colaborador {event.get('employee_id')}"
-                f"{matricula_part} no tiene ciclo configurado para el periodo "
+                f"Subproceso {child_num}: el colaborador {person_label}, matrícula {matricula_label} "
+                f"no tiene ciclo configurado para el periodo "
                 f"[{event.get('period_begin')}-{event.get('period_end')}]. "
-                f"Puesto {posto_id or ''}"
+                f"Puesto {posto_label}"
             )
 
         emp_id = event.get('employee_id')
@@ -355,6 +400,7 @@ def log_unconverted_fd_days(
     user: str = 'WFM',
     child_num: str = '1',
     posto_id=None,
+    labels: Optional[ProcessMessageLabels] = None,
 ) -> int:
     """
     Persist F/D rows that missed the rule-type conversion to wfm.esc_processo_erros.
@@ -367,28 +413,27 @@ def log_unconverted_fd_days(
 
     logged = 0
     for event in fd_events:
-        matricula = str(event.get('matricula', '') or '')
-        employee_label = event.get('employee_id')
-        if employee_label is None or str(employee_label).strip() == '':
-            employee_label = matricula or 'n/a'
-            matricula_part = ''
-        else:
-            matricula_part = f", matricula {matricula}" if matricula else ''
-
+        person_label, matricula_label = resolve_employee_labels(event, labels)
+        posto_label = format_posto_label(posto_id=posto_id, labels=labels)
         placeholder_values = {
             '1': child_num,
-            '2': str(employee_label),
-            '3': matricula_part,
+            '2': person_label,
+            '3': matricula_label,
             '4': str(event.get('schedule_day', '')),
-            '5': str(posto_id or ''),
+            '5': posto_label,
         }
         description = set_messages(df_messages, 'WARN_UNCONVERTED_FD', placeholder_values)
+        logger.info(
+            "WARN_UNCONVERTED_FD employee_id=%s posto_id=%s",
+            event.get('employee_id'),
+            posto_id,
+        )
         if not description:
             description = (
-                f"Subproceso {child_num}: el colaborador {employee_label}{matricula_part} "
+                f"Subproceso {child_num}: el colaborador {person_label}, matrícula {matricula_label} "
                 f"el dia {event.get('schedule_day', '')} queda F/D. "
                 f"No se convirtio al tipo de la regla y el descanso compensatorio "
-                f"se inserta sin movimiento. Puesto {posto_id or ''}"
+                f"se inserta sin movimiento. Puesto {posto_label}"
             )
 
         emp_id = event.get('employee_id')
@@ -426,6 +471,7 @@ def log_max_consecutive_working_days_errors(
     user: str = 'WFM',
     child_num: str = '1',
     posto_id=None,
+    labels: Optional[ProcessMessageLabels] = None,
 ) -> int:
     """
     Persist max consecutive working days pre-check failures to wfm.esc_processo_erros.
@@ -437,29 +483,34 @@ def log_max_consecutive_working_days_errors(
 
     logged = 0
     for event in error_events:
-        matricula = str(event.get('matricula', '') or '')
-        matricula_part = f", matrícula {matricula}" if matricula else ''
+        person_label, matricula_label = resolve_employee_labels(event, labels)
+        posto_label = format_posto_label(posto_id=posto_id, labels=labels)
         placeholder_values = {
             '1': child_num,
-            '2': str(event.get('employee_id', '')),
-            '3': matricula_part,
+            '2': person_label,
+            '3': matricula_label,
             '4': str(event.get('num_dias_cons', '')),
             '5': str(event.get('streak_days', '')),
             '6': str(event.get('period_begin', '')),
             '7': str(event.get('period_end', '')),
             '8': str(event.get('period_suffix', '')),
-            '9': str(posto_id or ''),
+            '9': posto_label,
         }
         description = set_messages(
             df_messages, 'ERR_MAX_CONSECUTIVE_WORKING_DAYS', placeholder_values
         )
+        logger.info(
+            "ERR_MAX_CONSECUTIVE_WORKING_DAYS employee_id=%s posto_id=%s",
+            event.get('employee_id'),
+            posto_id,
+        )
         if not description:
             description = event.get('detail_pt') or (
                 f"Subprocesso {child_num}: no periodo {event.get('period_begin')}-"
-                f"{event.get('period_end')} o colaborador {event.get('employee_id')}"
-                f"{matricula_part} viola o limite de {event.get('num_dias_cons')} dias "
+                f"{event.get('period_end')} o colaborador {person_label}, matrícula {matricula_label} "
+                f"viola o limite de {event.get('num_dias_cons')} dias "
                 f"consecutivos de trabalho ({event.get('streak_days')} dias). "
-                f"Posto {posto_id or ''}"
+                f"Posto {posto_label}"
             )
 
         emp_id = event.get('employee_id')
