@@ -25,6 +25,7 @@ from src.configuration_manager.instance import get_config
 from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.data_models.factory import DataModelFactory
+from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 from src.orquestrador_functions.Logs.process_wfm_errors import set_process_errors
 from src.orquestrador_functions.Logs.process_message_logging import (
     log_missing_ciclos_warnings,
@@ -144,12 +145,13 @@ class AlgoritmoGDService(BaseService):
         self.logger.info("AlgoritmoGDService initialized")
 
     def _refresh_raw_connection(self):
-        """Get a working raw connection from data_manager engine"""
-        # If external connection available, use it
-        if self.external_raw_connection:
-            self.raw_connection = self.external_raw_connection
+        """Return a live DBAPI connection for WFM inserts (external orchestrator or engine pool)."""
+        if self.external_raw_connection is not None:
+            conn = ensure_connection_with_config(self.external_raw_connection)
+            self.external_raw_connection = conn
+            self.raw_connection = conn
             return
-        
+
         # Check if current connection is valid before creating new one
         if self.raw_connection:
             try:
@@ -183,6 +185,13 @@ class AlgoritmoGDService(BaseService):
                 self.raw_connection = None
         else:
             self.raw_connection = None
+
+    def _set_wfm_process_error(self, df_messages, **kwargs) -> int:
+        """Persist one WFM process row after refreshing the raw connection."""
+        if not self.raw_connection or df_messages is None or df_messages.empty:
+            return 0
+        self._refresh_raw_connection()
+        return set_process_errors(connection=self.raw_connection, **kwargs)
 
     def _register_decision_points(self):
         """Register decision points from config with the process manager"""
@@ -292,9 +301,8 @@ class AlgoritmoGDService(BaseService):
                         {"valid_process_loading": valid_process_loading}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         #pathOS=ROOT_DIR,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
@@ -321,9 +329,8 @@ class AlgoritmoGDService(BaseService):
             df_messages = self.data_model.auxiliary_data.get('df_messages', df_messages)
             message_lang = self.data_model.auxiliary_data.get('message_lang')
             if self.raw_connection and not df_messages.empty:
-                self._refresh_raw_connection()
-                set_process_errors(
-                    connection=self.raw_connection,
+                self._set_wfm_process_error(
+                    df_messages,
                     pathOS=self.config_manager.system.project_root_dir,
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
@@ -363,9 +370,8 @@ class AlgoritmoGDService(BaseService):
                         {'valid_raw_data': valid_raw_data}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -413,9 +419,8 @@ class AlgoritmoGDService(BaseService):
             
             # Set process errors completition for process data loading
             if self.raw_connection and not df_messages.empty:
-                self._refresh_raw_connection()
-                set_process_errors(
-                    connection=self.raw_connection,
+                self._set_wfm_process_error(
+                    df_messages,
                     pathOS=self.config_manager.system.project_root_dir,
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
@@ -450,9 +455,8 @@ class AlgoritmoGDService(BaseService):
                     message=error_msg
                 )
             if self.raw_connection and not df_messages.empty:
-                self._refresh_raw_connection()
-                set_process_errors(
-                    connection=self.raw_connection,
+                self._set_wfm_process_error(
+                    df_messages,
                     pathOS=self.config_manager.system.project_root_dir,
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
@@ -575,8 +579,8 @@ class AlgoritmoGDService(BaseService):
                 #self.logger.info(f"DEBUG set_process_errors condition: raw_connection={self.raw_connection is not None}, df_messages_empty={df_messages.empty}, df_messages_len={len(df_messages)}")
                 if self.raw_connection and not df_messages.empty:
                     #self.logger.info(f"DEBUG SERVICE: INSIDE IF CONDITION for posto {posto_id}!")
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -606,8 +610,8 @@ class AlgoritmoGDService(BaseService):
                             message="Error treating parameters, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -638,8 +642,8 @@ class AlgoritmoGDService(BaseService):
                             message="Invalid matrices loading substage, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -670,8 +674,8 @@ class AlgoritmoGDService(BaseService):
                             message="Invalid result in func_inicializa substage, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -719,8 +723,8 @@ class AlgoritmoGDService(BaseService):
                         else:
                             message_key = 'invalidAllocationCycle'
                             placeholder_values = {'1': child_num}
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -751,8 +755,8 @@ class AlgoritmoGDService(BaseService):
                             message="Invalid result in format_results substage, returning False"
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -784,8 +788,8 @@ class AlgoritmoGDService(BaseService):
                                 message="Invalid result in insert_results substage, returning False"
                             )
                         if self.raw_connection and not df_messages.empty:
-                            set_process_errors(
-                                connection=self.raw_connection,
+                            self._set_wfm_process_error(
+                                df_messages,
                                 pathOS=self.config_manager.system.project_root_dir,
                                 user='WFM',
                                 fk_process=self.external_data['current_process_id'],
@@ -813,9 +817,8 @@ class AlgoritmoGDService(BaseService):
                     message="Finnished processing stage with success. Returnig True."
                 )
             if self.raw_connection and not df_messages.empty:
-                self._refresh_raw_connection()
-                set_process_errors(
-                    connection=self.raw_connection,
+                self._set_wfm_process_error(
+                    df_messages,
                     pathOS=self.config_manager.system.project_root_dir,
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
@@ -827,8 +830,8 @@ class AlgoritmoGDService(BaseService):
                     schedule_day=None
                 )
                 message_lang = self.data_model.auxiliary_data.get('message_lang')
-                set_process_errors(
-                    connection=self.raw_connection,
+                self._set_wfm_process_error(
+                    df_messages,
                     pathOS=self.config_manager.system.project_root_dir,
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
@@ -850,9 +853,8 @@ class AlgoritmoGDService(BaseService):
             self.logger.error(f"Error in processing stage: {str(e)}", exc_info=True)
             # TODO: add progress tracking
             if self.raw_connection and not df_messages.empty:
-                self._refresh_raw_connection()
-                set_process_errors(
-                    connection=self.raw_connection,
+                self._set_wfm_process_error(
+                    df_messages,
                     pathOS=self.config_manager.system.project_root_dir,
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
@@ -1015,9 +1017,8 @@ class AlgoritmoGDService(BaseService):
                 if not valid_load_colaborador_info:
                     # Set process error for colaborador loading failure
                     if self.raw_connection and not df_messages.empty:
-                        self._refresh_raw_connection()
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -1049,9 +1050,8 @@ class AlgoritmoGDService(BaseService):
                 if not valid_colaborador_info_data:
                     # Set process error for colaborador validation failure
                     if self.raw_connection and not df_messages.empty:
-                        self._refresh_raw_connection()
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -1081,9 +1081,8 @@ class AlgoritmoGDService(BaseService):
                         message="Valid colaborador info data"
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1111,9 +1110,8 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1149,8 +1147,8 @@ class AlgoritmoGDService(BaseService):
                             }
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -1182,8 +1180,8 @@ class AlgoritmoGDService(BaseService):
                             message_key = 'errAllInfo'
                             description_list.append(set_messages(df_messages, message_key, {'1': child_num, '2': posto_label(self.data_model.auxiliary_data, posto_id)}))
                         for description in description_list:
-                            set_process_errors(
-                                connection=self.raw_connection,
+                            self._set_wfm_process_error(
+                                df_messages,
                                 pathOS=self.config_manager.system.project_root_dir,
                                 user='WFM',
                                 fk_process=self.external_data['current_process_id'],
@@ -1208,9 +1206,8 @@ class AlgoritmoGDService(BaseService):
                         )
                     return False
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1232,9 +1229,8 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1269,8 +1265,8 @@ class AlgoritmoGDService(BaseService):
                             }
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -1296,8 +1292,8 @@ class AlgoritmoGDService(BaseService):
                             message_key = 'errCalendar'
                             description_list.append(set_messages(df_messages, message_key, {'1': child_num, '2': posto_label(self.data_model.auxiliary_data, posto_id)}))
                         for description in description_list:
-                            set_process_errors(
-                                connection=self.raw_connection,
+                            self._set_wfm_process_error(
+                                df_messages,
                                 pathOS=self.config_manager.system.project_root_dir,
                                 user='WFM',
                                 fk_process=self.external_data['current_process_id'],
@@ -1323,9 +1319,8 @@ class AlgoritmoGDService(BaseService):
                         )
                     return False
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1366,9 +1361,8 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1399,8 +1393,8 @@ class AlgoritmoGDService(BaseService):
                             }
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -1423,9 +1417,8 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1456,8 +1449,8 @@ class AlgoritmoGDService(BaseService):
                             }
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -1480,9 +1473,8 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1514,8 +1506,8 @@ class AlgoritmoGDService(BaseService):
                             }
                         )
                     if self.raw_connection and not df_messages.empty:
-                        set_process_errors(
-                            connection=self.raw_connection,
+                        self._set_wfm_process_error(
+                            df_messages,
                             pathOS=self.config_manager.system.project_root_dir,
                             user='WFM',
                             fk_process=self.external_data['current_process_id'],
@@ -1537,9 +1529,8 @@ class AlgoritmoGDService(BaseService):
                         result_data={"error": str(e)}
                     )
                 if self.raw_connection and not df_messages.empty:
-                    self._refresh_raw_connection()
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1870,8 +1861,8 @@ class AlgoritmoGDService(BaseService):
                         substage_name='insert_results',
                         success=False
                     )
-                set_process_errors(
-                    connection=self.raw_connection,
+                self._set_wfm_process_error(
+                    df_messages,
                     pathOS=self.config_manager.system.project_root_dir,
                     user='WFM',
                     fk_process=self.external_data['current_process_id'],
@@ -1900,8 +1891,8 @@ class AlgoritmoGDService(BaseService):
                         substage_name='insert_results',
                         success=False
                     )
-                    set_process_errors(
-                        connection=self.raw_connection,
+                    self._set_wfm_process_error(
+                        df_messages,
                         pathOS=self.config_manager.system.project_root_dir,
                         user='WFM',
                         fk_process=self.external_data['current_process_id'],
@@ -1924,8 +1915,8 @@ class AlgoritmoGDService(BaseService):
                         'validation_result': validation_result,
                     }
                 )
-            set_process_errors(
-                connection=self.raw_connection,
+            self._set_wfm_process_error(
+                df_messages,
                 pathOS=self.config_manager.system.project_root_dir,
                 user='WFM',
                 fk_process=self.external_data['current_process_id'],
