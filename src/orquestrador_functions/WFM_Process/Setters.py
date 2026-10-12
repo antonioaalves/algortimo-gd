@@ -12,7 +12,7 @@ THIS IS THE SETTERS FOR THE FUNCTIONS REGARDING THE WFM PROCESSES AND CONTROL OF
 import os
 from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 
-# COMMENTED OUT - Use the function from src.helpers instead
+# COMMENTED OUT - Use src.orquestrador_functions.Logs.process_wfm_errors.set_process_errors
 # def set_process_errors(connection, pathOS, user, fk_process, type_error, process_type, error_code, description, employee_id, schedule_day):
 #     """
 #     Inserts process error details into the database.

@@ -25,7 +25,7 @@ from src.configuration_manager.instance import get_config
 from src.data_models.models import DescansosDataModel
 from src.algorithms.factory import AlgorithmFactory
 from src.data_models.factory import DataModelFactory
-from src.helpers import set_process_errors
+from src.orquestrador_functions.Logs.process_wfm_errors import set_process_errors
 from src.orquestrador_functions.Logs.process_message_logging import (
     log_missing_ciclos_warnings,
     log_unconverted_fd_days,

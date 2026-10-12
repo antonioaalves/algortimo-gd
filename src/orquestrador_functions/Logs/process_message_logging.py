@@ -2,7 +2,7 @@
 Batch persistence of validation events to wfm.esc_processo_erros (STRSOL-1847).
 
 Template rendering uses message_loader + process_message_labels; inserts use
-set_process_errors from helpers (phase 2 may move that here).
+set_process_errors from process_wfm_errors.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pandas as pd
 
 from base_data_project.log_config import get_logger
 from src.configuration_manager.instance import get_config as get_config_manager
-from src.helpers import set_process_errors
+from src.orquestrador_functions.Logs.process_wfm_errors import set_process_errors
 from src.orquestrador_functions.Logs.message_loader import get_message_lang, set_messages
 from src.orquestrador_functions.Logs.process_message_labels import (
     ProcessMessageLabels,

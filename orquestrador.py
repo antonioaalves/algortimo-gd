@@ -43,7 +43,7 @@ logger.info("-------------------------------")
 # Add correct path to the functions
 from src.orquestrador_functions.WFM_Process.Getters import get_process_by_status, get_process_by_id, get_total_process_by_status
 from src.orquestrador_functions.WFM_Process.Setters import set_process_status, set_process_param_status
-from src.helpers import set_process_errors
+from src.orquestrador_functions.Logs.process_wfm_errors import set_process_errors
 from src.orquestrador_functions.Data_Handlers.GetGlobalData import get_all_params, get_gran_equi
 from src.orquestrador_functions.Logs.message_loader import (
     load_df_messages,

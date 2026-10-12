@@ -12,7 +12,6 @@ from typing import List, Dict, Any, Optional, Tuple
 
 # Local stuff
 from src.configuration_manager.instance import get_config as get_config_manager
-from src.orquestrador_functions.Classes.Connection.connect import ensure_connection_with_config
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers.managers import BaseDataManager, DBDataManager
 
@@ -32,97 +31,6 @@ def log_process_event(message_key: str, df_messages: pd.DataFrame, data_manager:
     message_str = set_messages(df_messages, message_key, values_replace_dict)
     logger.info(f"DEBUG: message_str: {message_str}")
     data_manager.set_process_errors(message_key=message_key, rendered_message=message_str, values_replace_dict=external_call_data, error_type=level)
-
-def set_process_errors(connection, pathOS, user, fk_process, type_error, process_type, error_code, description, employee_id, schedule_day):
-    """
-    Inserts process error details into the database.
-
-    Args:
-        connection: Active database connection.
-        pathOS (str): Base path for configurations and query files.
-        user (str): Username for the operation.
-        fk_process (int): Foreign key for the process.
-        type_error (str): Type of error.
-        process_type (str): Type of process.
-        error_code (int): Error code.
-        description (str): Description of the error.
-        employee_id (int): ID of the employee.
-        schedule_day (str): Scheduled day for the error (formatted as 'yyyy-mm-dd').
-    Returns:
-        int: 1 if successful, 0 otherwise.
-    """
-    try:
-        logger.info(f"DEBUG set_process_errors CALLED - connection: {connection}, user: {user}, fk_process: {fk_process}, description: {description}")
-        
-        # Only call ensure_connection for direct cx_Oracle connections
-        # SQLAlchemy connections manage their own lifecycle
-        if hasattr(connection, 'ping') and callable(getattr(connection, 'ping')):
-            connection = ensure_connection_with_config(connection)
-            logger.info(f"DEBUG: ensured cx_Oracle connection")
-        else:
-            logger.info(f"DEBUG: using SQLAlchemy connection as-is")
-        
-        query_file_path = os.path.join(pathOS, 'data', 'Queries', 'WFM_Process', 'Setters', 'set_process_errors.sql')
-        logger.info(f"DEBUG: query_file_path: {query_file_path}")
-        
-        # Load the query from file
-        with open(query_file_path, 'r') as f:
-            query = f.read().strip().replace("\n", " ")
-        
-        logger.info(f"DEBUG: loaded query: {query[:100]}...")
-        
-        # Execute the query - handle both cx_Oracle and SQLAlchemy connections
-        if connection is None:
-            logger.error("ERROR: No database connection available")
-            return 0
-        
-        # Check for SQLAlchemy connection first (has dbapi_connection attribute)
-        if hasattr(connection, 'dbapi_connection'):
-            if connection.dbapi_connection is not None:
-                cursor_context = connection.dbapi_connection.cursor()
-                logger.info(f"DEBUG: using SQLAlchemy dbapi_connection cursor")
-            else:
-                logger.error("ERROR: SQLAlchemy connection's dbapi_connection is None")
-                return 0
-        elif hasattr(connection, 'cursor') and callable(getattr(connection, 'cursor')):
-            # Direct cx_Oracle connection
-            cursor_context = connection.cursor()
-            logger.info(f"DEBUG: using direct cx_Oracle cursor")
-        else:
-            logger.error(f"ERROR: Unknown connection type: {type(connection)}")
-            return 0
-        
-        with cursor_context as cursor:
-            params = {
-               'i_user': user,
-               'i_fk_process': fk_process,
-               'i_type_error': type_error,
-               'i_process_type': process_type,
-               'i_error_code': error_code if error_code is not None else None,
-               'i_description': description,
-               'i_employee_id': employee_id if employee_id is not None else None,
-               'i_schedule_day': schedule_day if schedule_day is not None else None
-           }
-            logger.info(f"DEBUG: executing with params: {params}")
-            cursor.execute(query, params)
-            logger.info(f"DEBUG: query executed successfully")
-            
-            # Handle commit for both connection types
-            if hasattr(connection, 'dbapi_connection') and connection.dbapi_connection is not None:
-                # SQLAlchemy connection - commit via dbapi_connection
-                connection.dbapi_connection.commit()
-                logger.info(f"DEBUG: committed SQLAlchemy dbapi_connection")
-            elif hasattr(connection, 'commit') and callable(getattr(connection, 'commit')):
-                # Direct cx_Oracle connection
-                connection.commit()
-                logger.info(f"DEBUG: committed cx_Oracle connection")
-        
-        logger.info(f"DEBUG: set_process_errors returning 1 (success)")
-        return 1
-        
-    except Exception as e:
-        logger.error(f"Error in set_process_errors: {e}", exc_info=True)
-        return 0
 
 
 def replace_placeholders(template, values_dict):
