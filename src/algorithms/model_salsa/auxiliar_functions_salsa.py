@@ -505,6 +505,12 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
         compensation_days = sorted(compensation_days)[:compensation_limit]
     return compensation_days
 
+def recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total):
+    total1 = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline + total)])
+    if total1 != total:
+        total1 = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total1)
+    return total1
+
 def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, current_year, original_year, calendar_day_0):
     """
         Extend compensation deadline because of off days. Needs to take in account if the worked day to compensate is in current year
@@ -515,7 +521,7 @@ def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dy
         too many days. Total is contained to be less than deadline, the theoretical best case of deadline extension.
     """
     if current_year == original_year:
-        total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline)])
+        total = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, 0)
     else:
         total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if days < calendar_day_0])
     if total > deadline:
