@@ -377,7 +377,7 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0] and d > day}
@@ -483,7 +483,7 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in week_days - all_days_off if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift and d >= period[0] and d > day}

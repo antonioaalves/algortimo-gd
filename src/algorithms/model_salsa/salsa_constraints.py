@@ -130,7 +130,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                         logger.warning(f"For {w}: day {d} got {ammount} possible_compensation_days!! Changing possible days to after year ends")
                         possible_compensation_days[w][d].extend(compensation_days_calc(max(week_to_days), off, LQs, worker_absences[w], vacation_days[w], week_to_days,
                                                                               special_day_rules[w]["compensation_limit"][d], working_days[w], shift, w, fixed_lds, closed_days, period, d))
-                    logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {possible_compensation_days[w][d]}")
+                    logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {sorted(possible_compensation_days[w][d])}")
                 else:
                     possible_compensation_days[w][d] = compensation_days_calc_with_contract_changes(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days,
                                                                               special_day_rules[w]["compensation_limit"][d], working_days, shift, w, fixed_lds, closed_days, period, d, workers_with_dummy)
@@ -139,7 +139,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                         logger.warning(f"For {w}: day {d} got {ammount} possible_compensation_days!! Changing possible days to after year ends")
                         possible_compensation_days[w][d].extend(compensation_days_calc_with_contract_changes(max(week_to_days), fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days,
                                                                               special_day_rules[w]["compensation_limit"][d], working_days, shift, w, fixed_lds, closed_days, period, d, workers_with_dummy))
-                    logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {possible_compensation_days[w][d]}")
+                    logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {sorted(possible_compensation_days[w][d])}")
 
         if w in past_special_days_worked:
             logger.info(f"past special days {w} worked: {past_special_days_worked[w]}")
@@ -164,7 +164,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                         worked_special_day2 = model.NewBoolVar(f'worked_{day_type}_{w}_{d}')
                     worked_special_days[w][d] = worked_special_day2
                     amount_lds[w][d] = past_special_days_worked[w]["days_&_amount"][d]       
-                    logger.info(f"For {w}: day {d} before period {period[0]} got ammount = {len(possible_compensation_days[w][d])} possible_compensation_days: {possible_compensation_days[w][d]}")
+                    logger.info(f"For {w}: day {d} before period {period[0]} got ammount = {len(possible_compensation_days[w][d])} possible_compensation_days: {sorted(possible_compensation_days[w][d])}")
 
     # Dictionary to track compensation day usage
     # Dictionary to store all compensation day variables
@@ -172,7 +172,6 @@ def compensation_days(model, shift, workers, working_days, special_days, special
     contingent = {}
     total_lds = {}
     for w in workers:
-        original = w
         if w in dummy_workers:
             w = dummy_workers[w]['parent']
         if len(worked_special_days[w]) == 0:
@@ -233,10 +232,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
         for d in worked_special_days[w].keys():
             # Get all variables for compensation days for this special day
             comp_day_vars = [
-                contingent[w][(d, comp_day)] 
-                for comp_day in possible_compensation_days[w].get(d, [])
-                if (d, comp_day) in contingent[w]
-            ]
+                contingent[w][(d, comp_day)] for comp_day in possible_compensation_days[w].get(d, []) if (d, comp_day) in contingent[w]]
 
             # If the worker worked this special day, ensure one compensation day is assigned
             if comp_day_vars:
