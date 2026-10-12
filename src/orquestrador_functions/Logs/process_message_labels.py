@@ -18,7 +18,28 @@ from src.configuration_manager.instance import get_config as get_config_manager
 
 PROCESS_MESSAGE_LABELS_KEY = 'process_message_labels'
 
+_FEASIBILITY_CAP_DAYOFF_LABELS = {
+    'l_dom': {'ES': 'domingos', 'PT': 'domingos', 'EN': 'Sundays'},
+    'l_sab': {'ES': 'sabados', 'PT': 'sabados', 'EN': 'Saturdays'},
+    'l_dom_or_sab': {
+        'ES': 'descansos (sabado o domingo)',
+        'PT': 'descansos (sabado ou domingo)',
+        'EN': 'days off (Saturday or Sunday)',
+    },
+    'c2d': {
+        'ES': 'fines de semana de calidad',
+        'PT': 'fins de semana de qualidade',
+        'EN': 'quality weekends',
+    },
+}
+
 logger = get_logger(get_config_manager().system.project_name)
+
+
+def feasibility_cap_dayoff_label(field: str, lang: str) -> str:
+    labels = _FEASIBILITY_CAP_DAYOFF_LABELS.get(field, {})
+    lang = lang.upper()
+    return labels.get(lang, labels.get('EN', labels.get('ES', field)))
 
 
 def _label_is_blank(value) -> bool:

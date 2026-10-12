@@ -14,7 +14,7 @@ from base_data_project.log_config import get_logger
 from src.data_models.base import BaseDescansosDataModel
 from src.configuration_manager.base import BaseConfig
 from src.configuration_manager.instance import get_config
-from src.helpers import (
+from src.orquestrador_functions.Logs.process_message_logging import (
     log_feasibility_cap_events,
     log_max_consecutive_working_days_errors,
     log_workload_template_contract_errors,
