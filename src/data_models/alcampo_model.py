@@ -15,6 +15,10 @@ from base_data_project.data_manager.managers.base import BaseDataManager
 from src.data_models.base import BaseDescansosDataModel
 from src.configuration_manager.base import BaseConfig
 from src.configuration_manager.instance import get_config
+from src.orquestrador_functions.Logs.process_message_labels import (
+    format_unit_label,
+    refresh_process_message_labels,
+)
 from src.data_models.functions.helper_functions import (
     count_dates_per_year,
     get_param_for_posto,
@@ -315,7 +319,7 @@ class AlcampoDataModel(BaseDescansosDataModel):
                     end_date=last_day_passado,
                 )
                 if df_feriados is None or df_feriados.empty:
-                    return False, "ERR_LOAD_FERIADOS_EMPTY", str(unit_id)
+                    return False, "ERR_LOAD_FERIADOS_EMPTY", format_unit_label(df_estrutura_wfm, unit_id)
             except Exception as e:
                 return False, "errSubproc", str(e)
 
@@ -443,6 +447,7 @@ class AlcampoDataModel(BaseDescansosDataModel):
                 'df_process_rules': pd.DataFrame(),
                 'df_pro_emp_mov': pd.DataFrame(),
             })
+            refresh_process_message_labels(self.auxiliary_data)
             self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
             self.algorithm_treatment_params['wfm_proc_colab'] = wfm_proc_colab
             self.algorithm_treatment_params['df_feriados'] = df_feriados.copy()
@@ -971,6 +976,7 @@ class AlcampoDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", "past_employees_id_list is empty"
 
             self.raw_data['df_colaborador'] = df_colaborador.copy()
+            refresh_process_message_labels(self.auxiliary_data, raw_data=self.raw_data)
             self.auxiliary_data['df_contratos'] = df_contratos.copy()
             self.auxiliary_data['df_disponibilidade'] = df_disponibilidade.copy() if not df_disponibilidade.empty else pd.DataFrame()
             self.auxiliary_data['employees_id_list_for_posto'] = employees_id_list_for_posto
@@ -1259,6 +1265,7 @@ class AlcampoDataModel(BaseDescansosDataModel):
 
             df_colaborador = df_colaborador.rename(columns={'ld': 'l_d', 'lq': 'l_q'})
             self.raw_data['df_colaborador'] = df_colaborador.copy()
+            refresh_process_message_labels(self.auxiliary_data, raw_data=self.raw_data)
             return True, "", ""
         except Exception as e:
             self.logger.error(f"Error in load_colaborador_transformations: {e}", exc_info=True)

@@ -521,7 +521,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                             logger.info(f"Worker {new_w} last registered day: {last_registered_day[new_w]}")
                         else:
                             last_registered_day[new_w] = 0
-                        workers_with_dummy[w][range(data_admissao[new_w], data_demissao[new_w] + 1)] = new_w
+                        if layer == nbr_of_contracts - 1:
+                            workers_with_dummy[w][range(data_admissao[new_w], 500)] = new_w
+                        else:
+                            workers_with_dummy[w][range(data_admissao[new_w], data_demissao[new_w] + 1)] = new_w
                         dummy_workers[new_w] = {
                             'parent': w,
                             'layer': layer,
@@ -903,6 +906,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         logger.info(f"override rules: {override_holiday_sunday}")
 
         holiday_past_lds = {}
+        empty_past_lds = {}
+        day_off_past_lds = {}
         sunday_past_lds = {}
         if not matriz_past_lds_gd.empty:
 
@@ -913,6 +918,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             if not required_cols_past.issubset(matriz_past_lds_gd.columns):
                 logger.warning("Missing required columns for past LDS data")
                 holiday_past_lds = pd.DataFrame()
+                empty_past_lds = pd.DataFrame()
+                day_off_past_lds = pd.DataFrame()
                 sunday_past_lds = pd.DataFrame()
             else:
                 matriz_past_lds_gd['employee_id'] = pd.to_numeric(
@@ -924,6 +931,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 index_to_date.update(day_of_year_dict)
 
                 holiday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_holiday"]
+                empty_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_empty_day"]
+                day_off_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_holiday_dayoff"]
                 sunday_lds = matriz_past_lds_gd[matriz_past_lds_gd["rule_code"] == "ld_sunday"]
                 for w in workers_complete:
                     holiday_ld_w = holiday_lds[holiday_lds["employee_id"] == w].set_index('schedule_day')
@@ -937,6 +946,18 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                     sunday_past_lds[w] = {
                         "days_&_limit": sunday_ld_w['time_off_deadline'].astype(int).to_dict(),
                         "days_&_amount": sunday_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
+                    }
+                    empty_ld_w = empty_lds[empty_lds["employee_id"] == w].set_index('schedule_day')
+                    empty_ld_w.index = empty_ld_w.index.map(lambda d: day_of_year_dict_inverted[d.strftime('%Y-%m-%d')])
+                    empty_past_lds[w] = {
+                        "days_&_limit": empty_ld_w['time_off_deadline'].astype(int).to_dict(),
+                        "days_&_amount": empty_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
+                    }
+                    day_off_ld_w = day_off_lds[day_off_lds["employee_id"] == w].set_index('schedule_day')
+                    day_off_ld_w.index = day_off_ld_w.index.map(lambda d: day_of_year_dict_inverted[d.strftime('%Y-%m-%d')])
+                    day_off_past_lds[w] = {
+                        "days_&_limit": day_off_ld_w['time_off_deadline'].astype(int).to_dict(),
+                        "days_&_amount": day_off_ld_w['n_lds_pending'].fillna(1).astype(int).to_dict(),
                     }
                     if w in holiday_past_lds:
                         for d in holiday_past_lds[w]["days_&_limit"]:
@@ -952,8 +973,24 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                                                                                      day_of_year_dict_inverted[index_to_date[d]] + 399 + min_day_year,
                                                                                      year, pd.to_datetime(index_to_date[d]).year, period[0])
                             sunday_past_lds[w]["days_&_limit"][d] = sunday_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
+                    if w in empty_past_lds:
+                        for d in empty_past_lds[w]["days_&_limit"]:
+                            empty_past_lds[w]["days_&_limit"][d] += extend_deadline(w, empty_past_lds[w]["days_&_limit"][d],
+                                                                                     empty_days[w], vacation_days[w], worker_absences[w], dynamic_empty[w],
+                                                                                     day_of_year_dict_inverted[index_to_date[d]] + 399 + min_day_year,
+                                                                                     year, pd.to_datetime(index_to_date[d]).year, period[0])
+                            empty_past_lds[w]["days_&_limit"][d] = empty_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
+                    if w in day_off_past_lds:
+                        for d in day_off_past_lds[w]["days_&_limit"]:
+                            day_off_past_lds[w]["days_&_limit"][d] += extend_deadline(w, day_off_past_lds[w]["days_&_limit"][d],
+                                                                                     empty_days[w], vacation_days[w], worker_absences[w], dynamic_empty[w],
+                                                                                     day_of_year_dict_inverted[index_to_date[d]] + 399 + min_day_year,
+                                                                                     year, pd.to_datetime(index_to_date[d]).year, period[0])
+                            day_off_past_lds[w]["days_&_limit"][d] = day_off_past_lds[w]["days_&_limit"][d] - (pd.to_datetime(index_to_date[period[0]]) - pd.to_datetime(index_to_date[d])).days + 1
 
             logger.info(f"past holiday : {holiday_past_lds}")
+            logger.info(f"past sunday : {empty_past_lds}")
+            logger.info(f"past sunday : {day_off_past_lds}")
             logger.info(f"past sunday : {sunday_past_lds}")
         # =================================================================
         # 14. ANNUAL VARIABLES
@@ -1068,6 +1105,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             "index_to_date": index_to_date,
             "holiday_past_lds": holiday_past_lds,
             "sunday_past_lds": sunday_past_lds,
+            "empty_past_lds": empty_past_lds,
+            "day_off_past_lds": day_off_past_lds,
             "dynamic_empty": dynamic_empty,
             "dummy_workers": dummy_workers,
             "workers_with_dummy": workers_with_dummy,
