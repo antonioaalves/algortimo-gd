@@ -19,6 +19,7 @@ def _sample_colaborador():
         'begin_date': ['2026-07-01'],
         'end_date': ['2026-07-03'],
         'matricula': [81001884],
+        'nome': ['Ana Silva'],
     })
 
 
@@ -45,6 +46,7 @@ def test_populate_missing_df_ciclos_backfills_contract_active_days():
     assert len(df_result) == 3
     assert len(events) == 1
     assert events[0]['employee_id'] == '10986'
+    assert events[0]['nome'] == 'Ana Silva'
     assert events[0]['period_begin'] == '2026-07-01'
     assert events[0]['period_end'] == '2026-07-03'
     assert events[0]['missing_days_count'] == 3
@@ -156,26 +158,29 @@ def test_warn_missing_ciclos_message_renders_all_languages():
     df_messages = pd.DataFrame({
         'VAR': ['WARN_MISSING_CICLOS'],
         'ES': [
-            'Subproceso {1}: el colaborador {2}{3} no tiene ciclo configurado para el '
+            'Subproceso {1}: el colaborador {2}, matrícula {3}, no tiene ciclo configurado para el '
             'periodo [{6}-{7}]. Configure el ciclo en WFM. Puesto {8}'
         ],
         'PT': [
-            'Subprocesso {1}: o colaborador {2}{3} nao tem ciclo configurado para o '
+            'Subprocesso {1}: o colaborador {2}, matrícula {3}, nao tem ciclo configurado para o '
             'periodo [{6}-{7}]. Configure o ciclo no WFM. Posto {8}'
         ],
         'EN': [
-            'Subprocess {1}: employee {2}{3} has no cycle configured for period '
+            'Subprocess {1}: employee {2}, matricula {3}, has no cycle configured for period '
             '[{6}-{7}]. Configure the cycle in WFM. Post {8}'
         ],
     })
     placeholders = {
         '1': '1',
-        '2': '10986',
-        '3': ', matrícula 81001884',
+        '2': 'Ana Silva',
+        '3': '81001884',
         '6': '2026-07-01',
         '7': '2026-07-24',
-        '8': '1361',
+        '8': 'Caja',
     }
-    assert '10986' in set_messages(df_messages, 'WARN_MISSING_CICLOS', placeholders, lang='ES')
-    assert '10986' in set_messages(df_messages, 'WARN_MISSING_CICLOS', placeholders, lang='PT')
-    assert '10986' in set_messages(df_messages, 'WARN_MISSING_CICLOS', placeholders, lang='EN')
+    for lang in ('ES', 'PT', 'EN'):
+        rendered = set_messages(df_messages, 'WARN_MISSING_CICLOS', placeholders, lang=lang)
+        assert 'Ana Silva' in rendered
+        assert '81001884' in rendered
+        assert 'Caja' in rendered
+        assert '10986' not in rendered

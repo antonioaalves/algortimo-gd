@@ -65,6 +65,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_df_colaborador
 )
 from src.helpers import count_open_holidays
+from src.orquestrador_functions.Logs.process_message_labels import build_process_message_labels
 from src.data_models.functions.read_salsa_calendar_mirror import (
     build_read_salsa_worker_calendar,
     build_salsa_day_week_date_maps,
@@ -923,6 +924,8 @@ def populate_missing_df_ciclos(
         contract_cols = ['employee_id', 'begin_date', 'end_date', 'min_dia_trab', 'max_dia_trab']
         if 'matricula' in colab.columns:
             contract_cols.append('matricula')
+        if 'nome' in colab.columns:
+            contract_cols.append('nome')
         contracts = sort_df_colaborador_by_contract_period(colab[contract_cols].copy())
         contracts['begin_date'] = pd.to_datetime(contracts['begin_date'], errors='coerce').dt.normalize()
         contracts['end_date'] = pd.to_datetime(contracts['end_date'], errors='coerce').dt.normalize()
@@ -970,10 +973,16 @@ def populate_missing_df_ciclos(
             if 'matricula' in missing.columns
             else np.full(len(missing), np.nan)
         )
+        nome_vals = (
+            missing['nome'].values
+            if 'nome' in missing.columns
+            else np.full(len(missing), np.nan)
+        )
         df_missing = pd.DataFrame({
             'process_id': process_id,
             'employee_id': missing['employee_id'].values,
             'matricula': matricula_vals,
+            'nome': nome_vals,
             'schedule_day': schedule_days.values,
             'tipo_dia': 'A',
             'tipo_ciclo': 'N',
@@ -994,11 +1003,6 @@ def populate_missing_df_ciclos(
             'workload_template': 'A',
         })
 
-        if df.empty:
-            df_result = df_missing
-        else:
-            df_result = pd.concat([df, df_missing], ignore_index=True)
-
         warning_agg = (
             df_missing.groupby('employee_id', sort=False)
             .agg(
@@ -1006,16 +1010,26 @@ def populate_missing_df_ciclos(
                 period_end=('schedule_day', 'max'),
                 missing_days_count=('schedule_day', 'count'),
                 matricula=('matricula', 'first'),
+                nome=('nome', 'first'),
             )
             .reset_index()
         )
         warning_agg['period_begin'] = warning_agg['period_begin'].dt.strftime('%Y-%m-%d')
         warning_agg['period_end'] = warning_agg['period_end'].dt.strftime('%Y-%m-%d')
         warning_agg['matricula'] = warning_agg['matricula'].map(_format_matricula_value)
+        warning_agg['nome'] = warning_agg['nome'].map(
+            lambda value: '' if pd.isna(value) else str(value).strip()
+        )
         warning_agg['missing_days_count'] = warning_agg['missing_days_count'].astype(int)
         warning_events = warning_agg[
-            ['employee_id', 'matricula', 'period_begin', 'period_end', 'missing_days_count']
+            ['employee_id', 'nome', 'matricula', 'period_begin', 'period_end', 'missing_days_count']
         ].to_dict('records')
+
+        df_missing = df_missing.drop(columns=['nome'])
+        if df.empty:
+            df_result = df_missing
+        else:
+            df_result = pd.concat([df, df_missing], ignore_index=True)
 
         logger.warning(
             "populate_missing_df_ciclos: backfilled %s synthetic cycle rows for %s employee(s)",
@@ -1129,6 +1143,8 @@ def validate_workload_template_vs_contract(
         )
         return True, [], ""
 
+    employee_labels = build_process_message_labels(pd.DataFrame(), [df_colaborador])
+
     use_nro_semana = 'nro_semana' in invalid.columns and invalid['nro_semana'].notna().any()
     if use_nro_semana:
         invalid['_week_key'] = invalid['nro_semana'].astype(str)
@@ -1152,6 +1168,9 @@ def validate_workload_template_vs_contract(
         )
         matricula = row.get('matricula')
         matricula_str = str(int(matricula)) if pd.notna(matricula) and str(matricula).strip() != '' else ''
+        nome, matricula_from_colab = employee_labels.raw_employee(emp_id)
+        if not matricula_str:
+            matricula_str = matricula_from_colab
         min_trab = int(row['min_dia_trab'])
         max_trab = int(row['max_dia_trab'])
         wt_val = int(row['_wt_num'])
@@ -1175,6 +1194,7 @@ def validate_workload_template_vs_contract(
         logger.error("workload_template: %s", detail_pt)
         error_events.append({
             'employee_id': emp_id,
+            'nome': nome,
             'matricula': matricula_str,
             'workload_template': wt_val,
             'min_dia_trab': min_trab,
@@ -1427,6 +1447,7 @@ def _build_consecutive_work_index_state_for_employee(
     execution_end: pd.Timestamp,
     section_num_dias_cons: int,
     contracts: pd.DataFrame,
+    employee_labels=None,
 ) -> Optional[dict]:
     """
     Per-index calendar state for maximum_continuous_working_days pre-check.
@@ -1583,8 +1604,12 @@ def _build_consecutive_work_index_state_for_employee(
             except (TypeError, ValueError):
                 matricula = str(mat_vals.iloc[0]).strip()
 
+    nome = ''
+    if employee_labels is not None:
+        nome, _ = employee_labels.raw_employee(employee_id)
     return {
         'employee_id': str(employee_id),
+        'nome': nome,
         'matricula': matricula,
         'index_status': index_status,
         'complete_cycle_days': complete_cycle_days,
@@ -1659,6 +1684,7 @@ def _validate_employee_max_consecutive_working_days(
         begin, end, suffix = _period_labels(run_start_idx, run_end_idx)
         events.append({
             'employee_id': emp_id,
+            'nome': state.get('nome', ''),
             'matricula': matricula,
             'num_dias_cons': max_days,
             'streak_days': streak,
@@ -1814,6 +1840,7 @@ def validate_max_consecutive_working_days(
 
     contracts = _prepare_num_dias_cons_contracts(df_colaborador)
     employee_ids = sorted(df_colaborador['employee_id'].astype(str).unique().tolist())
+    employee_labels = build_process_message_labels(pd.DataFrame(), [df_colaborador])
 
     error_events: List[dict] = []
     for emp_id in employee_ids:
@@ -1827,6 +1854,7 @@ def validate_max_consecutive_working_days(
             execution_end=exec_end,
             section_num_dias_cons=section_default,
             contracts=contracts,
+            employee_labels=employee_labels,
         )
         if state is None:
             continue
@@ -5612,6 +5640,10 @@ def apply_annual_dayoff_feasibility_cap(
         field_codes = _ANNUAL_DAYOFF_FIELD_CODES
         column_to_rule_code = {v: k for k, v in _ANNUAL_RULE_CODE_TO_COLUMN.items()}
         cap_events: List[dict] = []
+        employee_labels = build_process_message_labels(
+            pd.DataFrame(),
+            [df_colaborador] if df_colaborador is not None and not df_colaborador.empty else [],
+        )
         _empty_calendar_state = {
             'weekly_rest': frozenset(),
             'consecutive_rest': frozenset(),
@@ -5812,8 +5844,11 @@ def apply_annual_dayoff_feasibility_cap(
                         f"(outside_fixed+exec_eligible={achievable}, exec_eligible={eligible_in_exec})"
                     )
                     df_annual.at[idx, field] = float(achievable)
+                    cap_nome, cap_matricula = employee_labels.raw_employee(emp_id)
                     cap_events.append({
                         'employee_id': emp_id,
+                        'nome': cap_nome,
+                        'matricula': cap_matricula,
                         'field': field,
                         'rule_field_code': column_to_rule_code.get(field, field),
                         'original_value': float(value),
