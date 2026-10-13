@@ -3,6 +3,7 @@
 # Dependencies
 from tracemalloc import start
 from typing import Dict, Optional, Any, List, Tuple
+import json
 import pandas as pd
 import os
 
@@ -2252,6 +2253,54 @@ class SalsaDataModel(BaseDescansosDataModel):
                         index=False,
                         encoding='utf-8',
                     )
+
+                prefix = f"{process_id}-{posto_id}"
+                treatment = self.algorithm_treatment_params
+                df_feriados = treatment.get('df_feriados', pd.DataFrame())
+                if df_feriados is not None and not df_feriados.empty:
+                    df_feriados.to_csv(
+                        os.path.join(output_dir, f'df_feriados-{prefix}.csv'),
+                        index=False,
+                        encoding='utf-8',
+                    )
+                df_process_rules = treatment.get('df_process_rules', pd.DataFrame())
+                if df_process_rules is not None and not df_process_rules.empty:
+                    df_process_rules.to_csv(
+                        os.path.join(output_dir, f'df_process_rules-{prefix}.csv'),
+                        index=False,
+                        encoding='utf-8',
+                    )
+                df_pro_emp_mov = treatment.get('df_pro_emp_mov', pd.DataFrame())
+                if df_pro_emp_mov is not None and not df_pro_emp_mov.empty:
+                    df_pro_emp_mov.to_csv(
+                        os.path.join(output_dir, f'df_pro_emp_mov-{prefix}.csv'),
+                        index=False,
+                        encoding='utf-8',
+                    )
+
+                manifest = {
+                    'process_id': process_id,
+                    'posto_id': posto_id,
+                    'start_date': self.external_call_data.get('start_date'),
+                    'end_date': self.external_call_data.get('end_date'),
+                    'admissao_proporcional': treatment.get('admissao_proporcional'),
+                    'wfm_proc_colab': treatment.get('wfm_proc_colab', ''),
+                    'nome_pais': treatment.get('nome_pais'),
+                    'eci_flag': bool(treatment.get('eci_flag', False)),
+                    'eci_sibling_results_flag': bool(treatment.get('eci_sibling_results_flag', False)),
+                    'NUM_DIAS_CONS': treatment.get('NUM_DIAS_CONS'),
+                    'ld_sunday_param': treatment.get('ld_sunday_param'),
+                    'ld_holiday_param': treatment.get('ld_holiday_param'),
+                    'real_shifts': treatment.get('real_shifts', ['M', 'T']),
+                    'employees_id_list_for_posto': treatment.get('employees_id_list_for_posto', []),
+                    'employees_id_90_list': treatment.get('employees_id_90_list', []),
+                }
+                manifest_path = os.path.join(output_dir, f'diagnose_salsa_manifest-{prefix}.json')
+                with open(manifest_path, 'w', encoding='utf-8') as manifest_file:
+                    json.dump(manifest, manifest_file, indent=2, ensure_ascii=False)
+                self.logger.info(
+                    f"SALSA diagnostic bundle saved (manifest + optional feriados/rules/mov CSVs) for {prefix}"
+                )
                 self.logger.info("CSV debug files saved successfully")
             except Exception as csv_error:
                 self.logger.warning(f"Failed to save CSV debug files: {csv_error}")

@@ -1,18 +1,22 @@
 """
-Rebuild the SALSA model for one process and find which restriction makes it infeasible.
+Rebuild the SALSA model for one process/posto and find which restriction makes it infeasible.
 
-The method is leave-one-out, not a guess:
-a restriction is necessary when the full model is INFEASIBLE and the same model
-with that restriction removed becomes FEASIBLE or OPTIMAL.
+Leave-one-out: a restriction is necessary when the full model is INFEASIBLE and removing
+that restriction alone yields FEASIBLE or OPTIMAL.
 
-Inputs are the four frames saved just before the algorithm, plus the holiday
-calendar, compensation rules, and pending days off printed in the run log.
-The rebuilt model is accepted only when it matches the logged fingerprint
-(15 workers, period 260-375, 378 days, 12 special days, 9038 shift variables).
+After a normal batch run, func_inicializa writes a diagnostic bundle under data/output:
+  diagnose_salsa_manifest-{process}-{posto}.json
+  df_colaborador / df_calendario / df_estimativas / df_annual_variables (existing)
+  df_feriados / df_process_rules / df_pro_emp_mov (when non-empty)
+
+Usage:
+  .\\.venv\\Scripts\\python.exe scripts/diagnose_salsa_infeasibility.py --process 74961 --posto 27
 """
 
 from __future__ import annotations
 
+import argparse
+import json
 import logging
 import sys
 import time
@@ -47,15 +51,9 @@ from src.algorithms.model_salsa.salsa_constraints import (
 from src.algorithms.model_salsa.variables import decision_variables
 from src.algorithms.salsaAlgorithm import SalsaAlgorithm
 
-OUT_DIR = ROOT / "data" / "output"
-PROCESS = "44650"
-EXPECTED_WORKERS = 15
-EXPECTED_DAYS = 378
-EXPECTED_SPECIAL = 12
-EXPECTED_PERIOD = [260, 375]
-EXPECTED_SHIFT_VARS = 9038
+DEFAULT_OUT_DIR = ROOT / "data" / "output"
 
-# Same families the 2026-09-29 run applied, in the same order.
+# Constraint families applied in SALSA (same order as salsaAlgorithm.execute_algorithm).
 FAMILIES = [
     "shift_day_constraint",
     "working_day_shifts",
@@ -80,100 +78,84 @@ FAMILIES = [
 STRUCTURAL = {"shift_day_constraint"}
 
 
-def _feriados() -> pd.DataFrame:
-    rows = [
-        ("2025-12-25", "F", 4),
-        ("2026-01-01", "F", 11),
-        ("2026-01-06", "F", 16),
-        ("2026-04-02", "A", 102),
-        ("2026-04-03", "A", 103),
-        ("2026-05-01", "A", 131),
-        ("2026-05-02", "A", 132),
-        ("2026-05-15", "A", 145),
-        ("2026-07-25", "A", 216),
-        ("2026-08-15", "A", 237),
-        ("2026-10-12", "A", 295),
-        ("2026-11-02", "A", 316),
-        ("2026-11-09", "A", 323),
-        ("2026-12-07", "A", 351),
-        ("2026-12-08", "A", 352),
-        ("2026-12-25", "F", 369),
-        ("2027-01-01", "F", 376),
-    ]
-    frame = pd.DataFrame(rows, columns=["schedule_day", "tipo_feriado", "index"])
-    frame["fk_unidade"] = 2339
+def _bundle_prefix(process: str | int, posto: str | int) -> str:
+    return f"{process}-{posto}"
+
+
+def _require_path(out_dir: Path, name: str) -> Path:
+    path = out_dir / name
+    if not path.is_file():
+        raise SystemExit(
+            f"Missing {path.name}. Run the batch for this process/posto first "
+            f"(func_inicializa must finish so debug CSVs and manifest are written)."
+        )
+    return path
+
+
+def load_manifest(out_dir: Path, process: str, posto: str) -> dict:
+    path = _require_path(out_dir, f"diagnose_salsa_manifest-{_bundle_prefix(process, posto)}.json")
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _read_optional_csv(out_dir: Path, filename: str) -> pd.DataFrame:
+    path = out_dir / filename
+    if not path.is_file():
+        return pd.DataFrame()
+    frame = pd.read_csv(path)
+    for column in ("schedule_day", "begin_date", "end_date", "deadline_date"):
+        if column in frame.columns:
+            frame[column] = pd.to_datetime(frame[column])
     return frame
 
 
-def _process_rules(employee_ids: list[int]) -> pd.DataFrame:
-    """One ld_holiday row per employee and day index 260..375, as printed for this run.
+def load_adapted(out_dir: Path, process: str, posto: str) -> dict:
+    prefix = _bundle_prefix(process, posto)
+    manifest = load_manifest(out_dir, process, posto)
 
-    The log shows amount 1, deadline 28, overlap Y, and no day-off or empty-day rows.
-    116 indexes * 10 employees = 1160 rows, matching the logged shape.
-    """
-    rows = []
-    for employee_id in employee_ids:
-        for index in range(260, 376):
-            rows.append(
-                {
-                    "employee_id": employee_id,
-                    "rule_code": "ld_holiday",
-                    "index": index,
-                    "time_off_additional": 1,
-                    "time_off_deadline": 28,
-                    "overlap_sunday_holiday": "Y",
-                }
-            )
-    return pd.DataFrame(rows)
+    colaborador = pd.read_csv(_require_path(out_dir, f"df_colaborador-{prefix}.csv"))
+    calendario = pd.read_csv(_require_path(out_dir, f"df_calendario-{prefix}.csv"))
+    estimativas = pd.read_csv(_require_path(out_dir, f"df_estimativas-{prefix}.csv"))
+    annual_path = out_dir / f"df_annual_variables-{prefix}.csv"
+    if annual_path.is_file():
+        annual = pd.read_csv(annual_path)
+        annual["begin_date"] = pd.to_datetime(annual["begin_date"])
+        annual["end_date"] = pd.to_datetime(annual["end_date"])
+    else:
+        annual = pd.DataFrame()
 
-
-def _past_lds() -> pd.DataFrame:
-    rows = [
-        (118, "2026-08-15", 28, 1),
-        (113, "2026-08-15", 28, 1),
-        (116, "2026-08-15", 28, 1),
-    ]
-    frame = pd.DataFrame(
-        rows,
-        columns=["employee_id", "schedule_day", "time_off_deadline", "n_lds_pending"],
-    )
-    frame["rule_code"] = "ld_holiday"
-    frame["schedule_day"] = pd.to_datetime(frame["schedule_day"])
-    return frame
-
-
-def load_adapted() -> dict:
-    annual = pd.read_csv(OUT_DIR / f"df_annual_variables-{PROCESS}-27.csv")
-    annual["begin_date"] = pd.to_datetime(annual["begin_date"])
-    annual["end_date"] = pd.to_datetime(annual["end_date"])
-    colaborador = pd.read_csv(OUT_DIR / f"df_colaborador-{PROCESS}-27.csv")
-    calendario = pd.read_csv(OUT_DIR / f"df_calendario-{PROCESS}-27.csv")
-    estimativas = pd.read_csv(OUT_DIR / f"df_estimativas-{PROCESS}-27.csv")
-    employee_ids = sorted(colaborador["employee_id"].dropna().astype(int).unique().tolist())
+    start_date = manifest["start_date"]
+    end_date = manifest["end_date"]
+    employees_for_posto = manifest.get("employees_id_list_for_posto")
+    if not employees_for_posto:
+        employees_for_posto = [
+            str(employee_id)
+            for employee_id in sorted(colaborador["employee_id"].dropna().astype(int).unique().tolist())
+        ]
 
     treatment = {
-        "admissao_proporcional": "floor",
-        "wfm_proc_colab": "",
-        "df_feriados": _feriados(),
-        "nome_pais": "Espanha",
-        "eci_flag": False,
-        "eci_sibling_results_flag": False,
-        "NUM_DIAS_CONS": 8,
-        "ld_sunday_param": 0.0,
-        "ld_holiday_param": 1.0,
-        "start_date": "2026-09-07",
-        "end_date": "2026-12-31",
-        "employees_id_list_for_posto": [str(employee_id) for employee_id in employee_ids],
-        "employees_id_90_list": [],
-        "df_process_rules": _process_rules(employee_ids),
-        "df_pro_emp_mov": _past_lds(),
+        "admissao_proporcional": manifest.get("admissao_proporcional", "floor"),
+        "wfm_proc_colab": manifest.get("wfm_proc_colab", ""),
+        "df_feriados": _read_optional_csv(out_dir, f"df_feriados-{prefix}.csv"),
+        "nome_pais": manifest.get("nome_pais", "Espanha"),
+        "eci_flag": manifest.get("eci_flag", False),
+        "eci_sibling_results_flag": manifest.get("eci_sibling_results_flag", False),
+        "NUM_DIAS_CONS": int(manifest.get("NUM_DIAS_CONS", 6)),
+        "ld_sunday_param": float(manifest.get("ld_sunday_param", 0.0)),
+        "ld_holiday_param": float(manifest.get("ld_holiday_param", 1.0)),
+        "start_date": start_date,
+        "end_date": end_date,
+        "employees_id_list_for_posto": employees_for_posto,
+        "employees_id_90_list": manifest.get("employees_id_90_list", []),
+        "df_process_rules": _read_optional_csv(out_dir, f"df_process_rules-{prefix}.csv"),
+        "df_pro_emp_mov": _read_optional_csv(out_dir, f"df_pro_emp_mov-{prefix}.csv"),
         "df_annual_variables": annual,
-        "real_shifts": ["M", "T"],
+        "real_shifts": manifest.get("real_shifts", ["M", "T"]),
     }
     algorithm = SalsaAlgorithm(
-        process_id=int(PROCESS),
-        start_date="2026-09-07",
-        end_date="2026-12-31",
+        process_id=int(process),
+        start_date=start_date,
+        end_date=end_date,
     )
     return algorithm.adapt_data(
         {
@@ -265,6 +247,9 @@ def build_model(adapted: dict, skip: set[str], keep: set[int] | None = None):
             adapted["fixed_compensation_days"], adapted["holiday_past_lds"],
             adapted["sunday_past_lds"], adapted["closed_holidays"], dummy_workers,
             workers_with_dummy,
+            adapted["empty_rules"],
+            adapted["day_off_rules"],
+            adapted["dynamic_empty"],
         )
     if workers:
         if "week_working_days_constraint" not in skip:
@@ -409,12 +394,38 @@ def without_days(adapted: dict, worker: int, days: set[int]) -> dict:
     return cloned
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="SALSA CP-SAT leave-one-out infeasibility diagnosis from func_inicializa debug bundle.",
+    )
+    parser.add_argument("--process", required=True, help="Process id (same as current_process_id in the batch)")
+    parser.add_argument("--posto", required=True, help="Posto id for the infeasible run (see Current posto_id in log)")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUT_DIR,
+        help=f"Folder with debug CSVs and manifest (default: {DEFAULT_OUT_DIR})",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
+    out_dir = args.output_dir.resolve()
+    process = str(args.process)
+    posto = str(args.posto)
+    prefix = _bundle_prefix(process, posto)
+
     logging.disable(logging.WARNING)
-    print("Loading frames and rebuilding adapted data...", flush=True)
-    adapted = load_adapted()
+    print(f"Loading bundle {prefix} from {out_dir} ...", flush=True)
+    if not (out_dir / f"df_feriados-{prefix}.csv").is_file():
+        print(
+            f"Note: df_feriados-{prefix}.csv not found (empty in run, or re-run batch with updated code).",
+            flush=True,
+        )
+    adapted = load_adapted(out_dir, process, posto)
     names = {}
-    colaborador = pd.read_csv(OUT_DIR / f"df_colaborador-{PROCESS}-27.csv")
+    colaborador = pd.read_csv(out_dir / f"df_colaborador-{prefix}.csv")
     for row in colaborador.itertuples(index=False):
         names[int(row.employee_id)] = str(row.nome)
 
@@ -423,20 +434,9 @@ def main() -> None:
         f"special={len(adapted['special_days'])} period={adapted['period']} country={adapted['country']}",
         flush=True,
     )
-    mismatches = []
-    if len(adapted["workers"]) != EXPECTED_WORKERS:
-        mismatches.append(f"workers {len(adapted['workers'])} != {EXPECTED_WORKERS}")
-    if len(adapted["days_of_year"]) != EXPECTED_DAYS:
-        mismatches.append(f"days {len(adapted['days_of_year'])} != {EXPECTED_DAYS}")
-    if len(adapted["special_days"]) != EXPECTED_SPECIAL:
-        mismatches.append(f"special {len(adapted['special_days'])} != {EXPECTED_SPECIAL}")
-    if list(adapted["period"]) != EXPECTED_PERIOD:
-        mismatches.append(f"period {list(adapted['period'])} != {EXPECTED_PERIOD}")
-    if mismatches:
-        raise SystemExit("Rebuilt data does not match the logged run: " + "; ".join(mismatches))
 
     lines = [
-        f"SALSA infeasibility diagnosis for process {PROCESS}",
+        f"SALSA infeasibility diagnosis for process {process} posto {posto}",
         f"workers={adapted['workers']}",
         f"period={adapted['period']} ({_date(adapted, adapted['period'][0])} to {_date(adapted, adapted['period'][1])})",
         "",
@@ -449,17 +449,12 @@ def main() -> None:
     print("Solving the full model...", flush=True)
     started = time.perf_counter()
     full_model, full_shift = build_model(adapted, skip=set())
-    if len(full_shift) != EXPECTED_SHIFT_VARS:
-        raise SystemExit(
-            f"Shift variable count {len(full_shift)} != logged {EXPECTED_SHIFT_VARS}. "
-            "The rebuilt model is not the one that was solved."
-        )
     full_status = solve_status(full_model)
     print(f"full model: {full_status} in {time.perf_counter() - started:.1f}s vars={len(full_shift)}", flush=True)
     lines.append(f"Full model status: {full_status} (shift variables {len(full_shift)})")
     if full_status != "INFEASIBLE":
         lines.append("The rebuilt model is not infeasible, so family tests were not run.")
-        _write(lines)
+        _write(out_dir, process, posto, lines)
         return
 
     print("Domain check: variables + exactly one shift, no business restrictions...", flush=True)
@@ -573,12 +568,12 @@ def main() -> None:
         "A restriction is reported only when removing it changes the status away from INFEASIBLE. "
         "UNKNOWN means the time limit was hit before a proof."
     )
-    _write(lines)
+    _write(out_dir, process, posto, lines)
     print("\n".join(lines), flush=True)
 
 
-def _write(lines: list[str]) -> None:
-    path = OUT_DIR / f"infeasibility_{PROCESS}_report.txt"
+def _write(out_dir: Path, process: str, posto: str, lines: list[str]) -> None:
+    path = out_dir / f"infeasibility_{process}_{posto}_report.txt"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Wrote {path}", flush=True)
 
