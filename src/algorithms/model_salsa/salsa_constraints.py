@@ -5,7 +5,7 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import compensation_day
 logger = get_logger('algoritmo_GD')
 
 def global_compensation_days(model, shift, workers, working_days, holidays, sundays, week_to_days, working_shift, holiday_rules, sunday_rules, fixed_days_off, fixed_LQs, worker_absences,
-                             vacation_days, period, override_holiday_sunday, fixed_lds, holiday_past_lds, sunday_past_lds, closed_days, dummy_workers, workers_with_dummy, empty_rules, day_off_rules, dynamic_empty):
+                             vacation_days, period, override_holiday_sunday, fixed_lds, holiday_past_lds, sunday_past_lds, empty_past_lds, day_off_past_lds, closed_days, dummy_workers, workers_with_dummy, empty_rules, day_off_rules, dynamic_empty):
 
     contingent_f = total_lds_f = contingent_d = total_lds_d = contingent_v = contingent_o = total_lds_v = total_lds_o = []
 
@@ -29,10 +29,10 @@ def global_compensation_days(model, shift, workers, working_days, holidays, sund
                                                   fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "sunday", sunday_past_lds, closed_days, dummy_workers, workers_with_dummy, dynamic_empty)
 
     contingent_v, total_lds_v = compensation_days(model, shift, workers, working_days, set(holidays), [], override_holiday_sunday, week_to_days, working_shift, empty_rules, fixed_lds,
-                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "empty", [], closed_days, dummy_workers, workers_with_dummy, dynamic_empty)
+                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "empty", empty_past_lds, closed_days, dummy_workers, workers_with_dummy, dynamic_empty)
 
     contingent_o, total_lds_o = compensation_days(model, shift, workers, working_days, set(holidays), [], override_holiday_sunday, week_to_days, working_shift, day_off_rules, fixed_lds,
-                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "day_off", [], closed_days, dummy_workers, workers_with_dummy, dynamic_empty)
+                                                      fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, "day_off", day_off_past_lds, closed_days, dummy_workers, workers_with_dummy, dynamic_empty)
 
     contingente_falso = {}
 
@@ -142,7 +142,7 @@ def compensation_days(model, shift, workers, working_days, special_days, special
                     logger.info(f"For {w}: day {d} got ammount = {ammount} possible_compensation_days: {sorted(possible_compensation_days[w][d])}")
 
         if w in past_special_days_worked:
-            logger.info(f"past special days {w} worked: {past_special_days_worked[w]}")
+            logger.info(f"past special days {w}: {past_special_days_worked[w]}")
             for d in past_special_days_worked[w]["days_&_limit"]:
                 logger.info(f"calculated time: {past_special_days_worked[w]['days_&_limit'][d]} from day {d} to start date {period[0]}")
                 if past_special_days_worked[w]["days_&_limit"][d] <= 0:
