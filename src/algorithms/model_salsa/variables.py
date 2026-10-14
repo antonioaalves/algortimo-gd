@@ -125,6 +125,8 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
                     for value in real_working_shift:
                         if d in shift_set[f"shift_{value}_set"]:
                             shift[(w, d, value)] = model.NewBoolVar(f"{w}_Day{d}_{value}")
+                    if 'LD' in shifts2:
+                        shift[(w, d, 'LD')] = model.NewBoolVar(f"{w}_Day{d}_LD")
                     continue
                 for s in shifts2:
                     shift[(w, d, s)] = model.NewBoolVar(f"{w}_Day{d}_{s}")
