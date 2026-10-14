@@ -208,7 +208,9 @@ if not sec_to_proc.empty:
                                         external_call_dict=external_call_dict,
                                         external_raw_connection=connection
                                     )
-                                
+
+                                connection = connection_object.ensure_connection()
+
                                 if success:
                                     logger.info(f"Direct function call completed successfully for process {wfm_proc_id}")
                                     local_processes += 1

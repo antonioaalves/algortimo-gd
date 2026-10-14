@@ -377,7 +377,7 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0] and d > day}
@@ -396,6 +396,8 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
 
     return compensation_days
 
@@ -430,10 +432,10 @@ def get_dummy(workers_with_dummy, w, d):
     if w in workers_with_dummy:
         for range, new_w in workers_with_dummy.get(w, {}).items():
             if d in range:
-                if d == range[0]:
-                    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
-                if d == range[-1]:
-                    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
+                #if d == range[0]:
+                #    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
+                #if d == range[-1]:
+                #    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
                 return new_w
     return w
 
@@ -481,7 +483,7 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in week_days - all_days_off if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift and d >= period[0] and d > day}
@@ -499,8 +501,15 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
-
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
     return compensation_days
+
+def recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total):
+    total1 = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline + total)])
+    if total1 != total:
+        total1 = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total1)
+    return total1
 
 def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, current_year, original_year, calendar_day_0):
     """
@@ -512,7 +521,7 @@ def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dy
         too many days. Total is contained to be less than deadline, the theoretical best case of deadline extension.
     """
     if current_year == original_year:
-        total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline)])
+        total = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, 0)
     else:
         total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if days < calendar_day_0])
     if total > deadline:
