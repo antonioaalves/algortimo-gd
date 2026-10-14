@@ -948,6 +948,11 @@ def free_days_week_2_3(model, shift, workers, working_days, holidays, week_to_da
 def free_days_week(model, shift, workers, week_to_days, working_days, admissao_proporcional, data_admissao,
                    data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, locked_days, closed_days):
     for w in workers:
+        #if w in [1377, 1382, 1386, 23958, 34896, 57472]:
+        #    print("not feasible ", w, contract_type[w])
+        #    continue
+        #else:
+        #    print("feasible ", w, contract_type[w])
         if contract_type[w] <= 3:
             continue
         worker_admissao = data_admissao.get(w, 0)
@@ -980,55 +985,25 @@ def free_days_week(model, shift, workers, week_to_days, working_days, admissao_p
             tipo_contrato = contract_type.get(w, 0)
             actual_days_in_week = len(week_work_days)  # Total days in this week
             # If this is an admissao or demissao week, apply proportional calculation
-            if is_admissao_week or is_demissao_week:
-                # Calculate proportional requirement based on actual days in the week
-                # Standard week has 7 days and requires 2 free days
-                # Proportion: (actual_days / 7) * 2
-                
-                if tipo_contrato >= 5:
-                    if 4 <= actual_days_in_week <= 5:
-                        required_free_days = 1
-                    elif actual_days_in_week < 4:
-                        required_free_days = 0
-                    else:
-                        if work_days_per_week[w][week - 1] == 6:
-                            required_free_days = 1
-                        else:
-                            required_free_days = 2
+            if tipo_contrato >= 5:
+                if (tipo_contrato == 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1) or tipo_contrato == 6:
+                    required_free_days = 1
+                elif actual_days_in_week >= 2:
+                    required_free_days = 2
+                elif actual_days_in_week == 1:
+                    required_free_days = 1
                 else:
-                    free_days_weekly = 2
-                    proportion = actual_days_in_week / 7.0
-                    proportion_days = proportion * free_days_weekly
-                    if admissao_proporcional == 'floor':
-                        required_free_days = max(0, int(floor(proportion_days)))
-
-                    elif admissao_proporcional == 'ceil':
-                        required_free_days = max(0, int(ceil(proportion_days)))
-                    else:
-                        required_free_days = max(0, int(floor(proportion_days)))
-                logger.info(f"Worker {w}, Week {week} (Admissao/Demissao week), Days {week_work_days}: "
-                            f" Required Free Days = {required_free_days}")
-            
+                     required_free_days = 0
             else:
-                if tipo_contrato >= 5:
-                    if (tipo_contrato == 8 and work_days_per_week[w][week - 1] == 6 and actual_days_in_week >= 1) or tipo_contrato == 6:
+                if actual_days_in_week >= 2:
+                    required_free_days = 2
+                elif actual_days_in_week == 1:
                         required_free_days = 1
-                    elif actual_days_in_week >= 2:
-                        required_free_days = 2
-                    elif actual_days_in_week == 1:
-                        required_free_days = 1
-                    else:
-                         required_free_days = 0
                 else:
-                    if actual_days_in_week >= 2:
-                        required_free_days = 2
-                    elif actual_days_in_week == 1:
-                            required_free_days = 1
-                    else:
-                         required_free_days = 0
-            
-                # logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
-                #            f"Required Free Days = {required_free_days}")
+                     required_free_days = 0
+        
+            # logger.info(f"Worker {w}, Week {week} (Regular week), Days {week_work_days}: "
+            #            f"Required Free Days = {required_free_days}")
 
             if required_free_days < (len(fixed_days_week) + len(fixed_lqs_week)):
                 required_free_days = len(fixed_days_week) + len(fixed_lqs_week)
@@ -1043,17 +1018,29 @@ def free_days_week(model, shift, workers, week_to_days, working_days, admissao_p
                 #logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
                 if required_free_days == 2:
                     if (len(week_work_days) >= 2):
-                        model.Add(free_shift_sum == required_free_days)
+                        if is_admissao_week or is_demissao_week:
+                            model.Add(free_shift_sum <= required_free_days)
+                        else:
+                            model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 3:
                     if (len(week_work_days) >= 3):
-                        model.Add(free_shift_sum == required_free_days)
+                        if is_admissao_week or is_demissao_week:
+                            model.Add(free_shift_sum <= required_free_days)
+                        else:
+                            model.Add(free_shift_sum == required_free_days)
                         #logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
                 elif required_free_days == 1:
                     if (len(week_work_days) >= 1):
                         #logger.info(f"Adding constraint for Worker {w}, Week {week}, Required Free Days: {required_free_days}, Free Shift Sum Variable: {free_shift_sum}")
-                        model.Add(free_shift_sum == required_free_days)
+                        if is_admissao_week or is_demissao_week:
+                            model.Add(free_shift_sum <= required_free_days)
+                        else:
+                            model.Add(free_shift_sum == required_free_days)
                 elif required_free_days == 0:
-                    model.Add(free_shift_sum == 0)
+                    if is_admissao_week or is_demissao_week:
+                        model.Add(free_shift_sum <= required_free_days)
+                    else:
+                        model.Add(free_shift_sum == required_free_days)
 
 #--------------------------------------------------------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------------------------

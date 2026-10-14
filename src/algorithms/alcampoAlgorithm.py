@@ -336,7 +336,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
 
             # Constraint to limit maximum free days in a year
             #desativadaaaaaa
-            #maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
+            ##maximum_free_days(model, shift, days_of_year, workers, total_l, c3d)
             
             # Constraint for free days on special days
             free_days_sundays(model, shift, sundays, workers_no_contract_changes, working_days, total_l_dom, year_range, annual_variables, workers_with_dummy)
@@ -345,7 +345,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             tc_atribution(model, shift, workers, tc, special_days, working_days, year_range)
             
             # Working days special days constraint
-            working_days_special_days(model, shift, special_days, workers_no_contract_changes, working_days, l_d, contract_type, real_working_shift, workers_with_dummy, year_range, annual_variables, complete_cycle_days, locked_days)
+            #working_days_special_days(model, shift, special_days, workers_no_contract_changes, working_days, l_d, contract_type, real_working_shift, workers_with_dummy, year_range, annual_variables, complete_cycle_days, locked_days)
 
             # Constrain LQ on saturdays if no L/F on sunday
             saturday_L_constraint(model, shift, workers, working_days, period, working_shift)
@@ -358,7 +358,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             
             # Worker week shift assignments #####
             #desativadaaaaaaaa
-            #assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
+            ##assign_week_shift(model, shift, workers_complete, week_to_days, working_days, worker_week_shift)
 
             working_day_shifts(model, shift, workers, working_days, check_shift, period, contract_type)
             
@@ -369,22 +369,22 @@ class AlcampoAlgorithm(BaseAlgorithm):
             no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period, locked_days, complete_cycle_days)
             
             # Day2 quality weekends
-            day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range, locked_days, complete_cycle_days)
+            #day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range, locked_days, complete_cycle_days)
             
             # Space LQs constraint
             space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
             
             # Priority 2-3 workers constraint
-            #prio_2_3_workers(model, shift, workers, working_days, holidays, week_to_days, contract_type, working_shift)
+            ##prio_2_3_workers(model, shift, workers, working_days, holidays, week_to_days, contract_type, working_shift)
 
             free_days_week_2_3(model, shift, workers, working_days, holidays, week_to_days, contract_type, working_shift, closed_holidays)
             
             # Compensation days constraint
             contingente_f = []
             contingente_d = []
-            contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
-                                                                    fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
-                                                                    sunday_past_lds, closed_holidays, dummy_workers, workers_with_dummy)
+            #contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
+            #                                                        fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
+            #                                                        sunday_past_lds, closed_holidays, dummy_workers, workers_with_dummy)
             
             # Limits LDs per week
             limits_LDs_week(model, shift, week_to_days, workers, special_days)
