@@ -9692,26 +9692,44 @@ def _resolve_compensatory_rest_types(
     rule_code: str,
     worked_day,
     day_off,
-    type_lookup_by_day: Dict,
-    type_lookup_employee: Dict,
+    rules_lookup_by_day: Dict,
+    rules_lookup_employee: Dict,
+    mov_lookup_by_day: Optional[Dict] = None,
+    mov_lookup_employee: Optional[Dict] = None,
 ):
     """
-    Resolve REST types for a compensatory pair, aligned with build_compensatory_output:
-    prefer types for the destination day (in-window rules), then the origin (worked) day
-    (pending mov / expired heads), then employee-level fallback.
-    """
-    day_off_normalized = pd.Timestamp(day_off).normalize()
-    rule_types = type_lookup_by_day.get((employee_id, rule_code, day_off_normalized))
-    if rule_types:
-        return rule_types
+    Resolve REST types for a compensatory pair from the rule that granted the right
+    (origin / worked_day), aligned with build_compensatory_output RULE_HEAD_ID on O.
 
-    if worked_day is not None:
-        worked_normalized = pd.Timestamp(worked_day).normalize()
-        rule_types = type_lookup_by_day.get((employee_id, rule_code, worked_normalized))
+    Order: pending mov on origin, merged rules on origin, employee mov, employee rules;
+    destination day only if worked_day is missing (ld_given always provides both dates).
+    """
+    mov_by_day = mov_lookup_by_day or {}
+    mov_by_employee = mov_lookup_employee or {}
+    worked_normalized = (
+        pd.Timestamp(worked_day).normalize() if worked_day is not None else None
+    )
+
+    if worked_normalized is not None:
+        rule_types = mov_by_day.get((employee_id, rule_code, worked_normalized))
+        if rule_types:
+            return rule_types
+        rule_types = rules_lookup_by_day.get((employee_id, rule_code, worked_normalized))
         if rule_types:
             return rule_types
 
-    return type_lookup_employee.get((employee_id, rule_code))
+    rule_types = mov_by_employee.get((employee_id, rule_code))
+    if rule_types:
+        return rule_types
+    rule_types = rules_lookup_employee.get((employee_id, rule_code))
+    if rule_types:
+        return rule_types
+
+    if worked_normalized is None and day_off is not None:
+        day_off_normalized = pd.Timestamp(day_off).normalize()
+        return rules_lookup_by_day.get((employee_id, rule_code, day_off_normalized))
+
+    return None
 
 
 def apply_compensatory_sched_types(
@@ -9727,10 +9745,9 @@ def apply_compensatory_sched_types(
     REST_DAY_TYPE and REST_DAY_SUBTYPE from merged df_process_rules and pending mov.
 
     This runs AFTER convert_types_out, which hardcodes all 'LD' rows to ('F', 'D').
-    For each solver ld_given pair (worked_day, day_off), types are resolved in the
-    same spirit as build_compensatory_output: destination day first (in-window rules),
-    then origin day (pending O / expired rule heads), then employee-level fallback.
-    Overrides are applied on the destination row in final_df.
+    For each solver ld_given pair (worked_day, day_off), REST types come from the
+    rule that granted the right (origin / pending mov O), not the head active on
+    day_off. Overrides are applied on the destination row in final_df.
 
     Args:
         final_df: Output DataFrame after convert_types_out, with sched_type/sched_subtype.
@@ -9762,22 +9779,29 @@ def apply_compensatory_sched_types(
 
         rule_code_map = COMPENSATORY_INTERNAL_RULE_CODE_BY_GROUP
 
-        type_lookup_by_day: Dict = {}
-        type_lookup_employee: Dict = {}
+        rules_lookup_by_day: Dict = {}
+        rules_lookup_employee: Dict = {}
+        mov_lookup_by_day: Dict = {}
+        mov_lookup_employee: Dict = {}
         _ingest_compensatory_rest_type_lookup(
             df_process_rules,
-            type_lookup_by_day,
-            type_lookup_employee,
+            rules_lookup_by_day,
+            rules_lookup_employee,
             fill_only=False,
         )
         _ingest_compensatory_rest_type_lookup(
             df_pro_emp_mov,
-            type_lookup_by_day,
-            type_lookup_employee,
-            fill_only=True,
+            mov_lookup_by_day,
+            mov_lookup_employee,
+            fill_only=False,
         )
 
-        if not type_lookup_by_day and not type_lookup_employee:
+        if (
+            not rules_lookup_by_day
+            and not rules_lookup_employee
+            and not mov_lookup_by_day
+            and not mov_lookup_employee
+        ):
             logger.warning("apply_compensatory_sched_types: no type lookup available - skipping")
             return final_df
 
@@ -9796,8 +9820,10 @@ def apply_compensatory_sched_types(
                         rule_code,
                         worked_day,
                         day_off,
-                        type_lookup_by_day,
-                        type_lookup_employee,
+                        rules_lookup_by_day,
+                        rules_lookup_employee,
+                        mov_lookup_by_day,
+                        mov_lookup_employee,
                     )
                     if not rule_types:
                         continue
