@@ -23,7 +23,7 @@ from src.algorithms.model_salsa_esp.salsa_esp_constraints import (
     free_days_special_days
 )
 from src.algorithms.model_salsa_esp.optimization_salsa_esp import salsa_esp_optimization
-from src.algorithms.solver.solver import solve
+from src.algorithms.solver.solver import configured_max_solver_time, solve
 
 from src.helpers import (_create_empty_results, _calculate_comprehensive_stats, 
                         _validate_constraints, _calculate_quality_metrics, 
@@ -117,6 +117,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
                 self.logger.debug("No algorithm treatment parameters provided, using empty dict")
             else:
                 self.logger.info(f"Using algorithm treatment parameters: {list(algorithm_treatment_params.keys())}")
+            self.max_solver_time_in_seconds = configured_max_solver_time(algorithm_treatment_params)
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE
@@ -436,6 +437,7 @@ class SalsaEspAlgorithm(BaseAlgorithm):
             self.logger.info("Solving SALSA model")
             
             schedule_df, results = solve(model, days_of_year, workers_complete, special_days, shift, shifts, work_day_hours, 
+                              max_time_seconds=self.max_solver_time_in_seconds,
                               output_filename=os.path.join(_config_manager.system.project_root_dir, 'data', 'output', 
                                                          f'salsa_esp_schedule_{self.process_id}.xlsx'))
             

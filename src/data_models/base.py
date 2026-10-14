@@ -45,6 +45,9 @@ from src.data_models.functions.data_treatment_functions import (
 from src.data_models.validations.load_process_data_validations import (
     validate_posto_id,
 )
+from src.data_models.validations.format_results_validations import (
+    collect_unconverted_fd_day_events,
+)
 from src.algorithms.factory import AlgorithmFactory
 
 
@@ -932,10 +935,52 @@ class BaseDescansosDataModel(ABC):
     def validate_format_results(self) -> bool:
         """
         Method responsible for validating formatted results before inserting.
+
+        Lists employee-days still F/D on df_final. Those rows missed the rule
+        type conversion, so a compensatory day off will be inserted with no
+        movement. Does not change df_final and does not fail the process.
         """
         try:
-            self.logger.info("Entered validate_format_results method. Needs to be implemented.")
-            return True            
+            self.logger.info("Entered validate_format_results method.")
+            final_df = self.formatted_data.get('df_final', pd.DataFrame())
+            if final_df is None:
+                final_df = pd.DataFrame()
+
+            try:
+                employee_id_matriculas_map = {}
+                if hasattr(self, 'auxiliary_data') and isinstance(self.auxiliary_data, dict):
+                    employee_id_matriculas_map = self.auxiliary_data.get(
+                        'employee_id_matriculas_map', {}
+                    ) or {}
+                events = collect_unconverted_fd_day_events(
+                    final_df,
+                    employee_id_matriculas_map=employee_id_matriculas_map,
+                )
+            except Exception as collect_error:
+                self.logger.error(
+                    f"Error collecting unconverted F/D days: {collect_error}",
+                    exc_info=True,
+                )
+                events = []
+
+            if hasattr(self, 'auxiliary_data') and isinstance(self.auxiliary_data, dict):
+                self.auxiliary_data['unconverted_fd_day_events'] = events
+
+            if not events:
+                self.logger.info("No unconverted F/D days on final_df")
+            else:
+                self.logger.warning(
+                    f"Unconverted F/D days on final_df: {len(events)}. "
+                    "Rule type was not applied; compensatory day off will be inserted with no movement"
+                )
+                for event in events:
+                    self.logger.warning(
+                        "Unconverted F/D day: employee_id=%s matricula=%s schedule_day=%s",
+                        event.get('employee_id'),
+                        event.get('matricula'),
+                        event.get('schedule_day'),
+                    )
+            return True
         except Exception as e:
             self.logger.error(f"Error validating format_results from data manager: {str(e)}")
             return False

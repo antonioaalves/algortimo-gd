@@ -65,6 +65,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_df_colaborador
 )
 from src.helpers import count_open_holidays
+from src.orquestrador_functions.Logs.process_message_labels import build_process_message_labels
 from src.data_models.functions.read_salsa_calendar_mirror import (
     build_read_salsa_worker_calendar,
     build_salsa_day_week_date_maps,
@@ -252,6 +253,8 @@ def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp
         if start_date2 is None or end_date2 is None:
             return False, pd.DataFrame(), "Input validation failed: invalid date parameters"
             
+        if not df_closed_days.empty and 'data' not in df_closed_days.columns and 'schedule_day' in df_closed_days.columns:
+            df_closed_days = df_closed_days.rename(columns={'schedule_day': 'data'})
         if not df_closed_days.empty and 'data' not in df_closed_days.columns:
             return False, pd.DataFrame(), "Input validation failed: missing data column"
 
@@ -921,6 +924,8 @@ def populate_missing_df_ciclos(
         contract_cols = ['employee_id', 'begin_date', 'end_date', 'min_dia_trab', 'max_dia_trab']
         if 'matricula' in colab.columns:
             contract_cols.append('matricula')
+        if 'nome' in colab.columns:
+            contract_cols.append('nome')
         contracts = sort_df_colaborador_by_contract_period(colab[contract_cols].copy())
         contracts['begin_date'] = pd.to_datetime(contracts['begin_date'], errors='coerce').dt.normalize()
         contracts['end_date'] = pd.to_datetime(contracts['end_date'], errors='coerce').dt.normalize()
@@ -968,10 +973,16 @@ def populate_missing_df_ciclos(
             if 'matricula' in missing.columns
             else np.full(len(missing), np.nan)
         )
+        nome_vals = (
+            missing['nome'].values
+            if 'nome' in missing.columns
+            else np.full(len(missing), np.nan)
+        )
         df_missing = pd.DataFrame({
             'process_id': process_id,
             'employee_id': missing['employee_id'].values,
             'matricula': matricula_vals,
+            'nome': nome_vals,
             'schedule_day': schedule_days.values,
             'tipo_dia': 'A',
             'tipo_ciclo': 'N',
@@ -992,11 +1003,6 @@ def populate_missing_df_ciclos(
             'workload_template': 'A',
         })
 
-        if df.empty:
-            df_result = df_missing
-        else:
-            df_result = pd.concat([df, df_missing], ignore_index=True)
-
         warning_agg = (
             df_missing.groupby('employee_id', sort=False)
             .agg(
@@ -1004,16 +1010,26 @@ def populate_missing_df_ciclos(
                 period_end=('schedule_day', 'max'),
                 missing_days_count=('schedule_day', 'count'),
                 matricula=('matricula', 'first'),
+                nome=('nome', 'first'),
             )
             .reset_index()
         )
         warning_agg['period_begin'] = warning_agg['period_begin'].dt.strftime('%Y-%m-%d')
         warning_agg['period_end'] = warning_agg['period_end'].dt.strftime('%Y-%m-%d')
         warning_agg['matricula'] = warning_agg['matricula'].map(_format_matricula_value)
+        warning_agg['nome'] = warning_agg['nome'].map(
+            lambda value: '' if pd.isna(value) else str(value).strip()
+        )
         warning_agg['missing_days_count'] = warning_agg['missing_days_count'].astype(int)
         warning_events = warning_agg[
-            ['employee_id', 'matricula', 'period_begin', 'period_end', 'missing_days_count']
+            ['employee_id', 'nome', 'matricula', 'period_begin', 'period_end', 'missing_days_count']
         ].to_dict('records')
+
+        df_missing = df_missing.drop(columns=['nome'])
+        if df.empty:
+            df_result = df_missing
+        else:
+            df_result = pd.concat([df, df_missing], ignore_index=True)
 
         logger.warning(
             "populate_missing_df_ciclos: backfilled %s synthetic cycle rows for %s employee(s)",
@@ -1127,6 +1143,8 @@ def validate_workload_template_vs_contract(
         )
         return True, [], ""
 
+    employee_labels = build_process_message_labels(pd.DataFrame(), [df_colaborador])
+
     use_nro_semana = 'nro_semana' in invalid.columns and invalid['nro_semana'].notna().any()
     if use_nro_semana:
         invalid['_week_key'] = invalid['nro_semana'].astype(str)
@@ -1150,6 +1168,9 @@ def validate_workload_template_vs_contract(
         )
         matricula = row.get('matricula')
         matricula_str = str(int(matricula)) if pd.notna(matricula) and str(matricula).strip() != '' else ''
+        nome, matricula_from_colab = employee_labels.raw_employee(emp_id)
+        if not matricula_str:
+            matricula_str = matricula_from_colab
         min_trab = int(row['min_dia_trab'])
         max_trab = int(row['max_dia_trab'])
         wt_val = int(row['_wt_num'])
@@ -1173,6 +1194,7 @@ def validate_workload_template_vs_contract(
         logger.error("workload_template: %s", detail_pt)
         error_events.append({
             'employee_id': emp_id,
+            'nome': nome,
             'matricula': matricula_str,
             'workload_template': wt_val,
             'min_dia_trab': min_trab,
@@ -1425,6 +1447,7 @@ def _build_consecutive_work_index_state_for_employee(
     execution_end: pd.Timestamp,
     section_num_dias_cons: int,
     contracts: pd.DataFrame,
+    employee_labels=None,
 ) -> Optional[dict]:
     """
     Per-index calendar state for maximum_continuous_working_days pre-check.
@@ -1581,8 +1604,12 @@ def _build_consecutive_work_index_state_for_employee(
             except (TypeError, ValueError):
                 matricula = str(mat_vals.iloc[0]).strip()
 
+    nome = ''
+    if employee_labels is not None:
+        nome, _ = employee_labels.raw_employee(employee_id)
     return {
         'employee_id': str(employee_id),
+        'nome': nome,
         'matricula': matricula,
         'index_status': index_status,
         'complete_cycle_days': complete_cycle_days,
@@ -1657,6 +1684,7 @@ def _validate_employee_max_consecutive_working_days(
         begin, end, suffix = _period_labels(run_start_idx, run_end_idx)
         events.append({
             'employee_id': emp_id,
+            'nome': state.get('nome', ''),
             'matricula': matricula,
             'num_dias_cons': max_days,
             'streak_days': streak,
@@ -1812,6 +1840,7 @@ def validate_max_consecutive_working_days(
 
     contracts = _prepare_num_dias_cons_contracts(df_colaborador)
     employee_ids = sorted(df_colaborador['employee_id'].astype(str).unique().tolist())
+    employee_labels = build_process_message_labels(pd.DataFrame(), [df_colaborador])
 
     error_events: List[dict] = []
     for emp_id in employee_ids:
@@ -1825,6 +1854,7 @@ def validate_max_consecutive_working_days(
             execution_end=exec_end,
             section_num_dias_cons=section_default,
             contracts=contracts,
+            employee_labels=employee_labels,
         )
         if state is None:
             continue
@@ -4651,6 +4681,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     fixed_LQs = set(emp_cal.loc[horario == 'LQ', 'index'].astype(int))
     vacation_days = set(emp_cal.loc[horario.isin(['V', 'V-']), 'index'].astype(int))
     worker_absences = set(emp_cal.loc[horario.isin(['A', 'AP', 'A-']), 'index'].astype(int))
+    empty_days = set(emp_cal.loc[horario == '-', 'index'].astype(int))
 
     if df_ausencias_ferias is not None and not df_ausencias_ferias.empty:
         emp_col = 'employee_id' if 'employee_id' in df_ausencias_ferias.columns else 'fk_colaborador'
@@ -4720,6 +4751,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
         work_days_per_week,
         year_range,
         period,
+        empty_days,
     )
 
     weekly_rest_quota = _indices_to_schedule_days(
@@ -4941,6 +4973,22 @@ def _count_weekly_rest_weekend_days_in_range(
     return count
 
 
+def _take_weekly_free_slot(
+    day: pd.Timestamp,
+    day_to_week: Optional[Dict[pd.Timestamp, int]],
+    remaining: int,
+    claims: Optional[dict],
+) -> bool:
+    """Spend one leftover L/LQ slot in this salsa week. claims is None for a single weekend day."""
+    week = day_to_week.get(day.normalize()) if day_to_week and claims is not None else None
+    left = remaining if week is None else remaining - claims.get(week, 0)
+    if left < 1:
+        return False
+    if week is not None:
+        claims[week] = claims.get(week, 0) + 1
+    return True
+
+
 def _count_eligible_sundays(
     begin: pd.Timestamp,
     effective_end: pd.Timestamp,
@@ -4955,6 +5003,7 @@ def _count_eligible_sundays(
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
+    slot_claims: Optional[dict] = None,
 ) -> int:
     """
     Count Sundays eligible for l_dom within [begin, effective_end].
@@ -4990,10 +5039,15 @@ def _count_eligible_sundays(
             sunday, adjacent_free, max_consec_free
         ):
             pass
-        elif _remaining_weekly_free_day_slots(
-            sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
-            weekly_quota_ctx=weekly_quota_ctx,
-        ) < 1:
+        elif not _take_weekly_free_slot(
+            sunday,
+            day_to_week,
+            _remaining_weekly_free_day_slots(
+                sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+            ),
+            slot_claims,
+        ):
             pass
         else:
             count += 1
@@ -5040,6 +5094,7 @@ def _count_eligible_saturdays(
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
     employee_id: Optional[str] = None,
+    slot_claims: Optional[dict] = None,
 ) -> int:
     """
     Count Saturdays eligible for l_sab (and l_dom_or_sab pool contribution).
@@ -5086,10 +5141,15 @@ def _count_eligible_saturdays(
             saturday, adjacent_free, max_consec_free
         ):
             pass
-        elif _remaining_weekly_free_day_slots(
-            saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
-            weekly_quota_ctx=weekly_quota_ctx,
-        ) < 1:
+        elif not _take_weekly_free_slot(
+            saturday,
+            day_to_week,
+            _remaining_weekly_free_day_slots(
+                saturday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+            ),
+            slot_claims,
+        ):
             pass
         else:
             count += 1
@@ -5465,15 +5525,18 @@ def _count_feasibility_cap_for_field(
                 **count_kwargs,
             )
         elif field == 'l_dom_or_sab':
+            slot_claims: Dict[int, int] = {}
             eligible_in_execution = (
                 _count_eligible_sundays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
                     **count_kwargs,
                 )
                 + _count_eligible_saturdays(
                     in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                     default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
                     **count_kwargs,
                 )
             )
@@ -5577,6 +5640,10 @@ def apply_annual_dayoff_feasibility_cap(
         field_codes = _ANNUAL_DAYOFF_FIELD_CODES
         column_to_rule_code = {v: k for k, v in _ANNUAL_RULE_CODE_TO_COLUMN.items()}
         cap_events: List[dict] = []
+        employee_labels = build_process_message_labels(
+            pd.DataFrame(),
+            [df_colaborador] if df_colaborador is not None and not df_colaborador.empty else [],
+        )
         _empty_calendar_state = {
             'weekly_rest': frozenset(),
             'consecutive_rest': frozenset(),
@@ -5777,8 +5844,11 @@ def apply_annual_dayoff_feasibility_cap(
                         f"(outside_fixed+exec_eligible={achievable}, exec_eligible={eligible_in_exec})"
                     )
                     df_annual.at[idx, field] = float(achievable)
+                    cap_nome, cap_matricula = employee_labels.raw_employee(emp_id)
                     cap_events.append({
                         'employee_id': emp_id,
+                        'nome': cap_nome,
+                        'matricula': cap_matricula,
                         'field': field,
                         'rule_field_code': column_to_rule_code.get(field, field),
                         'original_value': float(value),
@@ -5798,7 +5868,32 @@ def apply_annual_dayoff_feasibility_cap(
         return False, pd.DataFrame(), [], str(e)
 
 
-def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
+# STRSOL-1820: day-off horario codes that may replace closed holiday F when treat_label_holiday == 0
+F_OVERRIDABLE_DAYOFF_HORARIOS = frozenset({'L', 'L_DOM', 'C', 'LQ'})
+
+
+def closed_holiday_preserve_mask(
+    current_horario: pd.Series,
+    incoming_horario: pd.Series,
+    treat_label_holiday: int,
+) -> pd.Series:
+    """
+    True where an existing closed holiday (F) must not be overwritten by incoming_horario.
+    When treat_label_holiday is 0, allowed day-off codes may replace F.
+    """
+    is_f = current_horario == 'F'
+    if int(treat_label_holiday) == 0:
+        incoming_dayoff = incoming_horario.isin(F_OVERRIDABLE_DAYOFF_HORARIOS)
+        return is_f & ~incoming_dayoff
+    return is_f
+
+
+def add_calendario_passado(
+    df_calendario: pd.DataFrame,
+    df_calendario_passado: pd.DataFrame,
+    use_case: int = 1,
+    treat_label_holiday: int = 1,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Populate calendar schedule gaps using historical shift data.
     
@@ -5901,12 +5996,14 @@ def add_calendario_passado(df_calendario: pd.DataFrame, df_calendario_passado: p
             # Note: Allow '-' values (from type='N' conversion) to override default '0' values
             valid_passado_mask = mapped_values.notna() & (mapped_values != '')
             
-            # Create mask to preserve F's (closed holidays) and V's (vacations)
-            preserve_f_mask = df_result['horario'] == 'F'
+            # Preserve F (subject to STRSOL-1820) and V
+            preserve_f_mask = closed_holiday_preserve_mask(
+                df_result['horario'], mapped_values, treat_label_holiday
+            )
             preserve_v_mask = df_result['horario'] == 'V'
             preserve_mask = preserve_f_mask | preserve_v_mask
             
-            # Combine masks: override everything except F's and V's where passado has valid data
+            # Combine masks: override everything except preserved F's and V's where passado has valid data
             fill_mask = valid_passado_mask & ~preserve_mask
             
             # Vectorized assignment
@@ -6054,7 +6151,12 @@ def add_ausencias_ferias(df_calendario: pd.DataFrame, df_ausencias_ferias: pd.Da
         return False, pd.DataFrame(), error_msg
 
 
-def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
+def add_folgas_ciclos(
+    df_calendario: pd.DataFrame,
+    df_core_pro_emp_horario_det: pd.DataFrame,
+    use_case: int = 1,
+    treat_label_holiday: int = 1,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Apply fixed day-off cycles to calendar schedules (override mode).
     
@@ -6168,8 +6270,9 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
             # Vectorized lookup: map day-off values to result positions
             mapped_values = result_index.map(dayoffs_lookup)
             
-            # Create mask to preserve F's (closed holidays) - do not override closed holidays
-            preserve_f_mask = df_result['horario'] == 'F'
+            preserve_f_mask = closed_holiday_preserve_mask(
+                df_result['horario'], mapped_values, treat_label_holiday
+            )
             
             # Create mask for A's and V's - these should only be modified by '-' (becoming A- or V-)
             preserve_av_mask = df_result['horario'].isin(['A', 'V'])
@@ -6211,7 +6314,12 @@ def add_folgas_ciclos(df_calendario: pd.DataFrame, df_core_pro_emp_horario_det: 
         logger.error(error_msg, exc_info=True)
         return False, pd.DataFrame(), error_msg
 
-def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.DataFrame, use_case: int = 1) -> Tuple[bool, pd.DataFrame, str]:
+def add_ciclos_completos(
+    df_calendario: pd.DataFrame,
+    df_ciclos_completos: pd.DataFrame,
+    use_case: int = 1,
+    treat_label_holiday: int = 1,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Integrate complete 90-day rotation cycle schedules into calendar.
     
@@ -6324,15 +6432,16 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             # Note: Allow '-' values (skip days from tipo_dia='S') to override default '0' values
             valid_ciclos_mask = mapped_values.notna() & (mapped_values != '')
             
-            # Create mask to preserve F's (closed holidays) - F's should never be overridden
-            preserve_f_mask = df_result['horario'] == 'F'
+            preserve_f_mask = closed_holiday_preserve_mask(
+                df_result['horario'], mapped_values, treat_label_holiday
+            )
             
             # Create mask for A's and V's - these should only be modified by '-' (becoming A- or V-)
             preserve_av_mask = df_result['horario'].isin(['A', 'V'])
             
             # Special handling for '-' values: check if current horario is 'A' or 'V'
             # If inserting '-' and current is 'A' -> 'A-', if current is 'V' -> 'V-', otherwise '-'
-            # Note: F's should never be overridden, even by '-'
+            # Note: F's should never be overridden by '-'
             dash_mask = valid_ciclos_mask & ~preserve_f_mask & (mapped_values == '-')
             if dash_mask.any():
                 # Get current horario values for rows where we're inserting '-'
@@ -6345,8 +6454,12 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
                     np.where(current_horario == 'V', 'V-', '-')
                 )
             
-            # Process day-off values: L / L_DOM can override A's and V's (but not F's)
-            l_mask = valid_ciclos_mask & ~preserve_f_mask & mapped_values.isin(['L', 'L_DOM'])
+            # Process day-off values: may override A/V; may override F when treat_label_holiday == 0
+            l_mask = (
+                valid_ciclos_mask
+                & ~preserve_f_mask
+                & mapped_values.isin(F_OVERRIDABLE_DAYOFF_HORARIOS)
+            )
             if l_mask.any():
                 df_result.loc[l_mask, 'horario'] = mapped_values[l_mask]
 
@@ -6383,7 +6496,9 @@ def add_ciclos_completos(df_calendario: pd.DataFrame, df_ciclos_completos: pd.Da
             # Other codes (P, NL, LD, …): same value on both tipo_turno rows
             other_mask = (
                 valid_ciclos_mask & ~preserve_f_mask & ~preserve_av_mask
-                & ~mapped_values.isin(['-', 'L', 'L_DOM', 'M', 'T', 'MoT', 'NLM', 'NLT'])
+                & ~mapped_values.isin(
+                    ['-', 'M', 'T', 'MoT', 'NLM', 'NLT', *F_OVERRIDABLE_DAYOFF_HORARIOS]
+                )
             )
             if other_mask.any():
                 df_result.loc[other_mask, 'horario'] = mapped_values[other_mask]
@@ -9517,6 +9632,88 @@ def build_compensatory_output(
         return False, pd.DataFrame(), str(e)
 
 
+def _ingest_compensatory_rest_type_lookup(
+    source: Optional[pd.DataFrame],
+    type_lookup_by_day: Dict,
+    type_lookup_employee: Dict,
+    *,
+    fill_only: bool,
+) -> None:
+    """
+    Add (employee, rule_code[, schedule_day]) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE) entries.
+
+    When fill_only is False (merged process rules), day keys are always written and
+    employee-level keys use first-wins. When fill_only is True (pending mov), only
+    missing keys are added so in-window merged rules keep precedence.
+    """
+    if source is None or source.empty:
+        return
+
+    normalized = source.copy()
+    normalized.columns = [str(col).strip().lower() for col in normalized.columns]
+    if not {
+        'employee_id',
+        'rule_code',
+        'rest_day_type',
+        'rest_day_subtype',
+    }.issubset(normalized.columns):
+        return
+
+    normalized = normalized.dropna(subset=['rest_day_type', 'rest_day_subtype'])
+    normalized['employee_id'] = pd.to_numeric(normalized['employee_id'], errors='coerce')
+    normalized = normalized.dropna(subset=['employee_id'])
+
+    dedupe_cols = ['employee_id', 'rule_code']
+    has_schedule_day = 'schedule_day' in normalized.columns
+    if has_schedule_day:
+        normalized['schedule_day'] = pd.to_datetime(
+            normalized['schedule_day'], errors='coerce'
+        ).dt.normalize()
+        dedupe_cols.append('schedule_day')
+
+    for _, row in normalized.drop_duplicates(subset=dedupe_cols).iterrows():
+        emp_key = int(row['employee_id'])
+        rule_code = row['rule_code']
+        types = (row['rest_day_type'], row['rest_day_subtype'])
+        if has_schedule_day and pd.notna(row['schedule_day']):
+            day_key = (emp_key, rule_code, row['schedule_day'])
+            if not fill_only or day_key not in type_lookup_by_day:
+                type_lookup_by_day[day_key] = types
+        emp_key_rule = (emp_key, rule_code)
+        if not fill_only:
+            if emp_key_rule not in type_lookup_employee:
+                type_lookup_employee[emp_key_rule] = types
+        elif emp_key_rule not in type_lookup_employee:
+            type_lookup_employee[emp_key_rule] = types
+
+
+def _resolve_compensatory_rest_types(
+    employee_id: int,
+    rule_code: str,
+    worked_day,
+    day_off,
+    type_lookup_by_day: Dict,
+    type_lookup_employee: Dict,
+):
+    """
+    Resolve REST types for a compensatory pair, aligned with build_compensatory_output:
+    prefer types for the destination day (in-window rules), then the origin (worked) day
+    (pending mov / expired heads), then employee-level fallback.
+    """
+    day_off_normalized = pd.Timestamp(day_off).normalize()
+    rule_types = type_lookup_by_day.get((employee_id, rule_code, day_off_normalized))
+    if rule_types:
+        return rule_types
+
+    if worked_day is not None:
+        worked_normalized = pd.Timestamp(worked_day).normalize()
+        rule_types = type_lookup_by_day.get((employee_id, rule_code, worked_normalized))
+        if rule_types:
+            return rule_types
+
+    return type_lookup_employee.get((employee_id, rule_code))
+
+
 def apply_compensatory_sched_types(
     final_df: pd.DataFrame,
     compensatory_dict: Dict,
@@ -9527,12 +9724,13 @@ def apply_compensatory_sched_types(
 ) -> pd.DataFrame:
     """
     Override sched_type and sched_subtype for compensatory day-off rows using the
-    REST_DAY_TYPE and REST_DAY_SUBTYPE defined in df_process_rules.
+    REST_DAY_TYPE and REST_DAY_SUBTYPE from merged df_process_rules and pending mov.
 
     This runs AFTER convert_types_out, which hardcodes all 'LD' rows to ('F', 'D').
-    The compensatory dict from the solver identifies exactly which (employee, day_off)
-    pairs are compensatory and from which rule group (feriados/domingos), allowing us
-    to look up the rule-specific type/subtype and override.
+    For each solver ld_given pair (worked_day, day_off), types are resolved in the
+    same spirit as build_compensatory_output: destination day first (in-window rules),
+    then origin day (pending O / expired rule heads), then employee-level fallback.
+    Overrides are applied on the destination row in final_df.
 
     Args:
         final_df: Output DataFrame after convert_types_out, with sched_type/sched_subtype.
@@ -9564,64 +9762,20 @@ def apply_compensatory_sched_types(
 
         rule_code_map = COMPENSATORY_INTERNAL_RULE_CODE_BY_GROUP
 
-        # Day-level lookup: (employee_id, rule_code, day) -> (REST_DAY_TYPE, REST_DAY_SUBTYPE)
-        # Employee-level fallback when day is missing from merged rules.
-        type_lookup_by_day = {}
-        type_lookup_employee = {}
-        if df_process_rules is not None and not df_process_rules.empty:
-            rules_normalized = df_process_rules.copy()
-            rules_normalized.columns = [str(col).strip().lower() for col in rules_normalized.columns]
-            if (
-                'employee_id' in rules_normalized.columns
-                and 'rule_code' in rules_normalized.columns
-                and 'rest_day_type' in rules_normalized.columns
-                and 'rest_day_subtype' in rules_normalized.columns
-            ):
-                rules_normalized['employee_id'] = pd.to_numeric(
-                    rules_normalized['employee_id'], errors='coerce'
-                )
-                dedupe_cols = ['employee_id', 'rule_code']
-                if 'schedule_day' in rules_normalized.columns:
-                    rules_normalized['schedule_day'] = pd.to_datetime(
-                        rules_normalized['schedule_day'], errors='coerce'
-                    ).dt.normalize()
-                    dedupe_cols.append('schedule_day')
-                for _, row in rules_normalized.drop_duplicates(subset=dedupe_cols).iterrows():
-                    emp_key = int(row['employee_id'])
-                    rule_code = row['rule_code']
-                    types = (row['rest_day_type'], row['rest_day_subtype'])
-                    if 'schedule_day' in dedupe_cols and pd.notna(row['schedule_day']):
-                        type_lookup_by_day[(emp_key, rule_code, row['schedule_day'])] = types
-                    if (emp_key, rule_code) not in type_lookup_employee:
-                        type_lookup_employee[(emp_key, rule_code)] = types
-
-        # If merged employee-day rules are empty, adapt equivalent info from pending
-        # movements (already enriched with rule params) to preserve prior behavior.
-        if not type_lookup_by_day and not type_lookup_employee and df_pro_emp_mov is not None and not df_pro_emp_mov.empty:
-            mov_rules = df_pro_emp_mov.copy()
-            mov_rules.columns = [str(col).strip().lower() for col in mov_rules.columns]
-            if (
-                'employee_id' in mov_rules.columns
-                and 'rule_code' in mov_rules.columns
-                and 'rest_day_type' in mov_rules.columns
-                and 'rest_day_subtype' in mov_rules.columns
-            ):
-                mov_rules = mov_rules.dropna(subset=['rest_day_type', 'rest_day_subtype'])
-                mov_rules['employee_id'] = pd.to_numeric(mov_rules['employee_id'], errors='coerce')
-                dedupe_cols = ['employee_id', 'rule_code']
-                if 'schedule_day' in mov_rules.columns:
-                    mov_rules['schedule_day'] = pd.to_datetime(
-                        mov_rules['schedule_day'], errors='coerce'
-                    ).dt.normalize()
-                    dedupe_cols.append('schedule_day')
-                for _, row in mov_rules.drop_duplicates(subset=dedupe_cols).iterrows():
-                    emp_key = int(row['employee_id'])
-                    rule_code = row['rule_code']
-                    types = (row['rest_day_type'], row['rest_day_subtype'])
-                    if 'schedule_day' in dedupe_cols and pd.notna(row['schedule_day']):
-                        type_lookup_by_day[(emp_key, rule_code, row['schedule_day'])] = types
-                    if (emp_key, rule_code) not in type_lookup_employee:
-                        type_lookup_employee[(emp_key, rule_code)] = types
+        type_lookup_by_day: Dict = {}
+        type_lookup_employee: Dict = {}
+        _ingest_compensatory_rest_type_lookup(
+            df_process_rules,
+            type_lookup_by_day,
+            type_lookup_employee,
+            fill_only=False,
+        )
+        _ingest_compensatory_rest_type_lookup(
+            df_pro_emp_mov,
+            type_lookup_by_day,
+            type_lookup_employee,
+            fill_only=True,
+        )
 
         if not type_lookup_by_day and not type_lookup_employee:
             logger.warning("apply_compensatory_sched_types: no type lookup available - skipping")
@@ -9635,14 +9789,19 @@ def apply_compensatory_sched_types(
                 group_data = groups.get(group_key, {})
 
                 for worked_day, day_off in group_data.get('ld_given', []):
-                    if day_off is not None:
-                        day_off_normalized = pd.Timestamp(day_off).normalize()
-                        rule_types = type_lookup_by_day.get((worker_int, rule_code, day_off_normalized))
-                        if not rule_types:
-                            rule_types = type_lookup_employee.get((worker_int, rule_code))
-                        if not rule_types:
-                            continue
-                        overrides[(worker_int, day_off_normalized)] = rule_types
+                    if day_off is None:
+                        continue
+                    rule_types = _resolve_compensatory_rest_types(
+                        worker_int,
+                        rule_code,
+                        worked_day,
+                        day_off,
+                        type_lookup_by_day,
+                        type_lookup_employee,
+                    )
+                    if not rule_types:
+                        continue
+                    overrides[(worker_int, pd.Timestamp(day_off).normalize())] = rule_types
 
         if not overrides:
             logger.info("apply_compensatory_sched_types: no compensatory day-off rows to override")
