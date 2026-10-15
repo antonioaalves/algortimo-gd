@@ -56,6 +56,7 @@ from src.data_models.functions.helper_functions import (
     get_sunday_of_next_week,
     get_week_pattern,
     get_granularity_minutes,
+    employee_ids_cav_ciclo_completo,
 )
 
 # Get configuration singleton
@@ -3844,6 +3845,21 @@ def add_seq_turno(df_calendario: pd.DataFrame, df_colaborador: pd.DataFrame):
         
         horario_counts = df_result['horario'].value_counts()
         logger.info(f"Successfully populated horario column. Value counts: {horario_counts.to_dict()}")
+
+        # Alcampo-only caller: stamp employee-level tipo_ciclo from CAV (seq_turno + ciclo).
+        # Salsa uses add_tipo_ciclo_to_calendario (per-day WFM TIPO_CICLO S/N) instead.
+        if 'tipo_ciclo' in df_result.columns:
+            completo_ids = employee_ids_cav_ciclo_completo(df_colaborador)
+            if completo_ids:
+                emp_str = df_result['employee_id'].astype(str)
+                df_result['tipo_ciclo'] = emp_str.isin(completo_ids)
+            df_result['tipo_ciclo'] = df_result['tipo_ciclo'].astype(bool)
+            n_true = int(df_result['tipo_ciclo'].sum())
+            logger.info(
+                f"add_seq_turno: {len(completo_ids)} CAV CICLO COMPLETO employees; "
+                f"{n_true} calendar rows with tipo_ciclo=True"
+            )
+
         logger.info(f"Completed add_seq_turno for {len(df_result)} rows")
         
         return True, df_result, ""
