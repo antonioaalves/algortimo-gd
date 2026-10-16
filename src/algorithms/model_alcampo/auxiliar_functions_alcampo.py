@@ -196,28 +196,16 @@ def joining_template_with_contract_per_week(work_days_per_week, week_template, w
 
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, closed_days, period, day):
+def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, working_days, shift, w, fixed_lds, closed_days, period, day, special_days):
     compensation_days = []
     days_analysed = 0
-    current_week = special_day_week
     absences = worker_absences.union(vacation_days.union(closed_days))
-    all_days_off = fixed_days_off.union(fixed_LQs.union(absences.union(fixed_lds)))
-    while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
-        current_week += 1
-
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+    all_days_off = special_days.union(fixed_days_off.union(fixed_LQs.union(absences.union(fixed_lds))))
+    for week in range(special_day_week, special_day_week + 2):
+        week_days = set(week_to_days.get(week, range(week * 7 - 6, week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
-        available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0] and d > day}
-
-        days_analysed += len({d for d in week_days - absences if d >= period[0] and d > day})
-        if days_analysed > compensation_limit:
-            diff = days_analysed - compensation_limit
-            if diff > len(available_days):
-                break
-            diff -= len(week_days.intersection(all_days_off))
-            if diff > 0:
-                available_days = set(sorted(available_days)[:-diff])
+        available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0]}
 
         if min(week_days) >= period[1]:
             available_days = {d for d in week_days - all_days_off if (w, d, 'LD') in shift}
@@ -298,39 +286,26 @@ def get_annual_variables(annual_variables, w, d, variable):
     return True
                 
 def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days,
-                                                 week_to_days, compensation_limit, working_days, shift, w, fixed_lds,
-                                                 closed_days, period, day, workers_with_dummy):
+                                                 week_to_days, working_days, shift, w, fixed_lds,
+                                                 closed_days, period, day, workers_with_dummy, special_days):
     
     dummies = sorted(workers_with_dummy.get(w, {}).values())
     compensation_days = []
-    days_analysed = 0
-    current_week = special_day_week
     absences = worker_absences[w].union(vacation_days[w].union(closed_days))
     for dum in dummies:
         if w != dum:
             absences |= worker_absences[dum].union(vacation_days[dum])
 
-    all_days_off = fixed_days_off[w].union(fixed_LQs[w].union(absences.union(fixed_lds[w])))
+    all_days_off = fixed_days_off[w].union(fixed_LQs[w].union(absences.union(fixed_lds[w].union(special_days))))
     for dum in dummies:
         if w != dum:
             all_days_off |= fixed_days_off[dum].union(fixed_LQs[dum].union(absences.union(fixed_lds[dum])))
 
-    while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
-        current_week += 1
-
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+    for week in range(special_day_week, special_day_week + 2):
+        week_days = set(week_to_days.get(week, range(week * 7 - 6, week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
-        available_days = {d for d in week_days - all_days_off if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift and d >= period[0] and d > day}
-        days_analysed += len({d for d in week_days - absences if d >= period[0] and d > day})
-        if days_analysed > compensation_limit:
-            diff = days_analysed - compensation_limit
-            if diff > len(available_days):
-                break
-            diff -= len(week_days.intersection(all_days_off))
-            if diff > 0:
-                available_days = set(sorted(available_days)[:-diff])
-
+        available_days = {d for d in week_days - all_days_off if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift and d >= period[0]}
         if min(week_days) >= period[1]:
             available_days = {d for d in week_days - all_days_off if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift}
 
