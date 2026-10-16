@@ -440,7 +440,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                     self.logger.warning("Skipping constraint: salsa_2_free_days_week (disabled in config)")
                 if constraint_selections.get("first_day_not_free", {}).get("enabled", True):
                     self.logger.info("Applying constraint: first_day_not_free")
-                    first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off, period)
+                    first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off, period, dummy_workers)
                 else:
                     self.logger.warning("Skipping constraint: first_day_not_free (disabled in config)")
     
