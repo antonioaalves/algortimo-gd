@@ -910,6 +910,13 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
+            # STRSOL-1820: loaded from CORE_LABOR_LAW in load_process_data; pass through to solver
+            treat_label_holiday = int(
+                self.algorithm_treatment_params.get('treat_label_holiday', 1)
+            )
+            algorithm_treatment_params['treat_label_holiday'] = treat_label_holiday
+            self.logger.info(f"Parameter treat_label_holiday = {treat_label_holiday}")
+
             max_solver_time, _source = resolve_max_solver_time(
                 retrieved_params.get('max_solver_time_in_seconds'),
                 self.config_manager,
