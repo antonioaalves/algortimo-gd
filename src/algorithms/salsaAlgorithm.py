@@ -293,6 +293,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             shift_data = adapted_data["shift_data"]
             empty_rules = adapted_data["empty_rules"]
             day_off_rules = adapted_data["day_off_rules"]
+            worker_closed_holidays = adapted_data["worker_closed_holidays"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -354,7 +355,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             # Create decision variables
             shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences, vacation_days, empty_days, 
-                                       closed_holidays, fixed_days_off, fixed_LQs, shift_data, workers_past, fixed_compensation_days, locked_days,
+                                       worker_closed_holidays, fixed_days_off, fixed_LQs, shift_data, workers_past, fixed_compensation_days, locked_days,
                                        forced_work_days, contract_type, dynamic_empty, complete_cycle_days, real_working_shift)
             
             self.logger.info("Decision variables created for SALSA")
@@ -387,7 +388,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 self.logger.info("Applying constraint: holiday_compensation_days (Espanha-specific)")
                 contingente_f, contingente_d, contingente_v, contingente_o = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
                                                                         fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
-                                                                        sunday_past_lds, empty_past_lds, day_off_past_lds, closed_holidays, dummy_workers, workers_with_dummy, empty_rules, day_off_rules, dynamic_empty)
+                                                                        sunday_past_lds, empty_past_lds, day_off_past_lds, worker_closed_holidays, dummy_workers, workers_with_dummy, empty_rules, day_off_rules, dynamic_empty)
             elif country != "Espanha":
                 self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Espanha)")
             else:
@@ -470,7 +471,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("dynamic_empty_day", {}).get("enabled", True):
                     self.logger.info("Applying constraint: dynamic_empty_day")
-                    dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, closed_holidays, complete_cycle_days, work_days_per_week)
+                    dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_days, dynamic_empty, fixed_days_off, fixed_LQs, data_admissao, data_demissao, period, admissao_proporcional, worker_closed_holidays, complete_cycle_days, work_days_per_week)
                 else:
                     self.logger.warning("Skipping constraint: dynamic_empty_day (disabled in config)")
             self.logger.info("All enabled SALSA constraints applied")

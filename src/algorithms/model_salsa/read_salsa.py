@@ -57,6 +57,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         start_date = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == algorithm_treatment_params['start_date'], "index"].iloc[0]
         end_date = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == algorithm_treatment_params['end_date'], "index"].iloc[0]
         period = [start_date, end_date]
+        treat_label_holiday = algorithm_treatment_params.get("treat_label_holiday", 1)
 
         logger.info(f"Period Start and end Time:")
         logger.info(f"Start: {start_date}")
@@ -548,6 +549,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         complete_cycle_days = {}
         week_template_temp = {}
         week_template = {}
+        worker_closed_holidays = {}
 
         shift_data = {f"shift_{value}": {} for value in shifts}
 
@@ -597,7 +599,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 dynamic_empty[w] = []
                 complete_cycle_days[w] = []
                 week_template_temp[w] = []
-
+                worker_closed_holidays[w] = []
                 continue
             
             # Find days with specific statuses
@@ -605,7 +607,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             empty_days[w] = worker_calendar[worker_calendar['horario'].isin(['-', 'A-', 'V-' , '0'])]['index'].tolist()
             vacation_days[w] = worker_calendar[worker_calendar['horario'].isin(['V', 'V-'])]['index'].tolist()
             worker_absences[w] = worker_calendar[worker_calendar['horario'].isin(['AP', 'A-', 'A'])]['index'].tolist()
-            fixed_days_off[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'L_DOM'])]['index'].tolist()
+            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'L_DOM'])]['index'].tolist())
             work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
             week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
@@ -616,6 +618,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             forced_work_days[w] = worker_calendar[worker_calendar['horario'].isin(['NL', [f"NL{value}" for value in shifts]])]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
+            worker_closed_holidays[w] = set(worker_calendar[worker_calendar['horario'] == 'F']['index'].tolist())
 
         for w in week_template_temp:
             week_template[w] = {}
@@ -638,6 +641,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             locked_days[dummy] = {d for d in locked_days[original] if start <= d <= end}
             complete_cycle_days[dummy] = {d for d in complete_cycle_days[original] if start <= d <= end}
             fixed_compensation_days[dummy] = {d for d in fixed_compensation_days[original] if start <= d <= end}
+            worker_closed_holidays[dummy] = {d for d in worker_closed_holidays[original] if start <= d <= end}
             work_day_hours[dummy] = work_day_hours[original]
             week_template[dummy] = week_template[original]
 
@@ -653,6 +657,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             locked_days[original] = {d for d in locked_days[original] if d <= data_demissao[original]}
             complete_cycle_days[original] = {d for d in complete_cycle_days[original] if d <= data_demissao[original]}
             fixed_compensation_days[original] = {d for d in fixed_compensation_days[original] if d <= data_demissao[original]}
+            worker_closed_holidays[original] = {d for d in worker_closed_holidays[original] if d <= data_demissao[original]}
 
         workers = workers_list_with_dummy
         workers_complete = workers_complete_with_dummy
@@ -665,14 +670,24 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             if first_registered_day[w] > 0 or last_registered_day[w] > 0:  # Ensure worker was registered at some point
                 empty_days[w].extend([d for d in range(1, first_registered_day[w]) if d not in empty_days[w]])
                 empty_days[w].extend([d for d in range(last_registered_day[w] + 1, max_day) if d not in empty_days[w]])
-            
-
-            empty_days[w] = set(empty_days[w]) - closed_holidays
+            empty_days[w] = set(empty_days[w])
+            if treat_label_holiday == 0:
+                for d in closed_holidays:
+                    if d in worker_closed_holidays[w]:
+                        empty_days[w] = empty_days[w] - {d}
+                        worker_absences[w] = set(worker_absences[w]) - {d}
+                        vacation_days[w] = set(vacation_days[w]) - {d}
+                        print(f"entrei {w}, {d}")
+                    else:
+                        print(f"nao entrei {w}, {d}")
+            if treat_label_holiday == 1:
+                worker_closed_holidays[w] = set(closed_holidays)
+                empty_days[w] = empty_days[w] - worker_closed_holidays[w]
+                worker_absences[w] = set(worker_absences[w]) - worker_closed_holidays[w]
+                fixed_days_off[w] = set(fixed_days_off[w]) - worker_closed_holidays[w]
+                vacation_days[w] = set(vacation_days[w]) - worker_closed_holidays[w]
             for value in shifts:
                 empty_days[w] -= shift_data[f"shift_{value}"][w]
-            worker_absences[w] = set(worker_absences[w]) - closed_holidays
-            fixed_days_off[w] = set(fixed_days_off[w]) - closed_holidays
-            vacation_days[w] = set(vacation_days[w]) - closed_holidays
 
             if contract_type[w] == 8:
                 week = first_not_A_value(week_template[w])
@@ -698,8 +713,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
             work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w, contract_type[w])
             worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w],
-                                                                                                         week_to_days_salsa, closed_holidays, work_days_per_week[w], year_range, period, empty_days[w])
-            working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - closed_holidays
+                                                                                                         week_to_days_salsa, worker_closed_holidays[w], work_days_per_week[w], year_range, period, empty_days[w])
+            working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - worker_closed_holidays[w]
 
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
             if not working_days[w]:
@@ -1114,6 +1129,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             "annual_variables": annual_variables,
             "workers_no_contract_changes": workers_no_contract_changes,
             "shift_data" : shift_data,
+            "worker_closed_holidays": worker_closed_holidays,
             }
         
     except Exception as e:
