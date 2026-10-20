@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import datetime as dt
+from decimal import Decimal, InvalidOperation
 from typing import Any, List, Optional, Tuple, Dict, Union
 from base_data_project.log_config import get_logger
 from base_data_project.data_manager.managers import DBDataManager
@@ -241,6 +242,93 @@ def get_param_for_posto(df, posto_id, unit_id, secao_id, params_names_list=None)
                 #logger.info(f"DEBUG: Found default param {param_name}:{value}")
     
     return params_dict
+
+
+DEFAULT_MAX_SOLVER_TIME_SECONDS = 600
+
+
+def _parse_whole_seconds(value: Any) -> Optional[int]:
+    """Return a whole number of seconds >= 1, or None when the value cannot be used."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        candidate = text
+    else:
+        candidate = value
+    try:
+        number = Decimal(str(candidate).strip())
+    except (InvalidOperation, ValueError, TypeError, ArithmeticError):
+        return None
+    if not number.is_finite() or number != number.to_integral_value():
+        return None
+    seconds = int(number)
+    if seconds < 1:
+        return None
+    return seconds
+
+
+def resolve_max_solver_time(db_value: Any, config_manager: Any) -> Tuple[int, str]:
+    """
+    Resolve the CP-SAT time limit in seconds.
+
+    Order: core_alg_parameters value, then solver_parameters.json for the
+    current environment, then DEFAULT_MAX_SOLVER_TIME_SECONDS.
+    An invalid value is logged and the next layer is used.
+    """
+    if db_value is not None:
+        parsed = _parse_whole_seconds(db_value)
+        if parsed is not None:
+            logger.info(
+                f"max_solver_time_in_seconds={parsed} source=core_alg_parameters"
+            )
+            return parsed, "core_alg_parameters"
+        logger.warning(
+            f"Invalid max_solver_time_in_seconds from core_alg_parameters: {db_value!r}. "
+            "Falling back to solver_parameters.json."
+        )
+
+    environment = None
+    profile = None
+    algorithm_config = getattr(config_manager, "algorithm", None)
+    system_config = getattr(config_manager, "system", None)
+    if system_config is not None:
+        environment = getattr(system_config, "environment", None)
+    if algorithm_config is not None and environment:
+        profile = algorithm_config.get_solver_profile(environment)
+
+    if isinstance(profile, dict):
+        entry = profile.get("max_time_in_seconds")
+        if isinstance(entry, dict) and entry.get("enabled") is True:
+            parsed = _parse_whole_seconds(entry.get("value"))
+            if parsed is not None:
+                logger.info(
+                    f"max_solver_time_in_seconds={parsed} source=solver_parameters "
+                    f"environment={environment}"
+                )
+                return parsed, "solver_parameters"
+            logger.warning(
+                f"Invalid max_time_in_seconds in solver_parameters.json for "
+                f"environment '{environment}': {entry.get('value')!r}. Falling back to "
+                f"{DEFAULT_MAX_SOLVER_TIME_SECONDS}."
+            )
+        elif isinstance(entry, dict) and entry.get("enabled") is not True:
+            logger.info(
+                f"max_time_in_seconds disabled for environment '{environment}'. "
+                f"Falling back to {DEFAULT_MAX_SOLVER_TIME_SECONDS}."
+            )
+    else:
+        logger.info(
+            f"No solver profile for environment '{environment}'. "
+            f"Falling back to {DEFAULT_MAX_SOLVER_TIME_SECONDS}."
+        )
+
+    logger.info(
+        f"max_solver_time_in_seconds={DEFAULT_MAX_SOLVER_TIME_SECONDS} source=default"
+    )
+    return DEFAULT_MAX_SOLVER_TIME_SECONDS, "default"
 
 def get_value_from_row(row):
     """
@@ -1523,6 +1611,31 @@ def get_past_employees_id_list(wfm_proc_colab: str, df_mpd_valid_employees: pd.D
         logger.error(f"Error creating colabs_passado list: {e}", exc_info=True)
         return False, [], "Error creating the colabs_passado_list"
 
+
+def mask_cav_ciclo_completo(df: pd.DataFrame) -> pd.Series:
+    """True where CAV has seq_turno CICLO and ciclo COMPLETO (core_algorithm_variables)."""
+    seq = df['seq_turno'].astype(str).str.strip().str.upper()
+    ciclo = df['ciclo'].astype(str).str.strip().str.upper()
+    return (seq == 'CICLO') & (ciclo == 'COMPLETO')
+
+
+def employee_ids_cav_ciclo_completo(
+    df_colaborador: pd.DataFrame,
+    employee_ids_scope: Optional[List[str]] = None,
+) -> List[str]:
+    """Employee IDs on the CAV 90-day complete cycle (constant for the whole process year)."""
+    if df_colaborador is None or df_colaborador.empty:
+        return []
+    if 'seq_turno' not in df_colaborador.columns or 'ciclo' not in df_colaborador.columns:
+        return []
+    df = df_colaborador.drop_duplicates(subset=['employee_id'], keep='first').copy()
+    df['employee_id'] = df['employee_id'].astype(str)
+    if employee_ids_scope is not None:
+        scope = {str(x) for x in employee_ids_scope}
+        df = df[df['employee_id'].isin(scope)]
+    return df.loc[mask_cav_ciclo_completo(df), 'employee_id'].tolist()
+
+
 def get_employees_id_90_list(
     employees_id_list_for_posto: List[str],
     df_colaborador: Optional[pd.DataFrame] = None,
@@ -1571,20 +1684,13 @@ def get_employees_id_90_list(
             logger.info(f"get_employees_id_90_list (ciclos path): {len(employees_id_90_list)} CICLO COMPLETO employees")
             return True, employees_id_90_list, ""
 
-        # LEGACY FALLBACK: use seq_turno / ciclo from df_colaborador
+        # LEGACY FALLBACK: use seq_turno / ciclo from df_colaborador (Alcampo CAV)
         if df_colaborador is not None and not df_colaborador.empty and \
            'seq_turno' in df_colaborador.columns and 'ciclo' in df_colaborador.columns:
 
-            df_colab = df_colaborador.copy()
-            df_colab['employee_id'] = df_colab['employee_id'].astype(str)
-            mask_posto = df_colab['employee_id'].isin(employees_id_list_for_posto_str)
-            df_colab = df_colab[mask_posto]
-
-            mask_ciclo = (
-                (df_colab['seq_turno'].str.upper() == 'CICLO') &
-                (df_colab['ciclo'].str.upper() == 'COMPLETO')
+            employees_id_90_list = employee_ids_cav_ciclo_completo(
+                df_colaborador, employee_ids_scope=employees_id_list_for_posto_str
             )
-            employees_id_90_list = df_colab[mask_ciclo]['employee_id'].tolist()
             logger.info(f"get_employees_id_90_list (legacy path): {len(employees_id_90_list)} CICLO COMPLETO employees")
             return True, employees_id_90_list, ""
 

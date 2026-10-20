@@ -33,7 +33,8 @@
         "df_eci_section_employees": "queryGetEciSectionEmployees.sql",
         "df_eci_sibling_section": "queryGetEciSiblingSectionId.sql",
         "df_process_rules": "queryGetProcessLaborRules.sql",
-        "df_pro_emp_mov": "queryGetCoreProEmpMov.sql"
+        "df_pro_emp_mov": "queryGetCoreProEmpMov.sql",
+        "df_core_labor_law_treat_label": "queryGetCoreLaborLawTreatLabelHoliday.sql"
     },
     "available_entities_raw": {
         "df_calendario": "",

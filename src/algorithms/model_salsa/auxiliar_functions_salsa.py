@@ -105,7 +105,7 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
             
     return absences, vacations, fixed_days_off, fixed_LQs
 
-def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period):
+def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period, empty_days):
     for week, days in week_to_days_salsa.items():
         if len(days) <= 6 or days[-1] < period[0] or days[0] > period[1]:
             continue
@@ -132,7 +132,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     continue
             elif nbr_absences < 5:
                 continue
-            atributing_days = sorted(days_set - closed_holidays)
+            atributing_days = sorted(days_set - closed_holidays - empty_days)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]
@@ -377,7 +377,7 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0] and d > day}
@@ -396,6 +396,8 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
 
     return compensation_days
 
@@ -430,10 +432,10 @@ def get_dummy(workers_with_dummy, w, d):
     if w in workers_with_dummy:
         for range, new_w in workers_with_dummy.get(w, {}).items():
             if d in range:
-                if d == range[0]:
-                    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
-                if d == range[-1]:
-                    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
+                #if d == range[0]:
+                #    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
+                #if d == range[-1]:
+                #    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
                 return new_w
     return w
 
@@ -481,7 +483,7 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in week_days - all_days_off if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift and d >= period[0] and d > day}
@@ -499,8 +501,15 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
-
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
     return compensation_days
+
+def recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total):
+    total1 = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline + total)])
+    if total1 != total:
+        total1 = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total1)
+    return total1
 
 def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, current_year, original_year, calendar_day_0):
     """
@@ -512,7 +521,7 @@ def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dy
         too many days. Total is contained to be less than deadline, the theoretical best case of deadline extension.
     """
     if current_year == original_year:
-        total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline)])
+        total = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, 0)
     else:
         total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if days < calendar_day_0])
     if total > deadline:
@@ -522,3 +531,21 @@ def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dy
     else:
         total = 0
     return total
+
+def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day, workers_with_dummy):
+    if d < 0:
+        return type_of_day
+    current_dummy = get_dummy(workers_with_dummy, w, d)
+    for sh in shifts:
+        if sh in real_working_shift and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                return type_of_day
+        elif sh == '-' and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                print(f"entrei no vazio {w}, {d}, {sh}")
+                return "vazios"
+        elif sh in ['L', 'LD', 'LQ'] and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                return "folgas"
+    logger.warning(f"impossible wrong shift, {w}, {d}, {sh}")
+    return type_of_day
