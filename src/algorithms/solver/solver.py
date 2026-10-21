@@ -60,8 +60,6 @@ def solve(
     h_plus: Dict[int, int],
     contingente_feriados: Dict[int, List[bool]],
     contingente_domingos: Dict[int, List[bool]],
-    contingente_vazios: Dict[int, List[bool]],
-    contingente_off_days: Dict[int, List[bool]],
     eci_sibling_results_flag: bool,
     period: List[int],
     index_to_date: Dict[int, str],
@@ -123,8 +121,8 @@ def solve(
             logger.error(error_msg)
             raise ValueError(error_msg)
         
-        if not isinstance(special_days, list):
-            error_msg = f"special_days must be a list. special_days: {special_days}, type: {type(special_days)}"
+        if not isinstance(special_days, set):
+            error_msg = f"special_days must be a set. special_days: {special_days}, type: {type(special_days)}"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
@@ -261,8 +259,6 @@ def solve(
         days_of_year_sorted = sorted(days_of_year)
         time_worked_day_shift = {f"time_worked_day_{value}": [-pessOBJ.get((d, value), 0) for d in days_of_year_sorted] for value in real_working_shift}
         special_days_worked = {}
-        special_empty_days = {}
-        special_off_days = {}
         sun = {}
         compensation_days_off = {}
         feriados_domingos_compensacao = {}
@@ -365,8 +361,6 @@ def solve(
                 special_days_count = 0
                 unassigned_days = 0
                 special_days_worked[w] = []
-                special_off_days[w] = []
-                special_empty_days[w] = []
                 sun[w] = []
                 compensation_days_off[w] = []
 
@@ -380,17 +374,7 @@ def solve(
                         'ld_given' : [],
                         'no_compensation' : [],
                         'worked_before_period' : []
-                    },
-                    'vazios': {
-                        'ld_given' : [],
-                        'no_compensation' : [],
-                        'worked_before_period' : []
-                    },
-                    'folgas': {
-                        'ld_given' : [],
-                        'no_compensation' : [],
-                        'worked_before_period' : []
-                    },
+                    }
                 }
 
                 logger.info(f"Processing worker {w}")
@@ -409,11 +393,7 @@ def solve(
                         unassigned_days += 1
                     
                     worker_row.append(day_assignment)
-                    if day_assignment in ['L', 'LD', 'LQ'] and (d in special_days or d in sundays):
-                        special_off_days[w].append(index_to_date[d])
-                    if day_assignment == '-' and (d in special_days or d in sundays):
-                        special_empty_days[w].append(index_to_date[d])
-
+                    
                     # Count different shift types
                     if day_assignment == 'L':
                         l_count += 1
@@ -474,42 +454,12 @@ def solve(
                                     if d < period[0]:
                                         feriados_domingos_compensacao[w]["domingos"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
                                     feriados_domingos_compensacao[w]["domingos"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
-                if contingente_vazios:
-                    if w in contingente_vazios and len(contingente_vazios[w]) > 0:
-                        for (d, comp_day), assignment_var in contingente_vazios[w].items():
-                            if solver.Value(assignment_var) == 1:
-                                if comp_day > period[1]:
-                                    day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w]["vazios"]["no_compensation"].append(index_to_date[d])
-                                    if day not in compensation_days_off[w]:
-                                        compensation_days_off[w].append(day)
-                                else:
-                                    if d < period[0]:
-                                        feriados_domingos_compensacao[w]["vazios"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
-                                    feriados_domingos_compensacao[w]["vazios"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
-                if contingente_off_days:
-                    if w in contingente_off_days and len(contingente_off_days[w]) > 0:
-                        for (d, comp_day), assignment_var in contingente_off_days[w].items():
-                            if solver.Value(assignment_var) == 1:
-                                if comp_day > period[1]:
-                                    day = index_to_date.get(comp_day, comp_day)
-                                    feriados_domingos_compensacao[w]["folgas"]["no_compensation"].append(index_to_date[d])
-                                    if day not in compensation_days_off[w]:
-                                        compensation_days_off[w].append(day)
-                                else:
-                                    if d < period[0]:
-                                        feriados_domingos_compensacao[w]["folgas"]["worked_before_period"].append((index_to_date[d], index_to_date[comp_day]))
-                                    feriados_domingos_compensacao[w]["folgas"]["ld_given"].append((index_to_date[d], index_to_date[comp_day]))
 
                 logger.info(f"\n\t\tholidays worked      : {len(special_days_worked[w])}, {special_days_worked[w]}"
                             f"\n\t\tsundays worked       : {len(sun[w])}, {sun[w]}"
-                            f"\n\t\tempty days           : {len(special_empty_days[w])}, {special_empty_days[w]}"
-                            f"\n\t\toff days             : {len(special_off_days[w])}, {special_off_days[w]}"
                             f"\n\t\tcompensation days off: {len(compensation_days_off[w])}, {compensation_days_off[w]}\n")
                 logger.info(f"feriados e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['feriados']}")
                 logger.info(f"domingos e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['domingos']}")
-                logger.info(f"vazios e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['vazios']}")
-                logger.info(f"folgas e compensacoes: \n{w}: {feriados_domingos_compensacao[w]['folgas']}")
                 
                 # Store statistics for this worker
                 worker_stats[w] = {

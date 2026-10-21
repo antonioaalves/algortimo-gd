@@ -368,7 +368,8 @@ class AlcampoAlgorithm(BaseAlgorithm):
             free_day_next_2c(model, shift, workers, working_days, closed_holidays, period, complete_cycle_days, locked_days)
             
             # Limit consecutive free days during the week
-            no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period, locked_days, complete_cycle_days)
+            #temporariamente desativada
+            #no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period, locked_days, complete_cycle_days)
             
             # Day2 quality weekends
             day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range, locked_days, complete_cycle_days)

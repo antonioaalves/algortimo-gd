@@ -1086,5 +1086,3 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
     except Exception as e:
         logger.error(f"Error in read_data_alcampo: {e}",  exc_info=True)
         raise
-
-
