@@ -747,13 +747,15 @@ def salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_da
                     model.Add(free_shift_sum == 0)
 
 #-----------------------------------------------------------------------------------------------
-def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift, fixed_days, period):
+def first_day_not_free(model, shift, workers, working_days, first_registered_day, working_shift, fixed_days, period, dummy_workers):
     """Ensures that workers contracted in the middle of the period have a working shift on their first registered day."""
     # Find the earliest first registered day across all workers
     earliest_first_day = min(first_registered_day.get(w, float('inf')) for w in workers if first_registered_day.get(w, 0) > 0)
     
     for w in workers:
         # Get the worker's first registered day
+        if w in dummy_workers:
+            continue
         first = first_registered_day.get(w, 0)
         if not (period[0] < first < period[1]):
             continue 
