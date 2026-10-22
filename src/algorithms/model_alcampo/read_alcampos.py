@@ -403,9 +403,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 c2d[w] = 0
                 c3d[w] = 0
                 l_d[w] = 0
-                l_q[w] = 0
                 cxx[w] = 0
-                t_lq[w] = 0
                 tc[w] = 0
             else:
                 worker_row = worker_data.iloc[0]  # Take first row if multiple
@@ -417,9 +415,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
-                l_q[w] = int(worker_row.get('l_q', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
-                t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
                 tc[w] = int(worker_row.get('dofhc', 0))
                 out_workers[w] = [int(worker_row.get('out', 0) if not pd.isna(worker_row.get('out', 0)) else 0)]
 
@@ -430,9 +426,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             f"C2D: {c2d[w]}, "
                             f"C3D: {c3d[w]}, "
                             f"L_D: {l_d[w]}, "
-                            f"L_Q: {l_q[w]}, "
                             f"CXX: {cxx[w]}, "
-                            f"T_LQ: {t_lq[w]}, "
                             f"TC: {tc[w]}")
                 admissao_value = worker_row.get('data_admissao', None)
                 logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
@@ -460,7 +454,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
 
                 # Convert data_demissao to day of year
                 data_demissao[w] = max_day + 1
-                print("1", w, data_demissao[w])
                 if demissao_value is not None and not pd.isna(demissao_value):
                     if isinstance(demissao_value, (datetime, pd.Timestamp)):
                         demissao_date = demissao_value
@@ -476,7 +469,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             logger.info(f"Worker {w} data_demissao: {demissao_date.date()} -> day of year {demissao_day_of_year}")
                         else:
                             logger.info(f"Worker {w} data_demissao {demissao_date.date()} is outside calendar range ({min_calendar_date.date()} to {max_calendar_date.date()}), set to 0")
-                print("2", w, data_demissao[w])
 
                 # Track first and last registered days
                 if w in matriz_calendario_gd['employee_id'].values:
@@ -516,8 +508,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                         total_l[new_w] = int(worker_row.get('l_total', 0))
                         total_l_dom[new_w] = int(worker_row.get('l_dom', 0))
                         total_l_dom[w] = int(worker_row.get('l_dom', 0))
-                        l_q[new_w] = int(worker_row.get('l_q', 0))
-                        t_lq[new_w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
                         tc[new_w] = int(worker_row.get('dofhc', 0))
                         c2d[new_w] = int(worker_row.get('c2d', 0))
                         c3d[new_w] = int(worker_row.get('c3d', 0))
@@ -687,22 +677,26 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             vacation_days[w] = worker_calendar[worker_calendar['horario'].isin(['V', 'V-'])]['index'].tolist()
             worker_absences[w] = worker_calendar[worker_calendar['horario'].isin(['AP', 'A-', 'A'])]['index'].tolist()
             fixed_days_off[w] = worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'L_DOM'])]['index'].tolist()
-            week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
+            #week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
+            if 'workload_template' in worker_calendar.columns:
+                week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
+            else:
+                week_template_temp[w] = {index: 'A' for index in worker_calendar['index'].drop_duplicates()}
             fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             for value in shifts:
-                shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'MoT', 'NL' , f'NL{value}'])]['index'].tolist())
+                shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'NL' , f'NL{value}'])]['index'].tolist())
             forced_work_days[w] = worker_calendar[worker_calendar['horario'].isin(['NL', [f"NL{value}" for value in shifts]])]['index'].tolist()
             locked_days[w] = set(worker_calendar[worker_calendar['fixed'] == True]['index'].tolist())
             complete_cycle_days[w] = set(worker_calendar[worker_calendar['tipo_ciclo'] == True]['index'].tolist())
             work_special_days[w] = set(worker_calendar[worker_calendar['horario'] == 'TC']['index'].tolist())
-            mot_days[w] = set(worker_calendar[worker_calendar['mot'] == True]['index'].tolist())
+            mot_days[w] = set(worker_calendar[worker_calendar['horario'] == 'MoT']['index'].tolist())
 
 
         for w in week_template_temp:
-                    week_template[w] = {}
-                    for week, days in week_to_days.items():
-                        week_template[w][week] = week_template_temp[w][days[1]]
+            week_template[w] = {}
+            for week, days in week_to_days.items():
+                week_template[w][week] = week_template_temp[w][days[1]]
 
         for dummy in dummy_workers:
             original = dummy_workers[dummy]["parent"]
@@ -822,46 +816,46 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         worker_week_shift = {}
 
         # Iterate over each worker
-        for w in workers_complete:
-            # Only iterate over weeks that actually exist in week_to_days
-            for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
-                worker_week_shift[(w, week, 'M')] = 0
-                worker_week_shift[(w, week, 'T')] = 0
-                
-                # Iterate through days of the week for the current week
-                for day in week_to_days[week]:
-                        
-                        # Get the rows for the current week and day
-                         # Use WW column instead of isocalendar().week for consistency
-                        shift_entries = matriz_calendario_gd[
-                            (matriz_calendario_gd['ww'] == week) & 
-                            (matriz_calendario_gd['index'] == day) & 
-                            (matriz_calendario_gd['employee_id'] == w)
-                        ]
-                        
-                        #logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['horario'].tolist() if not shift_entries.empty else 'None'}")
-
-                        # Check for morning shifts ('M') for the current worker
-                        if not shift_entries[shift_entries['horario'] == "M"].empty:
-                            # Assign morning shift to the worker for that week
-                            worker_week_shift[(w, week, 'M')] = 1  # Set to 1 if morning shift is found
-
-                        # Check for afternoon shifts ('T') for the current worker
-                        if not shift_entries[shift_entries['horario'] == "T"].empty:
-                            # Assign afternoon shift to the worker for that week
-                            worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
-                    
-                        #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
-                
-            if not worker_week_shift:
-                logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
+        #for w in workers_complete:
+        #    # Only iterate over weeks that actually exist in week_to_days
+        #    for week in week_to_days.keys():  # Use only existing weeks instead of range(1, 53)
+        #        worker_week_shift[(w, week, 'M')] = 0
+        #        worker_week_shift[(w, week, 'T')] = 0
+        #        
+        #        # Iterate through days of the week for the current week
+        #        for day in week_to_days[week]:
+        #                
+        #                # Get the rows for the current week and day
+        #                 # Use WW column instead of isocalendar().week for consistency
+        #                shift_entries = matriz_calendario_gd[
+        #                    (matriz_calendario_gd['ww'] == week) & 
+        #                    (matriz_calendario_gd['index'] == day) & 
+        #                    (matriz_calendario_gd['employee_id'] == w)
+        #                ]
+        #                
+        #                #logger.info(f"Processing worker {w}, week {week}, day {day}: found {len(shift_entries)} shift entries with types: {shift_entries['horario'].tolist() if not shift_entries.empty else 'None'}")
+        #
+        #                # Check for morning shifts ('M') for the current worker
+        #                if not shift_entries[shift_entries['horario'] == "M"].empty:
+        #                    # Assign morning shift to the worker for that week
+        #                    worker_week_shift[(w, week, 'M')] = 1  # Set to 1 if morning shift is found
+        #
+        #                # Check for afternoon shifts ('T') for the current worker
+        #                if not shift_entries[shift_entries['horario'] == "T"].empty:
+        #                    # Assign afternoon shift to the worker for that week
+        #                    worker_week_shift[(w, week, 'T')] = 1  # Set to 1 if afternoon shift is found
+        #            
+        #                #logger.info(f"Worker {w} week {week} day {day}: M={worker_week_shift[(w, week, 'M')]}, T={worker_week_shift[(w, week, 'T')]}")
+        #        
+        #    if not worker_week_shift:
+        #        logger.warning(f"No week shifts found for worker {w}, this may indicate an issue with the data.")
 
         holiday_rules = {}
         sunday_rules = {}
         override_holiday_sunday = {}
 
         if not matriz_process_rules_gd.empty:
-            #logger.info(matriz_process_rules_gd.to_string())
+            logger.info(matriz_process_rules_gd.to_string())
             matriz_process_rules_gd.columns = matriz_process_rules_gd.columns.str.lower()
             required_cols_rules = {"rule_code", "employee_id", "index", "time_off_additional", "time_off_deadline"}
             if not required_cols_rules.issubset(matriz_process_rules_gd.columns):
@@ -973,6 +967,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                     l_d[w] = 0
                     cxx[w] = 0
                     tc[w] = 0
+                    t_lq[w] = 0
 
                     continue
                 worker_row = worker_data.iloc[0]
@@ -1084,10 +1079,10 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "sunday_past_lds": sunday_past_lds,
             "mot_days": mot_days,
             "out_workers": out_workers,
+            "data_demissao": data_demissao,
+            "data_admissao": data_admissao,
         }
         
     except Exception as e:
         logger.error(f"Error in read_data_alcampo: {e}",  exc_info=True)
         raise
-
-
