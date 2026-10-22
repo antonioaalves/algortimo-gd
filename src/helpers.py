@@ -2070,59 +2070,10 @@ def _calculate_quality_metrics(algorithm_results: pd.DataFrame) -> Dict[str, Any
         return {}
     
 def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
-    """Format schedule for different output types from wide format."""
-    try:
-        formatted_schedules = {
-            'database_format': pd.DataFrame(),
-            'wide_format': pd.DataFrame()
-        }
-        
-        if algorithm_results.empty:
-            return formatted_schedules
-        
-        # Wide format is already available (the input format)
-        formatted_schedules['wide_format'] = algorithm_results.copy()
-        
-        # Database format (long format) - convert from wide to long
-        if 'Worker' in algorithm_results.columns:
-            day_columns = [col for col in algorithm_results.columns if col != 'Worker' and col.startswith('Day')]
-            
-            if day_columns:
-                # Melt the DataFrame to long format
-                melted_df = pd.melt(
-                    algorithm_results,
-                    id_vars=['Worker'],
-                    value_vars=day_columns,
-                    var_name='Day',
-                    value_name='Shift'
-                )
-                
-                # Clean up the Day column to extract day numbers
-                logger.info(f"DEBUG: melted_df['Day'] type: {type(melted_df['Day'])}")
-                logger.info(f"DEBUG: melted_df['Day'].str.replace('Day ', ''): {melted_df['Day'].str.replace('Day ', '')}")
-                melted_df['Day'] = melted_df['Day'].str.replace('Day_', '').astype(int)
-                
-                # Convert day numbers to actual dates if start_date is available
-                if start_date:
-                    try:
-                        base_date = pd.to_datetime(start_date)
-                        melted_df['Date'] = melted_df['Day'].apply(lambda x: base_date + pd.Timedelta(days=x-1))
-                        melted_df['Date'] = melted_df['Date'].dt.strftime('%Y-%m-%d')
-                    except:
-                        melted_df['Date'] = melted_df['Day'].astype(str)
-                else:
-                    melted_df['Date'] = melted_df['Day'].astype(str)
-                
-                # Rename columns and select relevant ones
-                formatted_schedules['database_format'] = melted_df[['Worker', 'Date', 'Shift']].copy()
-                formatted_schedules['database_format'].rename(columns={'Worker': 'colaborador'}, inplace=True)
-                formatted_schedules['database_format'].rename(columns={'Shift': 'horario'}, inplace=True)
-                formatted_schedules['database_format'].rename(columns={'Date': 'data'}, inplace=True)
+    """Deprecated: use src.algorithms.helpers_algorithm._format_schedules."""
+    from src.algorithms.helpers_algorithm import _format_schedules as _format_schedules_canonical
 
-        return formatted_schedules
-    except Exception as e:
-        logger.error(f"Error formatting schedules: {e}", exc_info=True)
-        return {'database_format': pd.DataFrame(), 'wide_format': pd.DataFrame()}
+    return _format_schedules_canonical(algorithm_results, start_date, end_date)
 
 def _create_metadata(algo_name: str, process_id: int, start_date: str, end_date: str, parameters: Dict[str, Any], stats: Dict[str, Any], solver_attributes: Dict[str, Any]) -> Dict[str, Any]:
     """Create metadata information."""

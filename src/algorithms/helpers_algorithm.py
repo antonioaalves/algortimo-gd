@@ -605,43 +605,74 @@ def _calculate_quality_metrics(algorithm_results: pd.DataFrame) -> Dict[str, Any
         return {}
     
 def _format_schedules(algorithm_results: pd.DataFrame, start_date: str, end_date: str) -> Dict[str, pd.DataFrame]:
-    """Format schedule for different output types from wide format."""
+    """Wide solver output (Worker + day columns) to long database_format.
+
+    Current ``solver.solve`` returns date strings as column names (e.g. 2026-12-21).
+    Legacy wide tables used Day_1, Day_2, ...; those are converted via start_date when present.
+    """
     try:
         formatted_schedules = {
             'database_format': pd.DataFrame(),
             'wide_format': pd.DataFrame()
         }
-        
+
         if algorithm_results.empty:
             return formatted_schedules
-        
-        # Wide format is already available (the input format)
+
         formatted_schedules['wide_format'] = algorithm_results.copy()
-        
-        # Database format (long format) - convert from wide to long
-        if 'Worker' in algorithm_results.columns:
-            day_columns = [col for col in algorithm_results.columns if col != 'Worker']
-            
-            if day_columns:
-                # Melt the DataFrame to long format
-                # Note: 'Day' column will contain the date strings from column names (e.g., '2025-12-22')
-                melted_df = pd.melt(
-                    algorithm_results,
-                    id_vars=['Worker'],
-                    value_vars=day_columns,
-                    var_name='Day',
-                    value_name='Shift'
-                )
-                
-                logger.info(f"DEBUG: melted_df columns: {melted_df.columns.tolist()}, shape: {melted_df.shape}")
-                
-                # Select relevant columns and rename to expected format
-                formatted_schedules['database_format'] = melted_df[['Worker', 'Day', 'Shift']].copy()
-                formatted_schedules['database_format'].rename(columns={
-                    'Worker': 'colaborador',
-                    'Day': 'data',
-                    'Shift': 'horario'
-                }, inplace=True)
+
+        if 'Worker' not in algorithm_results.columns:
+            return formatted_schedules
+
+        day_index_columns = [
+            col for col in algorithm_results.columns
+            if col != 'Worker' and str(col).startswith('Day')
+        ]
+        date_columns = [
+            col for col in algorithm_results.columns
+            if col != 'Worker' and not str(col).startswith('Day')
+        ]
+
+        if day_index_columns and not date_columns:
+            melted_df = pd.melt(
+                algorithm_results,
+                id_vars=['Worker'],
+                value_vars=day_index_columns,
+                var_name='Day',
+                value_name='Shift',
+            )
+            melted_df['Day'] = melted_df['Day'].str.replace('Day_', '').astype(int)
+            if start_date:
+                try:
+                    base_date = pd.to_datetime(start_date)
+                    melted_df['data'] = melted_df['Day'].apply(
+                        lambda x: (base_date + pd.Timedelta(days=x - 1)).strftime('%Y-%m-%d')
+                    )
+                except Exception:
+                    melted_df['data'] = melted_df['Day'].astype(str)
+            else:
+                melted_df['data'] = melted_df['Day'].astype(str)
+            formatted_schedules['database_format'] = melted_df[['Worker', 'data', 'Shift']].copy()
+        elif date_columns:
+            melted_df = pd.melt(
+                algorithm_results,
+                id_vars=['Worker'],
+                value_vars=date_columns,
+                var_name='data',
+                value_name='Shift',
+            )
+            formatted_schedules['database_format'] = melted_df[['Worker', 'data', 'Shift']].copy()
+        else:
+            return formatted_schedules
+
+        formatted_schedules['database_format'].rename(
+            columns={'Worker': 'colaborador', 'Shift': 'horario'},
+            inplace=True,
+        )
+        logger.info(
+            "formatted_schedule database_format shape: %s",
+            formatted_schedules['database_format'].shape,
+        )
 
         return formatted_schedules
     except Exception as e:

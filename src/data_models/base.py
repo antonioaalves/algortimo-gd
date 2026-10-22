@@ -77,7 +77,10 @@ class BaseDescansosDataModel(ABC):
         self.data_container = data_container
         
         self.logger.info(f"Initialized {self.__class__.__name__} with project {project_name}")
-    
+
+    def uses_wfm_compensatory_pipeline(self) -> bool:
+        """STRSOL-1372: process labor rules, movement inserts, F/D validation (Salsa/WFM)."""
+        return True
 
     @abstractmethod
     def load_process_data():
@@ -655,9 +658,12 @@ class BaseDescansosDataModel(ABC):
                 self.rare_data['df_results'] = results.get('core_results', {}).get('formatted_schedule', pd.DataFrame())
                 #self.logger.info(f"DEBUG: df_results: {self.rare_data['df_results']}")
 
-                # STRSOL-1372: Store compensatory dict from solver for sched_type/sched_subtype override
-                # TODO STRSOL-1372: Confirm the exact key path in the solver results dict
-                self.rare_data['compensatory_dict'] = results.get('core_results', {}).get('feriados_domingos_compensacao', {})
+                if self.uses_wfm_compensatory_pipeline():
+                    self.rare_data['compensatory_dict'] = results.get('core_results', {}).get(
+                        'feriados_domingos_compensacao', {}
+                    )
+                else:
+                    self.rare_data['compensatory_dict'] = {}
                 
                 # Save CSV file for debugging (using config manager if available)
                 try:
@@ -681,6 +687,12 @@ class BaseDescansosDataModel(ABC):
                 #with open(os.path.join('data', 'output', f'df_results-{self.external_call_data.get("current_process_id", "")}.json'), 'w', encoding='utf-8') as f:
                 #    json.dump(results_df, f, indent=2, ensure_ascii=False)
                 self.logger.info(f"Results stored - df_results shape: {results_df.shape if results_df is not None else 'None'}")
+                if results_df is None or getattr(results_df, 'empty', True):
+                    self.logger.error(
+                        "Algorithm reported success but formatted_schedule is empty; "
+                        "check _format_schedules / solver column layout."
+                    )
+                    return False
                 self.logger.info(f"Allocation cycle completed successfully with algorithm {algorithm_name}.")
                 return True
             except KeyError as e:
@@ -849,22 +861,21 @@ class BaseDescansosDataModel(ABC):
             self.logger.info("Converting types out")
             final_df = convert_types_out(pd.DataFrame(final_df))
 
-            # STRSOL-1372: Override sched_type/sched_subtype for compensatory day-off rows
-            # using rule-defined REST_DAY_TYPE/REST_DAY_SUBTYPE from df_process_rules
-            compensatory_dict = self.rare_data.get('compensatory_dict', {})
-            df_process_rules = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
-            df_pro_emp_mov = self.algorithm_treatment_params.get('df_pro_emp_mov', pd.DataFrame())
-            if compensatory_dict:
-                date_col = 'data' if 'data' in final_df.columns else 'date'
-                self.logger.info("Applying compensatory sched_type/sched_subtype overrides")
-                final_df = apply_compensatory_sched_types(
-                    final_df=final_df,
-                    compensatory_dict=compensatory_dict,
-                    df_process_rules=df_process_rules,
-                    df_pro_emp_mov=df_pro_emp_mov,
-                    employee_col='colaborador',
-                    date_col=date_col,
-                )
+            if self.uses_wfm_compensatory_pipeline():
+                compensatory_dict = self.rare_data.get('compensatory_dict', {})
+                df_process_rules = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
+                df_pro_emp_mov = self.algorithm_treatment_params.get('df_pro_emp_mov', pd.DataFrame())
+                if compensatory_dict:
+                    date_col = 'data' if 'data' in final_df.columns else 'date'
+                    self.logger.info("Applying compensatory sched_type/sched_subtype overrides")
+                    final_df = apply_compensatory_sched_types(
+                        final_df=final_df,
+                        compensatory_dict=compensatory_dict,
+                        df_process_rules=df_process_rules,
+                        df_pro_emp_mov=df_pro_emp_mov,
+                        employee_col='colaborador',
+                        date_col=date_col,
+                    )
 
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             # Drop columns that exist (matricula_int may not exist if merge used employee_id)
@@ -904,28 +915,28 @@ class BaseDescansosDataModel(ABC):
             #self.logger.info(f"DEBUG: final_df:\n {final_df}")
             self.formatted_data['df_final'] = final_df.copy()
 
-            # STRSOL-1372: Build compensatory output (O/D rows for INT_EMP_PROCESS_MOV)
-            compensatory_dict = self.rare_data.get('compensatory_dict', {})
-            process_id = self.external_call_data.get("current_process_id", "")
-            df_process_rules_raw = self.auxiliary_data.get('df_process_rules_raw', pd.DataFrame())
-            df_pro_emp_mov_raw = self.auxiliary_data.get('df_pro_emp_mov_raw', pd.DataFrame())
-            df_process_rules_merged = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
-            if compensatory_dict:
-                self.logger.info("Building compensatory output from solver results")
-                success, df_compensatory, error_msg = build_compensatory_output(
-                    compensatory_dict=compensatory_dict,
-                    process_id=process_id,
-                    df_process_rules_raw=df_process_rules_raw,
-                    df_pro_emp_mov=df_pro_emp_mov_raw,
-                    df_process_rules_merged=df_process_rules_merged,
-                )
-                if success and not df_compensatory.empty:
-                    self.formatted_data['df_compensatory'] = df_compensatory.copy()
-                    self.logger.info(f"Compensatory output stored: {len(df_compensatory)} rows")
-                elif not success:
-                    self.logger.warning(f"build_compensatory_output failed: {error_msg}")
-                else:
-                    self.logger.info("No compensatory output rows generated")
+            if self.uses_wfm_compensatory_pipeline():
+                compensatory_dict = self.rare_data.get('compensatory_dict', {})
+                process_id = self.external_call_data.get("current_process_id", "")
+                df_process_rules_raw = self.auxiliary_data.get('df_process_rules_raw', pd.DataFrame())
+                df_pro_emp_mov_raw = self.auxiliary_data.get('df_pro_emp_mov_raw', pd.DataFrame())
+                df_process_rules_merged = self.algorithm_treatment_params.get('df_process_rules', pd.DataFrame())
+                if compensatory_dict:
+                    self.logger.info("Building compensatory output from solver results")
+                    success, df_compensatory, error_msg = build_compensatory_output(
+                        compensatory_dict=compensatory_dict,
+                        process_id=process_id,
+                        df_process_rules_raw=df_process_rules_raw,
+                        df_pro_emp_mov=df_pro_emp_mov_raw,
+                        df_process_rules_merged=df_process_rules_merged,
+                    )
+                    if success and not df_compensatory.empty:
+                        self.formatted_data['df_compensatory'] = df_compensatory.copy()
+                        self.logger.info(f"Compensatory output stored: {len(df_compensatory)} rows")
+                    elif not success:
+                        self.logger.warning(f"build_compensatory_output failed: {error_msg}")
+                    else:
+                        self.logger.info("No compensatory output rows generated")
 
             return True            
         except Exception as e:
@@ -942,6 +953,14 @@ class BaseDescansosDataModel(ABC):
         """
         try:
             self.logger.info("Entered validate_format_results method.")
+            if not self.uses_wfm_compensatory_pipeline():
+                self.logger.info(
+                    "Skipping unconverted F/D validation (WFM compensatory pipeline disabled)"
+                )
+                if hasattr(self, 'auxiliary_data') and isinstance(self.auxiliary_data, dict):
+                    self.auxiliary_data['unconverted_fd_day_events'] = []
+                return True
+
             final_df = self.formatted_data.get('df_final', pd.DataFrame())
             if final_df is None:
                 final_df = pd.DataFrame()
@@ -1031,8 +1050,7 @@ class BaseDescansosDataModel(ABC):
                 self.logger.error(f"Error inserting results with bulk_insert_with_query: {str(e)}", exc_info=True)
                 return False
 
-            # STRSOL-1372: Insert compensatory output (O/D rows) into INT_EMP_PROCESS_MOV
-            if 'df_compensatory' in self.formatted_data:
+            if self.uses_wfm_compensatory_pipeline() and 'df_compensatory' in self.formatted_data:
                 df_compensatory = self.formatted_data['df_compensatory'].copy()
                 if not df_compensatory.empty:
                     try:

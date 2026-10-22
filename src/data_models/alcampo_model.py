@@ -103,6 +103,10 @@ _ANNUAL_APPLY_COLS = (
 class AlcampoDataModel(BaseDescansosDataModel):
     """CAV load, quota math, and medium_data for the Alcampo solver."""
 
+    def uses_wfm_compensatory_pipeline(self) -> bool:
+        """Alcampo uses CAV configuration, not WFM labor rules / movement tables (STRSOL-1372)."""
+        return False
+
     def __init__(self, data_container: BaseDataContainer, project_name: str = 'algoritmo_GD', config_manager: BaseConfig = None, external_data: Dict[str, Any] = None):
         self.config_manager = config_manager if config_manager is not None else get_config()
         super().__init__(data_container=data_container, project_name=project_name)
@@ -114,8 +118,6 @@ class AlcampoDataModel(BaseDescansosDataModel):
             'df_closed_days': None,
             'df_params': None,
             'df_contratos': pd.DataFrame(),
-            'df_process_rules': pd.DataFrame(),
-            'df_pro_emp_mov': pd.DataFrame(),
             'df_annual_variables': pd.DataFrame(),
         }
         self.algorithm_treatment_params = {'admissao_proporcional': None}
@@ -444,8 +446,6 @@ class AlcampoDataModel(BaseDescansosDataModel):
                 'num_sundays_year': num_sundays_year,
                 'num_feriados_abertos': num_feriados_abertos,
                 'num_feriados_fechados': num_feriados_fechados,
-                'df_process_rules': pd.DataFrame(),
-                'df_pro_emp_mov': pd.DataFrame(),
             })
             refresh_process_message_labels(self.auxiliary_data)
             self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
@@ -454,8 +454,6 @@ class AlcampoDataModel(BaseDescansosDataModel):
             self.algorithm_treatment_params['nome_pais'] = nome_pais
             self.algorithm_treatment_params['eci_flag'] = eci_flag
             self.algorithm_treatment_params['eci_sibling_results_flag'] = eci_sibling_results_flag
-            self.algorithm_treatment_params['df_process_rules'] = pd.DataFrame()
-            self.algorithm_treatment_params['df_pro_emp_mov'] = pd.DataFrame()
             return True, "validSubProc", ''
         except Exception as e:
             self.logger.error(f"Error loading process data: {e}", exc_info=True)
@@ -987,8 +985,6 @@ class AlcampoDataModel(BaseDescansosDataModel):
             self.auxiliary_data['employees_id_by_posto_dict'] = employees_id_by_posto_dict
             self.algorithm_treatment_params['employees_id_list_for_posto'] = employees_id_list_for_posto
             self.algorithm_treatment_params['employees_id_90_list'] = []
-            self.algorithm_treatment_params['df_process_rules'] = pd.DataFrame()
-            self.algorithm_treatment_params['df_pro_emp_mov'] = pd.DataFrame()
             return True, "", ""
         except Exception as e:
             self.logger.error(f"Error in load_colaborador_info: {e}", exc_info=True)
@@ -1388,8 +1384,6 @@ class AlcampoDataModel(BaseDescansosDataModel):
             df_annual = self._build_synthetic_annual_variables(df_colaborador, df_calendario)
             self.auxiliary_data['df_annual_variables'] = df_annual.copy()
             self.algorithm_treatment_params['df_annual_variables'] = df_annual.copy()
-            self.algorithm_treatment_params['df_process_rules'] = pd.DataFrame()
-            self.algorithm_treatment_params['df_pro_emp_mov'] = pd.DataFrame()
 
             self.medium_data['df_colaborador'] = df_colaborador.copy()
             self.medium_data['df_calendario'] = df_calendario.copy()
