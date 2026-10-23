@@ -24,7 +24,7 @@ from src.configuration_manager.instance import get_config
 # Import orchestrator functions
 from src.orquestrador_functions.WFM_Process.Getters import get_process_by_status, get_process_by_id, get_total_process_by_status
 from src.orquestrador_functions.WFM_Process.Setters import set_process_status, set_process_param_status
-from src.helpers import set_process_errors
+from src.orquestrador_functions.Logs.process_wfm_errors import set_process_errors
 from src.orquestrador_functions.Data_Handlers.GetGlobalData import get_all_params, get_gran_equi
 from src.orquestrador_functions.Logs.message_loader import get_messages, set_messages
 from src.orquestrador_functions.Classes.AlgorithmPrepClasses.ConnectionHandler import ConnectionHandler
@@ -507,12 +507,12 @@ sys.exit(0)
 # ============================================================================
 """
 SEQUENTIAL (Current):
-Time →
+Time ->
 Thread 1: [========Process 1========] [========Process 2========] [========Process 3========]
 Total time: Process1 + Process2 + Process3
 
 PARALLEL (Multithreaded):
-Time →
+Time ->
 Thread 1: [========Process 1========]
 Thread 2: [========Process 2========]
 Thread 3: [========Process 3========]
