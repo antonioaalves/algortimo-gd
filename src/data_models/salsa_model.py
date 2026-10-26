@@ -661,7 +661,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Error loading df_closed_days: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
 
-            success, df_closed_days, error_msg = treat_df_closed_days(df_closed_days, first_year_date, last_year_date)
+            success, df_closed_days, error_msg = treat_df_closed_days(df_closed_days, first_year_date, last_year_date, int(main_year))
             if not success:
                 self.logger.error(f"Closed days treatment failed: {error_msg}")
                 return False, "errSubproc", error_msg

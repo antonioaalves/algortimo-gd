@@ -370,7 +370,12 @@ class AlcampoDataModel(BaseDescansosDataModel):
                 and 'schedule_day' in df_closed_days.columns
             ):
                 df_closed_days = df_closed_days.rename(columns={'schedule_day': 'data'})
-            success, df_closed_days, error_msg = treat_df_closed_days(df_closed_days, first_year_date, last_year_date)
+            success, df_closed_days, error_msg = treat_df_closed_days(
+                df_closed_days=df_closed_days,
+                start_date2=pd.to_datetime(first_year_date, format='%Y-%m-%d'),
+                end_date2=pd.to_datetime(last_year_date, format='%Y-%m-%d'),
+                year=int(main_year),
+            )
             if not success:
                 return False, "errSubproc", error_msg
             if df_closed_days.empty:

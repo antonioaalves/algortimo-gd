@@ -219,7 +219,7 @@ def treat_df_valid_emp(df_valid_emp: pd.DataFrame) -> Tuple[bool, pd.DataFrame, 
         logger.error(f"Error in treat_df_valid_emp: {str(e)}", exc_info=True)
         return False, pd.DataFrame(), ""
 
-def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp, end_date2: pd.Timestamp) -> Tuple[bool, pd.DataFrame, str]:
+def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp, end_date2: pd.Timestamp, year: int) -> Tuple[bool, pd.DataFrame, str]:
     """
     Filter and normalize closed business days within the scheduling period.
     
@@ -267,7 +267,7 @@ def treat_df_closed_days(df_closed_days: pd.DataFrame, start_date2: pd.Timestamp
                 df_closed_days = (df_closed_days
                         .assign(data=pd.to_datetime(df_closed_days['data'].dt.strftime('%Y-%m-%d')))
                         .query('(data >= @start_date2 and data <= @end_date2) or data < "2000-12-31"')
-                        .assign(data=lambda x: x['data'].apply(lambda d: d.replace(year=start_date2.year)))
+                        .assign(data=lambda x: x['data'].apply(lambda d: d.replace(year=year)))
                         [['data']]
                         .drop_duplicates())
             except (ValueError, KeyError) as e:
