@@ -213,6 +213,33 @@ class TestCreateDfCalendario:
         rows_per_emp = df.groupby('employee_id').size()
         assert len(rows_per_emp.unique()) == 1, "All employees should have same row count"
     
+    def test_empty_df_feriados_does_not_prefill_closed_holidays(
+        self, sample_employee_matricula_map
+    ):
+        """Zero-row feriados: calendar grid is created; no closed-day F pre-fill."""
+        empty_feriados = pd.DataFrame(
+            columns=[
+                'schedule_day',
+                'tipo_feriado',
+                'fk_unidade',
+                'fk_cidade',
+                'fk_estado',
+                'fk_pais',
+            ]
+        )
+        success, df, _ = create_df_calendario(
+            start_date='2025-01-01',
+            end_date='2025-01-07',
+            main_year=2025,
+            employee_id_matriculas_map=sample_employee_matricula_map,
+            past_employees_id_list=[101, 102, 103],
+            df_feriados=empty_feriados,
+        )
+
+        assert success
+        assert not df.empty
+        assert (df['horario'] == 'F').sum() == 0
+
     def test_prefills_closed_holidays_with_F(self, sample_employee_matricula_map, sample_df_feriados):
         """
         RULE: Dates with tipo_feriado='F' should have horario='F'

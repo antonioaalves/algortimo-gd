@@ -597,9 +597,14 @@ class SalsaDataModel(BaseDescansosDataModel):
                     start_date=first_day_passado, 
                     end_date=last_day_passado)
                 self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
-                if df_feriados is None or df_feriados.empty:
-                    self.logger.error("df_feriados is empty: no holidays configured")
-                    return False, "ERR_LOAD_FERIADOS_EMPTY", format_unit_label(df_estrutura_wfm, unit_id)
+                if df_feriados is None:
+                    self.logger.error("df_feriados load returned None")
+                    return False, "errSubproc", "df_feriados load returned None"
+                if df_feriados.empty:
+                    self.logger.warning(
+                        f"df_feriados has no rows for unit {format_unit_label(df_estrutura_wfm, unit_id)}; "
+                        "continuing without unit holiday calendar"
+                    )
             except Exception as e:
                 self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -618,14 +623,15 @@ class SalsaDataModel(BaseDescansosDataModel):
                     use_case=1,
                     main_year=main_year,
                     first_date=first_day_passado,
-                    last_date=last_day_passado
+                    last_date=last_day_passado,
+                    allow_empty=True,
                 )
                 if not success:
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
                     return False
             except Exception as e:
                 self.logger.error(f"Error adding date-related columns: {e}", exc_info=True)
-                return False            
+                return False
 
             if not validate_df_feriados(df_feriados):
                 self.logger.error(f"df_feriados is invalid: {df_feriados}")
