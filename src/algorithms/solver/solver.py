@@ -311,7 +311,7 @@ def solve(
                                 time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += work_day_hours[w].get(d, 8)
                             else:
                                 time_worked_day_shift[f"time_worked_day_{day_assignment}"][d - 1] += 10
-                    elif day_assignment == 'MoT':
+                    elif day_assignment in ['MoT', 'TC']:
                         if d in special_days:
                             special_days_worked[w].append(d)
                             special_days_count += 1

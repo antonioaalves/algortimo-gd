@@ -994,7 +994,7 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 l_d[w] = int(worker_row.get('l_d', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
                 tc[w] = int(worker_row.get('tc', 0)) #nome anterior da coluna: dofhc
-                t_lq[w] = int(worker_row.get('l_q', 0) + worker_row.get('c2d', 0) + worker_row.get('c3d', 0))
+                t_lq[w] = int(worker_row.get('l_q', 0))
 
                 size = len(worker_data)
                 if size > 1:

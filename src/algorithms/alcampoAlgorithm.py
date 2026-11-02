@@ -22,8 +22,8 @@ from src.algorithms.model_alcampo.alcampo_constraints import (
     maximum_continuous_working_special_days, maximum_free_days, free_days_special_days, 
     tc_atribution, working_days_special_days, LQ_attribution, LD_attribution, assign_week_shift,
     working_day_shifts, free_day_next_2c, no_free__days_close, free_days_week_2_3,
-    space_LQs, day2_quality_weekend, global_compensation_days,
-    limits_LDs_week, day3_quality_weekend, free_days_week, saturday_L_constraint
+    space_LQs, day2_quality_weekend, global_compensation_days, free_days_week_6,
+    limits_LDs_week, day3_quality_weekend, free_days_week_4_5, saturday_L_constraint
 )
 from src.algorithms.model_alcampo.optimization_alcampos import optimization_prediction
 from src.algorithms.solver.solver import configured_max_solver_time, solve
@@ -365,14 +365,11 @@ class AlcampoAlgorithm(BaseAlgorithm):
             working_day_shifts(model, shift, workers, working_days, check_shift, period, contract_type)
             
             # Free days adjacent to weekends
-            free_day_next_2c(model, shift, workers, working_days, closed_holidays, period, complete_cycle_days, locked_days)
+            #free_day_next_2c(model, shift, workers, working_days, closed_holidays, period, complete_cycle_days, locked_days)
             
             # Limit consecutive free days during the week
             #temporariamente desativada
             #no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period, locked_days, complete_cycle_days)
-            
-            # Day2 quality weekends
-            day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range, locked_days, complete_cycle_days)
             
             # Space LQs constraint
             space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
@@ -393,11 +390,16 @@ class AlcampoAlgorithm(BaseAlgorithm):
             limits_LDs_week(model, shift, week_to_days, workers, special_days)
         
             # One free day weekly
-            free_days_week(model, shift, workers, week_to_days, working_days, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, locked_days, closed_holidays)           
+            free_days_week_4_5(model, shift, workers, week_to_days, working_days, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, locked_days, closed_holidays)           
 
-            # Constraint for 3-day quality weekends
-            day3_quality_weekend(model, shift, workers, working_days, c3d, contract_type, closed_holidays)
+            # Day2 quality weekends
+            quality_2weekend_vars = day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range, locked_days, complete_cycle_days)
             
+            # Constraint for 3-day quality weekends
+            quality_3weekend_vars = day3_quality_weekend(model, shift, workers, working_days, c3d, contract_type, closed_holidays)
+            
+            free_days_week_6(model, shift, workers, week_to_days, working_days, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, period, complete_cycle_days, locked_days, closed_holidays, quality_2weekend_vars, quality_3weekend_vars)
+
             # Apply optimization (reusing from Stage 1)
             optimization_prediction(model, days_of_year, workers_complete, workers_complete_cycle, shift, pessObj, min_workers, closed_holidays,
                                     week_to_days, working_days, contract_type, special_days, workers_past, real_working_shift, out_workers, year_range, sundays)
