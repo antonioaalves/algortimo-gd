@@ -675,8 +675,8 @@ def LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq
 def day2_quality_weekend(model, shift, workers, working_days, sundays, c2d, contract_type, closed_holidays, year_range, locked_days, complete_cycle_days):
     quality_2weekend_vars = {}
     for w in workers:
-        if contract_type[w] in [4,5,6]:
-            quality_2weekend_vars = []
+        if contract_type[w] in [4, 5, 6]:
+            quality_2weekend_vars[w] = []
             for d in working_days[w]:
                 # Check if d is a Sunday and d-1 (Saturday) is in worker's working days or is a closed holiday
                 if d in sundays and (d - 1 in working_days[w] or d - 1 in closed_holidays) and year_range[0] < d <= year_range[1] \

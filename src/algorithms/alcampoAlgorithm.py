@@ -406,7 +406,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             work_day_hours = {}
             h_plus = {}
             eci_sibling_results_flag = False
-            schedule_df, feriados_domingos_compens = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, real_working_shift, work_day_hours, pessObj,
+            schedule_df, feriados_domingos_compens = solve(model, days_of_year, workers_complete, sundays, sorted(holidays), shift, shifts, real_working_shift, work_day_hours, pessObj,
                                                      workers_past, h_plus, contingente_t, [], [], [], eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
                                                      pd.Series(['Worker'] + (unique_dates)),
                                                      max_time_seconds=self.max_solver_time_in_seconds,
