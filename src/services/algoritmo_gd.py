@@ -1767,10 +1767,9 @@ class AlgoritmoGDService(BaseService):
         """
         try:
             self.logger.info(f"Starting format_results substage for stage: {stage_name}")
-            stage_name = 'format_results'
             success = self.data_model.format_results()
             if not success:
-                self.logger.warning("Performing allocation_cycle unsuccessful, returning False")
+                self.logger.warning("format_results substage unsuccessful, returning False")
                 if self.stage_handler:
                     self.stage_handler.complete_substage(
                         stage_name=stage_name,

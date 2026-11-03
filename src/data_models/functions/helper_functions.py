@@ -1611,6 +1611,31 @@ def get_past_employees_id_list(wfm_proc_colab: str, df_mpd_valid_employees: pd.D
         logger.error(f"Error creating colabs_passado list: {e}", exc_info=True)
         return False, [], "Error creating the colabs_passado_list"
 
+
+def mask_cav_ciclo_completo(df: pd.DataFrame) -> pd.Series:
+    """True where CAV has seq_turno CICLO and ciclo COMPLETO (core_algorithm_variables)."""
+    seq = df['seq_turno'].astype(str).str.strip().str.upper()
+    ciclo = df['ciclo'].astype(str).str.strip().str.upper()
+    return (seq == 'CICLO') & (ciclo == 'COMPLETO')
+
+
+def employee_ids_cav_ciclo_completo(
+    df_colaborador: pd.DataFrame,
+    employee_ids_scope: Optional[List[str]] = None,
+) -> List[str]:
+    """Employee IDs on the CAV 90-day complete cycle (constant for the whole process year)."""
+    if df_colaborador is None or df_colaborador.empty:
+        return []
+    if 'seq_turno' not in df_colaborador.columns or 'ciclo' not in df_colaborador.columns:
+        return []
+    df = df_colaborador.drop_duplicates(subset=['employee_id'], keep='first').copy()
+    df['employee_id'] = df['employee_id'].astype(str)
+    if employee_ids_scope is not None:
+        scope = {str(x) for x in employee_ids_scope}
+        df = df[df['employee_id'].isin(scope)]
+    return df.loc[mask_cav_ciclo_completo(df), 'employee_id'].tolist()
+
+
 def get_employees_id_90_list(
     employees_id_list_for_posto: List[str],
     df_colaborador: Optional[pd.DataFrame] = None,
@@ -1659,20 +1684,13 @@ def get_employees_id_90_list(
             logger.info(f"get_employees_id_90_list (ciclos path): {len(employees_id_90_list)} CICLO COMPLETO employees")
             return True, employees_id_90_list, ""
 
-        # LEGACY FALLBACK: use seq_turno / ciclo from df_colaborador
+        # LEGACY FALLBACK: use seq_turno / ciclo from df_colaborador (Alcampo CAV)
         if df_colaborador is not None and not df_colaborador.empty and \
            'seq_turno' in df_colaborador.columns and 'ciclo' in df_colaborador.columns:
 
-            df_colab = df_colaborador.copy()
-            df_colab['employee_id'] = df_colab['employee_id'].astype(str)
-            mask_posto = df_colab['employee_id'].isin(employees_id_list_for_posto_str)
-            df_colab = df_colab[mask_posto]
-
-            mask_ciclo = (
-                (df_colab['seq_turno'].str.upper() == 'CICLO') &
-                (df_colab['ciclo'].str.upper() == 'COMPLETO')
+            employees_id_90_list = employee_ids_cav_ciclo_completo(
+                df_colaborador, employee_ids_scope=employees_id_list_for_posto_str
             )
-            employees_id_90_list = df_colab[mask_ciclo]['employee_id'].tolist()
             logger.info(f"get_employees_id_90_list (legacy path): {len(employees_id_90_list)} CICLO COMPLETO employees")
             return True, employees_id_90_list, ""
 
