@@ -20,7 +20,7 @@
             "max_solver_time_in_seconds"
         ],
         "parameters_defaults": {
-            "algorithm_name": "salsa_algorithm",
+            "algorithm_name": "alcampo_algorithm",
             "GD_gloablMaxThreads": 4,
             "GD_maxThreads": 2,
             "gloablMaxThreads": 4,
@@ -38,12 +38,12 @@
         }
     }, 
     "external_call_data": {
-        "current_process_id": 73744,
+        "current_process_id": 613439,
         "api_proc_id": 999,
-        "wfm_proc_id": 73744,
+        "wfm_proc_id": 613439,
         "wfm_user": "WFM",
-        "start_date": "2026-10-05",
-        "end_date": "2026-12-31",
+        "start_date": "2027-01-01",
+        "end_date": "2027-12-31",
         "wfm_proc_colab": ""
     }
 }
