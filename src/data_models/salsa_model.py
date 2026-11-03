@@ -14,14 +14,20 @@ from base_data_project.log_config import get_logger
 from src.data_models.base import BaseDescansosDataModel
 from src.configuration_manager.base import BaseConfig
 from src.configuration_manager.instance import get_config
-from src.helpers import (
+from src.orquestrador_functions.Logs.process_message_logging import (
     log_feasibility_cap_events,
     log_max_consecutive_working_days_errors,
     log_workload_template_contract_errors,
 )
+from src.orquestrador_functions.Logs.process_message_labels import (
+    format_unit_label,
+    get_process_message_labels,
+    refresh_process_message_labels,
+)
 from src.data_models.functions.helper_functions import (
     count_dates_per_year, 
-    get_param_for_posto, 
+    get_param_for_posto,
+    resolve_max_solver_time, 
     load_wfm_scheds, 
     get_valid_emp_info,
     get_first_and_last_day_passado_arguments,
@@ -48,6 +54,7 @@ from src.data_models.functions.data_treatment_functions import (
     treat_df_calendario_passado,
     treat_df_ausencias_ferias,
     treat_df_ciclos_completos,
+    populate_missing_df_ciclos,
     validate_workload_template_vs_contract,
     validate_max_consecutive_working_days,
     treat_df_colaborador,
@@ -104,6 +111,7 @@ from src.data_models.validations.load_process_data_validations import (
     validate_valid_emp_info,
     validate_num_sundays_year,
     validate_df_estrutura_wfm,
+    validate_treat_label_holiday,
 )
 from src.data_models.validations.func_inicializa_validations import (
     validate_df_calendario_structure,
@@ -251,7 +259,12 @@ class SalsaDataModel(BaseDescansosDataModel):
         # In the future it should contain the error message to add to the log
         error_message = None
         try:
-            from src.orquestrador_functions.Logs.message_loader import load_df_messages
+            from src.orquestrador_functions.Logs.message_loader import (
+                load_df_messages,
+                set_runtime_message_lang,
+                apply_unit_message_lang_from_estrutura,
+            )
+            set_runtime_message_lang(None)
             df_messages = load_df_messages(self.config_manager.system.project_root_dir)
         except Exception as e:
             self.logger.error(f"Error loading df_messages: {e}")
@@ -261,6 +274,7 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.warning("DEBUGGING: df_messages is empty - set_process_errors will be skipped")
         else:
             self.logger.info(f"DEBUGGING: df_messages has {len(df_messages)} rows - set_process_errors will work")
+        self.auxiliary_data['df_messages'] = df_messages.copy()
 
         try:
             self.logger.info("Loading process data from data manager")
@@ -329,6 +343,68 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "", ""
 
             nome_pais = get_df_estrutura_wfm_info(df_estrutura_wfm)
+            message_lang = apply_unit_message_lang_from_estrutura(df_estrutura_wfm)
+            fk_pais_val = (
+                df_estrutura_wfm['fk_pais'].iloc[0]
+                if 'fk_pais' in df_estrutura_wfm.columns
+                else None
+            )
+            self.logger.info(
+                f"Process message language set to {message_lang} "
+                f"(fk_pais={fk_pais_val}, nome_pais={nome_pais})"
+            )
+
+            # STRSOL-1820: country labour law — closed holiday vs day-off on holiday
+            country_label = (nome_pais or '').strip() or 'unknown country'
+            try:
+                fk_pais = int(df_estrutura_wfm['fk_pais'].iloc[0])
+            except (TypeError, ValueError, IndexError):
+                self.logger.error(
+                    f"Invalid fk_pais in df_estrutura_wfm for country {country_label}"
+                )
+                return False, 'errSubproc', country_label
+
+            try:
+                self.logger.info(
+                    f"Loading CORE_LABOR_LAW TREATLABELHOLIDAY for fk_pais={fk_pais}, "
+                    f"nome_pais={country_label}"
+                )
+                df_core_labor_law = data_manager.load_data(
+                    entity='df_core_labor_law_treat_label',
+                    query_file=self.config_manager.paths.sql_auxiliary_paths[
+                        'df_core_labor_law_treat_label'
+                    ],
+                    fk_pais=str(fk_pais),
+                )
+                self.logger.info(
+                    f"df_core_labor_law_treat_label shape "
+                    f"(rows {df_core_labor_law.shape[0]}, columns {df_core_labor_law.shape[1]}): "
+                    f"{df_core_labor_law.columns.tolist()}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error loading CORE_LABOR_LAW TREATLABELHOLIDAY for fk_pais={fk_pais}, "
+                    f"nome_pais={country_label}: {e}",
+                    exc_info=True,
+                )
+                return False, 'ERR_TREAT_LABEL_HOLIDAY_MISSING', country_label
+
+            valid_treat, treat_err_code, treat_label_holiday = validate_treat_label_holiday(
+                df_core_labor_law
+            )
+            if not valid_treat:
+                self.logger.error(
+                    f"TREATLABELHOLIDAY validation failed: {treat_err_code}, "
+                    f"fk_pais={fk_pais}, nome_pais={country_label}, "
+                    f"rows={len(df_core_labor_law) if df_core_labor_law is not None else 0}"
+                )
+                return False, treat_err_code, country_label
+
+            self.algorithm_treatment_params['treat_label_holiday'] = treat_label_holiday
+            self.logger.info(
+                f"treat_label_holiday={treat_label_holiday} for country {country_label} "
+                f"(fk_pais={fk_pais})"
+            )
 
             # ECI Unit Detection: check if this is an ECI unit and load sibling section data
             eci_flag = is_eci_unit(df_estrutura_wfm)
@@ -521,6 +597,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                     start_date=first_day_passado, 
                     end_date=last_day_passado)
                 self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
+                if df_feriados is None or df_feriados.empty:
+                    self.logger.error("df_feriados is empty: no holidays configured")
+                    return False, "ERR_LOAD_FERIADOS_EMPTY", format_unit_label(df_estrutura_wfm, unit_id)
             except Exception as e:
                 self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -573,7 +652,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_closed_days = data_manager.load_data(
                     'df_closed_days', 
                     query_file=self.config_manager.paths.sql_processing_paths['df_closed_days'], 
-                    unit_id="'" + str(unit_id) + "'"
+                    unit_id="'" + str(unit_id) + "'",
+                    start_date=first_year_date,
+                    end_date=last_year_date,
                 )
                 self.logger.info(f"df_closed_days shape (rows {df_closed_days.shape[0]}, columns {df_closed_days.shape[1]}): {df_closed_days.columns.tolist()}")
             except Exception as e:
@@ -705,6 +786,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 
                 # AUX DATA - Copy the dataframes into the apropriate dict
                 self.auxiliary_data['df_messages'] = df_messages.copy()
+                self.auxiliary_data['message_lang'] = message_lang
                 self.auxiliary_data['df_valid_emp'] = df_valid_emp.copy()
                 self.auxiliary_data['df_estrutura_wfm'] = df_estrutura_wfm.copy()
                 self.auxiliary_data['df_params_lq'] = df_params_lq.copy()
@@ -734,6 +816,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.auxiliary_data['num_feriados_fechados'] = num_feriados_fechados
                 self.auxiliary_data['df_process_rules'] = df_process_rules.copy()
                 self.auxiliary_data['df_process_rules_raw'] = df_process_rules_raw.copy()
+                refresh_process_message_labels(self.auxiliary_data)
                 
                 # ALGORITHM TREATMENT PARAMS
                 self.algorithm_treatment_params['admissao_proporcional'] = parameters_cfg
@@ -805,6 +888,8 @@ class SalsaDataModel(BaseDescansosDataModel):
             self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)
             for param_name in params_names_list:
+                if param_name == 'max_solver_time_in_seconds':
+                    continue
                 param_value = retrieved_params.get(param_name, params_defaults.get(param_name))
                 self.auxiliary_data[param_name] = param_value
                 self.logger.info(f"Parameter {param_name} = {param_value}")
@@ -822,6 +907,12 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
+            max_solver_time, _source = resolve_max_solver_time(
+                retrieved_params.get('max_solver_time_in_seconds'),
+                self.config_manager,
+            )
+            self.auxiliary_data['max_solver_time_in_seconds'] = max_solver_time
+            algorithm_treatment_params['max_solver_time_in_seconds'] = max_solver_time
             self.logger.info(f"Treating parameters completed successfully")
             # Store algorithm_name in auxiliary_data for later use
             self.auxiliary_data['algorithm_name'] = algorithm_name
@@ -1102,6 +1193,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.info(f"Saving df_colaborador in raw_data")
 
                 self.raw_data['df_colaborador'] = df_colaborador.copy()
+                refresh_process_message_labels(self.auxiliary_data, raw_data=self.raw_data)
                 self.auxiliary_data['df_pro_emp_mov_raw'] = df_pro_emp_mov_raw.copy()
                 # df_contratos retired — kept as empty DataFrame for backward compatibility
                 self.auxiliary_data['df_contratos'] = pd.DataFrame()
@@ -1329,6 +1421,29 @@ class SalsaDataModel(BaseDescansosDataModel):
                 return False, "errSubproc", str(e)
 
             try:
+                df_colaborador = self.raw_data.get('df_colaborador', pd.DataFrame())
+                if df_colaborador is None:
+                    df_colaborador = pd.DataFrame()
+                self.logger.info("Checking for missing cycle rows and backfilling df_ciclos")
+                success, df_ciclos_completos_folgas_ciclos, missing_ciclos_events, error_msg = (
+                    populate_missing_df_ciclos(
+                        df_ciclos_completos_folgas_ciclos=df_ciclos_completos_folgas_ciclos,
+                        df_colaborador=df_colaborador,
+                        employees_id_list=employees_id_list_for_posto,
+                        process_id=process_id,
+                        start_date=start_date_str,
+                        end_date=end_date_str,
+                    )
+                )
+                if not success:
+                    self.logger.error(f"populate_missing_df_ciclos failed: {error_msg}")
+                    return False, "errSubproc", error_msg
+                self.auxiliary_data['missing_ciclos_warning_events'] = missing_ciclos_events
+            except Exception as e:
+                self.logger.error(f"Error populating missing df_ciclos rows: {e}", exc_info=True)
+                return False, "errSubproc", str(e)
+
+            try:
                 self.logger.info("Treating df_ciclos")
                 success, df_ciclos, error_msg = treat_df_ciclos_completos(
                     df_ciclos_completos=df_ciclos_completos_folgas_ciclos,
@@ -1517,7 +1632,15 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False, "errSubproc", error_msg
 
                 # Apply all cycle day-type horario codes to df_calendario
-                success, df_calendario, error_msg = add_ciclos_completos(df_calendario, df_ciclos)
+                treat_label_holiday = int(
+                    self.algorithm_treatment_params.get('treat_label_holiday', 1)
+                )
+
+                success, df_calendario, error_msg = add_ciclos_completos(
+                    df_calendario,
+                    df_ciclos,
+                    treat_label_holiday=treat_label_holiday,
+                )
                 if not success:
                     self.logger.error(f"Adding ciclos failed: {error_msg}")
                     return False, "errSubproc", error_msg
@@ -1529,7 +1652,11 @@ class SalsaDataModel(BaseDescansosDataModel):
                     return False, "errSubproc", error_msg
                 
                 # Add df_calendario_passado to df_calendario
-                success, df_calendario, error_msg = add_calendario_passado(df_calendario, df_calendario_passado)
+                success, df_calendario, error_msg = add_calendario_passado(
+                    df_calendario,
+                    df_calendario_passado,
+                    treat_label_holiday=treat_label_holiday,
+                )
                 if not success:
                     self.logger.error(f"Adding calendario passado failed: {error_msg}")
                     return False, "errSubproc", error_msg
@@ -1786,6 +1913,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
                 try:
                     self.raw_data['df_colaborador'] = df_colaborador.copy()
+                    refresh_process_message_labels(self.auxiliary_data, raw_data=self.raw_data)
                 except KeyError as e:
                     self.logger.error(f"KeyError when saving df_calendario to raw_data: {e}", exc_info=True)
                     return False, "errSubproc", str(e)
@@ -2046,6 +2174,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                             cap_events=cap_events,
                             child_num=str(self.external_call_data.get('child_number', 1)),
                             posto_id=self.auxiliary_data.get('current_posto_id'),
+                            labels=get_process_message_labels(self.auxiliary_data),
                         )
                         self.logger.info(
                             f"Logged {n_logged}/{len(cap_events)} feasibility cap event(s) to esc_processo_erros"
@@ -2163,6 +2292,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                             error_events=wt_events,
                             child_num=child_num,
                             posto_id=posto_id,
+                            labels=get_process_message_labels(self.auxiliary_data),
                         )
                         self.logger.info(
                             f"Logged {n_logged}/{len(wt_events)} workload_template error(s) "
@@ -2187,15 +2317,11 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 df_feriados = self.auxiliary_data.get('df_feriados', pd.DataFrame())
                 df_ausencias = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
-                num_dias_cons = int(
-                    self.config_manager.parameters.get_parameter_defaults().get('NUM_DIAS_CONS', 6)
-                )
                 success_cons, cons_events, error_cons = validate_max_consecutive_working_days(
                     df_calendario=df_calendario,
                     df_colaborador=df_colaborador,
                     df_feriados=df_feriados,
                     df_ausencias_ferias=df_ausencias,
-                    section_num_dias_cons=num_dias_cons,
                     execution_begin=start_date,
                     execution_end=end_date,
                 )
@@ -2210,6 +2336,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                             error_events=cons_events,
                             child_num=child_num,
                             posto_id=posto_id,
+                            labels=get_process_message_labels(self.auxiliary_data),
                         )
                         self.logger.info(
                             f"Logged {n_logged}/{len(cons_events)} max consecutive working "

@@ -6,14 +6,25 @@ import os
 # Local stuff
 from src.settings.log_parameters import log_parameters
 
+
+def _read_version() -> str:
+    """Read the project version from the VERSION file at the repo root."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    version_file = os.path.join(root, "VERSION")
+    try:
+        with open(version_file, "r", encoding="utf-8") as fh:
+            return fh.read().strip() or "0.0.0"
+    except FileNotFoundError:
+        return "0.0.0"
+
 system_configs = {
-    "environment": "tst2", # Options: development, production
+    "environment": "salsa_tst2", # Options: development, production
     "use_db": True, # Options: True, False
     "override_parameter_defaults": False, # Options: True, False
     "granularity": 15,
     
     "project_name": log_parameters.get("project_name", 'algoritmo_GD'), # Important for environment management
-    "project_version": "1.1-dev", # Important for environment management
+    "project_version": _read_version(), # Read from the VERSION file at repo root
     "project_author": "Tlantic SI - Strategic Solutions Team", # Important for environment management
     "project_author_url": "https://github.com/antonioaalves/algortimo-gd", # Important for environment management
     "project_license": "MIT",
@@ -36,7 +47,7 @@ system_configs = {
         'log_level': 'INFO',
         'log_dir': 'logs',
 
-        'message_lang': 'PT',  # ES or PT — all process/DB messages use this language for now
+        'message_lang': 'EN',  # EN, ES, or PT — fallback when unit fk_pais/nome_pais cannot be resolved
 
     },
 

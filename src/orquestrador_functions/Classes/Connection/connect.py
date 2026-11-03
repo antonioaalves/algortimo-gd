@@ -6,7 +6,7 @@ Created on Mon Oct 28 15:44:37 2024
 """
 
 import os
-import cx_Oracle
+import oracledb as cx_Oracle  # oracledb is the maintained replacement for cx_Oracle
 import configparser
 import datetime
 
@@ -17,6 +17,40 @@ from base_data_project.log_config import get_logger
 
 # Initialize logger with project name from config
 logger = get_logger(get_config_manager().project_name)
+
+
+def _init_oracle_thick_mode() -> None:
+    """
+    Switch python-oracledb to thick mode using the Instant Client.
+
+    Required when the Oracle server enforces Native Network Encryption (NNE)
+    or Data Integrity, which are not supported in thin mode (DPY-3001).
+    Idempotent: a second call raises ProgrammingError which we swallow.
+    """
+    client_dir = os.environ.get("ORACLE_DB_CLIENT") or os.environ.get("ORACLE_HOME")
+    try:
+        if client_dir:
+            cx_Oracle.init_oracle_client(lib_dir=client_dir)
+        else:
+            cx_Oracle.init_oracle_client()
+        logger.info("oracledb initialized in thick mode (lib_dir=%s)", client_dir or "default")
+    except cx_Oracle.ProgrammingError:
+        # Already initialized — fine.
+        pass
+    except cx_Oracle.Error as exc:
+        logger.error("Failed to initialize Oracle thick mode: %s", exc)
+        raise
+
+
+_init_oracle_thick_mode()
+
+
+def _safe_client_version():
+    """Return oracledb client version or None in thin mode (no Instant Client loaded)."""
+    try:
+        return cx_Oracle.clientversion()
+    except cx_Oracle.Error:
+        return None
 
 def connect_to_oracle(acessos_path, log_file="log.txt"):
     """
@@ -81,7 +115,7 @@ def connect_to_oracle(acessos_path, log_file="log.txt"):
         dsn_tns = cx_Oracle.makedsn(url, port, service_name=service_name)
         
         # Establish connection
-        connection = cx_Oracle.connect(user, passwd, dsn_tns, encoding="ISO-8859-1")
+        connection = cx_Oracle.connect(user=user, password=passwd, dsn=dsn_tns)
         logger.info("Connected to the Oracle database successfully")
         
         # Set the current schema
@@ -146,7 +180,7 @@ def connect_to_oracle_with_config():
         dsn_tns = cx_Oracle.makedsn(host, port, service_name=service_name)
         
         # Establish connection
-        connection = cx_Oracle.connect(user, password, dsn_tns, encoding="ISO-8859-1")
+        connection = cx_Oracle.connect(user=user, password=password, dsn=dsn_tns)
         logger.info(f"Connected to Oracle database at {host}:{port}/{service_name}")
         
         # Set the current schema
@@ -326,7 +360,7 @@ def get_connection_info(connection):
             'username': connection.username,
             'current_schema': None,
             'server_version': connection.version,
-            'client_version': cx_Oracle.clientversion(),
+            'client_version': _safe_client_version(),
             'is_healthy': False
         }
         

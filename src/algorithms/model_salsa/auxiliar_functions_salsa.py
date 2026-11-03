@@ -105,9 +105,9 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
             
     return absences, vacations, fixed_days_off, fixed_LQs
 
-def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range):
+def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period, empty_days):
     for week, days in week_to_days_salsa.items():
-        if len(days) <= 6:
+        if len(days) <= 6 or days[-1] < period[0] or days[0] > period[1]:
             continue
 
         days_set = set(days)
@@ -132,7 +132,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                     continue
             elif nbr_absences < 5:
                 continue
-            atributing_days = sorted(days_set - closed_holidays)
+            atributing_days = sorted(days_set - closed_holidays - empty_days)
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]
@@ -231,17 +231,63 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period
                 week_5_days = week - 1
                 found_week = True
                 break
-
-    if week_5_days % 2 == 0:
-        logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
-                    f"with days {days_off_week} since its even, first week will start with 5")
-        work_days_per_week= np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
-    else:
-        logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
-                    f"with days {days_off_week} since its odd, first week will start with 6")
-        work_days_per_week= np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
-
+    if found_week == True:
+        if week_5_days % 2 == 0:
+            logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
+                        f"with days {days_off_week} since its even, first week will start with 5")
+            work_days_per_week = np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+        else:
+            logger.info(f"Found week that has to be of 5 working days in week {week_5_days}, "
+                        f"with days {days_off_week} since its odd, first week will start with 6")
+            work_days_per_week = np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
     return work_days_per_week.astype(int)
+
+def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, week_workload, work_days_per_week, nbr_weeks,
+                               first_registered_day, dummy_workers, contract_type):
+
+    workers_by_first_day = defaultdict(list)
+    workers_non_defined_set = set(workers_non_defined)
+    for w in workers_non_defined_set | set(workers_first_week_defined):
+        workers_by_first_day[first_registered_day[w] // 7].append(w)
+    for date in sorted(workers_by_first_day):
+        first_week_5_load = 0
+        first_week_6_load = 0
+        
+        for w in workers_by_first_day[date]:
+            if w in set(workers_first_week_defined):
+                if work_days_per_week[w][0] == 5:
+                    first_week_5_load += week_workload[w]
+                else:
+                    first_week_6_load += week_workload[w]
+
+        non_defined_rev_sorted_workload = sorted(workers_non_defined_set.intersection(set(workers_by_first_day[date])), key = lambda w: week_workload[w], reverse = True)
+        logger.info(f"week {date}: workers: {non_defined_rev_sorted_workload}, 5/6 days total workload distribution: {first_week_5_load}/{first_week_6_load}")
+        non_defined_temp = non_defined_rev_sorted_workload.copy()
+        for w in non_defined_rev_sorted_workload:
+            if w in dummy_workers:
+                previous_w = previous_dummy(dummy_workers, dummy_workers[w]["layer"] - 1, dummy_workers[w]["parent"])
+                if contract_type[previous_w] == 8 and not np.all(work_days_per_week[previous_w] == 5):
+                    logger.info(f"More information is known now, previous worker {previous_w} is defined"
+                                f" and {w} will continue the sequence.")
+                    
+                    work_days_per_week[w] = work_days_per_week[previous_w]
+                    if not np.all(work_days_per_week[w] == 5):
+                        logger.info(f"{w} went to group of {work_days_per_week[w][0]} first week.")
+                        if work_days_per_week[w][0] == 5:
+                            first_week_5_load += week_workload[w]
+                        else:
+                            first_week_6_load += week_workload[w]
+                    non_defined_temp.remove(w)
+        for w in non_defined_temp:
+            if first_week_5_load <= first_week_6_load:
+                work_days_per_week[w] = np.tile(np.array([5, 6]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+                first_week_5_load += week_workload[w]
+                logger.info(f"{w} went to group of 5 first week, score: {first_week_5_load}/{first_week_6_load}")
+            else:
+                work_days_per_week[w] = np.tile(np.array([6, 5]), (nbr_weeks // 2) + 1)[:nbr_weeks]
+                first_week_6_load += week_workload[w]
+                logger.info(f"{w} went to group of 6 first week, score: {first_week_5_load}/{first_week_6_load}")
+    return work_days_per_week
 
 def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, work_days_per_week):
     for week, days in week_to_days.items():
@@ -331,7 +377,7 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in working_days.intersection(week_days - all_days_off) if (w, d, 'LD') in shift and d >= period[0] and d > day}
@@ -350,6 +396,8 @@ def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_a
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
 
     return compensation_days
 
@@ -384,27 +432,33 @@ def get_dummy(workers_with_dummy, w, d):
     if w in workers_with_dummy:
         for range, new_w in workers_with_dummy.get(w, {}).items():
             if d in range:
-                if d == range[0]:
-                    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
-                if d == range[-1]:
-                    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
+                #if d == range[0]:
+                #    logger.info(f"For worker {w}, day {d} is in beginning range of dummy worker {new_w}")
+                #if d == range[-1]:
+                #    logger.info(f"For worker {w}, day {d} is in ending range of dummy worker {new_w}")
                 return new_w
     return w
 
+def previous_dummy(dummy_workers, layer, parent):
+    if layer == 0:
+        return parent
+    else:
+        return next((worker for worker, info in dummy_workers.items()if info["layer"] == layer and info["parent"] == parent),None)
+    
 def get_annual_variables(annual_variables, w, d, variable):
     for range, new_w in annual_variables.get(w, {}).items():
         if d in range:
             if variable == "l_dom":
-                logger.info(f"Getting variable l_dom {annual_variables[w][range]['apply_l_dom']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable l_dom {annual_variables[w][range]['apply_l_dom']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_l_dom"]
             elif variable == "c2d":
-                logger.info(f"Getting variable c2d {annual_variables[w][range]['apply_c2d']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable c2d {annual_variables[w][range]['apply_c2d']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_c2d"]
             elif variable == "l_sab":
-                logger.info(f"Getting variable l_sab {annual_variables[w][range]['apply_l_sab']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable l_sab {annual_variables[w][range]['apply_l_sab']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_l_sab"]
             elif variable == "l_dom_or_sab":
-                logger.info(f"Getting variable l_dom_or_sab {annual_variables[w][range]['apply_l_dom_or_sab']}, for {w} in day {d}, that got range{range}")
+                #logger.info(f"Getting variable l_dom_or_sab {annual_variables[w][range]['apply_l_dom_or_sab']}, for {w} in day {d}, that got range{range}")
                 return annual_variables[w][range]["apply_l_dom_or_sab"]
     return True
                 
@@ -429,7 +483,7 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
-        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 7, current_week * 7)))
+        week_days = set(week_to_days.get(current_week, range(current_week * 7 - 6, current_week * 7)))
         if len(week_days.intersection(absences)) >= 5:
             continue
         available_days = {d for d in week_days - all_days_off if (get_dummy(workers_with_dummy, w, d), d, 'LD') in shift and d >= period[0] and d > day}
@@ -447,5 +501,51 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
 
         if len(available_days) > 0:
             compensation_days.extend(available_days)
-
+    if len(compensation_days) > compensation_limit:
+        compensation_days = sorted(compensation_days)[:compensation_limit]
     return compensation_days
+
+def recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total):
+    total1 = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if day_start < days < min(calendar_day_0, day_start + deadline + total)])
+    if total1 != total:
+        total1 = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, total1)
+    return total1
+
+def  extend_deadline(w, deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, current_year, original_year, calendar_day_0):
+    """
+        Extend compensation deadline because of off days. Needs to take in account if the worked day to compensate is in current year
+        or previous year because day_start is transformed to int and a previous year day is transformed to a day already atributed to
+        a day of current year.
+        The min() is necessary because counting till deadline would make it count twice the same holidays (here and in restrictions)
+        for cases where deadline goes over period start. But in cases where the deadline ends before period 0 would make it count
+        too many days. Total is contained to be less than deadline, the theoretical best case of deadline extension.
+    """
+    if current_year == original_year:
+        total = recursive_total(deadline, empty_days, vacation_days, worker_absences, dynamic_empty, day_start, calendar_day_0, 0)
+    else:
+        total = len([days for days in empty_days | vacation_days | worker_absences | dynamic_empty if days < calendar_day_0])
+    if total > deadline:
+        logger.warning(f"Worker {w} got a total of {total} days, too big to trust.")
+    if 0 < total <= deadline:
+        logger.info(f"Worker {w} got {total} days longer deadline.")
+    else:
+        total = 0
+    return total
+
+def type_of_shift(shift, shifts, solver, w, d, real_working_shift, type_of_day, workers_with_dummy):
+    if d < 0:
+        return type_of_day
+    current_dummy = get_dummy(workers_with_dummy, w, d)
+    for sh in shifts:
+        if sh in real_working_shift and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                return type_of_day
+        elif sh == '-' and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                print(f"entrei no vazio {w}, {d}, {sh}")
+                return "vazios"
+        elif sh in ['L', 'LD', 'LQ'] and (current_dummy, d, sh) in shift:
+            if solver.Value(shift[(current_dummy, d, sh)]) == 1:
+                return "folgas"
+    logger.warning(f"impossible wrong shift, {w}, {d}, {sh}")
+    return type_of_day

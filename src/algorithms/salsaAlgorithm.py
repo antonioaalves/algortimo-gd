@@ -23,7 +23,7 @@ from src.algorithms.model_salsa.salsa_constraints import (
     global_compensation_days, dynamic_empty_day, free_days_sundays, free_days_saturdays
 )
 from src.algorithms.model_salsa.optimization_salsa import salsa_optimization
-from src.algorithms.solver.solver import solve
+from src.algorithms.solver.solver import configured_max_solver_time, solve
 
 from src.algorithms.helpers_algorithm import (_convert_free_days, _create_empty_results, _calculate_comprehensive_stats, 
                         _validate_constraints, _calculate_quality_metrics, 
@@ -61,11 +61,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             end_date: End date for scheduling
         """
         # Default parameters for the SALSA algorithm
+
         default_parameters = {
-            "shifts": ["M", "T", "L", "LQ", 'LD', "F", "A", "V", "-"],
-            "check_shifts": ['M', 'T', 'L', 'LQ', 'LD'],
-            "working_shifts": ['M', 'T', 'LD'],
-            "real_working_shifts": ['M', 'T'],
             "settings":{
                 #F days affect c2d and cxx
                 "F_special_day": False,
@@ -116,8 +113,23 @@ class SalsaAlgorithm(BaseAlgorithm):
             if algorithm_treatment_params is None:
                 algorithm_treatment_params = {}
                 self.logger.debug("No algorithm treatment parameters provided, using empty dict")
+                real_shifts = ['M', 'T']
             else:
                 self.logger.info(f"Using algorithm treatment parameters: {list(algorithm_treatment_params.keys())}")
+                real_shifts = algorithm_treatment_params.get('real_shifts', ['M', 'T'])
+            self.max_solver_time_in_seconds = configured_max_solver_time(algorithm_treatment_params)
+
+            self.parameters = {
+                "real_working_shifts": real_shifts,
+                "shifts": real_shifts + ["L", "LQ", "LD", "F", "A", "V", "-"],
+                "check_shifts": real_shifts + ["L", "LQ", "LD"],
+                "working_shifts": real_shifts + ["LD"],
+                "settings": {
+                    "F_special_day": False,
+                    "free_sundays_plus_c2d": False,
+                    "missing_days_afect_free_days": False,
+                }
+            }
             
             # =================================================================
             # 1. VALIDATE INPUT DATA STRUCTURE
@@ -141,25 +153,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             if not isinstance(medium_dataframes, dict):
                 raise TypeError(f"Expected medium_dataframes to be dictionary, got {type(medium_dataframes)}")
-            # =================================================================
-            # 2. VALIDATE REQUIRED DATAFRAMES
-            # =================================================================
-            # required_dataframes = ['matrizA_bk', 'matrizB_bk', 'matriz2_bk']
-            # missing_dataframes = [df for df in required_dataframes if df not in medium_dataframes]
-            
-            # if missing_dataframes:
-            #     self.logger.error(f"Missing required DataFrames: {missing_dataframes}")
-            #     raise ValueError(f"Missing required DataFrames: {missing_dataframes}")
-            
-            # # Check if DataFrames are not empty
-            # for df_name in required_dataframes:
-            #     df = medium_dataframes[df_name]
-            #     if df.empty:
-            #         self.logger.error(f"DataFrame {df_name} is empty")
-            #         raise ValueError(f"DataFrame {df_name} is empty")
-                
-            #     self.logger.info(f"✅ {df_name}: {df.shape} - {df.memory_usage(deep=True).sum()/1024/1024:.2f} MB")
-            
 
             # =================================================================
             # 3. PROCESS DATA USING SALSA FUNCTION
@@ -169,7 +162,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # Import the SALSA data processing function
             from src.algorithms.model_salsa.read_salsa import read_data_salsa
             
-            processed_data = read_data_salsa(medium_dataframes, algorithm_treatment_params)
+            processed_data = read_data_salsa(medium_dataframes, self.parameters["real_working_shifts"], algorithm_treatment_params)
             
             
             # =================================================================
@@ -266,8 +259,6 @@ class SalsaAlgorithm(BaseAlgorithm):
             last_day = adapted_data['last_registered_day']
             fixed_days_off = adapted_data['fixed_days_off']
             fixed_LQs = adapted_data['fixed_LQs']
-            shift_M = adapted_data['shift_M']
-            shift_T = adapted_data['shift_T']
             role_by_worker = adapted_data['role_by_worker']
             work_day_hours = adapted_data['work_day_hours']
             work_days_per_week = adapted_data['work_days_per_week']
@@ -291,12 +282,17 @@ class SalsaAlgorithm(BaseAlgorithm):
             index_to_date = adapted_data["index_to_date"]
             holiday_past_lds = adapted_data["holiday_past_lds"]
             sunday_past_lds = adapted_data["sunday_past_lds"]
+            empty_past_lds = adapted_data["empty_past_lds"]
+            day_off_past_lds = adapted_data["day_off_past_lds"]
             dynamic_empty = adapted_data["dynamic_empty"]
             dummy_workers = adapted_data["dummy_workers"]
             workers_with_dummy = adapted_data["workers_with_dummy"]
             complete_cycle_days = adapted_data["complete_cycle_days"]
             annual_variables = adapted_data["annual_variables"]
             workers_no_contract_changes = adapted_data["workers_no_contract_changes"]
+            shift_data = adapted_data["shift_data"]
+            empty_rules = adapted_data["empty_rules"]
+            day_off_rules = adapted_data["day_off_rules"]
 
             # Extract algorithm parameters
             shifts = self.parameters["shifts"]
@@ -357,9 +353,9 @@ class SalsaAlgorithm(BaseAlgorithm):
             self.model = model
 
             # Create decision variables
-            shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences, vacation_days, 
-                                       empty_days, closed_holidays, fixed_days_off, fixed_LQs, shift_M, shift_T, workers_past,
-                                       fixed_compensation_days, locked_days, forced_work_days, contract_type, dynamic_empty, complete_cycle_days)
+            shift = decision_variables(model, workers_complete, shifts, first_day, last_day, worker_absences, vacation_days, empty_days, 
+                                       closed_holidays, fixed_days_off, fixed_LQs, shift_data, workers_past, fixed_compensation_days, locked_days,
+                                       forced_work_days, contract_type, dynamic_empty, complete_cycle_days, real_working_shift)
             
             self.logger.info("Decision variables created for SALSA")
             
@@ -370,6 +366,8 @@ class SalsaAlgorithm(BaseAlgorithm):
             
             contingente_f = []
             contingente_d = []
+            contingente_v = []
+            contingente_o = []
             
             # Basic constraint: each worker has exactly one shift per day
             if constraint_selections.get("shift_day_constraint", {}).get("enabled", True):
@@ -387,9 +385,9 @@ class SalsaAlgorithm(BaseAlgorithm):
 
             if constraint_selections.get("compensation_days", {}).get("enabled", True) and country == "Espanha":
                 self.logger.info("Applying constraint: holiday_compensation_days (Espanha-specific)")
-                contingente_f, contingente_d = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
+                contingente_f, contingente_d, contingente_v, contingente_o = global_compensation_days(model, shift, workers_complete, working_days, holidays, sundays, week_to_days, real_working_shift, holiday_rules, sunday_rules, 
                                                                         fixed_days_off, fixed_LQs, worker_absences, vacation_days, period, override_holiday_sunday, fixed_compensation_days, holiday_past_lds,
-                                                                        sunday_past_lds, closed_holidays, dummy_workers, workers_with_dummy)
+                                                                        sunday_past_lds, empty_past_lds, day_off_past_lds, closed_holidays, dummy_workers, workers_with_dummy, empty_rules, day_off_rules, dynamic_empty)
             elif country != "Espanha":
                 self.logger.info("Skipping constraint: holiday_compensation_days (not applicable for non-Espanha)")
             else:
@@ -399,7 +397,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # Week working days constraint based on contract type
                 if constraint_selections.get("week_working_days_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: week_working_days_constraint")
-                    week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, contract_type, work_days_per_week, period, complete_cycle_days)
+                    week_working_days_constraint(model, shift, week_to_days_salsa, workers, working_shift, work_days_per_week, period, complete_cycle_days)
                 else:
                     self.logger.warning("Skipping constraint: week_working_days_constraint (disabled in config)")
                 
@@ -437,12 +435,12 @@ class SalsaAlgorithm(BaseAlgorithm):
     
                 if constraint_selections.get("salsa_2_free_days_week", {}).get("enabled", True):
                     self.logger.info("Applying constraint: salsa_2_free_days_week")
-                    salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days)
+                    salsa_2_free_days_week(model, shift, workers, week_to_days_salsa, working_days, admissao_proporcional, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, work_days_per_week, period, complete_cycle_days, dynamic_empty, dummy_workers, workers_with_dummy)
                 else:
                     self.logger.warning("Skipping constraint: salsa_2_free_days_week (disabled in config)")
                 if constraint_selections.get("first_day_not_free", {}).get("enabled", True):
                     self.logger.info("Applying constraint: first_day_not_free")
-                    first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off, period)
+                    first_day_not_free(model, shift, workers, working_days, first_day, working_shift, fixed_days_off, period, dummy_workers)
                 else:
                     self.logger.warning("Skipping constraint: first_day_not_free (disabled in config)")
     
@@ -466,7 +464,7 @@ class SalsaAlgorithm(BaseAlgorithm):
 
                 if constraint_selections.get("one_colab_min_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: one_colab_min_constraint")
-                    one_colab_min_constraint(model, shift, workers, real_working_shift, days_of_year, shift_M, shift_T, period, closed_holidays)
+                    one_colab_min_constraint(model, shift, workers_past, workers, real_working_shift, days_of_year, shift_data, period, closed_holidays, contract_type)
                 else:
                     self.logger.warning("Skipping constraint: one_colab_min_constraint (disabled in config)")
 
@@ -490,9 +488,10 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, work_day_hours, pessObj,
-                                         workers_past, h_plus, contingente_f, contingente_d, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
+            schedule_df, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, real_working_shift, work_day_hours, pessObj,
+                                         workers_past, h_plus, contingente_f, contingente_d, contingente_v, contingente_o, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
                                          pd.Series(['Worker'] + (unique_dates)),
+                                         max_time_seconds=self.max_solver_time_in_seconds,
                                          output_filename=os.path.join(root_dir, 'data', 'output', f'salsa_schedule_{self.process_id}.xlsx'))
             self.final_schedule = pd.DataFrame(schedule_df).copy()
             logger.info(f"Final schedule shape: {self.final_schedule.shape}")

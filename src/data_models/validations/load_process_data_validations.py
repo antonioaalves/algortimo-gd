@@ -2,7 +2,7 @@
 
 # Dependencies
 import pandas as pd
-from typing import List, Union
+from typing import List, Optional, Tuple, Union
 
 # Local stuff
 from base_data_project.log_config import setup_logger
@@ -326,4 +326,43 @@ def validate_df_estrutura_wfm(df_estrutura_wfm: pd.DataFrame) -> bool:
         return False
     
     return True
+
+
+def _resolve_treatlabelholiday_column(df: pd.DataFrame) -> Optional[str]:
+    for col in df.columns:
+        if str(col).upper() == 'TREATLABELHOLIDAY':
+            return col
+    return None
+
+
+def validate_treat_label_holiday(df: pd.DataFrame) -> Tuple[bool, str, Optional[int]]:
+    """
+    STRSOL-1820: Validate CORE_LABOR_LAW.TREATLABELHOLIDAY for the process country.
+
+    Returns:
+        (True, '', 0|1) on success
+        (False, ERR_* code, None) on failure
+    """
+    if df is None or df.empty:
+        return False, 'ERR_TREAT_LABEL_HOLIDAY_MISSING', None
+    if len(df) > 1:
+        return False, 'ERR_TREAT_LABEL_HOLIDAY_MULTIPLE', None
+
+    col = _resolve_treatlabelholiday_column(df)
+    if col is None:
+        return False, 'ERR_TREAT_LABEL_HOLIDAY_INVALID', None
+
+    raw = df[col].iloc[0]
+    if pd.isna(raw) or (isinstance(raw, str) and str(raw).strip() == ''):
+        return False, 'ERR_TREAT_LABEL_HOLIDAY_INVALID', None
+
+    try:
+        val = int(float(raw))
+    except (TypeError, ValueError):
+        return False, 'ERR_TREAT_LABEL_HOLIDAY_INVALID', None
+
+    if val not in (0, 1):
+        return False, 'ERR_TREAT_LABEL_HOLIDAY_INVALID', None
+
+    return True, '', val
 

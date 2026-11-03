@@ -1,0 +1,79 @@
+{
+    "restriction_parameters": {
+        "max_continuous_working_days": 5,
+        "shifts": ["M", "T", "L", "LQ", "F", "A", "V"],
+        "check_shifts": ["M", "T", "L", "LQ"],
+        "working_shifts": ["M", "T"],
+        "F_special_day": 0,
+        "free_sundays_plus_c2d": 0,
+        "missing_days_afect_free_days": 0
+
+    },
+    "constraint_selections": {
+        "shift_day_constraint": {
+            "enabled": true,
+            "use_case": 0
+        },
+        "week_working_days_constraint": {
+            "enabled": true,
+            "use_case": 0            
+        },
+        "maximum_free_days": {
+            "enabled": true,
+            "use_case": 0                
+        },
+        "LQ_attribution": {
+            "enabled": true,
+            "use_case": 0                
+        },
+        "closed_holiday_attribution": {
+            "enabled": true,
+            "use_case": 0                
+        },
+        "holiday_missing_day_attribution": {
+            "enabled": true,
+            "use_case": 0                
+        },
+        "assign_week_shift": {
+            "enabled": true,
+            "use_case": 0                
+        },
+        "working_day_shifts": {
+            "enabled": true,
+            "use_case": 0    
+        },
+        "salsa_2_consecutive_free_days": {
+            "enabled": true,
+            "use_case": 0    
+        },
+        "salsa_2_day_quality_weekend": {
+            "enabled": true,
+            "use_case": 0    
+        },
+        "salsa_saturday_L_constraint": {
+            "enabled": true,
+            "use_case": 0
+        },
+        "maximum_continuous_working_days": {
+            "enabled": true,
+            "use_case": 0
+        },
+        "salsa_2_free_days_week": {
+            "enabled": true,
+            "use_case": 0
+        },
+        "first_day_not_free": {
+            "enabled": true,
+            "use_case": 0
+        },
+        "free_days_special_days": {
+            "enabled": true,
+            "use_case": 0
+        },
+        "compensation_days": {
+            "enabled": true,
+            "use_case": 0
+        }
+    }
+}
+
