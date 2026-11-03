@@ -17,14 +17,13 @@ def add_var(model, shift, w, days, code):
 
 
 def decision_variables(model, workers, shifts, first_day, last_day, absences, vacation_days, empty_days,
-                       closed_holidays, fixed_days_off, fixed_LQs, shift_data, past_workers, fixed_compensation_days,
+                       worker_closed_holidays, fixed_days_off, fixed_LQs, shift_data, past_workers, fixed_compensation_days,
                        locked_days, forced_work_days, contract_type, dynamic_empty, complete_cycle_days, real_working_shift):
     # Create decision variables (binary: 1 if person is assigned to shift, 0 otherwise)
     shift = {}
 
-    closed_set = set(closed_holidays)
-    logger.info(f"\tDEBUG closed days (everyone) {sorted(closed_set)}")
     for w in past_workers:
+        closed_set = set(worker_closed_holidays[w])
         empty_set = empty_days[w]
         vacation = vacation_days[w]
         fixed_LQs_set = fixed_LQs[w]
@@ -43,6 +42,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
             shift_set = {f"shift_{value}_set": set(shift_data[f"shift_{value}"][w]) for value in real_working_shift}
 
         logger.info(f"For PAST WORKER {w}:")
+        logger.info(f"\tDEBUG closed days {sorted(closed_set)}")
         logger.info(f"\tDEBUG empty days {sorted(empty_set)}")
         logger.info(f"\tDEBUG vacation {sorted(vacation)}")
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
@@ -70,9 +70,10 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
 
     for w in workers:
 
+        closed_set = set(worker_closed_holidays[w])
         empty_set = empty_days[w]
         vacation = vacation_days[w] - empty_set
-        fixed_LQs_set = fixed_LQs[w] - vacation - closed_holidays
+        fixed_LQs_set = fixed_LQs[w] - vacation
         fixed_days_set = fixed_days_off[w] - vacation - fixed_LQs_set
         absence_set = absences[w] - fixed_days_set - fixed_LQs_set - vacation - empty_set
         forced_set = set(forced_work_days[w])
@@ -92,6 +93,7 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
             SET_CODE_PRIORITY.append((value, shift_set[f"shift_{value}_set"]))
 
         logger.info(f"For worker {w}:")
+        logger.info(f"\tDEBUG closed days {sorted(closed_set)}")
         logger.info(f"\tDEBUG empty days {sorted(empty_set)}")
         logger.info(f"\tDEBUG vacation {sorted(vacation)}")
         logger.info(f"\tDEBUG fixed lqs {sorted(fixed_LQs_set)}")
@@ -107,10 +109,10 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         if contract_type.get(w, 0) <= 4 and w in dynamic_empty:
             fixed_dynamic_empty = dynamic_empty[w]
             logger.info(f"\tDEBUG fixed dynamic empty days {sorted(fixed_dynamic_empty)}\n")
-            blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set | fixed_dynamic_empty
+            blocked_days = absence_set | vacation | empty_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set | fixed_dynamic_empty
             add_var(model, shift, w, fixed_dynamic_empty, '-')
         else:
-            blocked_days = absence_set | vacation | empty_set | closed_holidays | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set
+            blocked_days = absence_set | vacation | empty_set | closed_set | fixed_days_set | fixed_LQs_set | absence_set | fixed_LD_set
 
         for d in range(first_day[w], last_day[w] + 1):
             if d not in blocked_days:
@@ -143,6 +145,6 @@ def decision_variables(model, workers, shifts, first_day, last_day, absences, va
         add_var(model, shift, w, fixed_days_set - empty_set, 'L')
         add_var(model, shift, w, fixed_LQs_set - empty_set, 'LQ')
         add_var(model, shift, w, fixed_LD_set - empty_set, 'LD')
-        add_var(model, shift, w, closed_holidays - empty_set, 'F')
+        add_var(model, shift, w, closed_set - empty_set, 'F')
         add_var(model, shift, w, empty_set, '-')
     return shift
