@@ -56,14 +56,16 @@ def _persist_message_events(
     logged = 0
     for event in events:
         description = set_messages(df_messages, message_key, build_placeholders(event))
+        if not description:
+            description = build_fallback(event)
+
         logger.info(
-            "%s employee_id=%s posto_id=%s",
+            "%s employee_id=%s posto_id=%s | %s",
             log_tag,
             event.get('employee_id'),
             posto_id,
+            description,
         )
-        if not description:
-            description = build_fallback(event)
 
         ok = set_process_errors(
             connection=connection,
@@ -79,6 +81,12 @@ def _persist_message_events(
         )
         if ok:
             logged += 1
+        else:
+            logger.error(
+                "%s: failed to persist esc_processo_erros | %s",
+                log_tag,
+                description,
+            )
     return logged
 
 
@@ -171,11 +179,11 @@ def log_workload_template_contract_errors(
 
     def fallback(event: dict) -> str:
         person_label, matricula_label = resolve_employee_labels(event, labels)
-        return event.get('detail_pt') or (
-            f"Subprocesso {child_num}: workload_template={event.get('workload_template')} "
-            f"incompatível com contrato ({event.get('min_dia_trab')}-{event.get('max_dia_trab')}) "
-            f"colaborador {person_label}, matrícula {matricula_label} "
-            f"{event.get('week_label', '')}{event.get('period_suffix', '')} posto {posto}"
+        return (
+            f"Sub {child_num}: {person_label} ({matricula_label}) ciclo "
+            f"{event.get('workload_template')}d/sem vs contrato "
+            f"({event.get('min_dia_trab')}-{event.get('max_dia_trab')}d). "
+            f"{event.get('week_label', '')}{event.get('period_suffix', '')}. Posto {posto}"
         )
 
     return _persist_message_events(
@@ -329,18 +337,15 @@ def log_max_consecutive_working_days_errors(
             '5': str(event.get('streak_days', '')),
             '6': str(event.get('period_begin', '')),
             '7': str(event.get('period_end', '')),
-            '8': str(event.get('period_suffix', '')),
             '9': posto,
         }
 
     def fallback(event: dict) -> str:
         person_label, matricula_label = resolve_employee_labels(event, labels)
-        return event.get('detail_pt') or (
-            f"Subprocesso {child_num}: no periodo {event.get('period_begin')}-"
-            f"{event.get('period_end')} o colaborador {person_label}, matrícula {matricula_label} "
-            f"viola o limite de {event.get('num_dias_cons')} dias "
-            f"consecutivos de trabalho ({event.get('streak_days')} dias). "
-            f"Posto {posto}"
+        return (
+            f"Sub {child_num}: {person_label} ({matricula_label}) excede "
+            f"{event.get('num_dias_cons')} dias trab. seguidos ({event.get('streak_days')}). "
+            f"[{event.get('period_begin')}-{event.get('period_end')}]. Posto {posto}"
         )
 
     return _persist_message_events(
