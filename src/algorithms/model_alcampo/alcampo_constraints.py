@@ -655,20 +655,28 @@ def space_LQs (model, shift, workers, working_days, t_lq, cal=None):
                 model.Add(lq_in_month <= 2)
                 model.Add(lq_in_month >= 0)
 
-def LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq, year_range, annual_variables, workers_with_dummy, closed_days):
+def LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq, year_range, annual_variables, workers_with_dummy, closed_days, c2d, c3d, special_days, contract_type):
     #preciso confirmar se tem de ser == ou manter como tem na salsa de >=
     for w in workers_no_contract_changes:
         if t_lq.get(w, 0) == 0:
             continue
-        worker_saturdays = [d for d in range(year_range[0], year_range[1]) if (d in working_days[w] or d in closed_days) \
+
+        worker_days = [d for d in range(year_range[0], year_range[1]) if (d in working_days[w]) \
                             and get_annual_variables(annual_variables, w, d, "c2d") == True and (w, d, "LQ") in shift]
-        model.Add(sum(shift[(w, d, 'LQ')] for d in worker_saturdays if (w, d, 'LQ') in shift) == t_lq.get(w, 0))
+        real_lq = t_lq[w] - c2d[w] - c3d[w]
+        if real_lq >= 0 and contract_type[w] == 6:
+            print(w, real_lq)
+            print(special_days)
+            print([d for d in worker_days if d % 7 not in [1, 5, 6] and d not in special_days])
+            model.Add(sum(shift.get((w, d, 'LQ'), 0) for d in worker_days if d % 7 not in [1, 5, 6] and d not in special_days) == real_lq)
+
+        model.Add(sum(shift[(w, d, 'LQ')] for d in worker_days if (w, d, 'LQ') in shift) == t_lq.get(w, 0))
     for w in workers_with_dummy:
         if t_lq.get(w, 0) == 0:
             continue
-        worker_saturdays = [d for d in range(year_range[0], year_range[1]) if (d in working_days[get_dummy(workers_with_dummy, w, d)] or d in closed_days) \
+        worker_days = [d for d in range(year_range[0], year_range[1]) if (d in working_days[get_dummy(workers_with_dummy, w, d)] or d in closed_days) \
                             and get_annual_variables(annual_variables, w, d, "c2d") == True and (get_dummy(workers_with_dummy, w, d), d, "LQ") in shift]
-        lq_sat = sum(shift[(get_dummy(workers_with_dummy, w, d), d, 'LQ')] for d in worker_saturdays if (get_dummy(workers_with_dummy, w, d), d, 'LQ') in shift)
+        lq_sat = sum(shift[(get_dummy(workers_with_dummy, w, d), d, 'LQ')] for d in worker_days if (get_dummy(workers_with_dummy, w, d), d, 'LQ') in shift)
 
         model.Add(lq_sat == t_lq.get(w, 0))
 
@@ -835,8 +843,8 @@ def free_days_week_4_5(model, shift, workers, week_to_days, working_days, data_a
                     else:
                         model.Add(free_shift_sum == required_free_days)
 
-def free_days_week_6(model, shift, workers, week_to_days, working_days, data_admissao, data_demissao, fixed_days_off,
-                   fixed_LQs, contract_type, period, complete_cycle_days, locked_days, closed_days, quality_2weekend_vars, quality_3weekend_vars):
+def free_days_week_6(model, shift, workers, week_to_days, working_days, data_admissao, data_demissao, fixed_days_off, fixed_LQs, contract_type, 
+                    period, complete_cycle_days, locked_days, closed_days, quality_2weekend_vars, quality_3weekend_vars):
     for w in workers:
         if contract_type[w] != 6:
             continue
@@ -895,17 +903,20 @@ def free_days_week_6(model, shift, workers, week_to_days, working_days, data_adm
                                         logger.warning(f"entrei aqui {counter} vezes, pode dar infeasible, {w}, {week_work_days}")
                                     counter += 1
                                     #permitir c2d e c3d
-                                    model.Add(free_shift_sum >= 2).OnlyEnforceIf(saturday_bool)
-                                    model.Add(free_shift_sum <= 3).OnlyEnforceIf(saturday_bool)
-                                    model.Add(sum(shift.get((w, d, 'L'), 0) + shift.get((w, d, 'LQ'), 0) for d in week_work_days if d < saturday - 1) == 0).OnlyEnforceIf(saturday_bool)
+                                    model.Add(free_shift_sum >= 2).OnlyEnforceIf(has_saturday_quality)
+                                    model.Add(free_shift_sum <= 3).OnlyEnforceIf(has_saturday_quality)
+                                    model.Add(sum(shift.get((w, d, 'L'), 0) + shift.get((w, d, 'LQ'), 0) for d in week_work_days if d < saturday - 1) == 0).OnlyEnforceIf(has_saturday_quality)
 
-                                    model.Add(free_shift_sum <= 1).OnlyEnforceIf(has_saturday_quality.Not())
+                                    model.Add(free_shift_sum <= 2).OnlyEnforceIf(has_saturday_quality.Not())
+                                    model.Add(sum(shift.get((w, d, 'L'), 0) for d in week_work_days) <= 1).OnlyEnforceIf(has_saturday_quality.Not())
+                                    model.Add(sum(shift.get((w, d, 'LQ'), 0) for d in week_work_days if d % 7 in [ 5, 6]) == 0).OnlyEnforceIf(has_saturday_quality.Not())
                                     model.Add(free_shift_sum_ld <= 2).OnlyEnforceIf(has_saturday_quality.Not())
                                     model.Add(free_shift_sum_ld > 0).OnlyEnforceIf(has_saturday_quality.Not())
 
                         else:
                             # No Saturday in week_work_days: apply the normal restrictions
                             model.Add(free_shift_sum <= 1)
+                            model.Add(sum(shift.get((w, d, 'LQ'), 0) for d in week_work_days if d % 7 in [1, 5, 6]) == 0)
                             model.Add(free_shift_sum_ld <= 2)
                             model.Add(free_shift_sum_ld > 0)
 

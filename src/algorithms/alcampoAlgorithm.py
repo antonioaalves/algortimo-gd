@@ -251,14 +251,12 @@ class AlcampoAlgorithm(BaseAlgorithm):
             worker_week_shift = adapted_data['worker_week_shift']
             workers = adapted_data['workers']
             contract_type = adapted_data['contract_type']
-            total_l = adapted_data['total_l']
             total_l_dom = adapted_data['total_l_dom']
             c2d = adapted_data['c2d']
             c3d = adapted_data['c3d']
             l_d = adapted_data['l_d']
             l_q = adapted_data['l_q']
             cxx = adapted_data['cxx']
-            t_lq = adapted_data['t_lq']
             tc = adapted_data['tc']
             pessObj = adapted_data['pess_obj']
             min_workers = adapted_data['min_workers']
@@ -353,7 +351,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             saturday_L_constraint(model, shift, workers, working_days, period, working_shift)
 
             # LQ attribution constraint
-            LQ_attribution(model, shift, workers_no_contract_changes, working_days, t_lq, year_range, annual_variables, workers_with_dummy, closed_holidays)
+            LQ_attribution(model, shift, workers_no_contract_changes, working_days, l_q, year_range, annual_variables, workers_with_dummy, closed_holidays, c2d, c3d, special_days, contract_type)
 
             # LD attribution constraint
             LD_attribution(model, shift, workers_no_contract_changes, working_days, l_d, year_range, workers_with_dummy)
@@ -372,7 +370,7 @@ class AlcampoAlgorithm(BaseAlgorithm):
             #no_free__days_close(model, shift, workers, working_days, cxx, contract_type, closed_holidays, days_of_year, period, locked_days, complete_cycle_days)
             
             # Space LQs constraint
-            space_LQs(model, shift, workers, working_days, t_lq, matriz_calendario_gd)
+            space_LQs(model, shift, workers, working_days, l_q, matriz_calendario_gd)
             
             # Priority 2-3 workers constraint
             ##prio_2_3_workers(model, shift, workers, working_days, holidays, week_to_days, contract_type, working_shift)

@@ -28,7 +28,7 @@
             "maxRetries": 3,
             "sleepTime": 1000,
             "test_param_scheduling_threshold": 0.75,
-            "GD_algorithmName": "salsa_algorithm",
+            "GD_algorithmName": "alcampo_algorithm",
             "GD_consideraFestivos": 1,
             "GD_convenioBD": "ALCAMPO",
             "codigos_motivo_ausencia": [

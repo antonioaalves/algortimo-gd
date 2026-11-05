@@ -375,7 +375,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         l_d = {}
         l_q = {}
         cxx = {}
-        t_lq = {}
         tc = {}
         total_l_sab = {}
         total_l_dom_or_sab = {}
@@ -410,24 +409,8 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         
                 # Extract contract information
                 contract_type[w] = worker_row.get('tipo_contrato', 0)
-                total_l[w] = int(worker_row.get('l_total', 0))
-                total_l_dom[w] = int(worker_row.get('l_dom', 0))
-                c2d[w] = int(worker_row.get('c2d', 0))
-                c3d[w] = int(worker_row.get('c3d', 0))
-                l_d[w] = int(worker_row.get('l_d', 0))
-                cxx[w] = int(worker_row.get('cxx', 0))
-                tc[w] = int(worker_row.get('dofhc', 0))
                 out_workers[w] = [int(worker_row.get('out', 0) if not pd.isna(worker_row.get('out', 0)) else 0)]
-
-                logger.info(f"Worker {w} contract information extracted: "
-                            f"Contract Type: {contract_type[w]}, "
-                            f"Total L: {total_l[w]}, "
-                            f"Total L DOM: {total_l_dom[w]}, "
-                            f"C2D: {c2d[w]}, "
-                            f"C3D: {c3d[w]}, "
-                            f"L_D: {l_d[w]}, "
-                            f"CXX: {cxx[w]}, "
-                            f"TC: {tc[w]}")
+                
                 admissao_value = worker_row.get('data_admissao', None)
                 logger.info(f"Processing worker {w} with data_admissao: {admissao_value}")
                 demissao_value = worker_row.get('data_demissao', None)
@@ -505,14 +488,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             original_end_date = int(worker_calendar.loc[worker_calendar['schedule_day'] == pd.to_datetime(worker_row.get('begin_date', None)), 'index'].iloc[0]) - 1
                         # Extract contract information
                         contract_type[new_w] = int(worker_row.get('tipo_contrato', 0))
-                        total_l[new_w] = int(worker_row.get('l_total', 0))
-                        total_l_dom[new_w] = int(worker_row.get('l_dom', 0))
-                        total_l_dom[w] = int(worker_row.get('l_dom', 0))
-                        tc[new_w] = int(worker_row.get('dofhc', 0))
-                        c2d[new_w] = int(worker_row.get('c2d', 0))
-                        c3d[new_w] = int(worker_row.get('c3d', 0))
-                        l_d[new_w] = int(worker_row.get('l_d', 0))
-                        cxx[new_w] = int(worker_row.get('cxx', 0))
                         out_workers[new_w] = [int(worker_row.get('out', 0) if not pd.isna(worker_row.get('out', 0)) else 0)]
                         admissao_value = worker_row.get('begin_date', None)
                         logger.info(f"Processing worker {new_w} with data_admissao: {admissao_value}")
@@ -597,9 +572,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
         for w in workers:
             if contract_type[w] == 0:
                 logger.error(f"Worker {w} has contract type error, removing from workers list")
-                workers.pop(workers.index(w))  # Remove worker with contract error
-            elif total_l[w] < 0:
-                logger.error(f"Worker {w} has non-positive total_l: {total_l[w]}, removing from workers list")
                 workers.pop(workers.index(w))  # Remove worker with contract error
 
         logger.info(f"Contract information extracted for {len(workers)} workers")
@@ -763,12 +735,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
 
         #    logger.info(f"Worker {w} total L DOM adjusted: {total_l_dom[w]} based on special days and contract type {contract_type[w]}")
 
-        for w in workers:
-            if contract_type[w] == 6:
-                l_d[w] =  l_d[w] + tc[w] 
-            elif contract_type[w] in [4,5]:
-                total_l[w] = total_l[w] - tc[w]        
-            logger.info(f"Worker {w} L_D adjusted: {l_d[w]}, total L: {total_l[w]} based on contract type {contract_type[w]}")
 
         logger.info("Worker parameters adjusted based on first and last registered days")
 
@@ -967,7 +933,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                     l_d[w] = 0
                     cxx[w] = 0
                     tc[w] = 0
-                    t_lq[w] = 0
 
                     continue
                 worker_row = worker_data.iloc[0]
@@ -992,9 +957,12 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                 c2d[w] = int(worker_row.get('c2d', 0))
                 c3d[w] = int(worker_row.get('c3d', 0))
                 l_d[w] = int(worker_row.get('l_d', 0))
+                if contract_type[w] == 6:
+                    l_q[w] = int(worker_row.get('l_q', 0)) + c3d[w] + c2d[w]
+                else:
+                    l_q[w] = int(worker_row.get('l_q', 0))
                 cxx[w] = int(worker_row.get('cxx', 0))
                 tc[w] = int(worker_row.get('tc', 0)) #nome anterior da coluna: dofhc
-                t_lq[w] = int(worker_row.get('l_q', 0))
 
                 size = len(worker_data)
                 if size > 1:
@@ -1010,11 +978,28 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
                             "apply_total_l": worker_row.get("apply_total_l", True),
                             "apply_c3d": worker_row.get("apply_c3d", True),
                             "apply_l_d": worker_row.get("apply_l_d", True),
+                            "apply_l_q": worker_row.get("apply_l_q", True),
                             "apply_cxx": worker_row.get("apply_cxx", True),
                             "apply_tc": worker_row.get("apply_tc", True),
                         }
+                logger.info(f"Worker {w} contract information extracted: "
+                    f"Contract Type: {contract_type[w]}, "
+                    f"Total L: {total_l[w]}, "
+                    f"Total L DOM: {total_l_dom[w]}, "
+                    f"C2D: {c2d[w]}, "
+                    f"C3D: {c3d[w]}, "
+                    f"L_D: {l_d[w]}, "
+                    f"CXX: {cxx[w]}, "
+                    f"TC: {tc[w]}")
         logger.info(f"annual variables: {annual_variables}")
 
+        for w in workers:
+            if contract_type[w] == 6:
+                l_d[w] =  l_d[w] + tc[w] 
+            elif contract_type[w] in [4,5]:
+                total_l[w] = total_l[w] - tc[w]        
+            logger.info(f"Worker {w} L_D adjusted: {l_d[w]}, total L: {total_l[w]} based on contract type {contract_type[w]}")
+        
         logger.info("[OK] Data processing completed successfully")
         # =================================================================
         # 13. RETURN ALL PROCESSED data
@@ -1044,7 +1029,6 @@ def read_data_alcampo(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[s
             "l_d" : l_d,
             "l_q" : l_q,
             "cxx" : cxx,
-            "t_lq" : t_lq,
             "tc" : tc,
             "matriz_estimativas_gd" : matriz_estimativas_gd,
             "pess_obj" : pess_obj,
