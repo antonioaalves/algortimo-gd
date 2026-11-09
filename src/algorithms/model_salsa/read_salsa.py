@@ -399,7 +399,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 min_work_days[w] = int(worker_row.get('min_dia_trab', 0))
                 max_work_days[w] = int(worker_row.get('max_dia_trab', 0))
                 week_workload[w] = int(worker_row.get('maximumworkload', 0))
-                max_consect_days[w] = int(worker_row.get('n_sem_a_folga', 0))
+                max_consect_days[w] = int(worker_row.get('max_continuous_work_days', 0))
 
                 # MODIFIED: Fix date handling - don't convert Timestamp to datetime
                 admissao_value = worker_row.get('data_admissao', None)
@@ -482,7 +482,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                         min_work_days[new_w] = int(worker_row.get('min_dia_trab', 0))
                         max_work_days[new_w] = int(worker_row.get('max_dia_trab', 0))
                         week_workload[new_w] = int(worker_row.get('maximumworkload', 0))
-                        max_consect_days[new_w] = int(worker_row.get('n_sem_a_folga', 0))
+                        max_consect_days[new_w] = int(worker_row.get('max_continuous_work_days', 0))
 
                         admissao_value = worker_row.get('begin_date', None)
                         logger.info(f"Processing worker {new_w} with data_admissao: {admissao_value}")
