@@ -2130,7 +2130,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
                 return False, "errSubproc", error_msg
 
-            # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
+            # Apply feasibility cap to annual day-off entitlements (STRSOL-1919 joint engine).
             # Runs here because all required data is available: df_annual_variables and df_feriados
             # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
             try:

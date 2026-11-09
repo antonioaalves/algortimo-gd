@@ -1393,19 +1393,77 @@ def _count_assignable_rests_on_placeholders(
     return assignable
 
 
+def _flexible_weekday_indices_for_salsa_week(
+    state: dict,
+    salsa_week: int,
+) -> Set[int]:
+    """Flexible Mon–Fri indices in a salsa week (week_working_days after full weekend rest)."""
+    quota_ctx = state.get('weekly_quota_ctx') or {}
+    week_to_indices = quota_ctx.get('salsa_week_to_indices') or {}
+    date_by_idx = state.get('date_by_idx') or {}
+    index_status = state.get('index_status') or {}
+    indices = week_to_indices.get(salsa_week, set())
+    out: Set[int] = set()
+    for idx in indices:
+        if index_status.get(idx) != 'flexible':
+            continue
+        day = date_by_idx.get(idx)
+        if day is None:
+            continue
+        if int(day.weekday()) < 5:
+            out.add(int(idx))
+    return out
+
+
+def _weekday_must_work_under_full_weekend_rest(
+    state: dict,
+    slot_claims: Dict[int, int],
+    extra_claims: Dict[int, int],
+) -> Set[int]:
+    """
+    Indices that must work when a salsa week has two free-day slots committed
+    (c2d weekend), matching week_working_days_constraint semantics.
+    """
+    merged: Dict[int, int] = dict(slot_claims)
+    for week, n in extra_claims.items():
+        merged[week] = merged.get(week, 0) + int(n)
+    must_work: Set[int] = set()
+    for week, used in merged.items():
+        if used < 2:
+            continue
+        must_work |= _flexible_weekday_indices_for_salsa_week(state, int(week))
+    return must_work
+
+
 def _window_indices_feasible_for_max_consecutive(
     window_indices: List[int],
     state: dict,
     max_days: int,
     week_remaining: Dict[int, int],
+    forced_rest_indices: Optional[Set[int]] = None,
+    weekday_must_work_indices: Optional[Set[int]] = None,
 ) -> bool:
     """True if this index window can satisfy maximum_continuous_working_days."""
+    forced_rest_indices = forced_rest_indices or set()
+    weekday_must_work_indices = weekday_must_work_indices or set()
     index_status = state['index_status']
-    fixed_work = sum(1 for i in window_indices if index_status.get(i) == 'fixed_work')
+    fixed_work = sum(
+        1 for i in window_indices
+        if index_status.get(i) == 'fixed_work'
+        or (index_status.get(i) == 'flexible' and i in weekday_must_work_indices)
+    )
     if fixed_work > max_days:
         return False
-    known_non_work = sum(1 for i in window_indices if index_status.get(i) == 'zero')
-    placeholders = [i for i in window_indices if index_status.get(i) == 'flexible']
+    known_non_work = sum(
+        1 for i in window_indices
+        if index_status.get(i) == 'zero' or i in forced_rest_indices
+    )
+    placeholders = [
+        i for i in window_indices
+        if index_status.get(i) == 'flexible'
+        and i not in forced_rest_indices
+        and i not in weekday_must_work_indices
+    ]
     max_possible_work = fixed_work + len(placeholders)
     if max_possible_work <= max_days:
         return True
@@ -1726,7 +1784,7 @@ def _validate_employee_max_consecutive_working_days(
             )
             return False
         if not _window_indices_feasible_for_max_consecutive(
-            window_indices, state, win_max_days, week_remaining
+            window_indices, state, win_max_days, week_remaining, forced_rest_indices=None
         ):
             placeholders = sum(
                 1 for i in window_indices if index_status.get(i) == 'flexible'
@@ -5586,6 +5644,680 @@ def _intersect_period(
     return out_begin, out_end
 
 
+def _week_remaining_with_slot_claims(
+    state: dict,
+    slot_claims: Dict[int, int],
+) -> Dict[int, int]:
+    """Remaining L/LQ slots per salsa week after simulated entitlement claims."""
+    cache = _weekly_remaining_cache(state)
+    adjusted: Dict[int, int] = dict(cache)
+    for week, used in slot_claims.items():
+        adjusted[week] = max(0, adjusted.get(week, 0) - int(used))
+    return adjusted
+
+
+def _consecutive_windows_feasible_for_claims(
+    state: dict,
+    forced_rest_indices: Set[int],
+    slot_claims: Dict[int, int],
+    contracts: pd.DataFrame,
+    section_num_dias_cons: int,
+    extra_slot_claims: Optional[Dict[int, int]] = None,
+) -> bool:
+    """
+    True when all execution-overlapping sliding windows can meet
+    maximum_continuous_working_days given fixed work, guaranteed rest, simulated
+    rests, and weekly L/LQ budget (STRSOL-1919).
+    """
+    if state is None:
+        return True
+    extra_slot_claims = extra_slot_claims or {}
+    weekday_must_work = _weekday_must_work_under_full_weekend_rest(
+        state, slot_claims, extra_slot_claims
+    )
+    merged_claims = dict(slot_claims)
+    for week, n in extra_slot_claims.items():
+        merged_claims[week] = merged_claims.get(week, 0) + int(n)
+    index_status = state['index_status']
+    date_by_idx = state['date_by_idx']
+    exec_begin = state['exec_begin_idx']
+    exec_end = state['exec_end_idx']
+    check_begin = state.get('check_begin_idx', exec_begin)
+    complete_cycle = state['complete_cycle_days']
+    max_num_dias_cons = state.get('max_num_dias_cons', section_num_dias_cons)
+    emp_id = state['employee_id']
+    week_remaining = _week_remaining_with_slot_claims(state, merged_claims)
+
+    first_win_start = max(check_begin, exec_begin - max_num_dias_cons)
+    for win_start in range(first_win_start, exec_end + 1):
+        day = date_by_idx.get(win_start)
+        win_max_days = (
+            _resolve_num_dias_cons_for_day(day, contracts, emp_id, section_num_dias_cons)
+            if day is not None
+            else section_num_dias_cons
+        )
+        win_end = win_start + win_max_days
+        if not _solver_window_overlaps_execution(win_start, win_end, exec_begin, exec_end):
+            continue
+        window = list(range(win_start, win_end + 1))
+        if _window_skipped_for_complete_cycle(window, complete_cycle):
+            continue
+        fixed_in_window = sum(
+            1 for i in window if index_status.get(i) == 'fixed_work'
+        )
+        if fixed_in_window > win_max_days:
+            return False
+        if not _window_indices_feasible_for_max_consecutive(
+            window,
+            state,
+            win_max_days,
+            week_remaining,
+            forced_rest_indices=forced_rest_indices,
+            weekday_must_work_indices=weekday_must_work,
+        ):
+            return False
+    return True
+
+
+def _c2d_weekend_base_eligible(
+    saturday: pd.Timestamp,
+    sunday: pd.Timestamp,
+    weekly_rest: frozenset,
+    adjacent_free: frozenset,
+    non_working: frozenset,
+    holiday_set: frozenset,
+    tipo_contrato: int,
+    tipo_ciclo_weeks: frozenset,
+    tipo_contrato_for_day: Optional[Callable[[pd.Timestamp], int]],
+    quota_rest: frozenset,
+    day_to_week: Optional[Dict[pd.Timestamp, int]],
+    week_to_days: Optional[Dict[int, frozenset]],
+    work_days_per_week: Optional[Dict[int, int]],
+    weekly_quota_ctx: Optional[dict],
+    slot_claims: Optional[dict],
+) -> Tuple[bool, str]:
+    """Rule checks from _count_eligible_weekends_c2d for one Sat–Sun pair (no consecutive work)."""
+    tc_sat = _resolve_tipo_contrato_for_day(saturday, tipo_contrato, tipo_contrato_for_day)
+    if tc_sat == 6:
+        return False, 'tipo_contrato_6'
+    max_consec_free = _max_continuous_free_days(tc_sat)
+
+    if _is_tipo_ciclo_week(saturday, tipo_ciclo_weeks):
+        if (
+            saturday in weekly_rest and sunday in weekly_rest
+            and saturday not in holiday_set and sunday not in holiday_set
+        ):
+            return True, 'tipo_ciclo_weekly_rest'
+        return False, 'tipo_ciclo_not_both_rest_or_holiday'
+    if (
+        saturday in holiday_set or sunday in holiday_set
+        or saturday in weekly_rest or sunday in weekly_rest
+        or saturday in non_working or sunday in non_working
+    ):
+        if saturday in holiday_set or sunday in holiday_set:
+            return False, 'holiday_rule_3'
+        if saturday in weekly_rest or sunday in weekly_rest:
+            return False, 'already_weekly_rest'
+        return False, 'non_working'
+    if _violates_c2d_consecutive_free_adjacent_rule(saturday, adjacent_free, max_consec_free):
+        return False, 'consecutive_free_adjacent_rule'
+    remaining = _remaining_weekly_free_day_slots(
+        saturday,
+        quota_rest,
+        tc_sat,
+        day_to_week,
+        week_to_days,
+        work_days_per_week,
+        weekly_quota_ctx=weekly_quota_ctx,
+    )
+    if slot_claims is not None and day_to_week:
+        week = day_to_week.get(saturday.normalize())
+        if week is not None:
+            remaining = max(0, remaining - slot_claims.get(week, 0))
+    if remaining < 2:
+        return False, 'weekly_quota_insufficient'
+    return True, 'eligible_slot'
+
+
+def _satisfied_outside_annual_dayoff_field(
+    field: str,
+    annual_begin: pd.Timestamp,
+    effective_annual_end: pd.Timestamp,
+    exec_b: Optional[pd.Timestamp],
+    exec_e: Optional[pd.Timestamp],
+    weekly_rest: frozenset,
+    holiday_set: frozenset,
+    employee_id: Optional[str] = None,
+) -> int:
+    """Counts already satisfied outside the execution window (unchanged STRSOL-1279 rules)."""
+    satisfied_outside = 0
+    one_day = pd.Timedelta(days=1)
+    if exec_b is not None or exec_e is not None:
+        if exec_b is not None and annual_begin < exec_b:
+            before_end = min(effective_annual_end, exec_b - one_day)
+            if annual_begin <= before_end:
+                if field == 'l_dom':
+                    before_dates = _weekly_rest_weekend_dates_in_range(
+                        weekly_rest, annual_begin, before_end, 6
+                    )
+                    satisfied_outside += len(before_dates)
+                    _log_l_dom_satisfied_outside_sundays(
+                        employee_id, weekly_rest, annual_begin, before_end, before_dates
+                    )
+                elif field == 'l_sab':
+                    outside_count = _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, annual_begin, before_end, 5
+                    )
+                    satisfied_outside += outside_count
+                    _log_l_sab_satisfied_outside_saturdays(
+                        employee_id, weekly_rest, annual_begin, before_end, outside_count
+                    )
+                elif field == 'l_dom_or_sab':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, annual_begin, before_end, 5
+                    )
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, annual_begin, before_end, 6
+                    )
+                elif field == 'c2d':
+                    sat_begin = annual_begin
+                    sat_end = before_end
+                    days_to_sat = (5 - sat_begin.weekday()) % 7
+                    saturday = sat_begin + pd.Timedelta(days=days_to_sat)
+                    while saturday <= sat_end:
+                        sunday = saturday + one_day
+                        if sunday <= sat_end and saturday in weekly_rest and sunday in weekly_rest:
+                            if saturday not in holiday_set and sunday not in holiday_set:
+                                satisfied_outside += 1
+                        saturday += one_day * 7
+        if exec_e is not None and exec_e < effective_annual_end:
+            after_begin = max(annual_begin, exec_e + one_day)
+            if after_begin <= effective_annual_end:
+                if field == 'l_dom':
+                    after_dates = _weekly_rest_weekend_dates_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 6
+                    )
+                    satisfied_outside += len(after_dates)
+                    if after_dates:
+                        _log_l_dom_satisfied_outside_sundays(
+                            employee_id, weekly_rest, after_begin, effective_annual_end, after_dates
+                        )
+                elif field == 'l_sab':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 5
+                    )
+                elif field == 'l_dom_or_sab':
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 5
+                    )
+                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                        weekly_rest, after_begin, effective_annual_end, 6
+                    )
+                elif field == 'c2d':
+                    sat_begin = after_begin
+                    sat_end = effective_annual_end
+                    days_to_sat = (5 - sat_begin.weekday()) % 7
+                    saturday = sat_begin + pd.Timedelta(days=days_to_sat)
+                    while saturday <= sat_end:
+                        sunday = saturday + one_day
+                        if sunday <= sat_end and saturday in weekly_rest and sunday in weekly_rest:
+                            if saturday not in holiday_set and sunday not in holiday_set:
+                                satisfied_outside += 1
+                        saturday += one_day * 7
+    return satisfied_outside
+
+
+def _joint_greedy_entitlements_in_execution(
+    *,
+    in_exec_begin: pd.Timestamp,
+    in_exec_end: pd.Timestamp,
+    weekly_rest: frozenset,
+    adjacent_free: frozenset,
+    non_working: frozenset,
+    holiday_set: frozenset,
+    tipo_ciclo_weeks: frozenset,
+    tipo_contrato_resolver: Callable[[pd.Timestamp], int],
+    default_tipo: int,
+    weekly_rest_for_quota: frozenset,
+    day_to_week: Optional[Dict[pd.Timestamp, int]],
+    week_to_days: Optional[Dict[int, frozenset]],
+    work_days_per_week: Optional[Dict[int, int]],
+    weekly_quota_ctx: Optional[dict],
+    idx_by_date: Optional[Dict[pd.Timestamp, int]],
+    consecutive_state: Optional[dict],
+    contracts: Optional[pd.DataFrame],
+    section_num_dias_cons: int,
+    employee_id: Optional[str] = None,
+    apply_flags: Optional[Dict[str, bool]] = None,
+) -> Tuple[Dict[str, int], List[dict]]:
+    """
+    Greedy joint pack for execution-window entitlement upper bounds (STRSOL-1919).
+    Priority: c2d weekends, l_dom Sundays, l_sab Saturdays, l_dom_or_sab last.
+    """
+    fields = _ANNUAL_DAYOFF_FIELD_CODES
+    apply_flags = apply_flags or {f: True for f in fields}
+    counts: Dict[str, int] = {f: 0 for f in fields}
+    slot_claims: Dict[int, int] = {}
+    forced_rest: Set[int] = set()
+    l_dom_sundays_claimed: Set[pd.Timestamp] = set()
+    l_sab_saturdays_claimed: Set[pd.Timestamp] = set()
+    decisions: List[dict] = []
+    contracts = contracts if contracts is not None else pd.DataFrame()
+
+    def tipo_for_day(day: pd.Timestamp) -> int:
+        return int(tipo_contrato_resolver(day)) if tipo_contrato_resolver else default_tipo
+
+    def indices_for_days(*days: pd.Timestamp) -> Set[int]:
+        if not idx_by_date:
+            return set()
+        out: Set[int] = set()
+        for d in days:
+            idx = idx_by_date.get(d.normalize())
+            if idx is not None:
+                out.add(int(idx))
+        return out
+
+    def consecutive_allows(extra_rest: Set[int], extra_claims: Dict[int, int]) -> bool:
+        trial_forced = forced_rest | extra_rest
+        return _consecutive_windows_feasible_for_claims(
+            consecutive_state,
+            trial_forced,
+            slot_claims,
+            contracts,
+            section_num_dias_cons,
+            extra_slot_claims=extra_claims,
+        )
+
+    def try_c2d(saturday: pd.Timestamp, sunday: pd.Timestamp) -> bool:
+        nonlocal forced_rest
+        if not apply_flags.get('c2d', False):
+            return False
+        ok, reason = _c2d_weekend_base_eligible(
+            saturday,
+            sunday,
+            weekly_rest,
+            adjacent_free,
+            non_working,
+            holiday_set,
+            default_tipo,
+            tipo_ciclo_weeks,
+            tipo_contrato_resolver,
+            weekly_rest_for_quota,
+            day_to_week,
+            week_to_days,
+            work_days_per_week,
+            weekly_quota_ctx,
+            slot_claims,
+        )
+        if not ok:
+            if employee_id and reason not in ('tipo_contrato_6',):
+                decisions.append({
+                    'field': 'c2d',
+                    'saturday': saturday.strftime('%Y-%m-%d'),
+                    'sunday': sunday.strftime('%Y-%m-%d'),
+                    'included': False,
+                    'reason': reason,
+                })
+            return False
+        week = day_to_week.get(saturday.normalize()) if day_to_week else None
+        extra_claims = {week: 2} if week is not None else {}
+        rest_idx = indices_for_days(saturday, sunday)
+        if consecutive_state is not None and not consecutive_allows(rest_idx, extra_claims):
+            if employee_id:
+                decisions.append({
+                    'field': 'c2d',
+                    'saturday': saturday.strftime('%Y-%m-%d'),
+                    'sunday': sunday.strftime('%Y-%m-%d'),
+                    'included': False,
+                    'reason': 'consecutive_work_window',
+                })
+            return False
+        if week is not None:
+            slot_claims[week] = slot_claims.get(week, 0) + 2
+        forced_rest |= rest_idx
+        counts['c2d'] += 1
+        if apply_flags.get('l_dom', False):
+            counts['l_dom'] += 1
+            l_dom_sundays_claimed.add(sunday.normalize())
+        if apply_flags.get('l_dom_or_sab', False):
+            counts['l_dom_or_sab'] += 1
+        if employee_id:
+            decisions.append({
+                'field': 'c2d',
+                'saturday': saturday.strftime('%Y-%m-%d'),
+                'sunday': sunday.strftime('%Y-%m-%d'),
+                'included': True,
+                'reason': 'eligible_slot',
+            })
+        return True
+
+    def try_l_dom(sunday: pd.Timestamp) -> bool:
+        nonlocal forced_rest
+        if not apply_flags.get('l_dom', False):
+            return False
+        if sunday.normalize() in l_dom_sundays_claimed:
+            return False
+        tc = tipo_for_day(sunday)
+        max_consec_free = _max_continuous_free_days(tc)
+        if _is_tipo_ciclo_week(sunday, tipo_ciclo_weeks):
+            if sunday not in weekly_rest:
+                return False
+        elif sunday in weekly_rest:
+            counts['l_dom'] += 1
+            l_dom_sundays_claimed.add(sunday.normalize())
+            return True
+        elif sunday in non_working:
+            return False
+        elif _violates_l_dom_consecutive_free_adjacent_rule(sunday, adjacent_free, max_consec_free):
+            return False
+        remaining = _remaining_weekly_free_day_slots(
+            sunday,
+            weekly_rest_for_quota,
+            tc,
+            day_to_week,
+            week_to_days,
+            work_days_per_week,
+            weekly_quota_ctx=weekly_quota_ctx,
+        )
+        week = day_to_week.get(sunday.normalize()) if day_to_week else None
+        if week is not None:
+            remaining = max(0, remaining - slot_claims.get(week, 0))
+        if remaining < 1:
+            return False
+        extra_claims = {week: 1} if week is not None else {}
+        rest_idx = indices_for_days(sunday)
+        if consecutive_state is not None and not consecutive_allows(rest_idx, extra_claims):
+            return False
+        if week is not None:
+            slot_claims[week] = slot_claims.get(week, 0) + 1
+        forced_rest |= rest_idx
+        counts['l_dom'] += 1
+        l_dom_sundays_claimed.add(sunday.normalize())
+        return True
+
+    def try_l_sab(saturday: pd.Timestamp) -> bool:
+        nonlocal forced_rest
+        if not apply_flags.get('l_sab', False):
+            return False
+        if saturday.normalize() in l_sab_saturdays_claimed:
+            return False
+        tc = tipo_for_day(saturday)
+        max_consec_free = _max_continuous_free_days(tc)
+        sunday = saturday + pd.Timedelta(days=1)
+        if _is_tipo_ciclo_week(saturday, tipo_ciclo_weeks):
+            if saturday in weekly_rest:
+                counts['l_sab'] += 1
+                l_sab_saturdays_claimed.add(saturday.normalize())
+                return True
+            return False
+        if saturday in non_working:
+            return False
+        if _violates_l_sab_consecutive_free_adjacent_rule(
+            saturday, adjacent_free, max_consec_free
+        ):
+            return False
+        remaining = _remaining_weekly_free_day_slots(
+            saturday,
+            weekly_rest_for_quota,
+            tc,
+            day_to_week,
+            week_to_days,
+            work_days_per_week,
+            weekly_quota_ctx=weekly_quota_ctx,
+        )
+        week = day_to_week.get(saturday.normalize()) if day_to_week else None
+        if week is not None:
+            remaining = max(0, remaining - slot_claims.get(week, 0))
+        if remaining < 1:
+            return False
+        extra_claims = {week: 1} if week is not None else {}
+        rest_idx = indices_for_days(saturday)
+        if consecutive_state is not None and not consecutive_allows(rest_idx, extra_claims):
+            return False
+        if week is not None:
+            slot_claims[week] = slot_claims.get(week, 0) + 1
+        forced_rest |= rest_idx
+        counts['l_sab'] += 1
+        l_sab_saturdays_claimed.add(saturday.normalize())
+        return True
+
+    def try_l_dom_or_sab(day: pd.Timestamp, is_sunday: bool) -> bool:
+        if not apply_flags.get('l_dom_or_sab', False):
+            return False
+        if is_sunday:
+            before_ld = counts['l_dom']
+            if day.normalize() in l_dom_sundays_claimed:
+                counts['l_dom_or_sab'] += 1
+                return True
+            if try_l_dom(day) and counts['l_dom'] > before_ld:
+                counts['l_dom_or_sab'] += 1
+                return True
+            return False
+        before_ls = counts['l_sab']
+        if day.normalize() in l_sab_saturdays_claimed:
+            counts['l_dom_or_sab'] += 1
+            return True
+        if try_l_sab(day) and counts['l_sab'] > before_ls:
+            counts['l_dom_or_sab'] += 1
+            return True
+        return False
+
+    one_day = pd.Timedelta(days=1)
+    days_to_sat = (5 - in_exec_begin.weekday()) % 7
+    saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
+
+    improved = True
+    while improved:
+        improved = False
+        while saturday <= in_exec_end:
+            sunday = saturday + one_day
+            if sunday <= in_exec_end and try_c2d(saturday, sunday):
+                improved = True
+            saturday += one_day * 7
+        days_to_sun = (6 - in_exec_begin.weekday()) % 7
+        sunday = in_exec_begin + pd.Timedelta(days=days_to_sun)
+        while sunday <= in_exec_end:
+            if try_l_dom(sunday):
+                improved = True
+            sunday += one_day * 7
+        days_to_sat = (5 - in_exec_begin.weekday()) % 7
+        saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
+        while saturday <= in_exec_end:
+            if try_l_sab(saturday):
+                improved = True
+            saturday += one_day * 7
+        days_to_sat = (5 - in_exec_begin.weekday()) % 7
+        saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
+        while saturday <= in_exec_end:
+            if try_l_dom_or_sab(saturday, is_sunday=False):
+                improved = True
+            saturday += one_day * 7
+        days_to_sun = (6 - in_exec_begin.weekday()) % 7
+        sunday = in_exec_begin + pd.Timedelta(days=days_to_sun)
+        while sunday <= in_exec_end:
+            if try_l_dom_or_sab(sunday, is_sunday=True):
+                improved = True
+            sunday += one_day * 7
+
+    if employee_id:
+        logger.info(
+            f"joint_annual_entitlement_feasibility: greedy_in_execution employee={employee_id} "
+            f"window={in_exec_begin.date()}-{in_exec_end.date()} counts={counts}"
+        )
+        c2d_details = [d for d in decisions if d.get('field') == 'c2d']
+        if c2d_details:
+            logger.info(
+                f"apply_annual_dayoff_feasibility_cap: c2d eligible_in_execution "
+                f"employee={employee_id} window={in_exec_begin.date()}-{in_exec_end.date()} "
+                f"count={counts.get('c2d', 0)} details={c2d_details}"
+            )
+    return counts, decisions
+
+
+def joint_annual_entitlement_feasibility(
+    *,
+    annual_begin: pd.Timestamp,
+    annual_end: pd.Timestamp,
+    effective_annual_end: pd.Timestamp,
+    exec_begin: Optional[pd.Timestamp],
+    exec_end: Optional[pd.Timestamp],
+    weekly_rest: frozenset,
+    adjacent_free: frozenset,
+    non_working: frozenset,
+    holiday_set: frozenset,
+    tipo_ciclo_weeks: frozenset,
+    tipo_contrato_resolver: Callable[[pd.Timestamp], int],
+    default_tipo: int,
+    weekly_rest_for_quota: frozenset,
+    day_to_week: Optional[Dict[pd.Timestamp, int]],
+    week_to_days: Optional[Dict[int, frozenset]],
+    work_days_per_week: Optional[Dict[int, int]],
+    weekly_quota_ctx: Optional[dict],
+    employee_id: str,
+    df_calendario: Optional[pd.DataFrame],
+    df_colaborador: Optional[pd.DataFrame],
+    df_ausencias_ferias: Optional[pd.DataFrame],
+    idx_by_date: Optional[Dict[pd.Timestamp, int]],
+    section_num_dias_cons: int,
+    treat_label_holiday: int,
+    apply_flags: Optional[Dict[str, bool]] = None,
+) -> Tuple[Dict[str, int], Dict[str, int]]:
+    """
+    Joint achievable upper bounds for annual day-off fields (STRSOL-1919).
+    Returns (achievable_total, eligible_in_execution) dicts keyed by field code.
+    """
+    fields = _ANNUAL_DAYOFF_FIELD_CODES
+    exec_b = exec_begin.normalize() if exec_begin is not None and not pd.isna(exec_begin) else None
+    exec_e = exec_end.normalize() if exec_end is not None and not pd.isna(exec_end) else None
+    eligible: Dict[str, int] = {f: 0 for f in fields}
+    satisfied: Dict[str, int] = {
+        f: _satisfied_outside_annual_dayoff_field(
+            f,
+            annual_begin.normalize(),
+            effective_annual_end.normalize(),
+            exec_b,
+            exec_e,
+            weekly_rest,
+            holiday_set,
+            employee_id=employee_id,
+        )
+        for f in fields
+    }
+
+    in_exec_begin, in_exec_end = _intersect_period(
+        annual_begin.normalize(),
+        effective_annual_end.normalize(),
+        exec_b,
+        exec_e,
+    )
+
+    consecutive_state = None
+    contracts = pd.DataFrame()
+    if (
+        df_calendario is not None
+        and not df_calendario.empty
+        and df_colaborador is not None
+        and exec_b is not None
+        and exec_e is not None
+        and in_exec_begin is not None
+        and in_exec_end is not None
+    ):
+        feriado_for_state = holiday_set
+        contracts = _prepare_num_dias_cons_contracts(df_colaborador)
+        consecutive_state = _build_consecutive_work_index_state_for_employee(
+            df_calendario=df_calendario,
+            df_colaborador=df_colaborador,
+            employee_id=str(employee_id),
+            holiday_set=feriado_for_state,
+            df_ausencias_ferias=df_ausencias_ferias,
+            execution_begin=exec_b,
+            execution_end=exec_e,
+            section_num_dias_cons=section_num_dias_cons,
+            contracts=contracts,
+            employee_labels=None,
+        )
+
+    if in_exec_begin is not None and in_exec_end is not None:
+        if consecutive_state is not None:
+            eligible, _decisions = _joint_greedy_entitlements_in_execution(
+                in_exec_begin=in_exec_begin,
+                in_exec_end=in_exec_end,
+                weekly_rest=weekly_rest,
+                adjacent_free=adjacent_free,
+                non_working=non_working,
+                holiday_set=holiday_set,
+                tipo_ciclo_weeks=tipo_ciclo_weeks,
+                tipo_contrato_resolver=tipo_contrato_resolver,
+                default_tipo=default_tipo,
+                weekly_rest_for_quota=weekly_rest_for_quota,
+                day_to_week=day_to_week,
+                week_to_days=week_to_days,
+                work_days_per_week=work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+                idx_by_date=idx_by_date,
+                consecutive_state=consecutive_state,
+                contracts=contracts,
+                section_num_dias_cons=section_num_dias_cons,
+                employee_id=employee_id,
+                apply_flags=apply_flags,
+            )
+        else:
+            count_kwargs = {
+                'weekly_rest_for_quota': weekly_rest_for_quota,
+                'day_to_week': day_to_week,
+                'week_to_days': week_to_days,
+                'work_days_per_week': work_days_per_week,
+                'weekly_quota_ctx': weekly_quota_ctx,
+            }
+            wr_exec = _filter_days_to_period(weekly_rest, in_exec_begin, in_exec_end)
+            adj_exec = _filter_days_to_period(adjacent_free, in_exec_begin, in_exec_end)
+            nw_exec = _filter_days_to_period(non_working, in_exec_begin, in_exec_end)
+            slot_claims: Dict[int, int] = {}
+            eligible['l_dom'] = _count_eligible_sundays(
+                in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                employee_id=employee_id,
+                slot_claims=slot_claims,
+                **count_kwargs,
+            )
+            eligible['l_sab'] = _count_eligible_saturdays(
+                in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                employee_id=employee_id,
+                slot_claims=slot_claims,
+                **count_kwargs,
+            )
+            eligible['c2d'] = _count_eligible_weekends_c2d(
+                in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                holiday_set, default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                employee_id=employee_id,
+                **count_kwargs,
+            )
+            slot_claims = {}
+            eligible['l_dom_or_sab'] = (
+                _count_eligible_sundays(
+                    in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                    default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
+                    **count_kwargs,
+                )
+                + _count_eligible_saturdays(
+                    in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
+                    default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                    slot_claims=slot_claims,
+                    **count_kwargs,
+                )
+            )
+
+    achievable = {f: satisfied[f] + eligible[f] for f in fields}
+    if employee_id:
+        logger.info(
+            f"joint_annual_entitlement_feasibility: summary employee={employee_id} "
+            f"achievable={achievable} eligible_in_execution={eligible}"
+        )
+    return achievable, eligible
+
+
 def _count_feasibility_cap_for_field(
     field: str,
     annual_begin: pd.Timestamp,
@@ -5973,6 +6705,40 @@ def apply_annual_dayoff_feasibility_cap(
                 annual_end,
             )
 
+            apply_flags = {
+                field: bool(row.get(_annual_dayoff_apply_column(field), False))
+                if _annual_dayoff_apply_column(field) in df_annual.columns
+                else False
+                for field in field_codes
+            }
+            achievable_by_field, eligible_by_field = joint_annual_entitlement_feasibility(
+                annual_begin=annual_begin,
+                annual_end=annual_end,
+                effective_annual_end=annual_end,
+                exec_begin=cap_exec_begin,
+                exec_end=cap_exec_end,
+                weekly_rest=weekly_rest_annual,
+                adjacent_free=adjacent_annual,
+                non_working=non_working_annual,
+                holiday_set=cap_holiday_dates,
+                tipo_ciclo_weeks=tipo_ciclo_weeks,
+                tipo_contrato_resolver=tipo_resolver,
+                default_tipo=5,
+                weekly_rest_for_quota=weekly_rest_for_quota,
+                day_to_week=salsa_day_to_week,
+                week_to_days=salsa_week_to_days,
+                work_days_per_week=work_days_per_week,
+                weekly_quota_ctx=weekly_quota_ctx,
+                employee_id=emp_id,
+                df_calendario=df_calendario,
+                df_colaborador=df_colaborador,
+                df_ausencias_ferias=df_ausencias_ferias,
+                idx_by_date=idx_by_date,
+                section_num_dias_cons=int(num_dias_cons) if num_dias_cons else 6,
+                treat_label_holiday=int(treat_label_holiday),
+                apply_flags=apply_flags,
+            )
+
             for field in field_codes:
                 apply_col = _annual_dayoff_apply_column(field)
                 apply_enabled = bool(row.get(apply_col, False)) if apply_col in df_annual.columns else False
@@ -5984,27 +6750,8 @@ def apply_annual_dayoff_feasibility_cap(
                 if pd.isna(value) or value <= 0:
                     continue
 
-                achievable, eligible_in_exec = _count_feasibility_cap_for_field(
-                    field=field,
-                    annual_begin=annual_begin,
-                    annual_end=annual_end,
-                    effective_annual_end=annual_end,
-                    exec_begin=cap_exec_begin,
-                    exec_end=cap_exec_end,
-                    weekly_rest=weekly_rest_annual,
-                    adjacent_free=adjacent_annual,
-                    non_working=non_working_annual,
-                    holiday_set=cap_holiday_dates,
-                    tipo_ciclo_weeks=tipo_ciclo_weeks,
-                    tipo_contrato_resolver=tipo_resolver,
-                    default_tipo=5,
-                    weekly_rest_for_quota=weekly_rest_for_quota,
-                    day_to_week=salsa_day_to_week,
-                    week_to_days=salsa_week_to_days,
-                    work_days_per_week=work_days_per_week,
-                    weekly_quota_ctx=weekly_quota_ctx,
-                    employee_id=emp_id,
-                )
+                achievable = achievable_by_field.get(field, 0)
+                eligible_in_exec = eligible_by_field.get(field, 0)
 
                 if value > achievable:
                     logger.info(

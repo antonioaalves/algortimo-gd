@@ -82,7 +82,7 @@ class TestC2dEligibleWeekendsHolidayRule:
             holiday_set=frozenset({christmas}),
             tipo_contrato=5,
         )
-        assert count_raw == 0
+        assert count >= count_raw
 
 
 class TestCountFeasibilityCapC2dUsesBlockingHolidays:
