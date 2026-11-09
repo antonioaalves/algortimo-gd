@@ -492,8 +492,6 @@ class AlcampoDataModel(BaseDescansosDataModel):
                 self.auxiliary_data[param_name] = param_value
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
-                if param_name == 'NUM_DIAS_CONS':
-                    algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
                 if param_name == 'ld_sunday_param':
                     algorithm_treatment_params['ld_sunday_param'] = float(param_value)
                 if param_name == 'ld_holiday_param':

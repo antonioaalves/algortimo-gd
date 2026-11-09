@@ -14,6 +14,25 @@ from src.algorithms.model_salsa.auxiliar_functions_salsa import (days_off_atribu
 # Set up logger
 logger = get_logger(get_config_manager().system.project_name)
 
+_DEFAULT_MAX_CONTINUOUS_WORK_DAYS = 6
+
+
+def _scalar_max_continuous_work_days_from_colaborador(df_colaborador: pd.DataFrame) -> int:
+    """
+    Scalar limit for maximum_continuous_working_days (solver still uses one value for all workers).
+    Uses the max positive max_continuous_work_days across contract rows when present.
+    """
+    if df_colaborador is None or df_colaborador.empty:
+        return _DEFAULT_MAX_CONTINUOUS_WORK_DAYS
+    if 'max_continuous_work_days' not in df_colaborador.columns:
+        return _DEFAULT_MAX_CONTINUOUS_WORK_DAYS
+    numeric = pd.to_numeric(df_colaborador['max_continuous_work_days'], errors='coerce').dropna()
+    numeric = numeric[numeric > 0]
+    if numeric.empty:
+        return _DEFAULT_MAX_CONTINUOUS_WORK_DAYS
+    return int(numeric.max())
+
+
 def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str], algorithm_treatment_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Enhanced version of read_data_salsa with comprehensive logging and error checks.
@@ -53,7 +72,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         matriz_annual_variables = algorithm_treatment_params["df_annual_variables"]
         admissao_proporcional = algorithm_treatment_params['admissao_proporcional']
         eci_sibling_results_flag = algorithm_treatment_params['eci_sibling_results_flag']
-        num_dias_cons = int(algorithm_treatment_params['NUM_DIAS_CONS'])
         start_date = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == algorithm_treatment_params['start_date'], "index"].iloc[0]
         end_date = matriz_calendario_gd.loc[matriz_calendario_gd["schedule_day"] == algorithm_treatment_params['end_date'], "index"].iloc[0]
         period = [start_date, end_date]
@@ -75,6 +93,8 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         matriz_colaborador_gd.columns = matriz_colaborador_gd.columns.str.lower()
         matriz_estimativas_gd.columns = matriz_estimativas_gd.columns.str.lower()
         matriz_calendario_gd.columns = matriz_calendario_gd.columns.str.lower()
+
+        num_dias_cons = _scalar_max_continuous_work_days_from_colaborador(matriz_colaborador_gd)
 
         logger.info(f"Input DataFrames loaded:")
         logger.info(f"  - matriz_colaborador: {matriz_colaborador_gd.shape}")

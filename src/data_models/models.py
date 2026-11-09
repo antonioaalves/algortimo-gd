@@ -129,9 +129,6 @@ class DescansosDataModel(BaseDataModel):
             'treatment_params': {
                 'admissao_proporcional': None,
             },
-            'constraint_params': {
-                'NUM_DIAS_CONS': None,
-            },
         }
         # Data first stage - See data lifecycle to understand what this data is
         self.raw_data: Dict[str, Any] = {
@@ -474,26 +471,6 @@ class DescansosDataModel(BaseDataModel):
                 secao_id=self.auxiliary_data['secao_id'], 
                 params_names_list=params_names_list
             ) or {}
-
-            # Save data into variables
-            try:
-                num_dias_cons = retrieved_params['NUM_DIAS_CONS']
-                if num_dias_cons:
-                    #self.algorithm_data_params['constraint_params']['NUM_DIAS_CONS'] = num_dias_cons
-                    self.algorithm_data_params.update({
-                        'constraint_params': {
-                            'NUM_DIAS_CONS': num_dias_cons
-                        }
-                    })
-            except KeyError as e:
-                self.logger.error(f"KeyError when saving dataframes: {e}", exc_info=True)
-                return False
-            except ValueError as e:
-                self.logger.error(f"ValueError when saving dataframes: {e}", exc_info=True)
-                return False
-            except Exception as e:
-                self.logger.error(f"Error saving dataframes to auxiliary_data and raw_data: {e}", exc_info=True)
-                return False
 
             self.logger.info(f"Retrieved params after get_param_for_posto:\n{retrieved_params}")
             # Merge with defaults (retrieved params take precedence)

@@ -1217,8 +1217,11 @@ def validate_workload_template_vs_contract(
     return False, error_events, summary
 
 
+_DEFAULT_MAX_CONTINUOUS_WORK_DAYS = 6
+
+
 def _prepare_num_dias_cons_contracts(df_colaborador: pd.DataFrame) -> pd.DataFrame:
-    """Contract rows for resolving num_dias_cons by day (optional column on df_colaborador)."""
+    """Contract rows for resolving max_continuous_work_days by day from df_colaborador."""
     if df_colaborador is None or df_colaborador.empty:
         return pd.DataFrame()
     required = ['employee_id', 'begin_date', 'end_date']
@@ -1226,8 +1229,8 @@ def _prepare_num_dias_cons_contracts(df_colaborador: pd.DataFrame) -> pd.DataFra
     if missing:
         return pd.DataFrame()
     cols = list(required)
-    if 'num_dias_cons' in df_colaborador.columns:
-        cols.append('num_dias_cons')
+    if 'max_continuous_work_days' in df_colaborador.columns:
+        cols.append('max_continuous_work_days')
     contracts = sort_df_colaborador_by_contract_period(df_colaborador[cols].copy())
     contracts['employee_id'] = contracts['employee_id'].astype(str)
     contracts['begin_date'] = pd.to_datetime(contracts['begin_date'], errors='coerce').dt.normalize()
@@ -1244,13 +1247,13 @@ def _resolve_num_dias_cons_for_day(
     """
     Max consecutive working days for the active contract on day.
 
-    AS-IS: section-level NUM_DIAS_CONS when df_colaborador.num_dias_cons is absent.
-    TO-BE: contract-level num_dias_cons on df_colaborador (range join), section fallback.
+    Contract-level max_continuous_work_days from df_colaborador; when the column is
+    absent or null on the active contract, uses section_default (hardcoded fallback).
     """
-    default = int(section_default) if section_default is not None else 6
+    default = int(section_default) if section_default is not None else _DEFAULT_MAX_CONTINUOUS_WORK_DAYS
     if default <= 0:
-        default = 6
-    if contracts is None or contracts.empty or 'num_dias_cons' not in contracts.columns:
+        default = _DEFAULT_MAX_CONTINUOUS_WORK_DAYS
+    if contracts is None or contracts.empty or 'max_continuous_work_days' not in contracts.columns:
         return default
     day = pd.Timestamp(day).normalize()
     active = contracts[
@@ -1261,7 +1264,7 @@ def _resolve_num_dias_cons_for_day(
     if active.empty:
         return default
     row = active.sort_values('begin_date').iloc[-1]
-    val = row.get('num_dias_cons')
+    val = row.get('max_continuous_work_days')
     if val is None or (isinstance(val, float) and pd.isna(val)):
         return default
     try:
@@ -1776,7 +1779,6 @@ def validate_max_consecutive_working_days(
     df_colaborador: pd.DataFrame,
     df_feriados: pd.DataFrame,
     df_ausencias_ferias: pd.DataFrame,
-    section_num_dias_cons: int,
     execution_begin: str,
     execution_end: str,
 ) -> Tuple[bool, List[dict], str]:
@@ -1792,8 +1794,8 @@ def validate_max_consecutive_working_days(
     MoT/M/T placeholders can become L/LQ when weekly quota allows. Ciclo completo
     windows are skipped. Contract-change boundary windows mirror dummy-worker logic.
 
-    num_dias_cons: section default with optional per-contract override via
-    df_colaborador.max_continuous_work_days (contract-level), section fallback.
+    Limit per contract period from df_colaborador.max_continuous_work_days; rows with
+    a null value use _DEFAULT_MAX_CONTINUOUS_WORK_DAYS.
 
     Returns:
         (success, error_events, error_message)
@@ -1823,9 +1825,7 @@ def validate_max_consecutive_working_days(
     if exec_begin > exec_end:
         return True, [], ''
 
-    section_default = int(section_num_dias_cons) if section_num_dias_cons is not None else 6
-    if section_default <= 0:
-        section_default = 6
+    section_default = _DEFAULT_MAX_CONTINUOUS_WORK_DAYS
 
     holiday_set: frozenset = frozenset()
     if df_feriados is not None and not df_feriados.empty and 'schedule_day' in df_feriados.columns:
@@ -1959,11 +1959,12 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
     Key Operations:
         1. Identifier normalisation (employee_id, contract_id, matricula -> str)
         2. labor_union -> uppercase
-        3. maximumworkday timedelta -> hours  (absorbed from retired treat_df_contratos)
-        4. carga_diaria derivation (min of avg-daily-workload vs maximumworkday)
-        5. begin_date / end_date -> datetime
-        6. Validate min_dia_trab / max_dia_trab business rules
-        7. Initialise runtime-computed columns (total_dom_fes, total_fes, total_holidays)
+        3. max_continuous_work_days: numeric coercion; non-positive values set to NA
+        4. maximumworkday timedelta -> hours  (absorbed from retired treat_df_contratos)
+        5. carga_diaria derivation (min of avg-daily-workload vs maximumworkday)
+        6. begin_date / end_date -> datetime
+        7. Validate min_dia_trab / max_dia_trab business rules
+        8. Initialise runtime-computed columns (total_dom_fes, total_fes, total_holidays)
 
     Args:
         df_colaborador: Raw DataFrame from queryGetCoreProEmpContract.sql
@@ -2033,6 +2034,21 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
 
         # Derive maximumdaysperweek after nulls are resolved
         df_colaborador['maximumdaysperweek'] = df_colaborador['max_dia_trab'].astype(float)
+
+        # max_continuous_work_days: integer day count from wfm.core_pro_emp_contract
+        if 'max_continuous_work_days' in df_colaborador.columns:
+            try:
+                if pd.api.types.is_timedelta64_dtype(df_colaborador['max_continuous_work_days']):
+                    df_colaborador['max_continuous_work_days'] = df_colaborador['max_continuous_work_days'].dt.days
+                else:
+                    df_colaborador['max_continuous_work_days'] = pd.to_numeric(
+                        df_colaborador['max_continuous_work_days'], errors='coerce'
+                    )
+                df_colaborador['max_continuous_work_days'] = df_colaborador['max_continuous_work_days'].where(
+                    df_colaborador['max_continuous_work_days'] > 0, other=pd.NA
+                )
+            except Exception as e:
+                logger.warning(f"treat_df_colaborador: max_continuous_work_days conversion failed, leaving as-is: {e}")
 
         # MAXIMUMWORKDAY: timedelta -> hours  (mirrors retired treat_df_contratos logic)
         try:
@@ -5624,7 +5640,6 @@ def apply_annual_dayoff_feasibility_cap(
     df_annual_variables: pd.DataFrame,
     df_feriados: pd.DataFrame,
     df_ausencias_ferias: pd.DataFrame,
-    num_dias_cons: int,
     main_year: int,
     df_calendario: Optional[pd.DataFrame] = None,
     execution_begin: Optional[str] = None,
