@@ -289,19 +289,21 @@ def treat_df_feriados(df_feriados: pd.DataFrame) -> Tuple[bool, pd.DataFrame, st
     Priority: fk_unidade > fk_cidade > fk_estado > fk_pais
     """
     try:
-        # INPUT VALIDATION
-        if df_feriados.empty:
-            return False, pd.DataFrame(), "Input validation failed: empty DataFrame"
-        
-        # COLUMN RENAMING
-        # Oracle may return 'database' instead of 'schedule_day' alias
+        if df_feriados is None:
+            return False, pd.DataFrame(), "Input validation failed: None dataframe"
+
+        # COLUMN RENAMING — Oracle may return 'database' instead of 'schedule_day' alias
         if 'database' in df_feriados.columns and 'schedule_day' not in df_feriados.columns:
             df_feriados = df_feriados.rename(columns={'database': 'schedule_day'})
-        
-        # Ensure schedule_day exists
+
         if 'schedule_day' not in df_feriados.columns:
-            return False, pd.DataFrame(), "Input validation failed: missing date column (expected 'schedule_day' or 'database')"
-        
+            return False, pd.DataFrame(), (
+                "Input validation failed: missing date column (expected 'schedule_day' or 'database')"
+            )
+
+        if df_feriados.empty:
+            return True, df_feriados.copy(), ""
+
         # Convert schedule_day to datetime
         df_feriados['schedule_day'] = pd.to_datetime(df_feriados['schedule_day'])
         
@@ -7082,7 +7084,16 @@ def process_special_shift_types(df_calendario: pd.DataFrame, shift_type: str, em
         return False, pd.DataFrame(), error_msg
 
 
-def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_col: bool = False, use_case: int = 0, main_year: int = None, first_date: str = None, last_date: str = None) -> Tuple[bool, pd.DataFrame, str]:
+def add_date_related_columns(
+    df: pd.DataFrame,
+    date_col: str = 'data',
+    add_id_col: bool = False,
+    use_case: int = 0,
+    main_year: int = None,
+    first_date: str = None,
+    last_date: str = None,
+    allow_empty: bool = False,
+) -> Tuple[bool, pd.DataFrame, str]:
     """
     Add date-related columns to dataframe (index, WDAY, WW, WD).
     
@@ -7096,6 +7107,7 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         main_year: Main year for fixed indexing (required when use_case=1)
         first_date: Reference start date for consistent indexing (use_case=0)
         last_date: Reference end date for consistent indexing (use_case=0)
+        allow_empty: If True, zero-row frames get empty date-derived columns (df_feriados load)
         
     Returns:
         Tuple[bool, pd.DataFrame, str]: (success, dataframe with new columns, error message)
@@ -7107,13 +7119,29 @@ def add_date_related_columns(df: pd.DataFrame, date_col: str = 'data', add_id_co
         multiple dataframes (df_calendario, df_estimativas, df_feriados).
     """
     try:
-        # INPUT VALIDATION
-        if df is None or df.empty:
-            return False, pd.DataFrame(), "Input validation failed: empty or None dataframe"
-        
+        if df is None:
+            return False, pd.DataFrame(), "Input validation failed: None dataframe"
+
         if date_col not in df.columns:
             return False, pd.DataFrame(), f"Input validation failed: column '{date_col}' not found"
-        
+
+        if df.empty:
+            if not allow_empty:
+                return False, pd.DataFrame(), "Input validation failed: empty or None dataframe"
+            df_result = df.copy()
+            for col, dtype in (
+                ('index', 'int64'),
+                ('wday', 'int64'),
+                ('ww', 'int64'),
+                ('wd', 'object'),
+                ('year', 'int64'),
+            ):
+                if col not in df_result.columns:
+                    df_result[col] = pd.Series(dtype=dtype)
+            if add_id_col and 'ID' not in df_result.columns:
+                df_result['ID'] = pd.Series(dtype='int64')
+            return True, df_result, ""
+
         # TREATMENT LOGIC
         df_result = df.copy()
         

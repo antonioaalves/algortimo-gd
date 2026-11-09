@@ -318,8 +318,13 @@ class AlcampoDataModel(BaseDescansosDataModel):
                     start_date=first_day_passado,
                     end_date=last_day_passado,
                 )
-                if df_feriados is None or df_feriados.empty:
-                    return False, "ERR_LOAD_FERIADOS_EMPTY", format_unit_label(df_estrutura_wfm, unit_id)
+                if df_feriados is None:
+                    return False, "errSubproc", "df_feriados load returned None"
+                if df_feriados.empty:
+                    self.logger.warning(
+                        f"df_feriados has no rows for unit {format_unit_label(df_estrutura_wfm, unit_id)}; "
+                        "continuing without unit holiday calendar"
+                    )
             except Exception as e:
                 return False, "errSubproc", str(e)
 
@@ -334,6 +339,7 @@ class AlcampoDataModel(BaseDescansosDataModel):
                 main_year=main_year,
                 first_date=first_day_passado,
                 last_date=last_day_passado,
+                allow_empty=True,
             )
             if not success:
                 return False, "errSubproc", error_msg
