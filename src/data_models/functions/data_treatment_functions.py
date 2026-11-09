@@ -4382,6 +4382,7 @@ def _build_salsa_weekly_quota_context(
     execution_end: pd.Timestamp,
     holiday_set: frozenset,
     df_ausencias_ferias: Optional[pd.DataFrame] = None,
+    treat_label_holiday: int = 1,
 ) -> Optional[dict]:
     """
     Per-employee salsa week quota context mirroring read_salsa + salsa_2_free_days_week.
@@ -4410,13 +4411,9 @@ def _build_salsa_weekly_quota_context(
         return None
 
     horario = emp_cal['horario'].astype(str).str.strip()
-    closed_holidays: Set[int] = set(
-        emp_cal.loc[horario == 'F', 'index'].astype(int)
+    closed_holidays: Set[int] = _closed_holiday_indices_for_cap(
+        emp_cal, holiday_set, idx_by_date, treat_label_holiday
     )
-    for day in holiday_set:
-        idx = idx_by_date.get(pd.Timestamp(day).normalize())
-        if idx is not None:
-            closed_holidays.add(int(idx))
 
     extra_vacation: Set[int] = set()
     extra_absence: Set[int] = set()
@@ -4626,6 +4623,55 @@ def _indices_to_schedule_days(
     return frozenset(date_by_idx[i] for i in indices if i in date_by_idx)
 
 
+def _closed_holiday_indices_for_cap(
+    emp_cal: pd.DataFrame,
+    holiday_set: frozenset,
+    idx_by_date: Dict[pd.Timestamp, int],
+    treat_label_holiday: int,
+) -> set:
+    """
+    Closed-holiday index set for feasibility-cap quota (STRSOL-1820 / read_salsa parity).
+
+    treat_label_holiday=1: every closed feriado date is closed for quota stripping (legacy).
+    treat_label_holiday=0: only dates that still show horario F on the employee calendar;
+    L/C/LQ/L_DOM that replaced F are not stripped from fixed weekly rest.
+    """
+    overridable = frozenset({'L', 'L_DOM', 'C', 'LQ'})
+    horario = emp_cal['horario'].astype(str).str.strip()
+    closed_holidays = set(emp_cal.loc[horario == 'F', 'index'].astype(int))
+    for day in holiday_set:
+        idx = idx_by_date.get(pd.Timestamp(day).normalize())
+        if idx is None:
+            continue
+        if int(treat_label_holiday) == 0:
+            day_horarios = set(
+                emp_cal.loc[emp_cal['index'] == idx, 'horario'].astype(str).str.strip()
+            ) - {''}
+            if day_horarios & overridable:
+                continue
+            if 'F' in day_horarios:
+                closed_holidays.add(int(idx))
+        else:
+            closed_holidays.add(int(idx))
+    return closed_holidays
+
+
+def _closed_holiday_dates_for_cap(
+    emp_cal: pd.DataFrame,
+    holiday_set: frozenset,
+    idx_by_date: Dict[pd.Timestamp, int],
+    date_by_idx: Dict[int, pd.Timestamp],
+    treat_label_holiday: int,
+) -> frozenset:
+    """Schedule-day frozenset of closed holidays for c2d Rule 3 / adjacent_free (STRSOL-1820)."""
+    indices = _closed_holiday_indices_for_cap(
+        emp_cal, holiday_set, idx_by_date, treat_label_holiday
+    )
+    return frozenset(
+        date_by_idx[i].normalize() for i in indices if i in date_by_idx
+    )
+
+
 def _resolve_employee_tipo_contrato(
     df_colaborador: pd.DataFrame,
     employee_id: str,
@@ -4650,7 +4696,8 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     df_ausencias_ferias: Optional[pd.DataFrame],
     period_begin: pd.Timestamp,
     period_end: pd.Timestamp,
-    period: list[int]
+    period: list[int],
+    treat_label_holiday: int = 1,
 ) -> dict:
     """
     Mirror read_salsa days_off_atributtion for feasibility-cap weekly quota.
@@ -4704,11 +4751,9 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
                 else:
                     worker_absences.add(idx)
 
-    closed_holidays = set(emp_cal.loc[horario == 'F', 'index'].astype(int))
-    for day in holiday_set:
-        idx = idx_by_date.get(pd.Timestamp(day).normalize())
-        if idx is not None:
-            closed_holidays.add(idx)
+    closed_holidays = _closed_holiday_indices_for_cap(
+        emp_cal, holiday_set, idx_by_date, treat_label_holiday
+    )
 
     vacation_days -= closed_holidays
     worker_absences -= closed_holidays
@@ -4955,6 +5000,26 @@ def _resolve_tipo_contrato_for_day(
     return tipo_contrato
 
 
+def _weekly_rest_weekend_dates_in_range(
+    weekly_rest: frozenset,
+    begin: pd.Timestamp,
+    end: pd.Timestamp,
+    weekday: int,
+) -> List[pd.Timestamp]:
+    """Dates in weekly_rest with given weekday (5=Sat, 6=Sun) within [begin, end]."""
+    if begin > end:
+        return []
+    days_to_target = (weekday - begin.weekday()) % 7
+    target = begin + pd.Timedelta(days=days_to_target)
+    one_week = pd.Timedelta(days=7)
+    dates: List[pd.Timestamp] = []
+    while target <= end:
+        if target in weekly_rest:
+            dates.append(target)
+        target += one_week
+    return dates
+
+
 def _count_weekly_rest_weekend_days_in_range(
     weekly_rest: frozenset,
     begin: pd.Timestamp,
@@ -4962,17 +5027,24 @@ def _count_weekly_rest_weekend_days_in_range(
     weekday: int,
 ) -> int:
     """Count days in weekly_rest with given weekday (5=Sat, 6=Sun) within [begin, end]."""
-    if begin > end:
-        return 0
-    days_to_target = (weekday - begin.weekday()) % 7
-    target = begin + pd.Timedelta(days=days_to_target)
-    one_week = pd.Timedelta(days=7)
-    count = 0
-    while target <= end:
-        if target in weekly_rest:
-            count += 1
-        target += one_week
-    return count
+    return len(_weekly_rest_weekend_dates_in_range(weekly_rest, begin, end, weekday))
+
+
+def _log_l_dom_satisfied_outside_sundays(
+    employee_id: Optional[str],
+    weekly_rest: frozenset,
+    begin: pd.Timestamp,
+    end: pd.Timestamp,
+    dates: List[pd.Timestamp],
+) -> None:
+    """Log Sunday dates already at weekly rest before/after the execution window."""
+    if employee_id is None:
+        return
+    formatted = [d.strftime('%Y-%m-%d') for d in dates]
+    logger.info(
+        f"apply_annual_dayoff_feasibility_cap: l_dom satisfied_outside employee={employee_id} "
+        f"window={begin.date()}-{end.date()} count={len(dates)} sundays={formatted}"
+    )
 
 
 def _take_weekly_free_slot(
@@ -5006,6 +5078,7 @@ def _count_eligible_sundays(
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
     slot_claims: Optional[dict] = None,
+    employee_id: Optional[str] = None,
 ) -> int:
     """
     Count Sundays eligible for l_dom within [begin, effective_end].
@@ -5030,30 +5103,50 @@ def _count_eligible_sundays(
     while sunday <= effective_end:
         tc = _resolve_tipo_contrato_for_day(sunday, tipo_contrato, tipo_contrato_for_day)
         max_consec_free = _max_continuous_free_days(tc)
+        included = False
+        reason = ''
         if _is_tipo_ciclo_week(sunday, tipo_ciclo_weeks):
             if sunday in weekly_rest:
-                count += 1
+                included = True
+                reason = 'tipo_ciclo_already_weekly_rest'
+            else:
+                reason = 'tipo_ciclo_working_sunday'
         elif sunday in weekly_rest:
-            count += 1
+            included = True
+            reason = 'already_weekly_rest'
         elif sunday in non_working:
-            pass
+            reason = 'non_working'
         elif _violates_l_dom_consecutive_free_adjacent_rule(
             sunday, adjacent_free, max_consec_free
         ):
-            pass
-        elif not _take_weekly_free_slot(
-            sunday,
-            day_to_week,
-            _remaining_weekly_free_day_slots(
+            reason = 'consecutive_free_adjacent_rule'
+        else:
+            remaining_slots = _remaining_weekly_free_day_slots(
                 sunday, quota_rest, tc, day_to_week, week_to_days, work_days_per_week,
                 weekly_quota_ctx=weekly_quota_ctx,
-            ),
-            slot_claims,
-        ):
-            pass
-        else:
+            )
+            if not _take_weekly_free_slot(
+                sunday, day_to_week, remaining_slots, slot_claims
+            ):
+                reason = f'weekly_quota_full remaining_slots={remaining_slots}'
+            else:
+                included = True
+                reason = 'eligible_slot'
+        if included:
             count += 1
+        if employee_id is not None:
+            week_num = day_to_week.get(sunday.normalize()) if day_to_week else None
+            logger.info(
+                f"apply_annual_dayoff_feasibility_cap: l_dom eligible_scan employee={employee_id} "
+                f"date={sunday.strftime('%Y-%m-%d')} included={included} "
+                f"reason={reason} salsa_week={week_num}"
+            )
         sunday += one_day * 7
+    if employee_id is not None:
+        logger.info(
+            f"apply_annual_dayoff_feasibility_cap: l_dom eligible_in_execution employee={employee_id} "
+            f"window={begin.date()}-{effective_end.date()} count={count}"
+        )
     return count
 
 
@@ -5187,6 +5280,7 @@ def _count_eligible_weekends_c2d(
     week_to_days: Optional[Dict[int, frozenset]] = None,
     work_days_per_week: Optional[Dict[int, int]] = None,
     weekly_quota_ctx: Optional[dict] = None,
+    employee_id: Optional[str] = None,
 ) -> int:
     """
     Count Sat+Sun pairs eligible for c2d quality weekends.
@@ -5202,6 +5296,7 @@ def _count_eligible_weekends_c2d(
     saturday = begin + pd.Timedelta(days=days_to_sat)
     one_day = pd.Timedelta(days=1)
     count = 0
+    scan_details: List[dict] = []
 
     while saturday <= effective_end:
         sunday = saturday + one_day
@@ -5213,31 +5308,59 @@ def _count_eligible_weekends_c2d(
             saturday += one_day * 7
             continue
         max_consec_free = _max_continuous_free_days(tc_sat)
+        salsa_week = day_to_week.get(saturday.normalize()) if day_to_week else None
+        included = False
+        reason = ''
 
         if _is_tipo_ciclo_week(saturday, tipo_ciclo_weeks):
             if (
                 saturday in weekly_rest and sunday in weekly_rest
                 and saturday not in holiday_set and sunday not in holiday_set
             ):
-                count += 1
+                included = True
+                reason = 'tipo_ciclo_weekly_rest'
+            else:
+                reason = 'tipo_ciclo_not_both_rest_or_holiday'
         elif (
             saturday in holiday_set or sunday in holiday_set
             or saturday in weekly_rest or sunday in weekly_rest
             or saturday in non_working or sunday in non_working
         ):
-            pass
+            if saturday in holiday_set or sunday in holiday_set:
+                reason = 'holiday_rule_3'
+            elif saturday in weekly_rest or sunday in weekly_rest:
+                reason = 'already_weekly_rest'
+            else:
+                reason = 'non_working'
         elif _violates_c2d_consecutive_free_adjacent_rule(
             saturday, adjacent_free, max_consec_free
         ):
-            pass
+            reason = 'consecutive_free_adjacent_rule'
         elif _remaining_weekly_free_day_slots(
             saturday, quota_rest, tc_sat, day_to_week, week_to_days, work_days_per_week,
             weekly_quota_ctx=weekly_quota_ctx,
         ) < 2:
-            pass
+            reason = 'weekly_quota_insufficient'
         else:
+            included = True
+            reason = 'eligible_slot'
+        if included:
             count += 1
+        if employee_id is not None:
+            scan_details.append({
+                'saturday': saturday.strftime('%Y-%m-%d'),
+                'sunday': sunday.strftime('%Y-%m-%d'),
+                'salsa_week': salsa_week,
+                'included': included,
+                'reason': reason,
+            })
         saturday += one_day * 7
+    if employee_id is not None:
+        logger.info(
+            f"apply_annual_dayoff_feasibility_cap: c2d eligible_in_execution "
+            f"employee={employee_id} window={begin.date()}-{effective_end.date()} "
+            f"count={count} details={scan_details}"
+        )
     return count
 
 
@@ -5517,6 +5640,7 @@ def _count_feasibility_cap_for_field(
             eligible_in_execution = _count_eligible_sundays(
                 in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                 default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                employee_id=employee_id,
                 **count_kwargs,
             )
         elif field == 'l_sab':
@@ -5546,18 +5670,25 @@ def _count_feasibility_cap_for_field(
             eligible_in_execution = _count_eligible_weekends_c2d(
                 in_exec_begin, in_exec_end, wr_exec, adj_exec, nw_exec,
                 holiday_set, default_tipo, tipo_ciclo_weeks, tipo_contrato_resolver,
+                employee_id=employee_id,
                 **count_kwargs,
             )
 
     satisfied_outside = 0
+    l_dom_satisfied_outside_dates: List[pd.Timestamp] = []
     if exec_b is not None or exec_e is not None:
         one_day = pd.Timedelta(days=1)
         if exec_b is not None and annual_begin < exec_b:
             before_end = min(effective_annual_end, exec_b - one_day)
             if annual_begin <= before_end:
                 if field == 'l_dom':
-                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                    before_dates = _weekly_rest_weekend_dates_in_range(
                         weekly_rest, annual_begin, before_end, 6
+                    )
+                    satisfied_outside += len(before_dates)
+                    l_dom_satisfied_outside_dates.extend(before_dates)
+                    _log_l_dom_satisfied_outside_sundays(
+                        employee_id, weekly_rest, annual_begin, before_end, before_dates
                     )
                 elif field == 'l_sab':
                     outside_count = _count_weekly_rest_weekend_days_in_range(
@@ -5589,9 +5720,15 @@ def _count_feasibility_cap_for_field(
             after_begin = max(annual_begin, exec_e + one_day)
             if after_begin <= effective_annual_end:
                 if field == 'l_dom':
-                    satisfied_outside += _count_weekly_rest_weekend_days_in_range(
+                    after_dates = _weekly_rest_weekend_dates_in_range(
                         weekly_rest, after_begin, effective_annual_end, 6
                     )
+                    satisfied_outside += len(after_dates)
+                    l_dom_satisfied_outside_dates.extend(after_dates)
+                    if after_dates:
+                        _log_l_dom_satisfied_outside_sundays(
+                            employee_id, weekly_rest, after_begin, effective_annual_end, after_dates
+                        )
                 elif field == 'l_sab':
                     satisfied_outside += _count_weekly_rest_weekend_days_in_range(
                         weekly_rest, after_begin, effective_annual_end, 5
@@ -5616,6 +5753,19 @@ def _count_feasibility_cap_for_field(
                         saturday += one_day * 7
 
     achievable_total = satisfied_outside + eligible_in_execution
+    if employee_id and field == 'l_dom':
+        logger.info(
+            f"apply_annual_dayoff_feasibility_cap: l_dom achievable_summary employee={employee_id} "
+            f"satisfied_outside={satisfied_outside} "
+            f"satisfied_outside_sundays={[d.strftime('%Y-%m-%d') for d in l_dom_satisfied_outside_dates]} "
+            f"eligible_in_execution={eligible_in_execution} achievable_total={achievable_total}"
+        )
+    elif employee_id and field == 'c2d':
+        logger.info(
+            f"apply_annual_dayoff_feasibility_cap: c2d achievable_summary employee={employee_id} "
+            f"satisfied_outside={satisfied_outside} "
+            f"eligible_in_execution={eligible_in_execution} achievable_total={achievable_total}"
+        )
     return achievable_total, eligible_in_execution
 
 
@@ -5629,6 +5779,7 @@ def apply_annual_dayoff_feasibility_cap(
     df_calendario: Optional[pd.DataFrame] = None,
     execution_begin: Optional[str] = None,
     execution_end: Optional[str] = None,
+    treat_label_holiday: int = 1,
 ) -> Tuple[bool, pd.DataFrame, List[dict], str]:
     """
     Build wide df_annual_variables from WFM long data and apply feasibility caps per
@@ -5726,6 +5877,8 @@ def apply_annual_dayoff_feasibility_cap(
         salsa_week_to_days, salsa_day_to_week = _build_salsa_week_maps_from_calendario(
             df_calendario
         )
+        idx_by_date, date_by_idx = _build_calendario_index_date_maps(df_calendario)
+        feriado_days_for_cap = closed_feriados if closed_feriados else holiday_set
         if df_calendario is None or df_calendario.empty:
             logger.warning(
                 "apply_annual_dayoff_feasibility_cap: df_calendario missing/empty; "
@@ -5763,8 +5916,20 @@ def apply_annual_dayoff_feasibility_cap(
                 cal_state['weekly_rest'], annual_begin, annual_end
             )
             emp_ausencias = ausencias_by_employee.get(emp_id, frozenset())
+            emp_cal = (
+                df_calendario[df_calendario['employee_id'].astype(str) == emp_id]
+                if df_calendario is not None and not df_calendario.empty
+                else pd.DataFrame()
+            )
+            cap_holiday_dates = (
+                _closed_holiday_dates_for_cap(
+                    emp_cal, feriado_days_for_cap, idx_by_date, date_by_idx, treat_label_holiday
+                )
+                if not emp_cal.empty and idx_by_date and date_by_idx
+                else _filter_days_to_period(feriado_days_for_cap, annual_begin, annual_end)
+            )
             adjacent_annual = _filter_days_to_period(
-                holiday_set | emp_ausencias, annual_begin, annual_end
+                cap_holiday_dates | emp_ausencias, annual_begin, annual_end
             )
 
             cap_exec_begin = exec_begin if exec_begin is not None else annual_begin
@@ -5782,18 +5947,20 @@ def apply_annual_dayoff_feasibility_cap(
                 employee_id=emp_id,
                 execution_begin=cap_exec_begin,
                 execution_end=cap_exec_end,
-                holiday_set=closed_feriados,
+                holiday_set=feriado_days_for_cap,
                 df_ausencias_ferias=df_ausencias_ferias,
+                treat_label_holiday=treat_label_holiday,
             )
             cap_attribution = _build_attributed_rest_and_unavailable_days_for_cap(
                 df_calendario=df_calendario,
                 df_colaborador=df_colaborador,
                 employee_id=emp_id,
-                holiday_set=closed_feriados,
+                holiday_set=feriado_days_for_cap,
                 df_ausencias_ferias=df_ausencias_ferias,
                 period_begin=annual_begin,
                 period_end=annual_end,
-                period=[cap_exec_begin, cap_exec_end]
+                period=[cap_exec_begin, cap_exec_end],
+                treat_label_holiday=treat_label_holiday,
             )
             weekly_rest_for_quota = (
                 cap_attribution['weekly_rest_quota']
@@ -5827,7 +5994,7 @@ def apply_annual_dayoff_feasibility_cap(
                     weekly_rest=weekly_rest_annual,
                     adjacent_free=adjacent_annual,
                     non_working=non_working_annual,
-                    holiday_set=holiday_set,
+                    holiday_set=cap_holiday_dates,
                     tipo_ciclo_weeks=tipo_ciclo_weeks,
                     tipo_contrato_resolver=tipo_resolver,
                     default_tipo=5,
@@ -5836,7 +6003,7 @@ def apply_annual_dayoff_feasibility_cap(
                     week_to_days=salsa_week_to_days,
                     work_days_per_week=work_days_per_week,
                     weekly_quota_ctx=weekly_quota_ctx,
-                    employee_id=emp_id if field == 'l_sab' else None,
+                    employee_id=emp_id,
                 )
 
                 if value > achievable:

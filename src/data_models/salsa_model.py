@@ -2139,6 +2139,9 @@ class SalsaDataModel(BaseDescansosDataModel):
                 df_ausencias_cap = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
                 num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
 
+                treat_label_holiday = int(
+                    self.algorithm_treatment_params.get('treat_label_holiday', 1)
+                )
                 success_cap, df_annual_variables, cap_events, error_cap = apply_annual_dayoff_feasibility_cap(
                     df_colaborador=df_colaborador,
                     df_annual_variables=df_annual_variables,
@@ -2149,6 +2152,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df_calendario=df_calendario,
                     execution_begin=start_date,
                     execution_end=end_date,
+                    treat_label_holiday=treat_label_holiday,
                 )
                 if not success_cap:
                     self.logger.error(f"apply_annual_dayoff_feasibility_cap failed: {error_cap}")
