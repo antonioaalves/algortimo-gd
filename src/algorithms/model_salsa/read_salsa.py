@@ -671,21 +671,28 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 empty_days[w].extend([d for d in range(1, first_registered_day[w]) if d not in empty_days[w]])
                 empty_days[w].extend([d for d in range(last_registered_day[w] + 1, max_day) if d not in empty_days[w]])
             empty_days[w] = set(empty_days[w])
+            worker_absences[w] = set(worker_absences[w])
+            vacation_days[w] = set(vacation_days[w])
+            fixed_days_off[w] = set(fixed_days_off[w])
             if treat_label_holiday == 0:
                 for d in closed_holidays:
+                    empty_days[w] -= {d}
+                    for value in shifts:
+                        shift_data[f"shift_{value}"][w] -= {d}                       
                     if d in worker_closed_holidays[w]:
-                        empty_days[w] = empty_days[w] - {d}
-                        worker_absences[w] = set(worker_absences[w]) - {d}
-                        vacation_days[w] = set(vacation_days[w]) - {d}
+                        worker_absences[w] -= {d}
+                        vacation_days[w] -= {d}
                         print(f"entrei {w}, {d}")
                     else:
                         print(f"nao entrei {w}, {d}")
+                        if d not in worker_absences[w] and d not in vacation_days[w]:
+                            fixed_days_off[w] |= {d}
             if treat_label_holiday == 1:
                 worker_closed_holidays[w] = set(closed_holidays)
-                empty_days[w] = empty_days[w] - worker_closed_holidays[w]
-                worker_absences[w] = set(worker_absences[w]) - worker_closed_holidays[w]
-                fixed_days_off[w] = set(fixed_days_off[w]) - worker_closed_holidays[w]
-                vacation_days[w] = set(vacation_days[w]) - worker_closed_holidays[w]
+                empty_days[w] -= worker_closed_holidays[w]
+                worker_absences[w] -= worker_closed_holidays[w]
+                fixed_days_off[w] -= worker_closed_holidays[w]
+                vacation_days[w] -= worker_closed_holidays[w]
             for value in shifts:
                 empty_days[w] -= shift_data[f"shift_{value}"][w]
 
