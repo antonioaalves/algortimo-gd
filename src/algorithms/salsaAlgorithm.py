@@ -412,7 +412,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 # LQ attribution constraint
                 if constraint_selections.get("LQ_attribution", {}).get("enabled", True):
                     self.logger.info("Applying constraint: LQ_attribution")
-                    LQ_attribution(model, shift, workers_no_contract_changes, working_days, c2d, year_range, annual_variables, workers_with_dummy, sundays)
+                    l_sat_vars = LQ_attribution(model, shift, workers_no_contract_changes, working_days, c2d, year_range, annual_variables, workers_with_dummy, sundays)
                 else:
                     self.logger.warning("Skipping constraint: LQ_attribution (disabled in config)")
                             
@@ -430,7 +430,7 @@ class SalsaAlgorithm(BaseAlgorithm):
                 
                 if constraint_selections.get("salsa_saturday_L_constraint", {}).get("enabled", True):
                     self.logger.info("Applying constraint: salsa_saturday_L_constraint")
-                    salsa_saturday_L_constraint(model, shift, workers, working_days, period)
+                    #salsa_saturday_L_constraint(model, shift, workers, working_days, period)
                 else:
                     self.logger.warning("Skipping constraint: salsa_saturday_L_constraint (disabled in config)")
     
@@ -489,7 +489,7 @@ class SalsaAlgorithm(BaseAlgorithm):
             # SOLVE THE MODEL
             # =================================================================
             self.logger.info("Solving SALSA model")
-            schedule_df, feriados_domingos_compensacao = solve(model, days_of_year, workers_complete, sundays, holidays, shift, shifts, real_working_shift, work_day_hours, pessObj,
+            schedule_df, feriados_domingos_compensacao = solve(l_sat_vars, model, days_of_year, workers_complete, sundays, holidays, shift, shifts, real_working_shift, work_day_hours, pessObj,
                                          workers_past, h_plus, contingente_f, contingente_d, contingente_v, contingente_o, eci_sibling_results_flag, period, index_to_date, dummy_workers, workers_with_dummy,
                                          pd.Series(['Worker'] + (unique_dates)),
                                          max_time_seconds=self.max_solver_time_in_seconds,

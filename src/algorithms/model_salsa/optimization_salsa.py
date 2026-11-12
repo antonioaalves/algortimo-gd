@@ -91,9 +91,9 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_sundays_equal=1 
     sundays_diff_weight=int(scale*percentage_of_importance_sundays_equal/sundays_diff_min_worst_scenario)
 
-    LQs_diff_min_worst_scenario=1
-    percentage_of_importance_LQs_equal=1 
-    LQs_diff_weight=int(scale*percentage_of_importance_LQs_equal/LQs_diff_min_worst_scenario)
+    c2ds_diff_min_worst_scenario=1
+    percentage_of_importance_c2ds_equal=1 
+    c2ds_diff_weight=int(scale*percentage_of_importance_c2ds_equal/c2ds_diff_min_worst_scenario)
 
     no_consec_free_days_min_worst_scenario=52*len(workers)
     percentage_of_importance_consec_free_days=1
@@ -112,13 +112,13 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
     percentage_of_importance_sunday_imbalance_weight_periodicity=3 
     sunday_imbalance_weight_periodicity=int(scale*percentage_of_importance_sunday_imbalance_weight_periodicity/sunday_imbalance_weight_periodicity_min_worst_scenario)
 
-    LQ_imbalance_per_semeste_min_worst_scenario=1
-    percentage_of_importance_LQ_balance=1 
-    LQ_imbalance_weight=int(scale*percentage_of_importance_LQ_balance/LQ_imbalance_per_semeste_min_worst_scenario)
+    c2d_imbalance_per_semeste_min_worst_scenario=1
+    percentage_of_importance_c2d_balance=1 
+    c2d_imbalance_weight=int(scale*percentage_of_importance_c2d_balance/c2d_imbalance_per_semeste_min_worst_scenario)
     if workers_not_complete_exist:
-        LQ_imbalance_weight_average=int(math.ceil(LQ_imbalance_weight/len(workers_not_complete)))
+        c2d_imbalance_weight_average=int(math.ceil(c2d_imbalance_weight/len(workers_not_complete)))
     else:
-        LQ_imbalance_weight_average = int(LQ_imbalance_weight)
+        c2d_imbalance_weight_average = int(c2d_imbalance_weight)
 
     inconsistent_number_of_weeks_min_worst_scenario=52*len(workers)
     percentage_of_importance_consistent_number_of_weeks=0
@@ -665,7 +665,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         objective_terms.append(saturday_diff_q * sundays_diff_weight)
 
 
-    # 6. Balancing number of free EsLQ across the workers 
+    # 6. Balancing number of free c2d across the workers 
 
     
     for qi, workers_q in q_groups.items():
@@ -673,31 +673,34 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         if len(workers_q) <= 1:
             continue  
 
-        LQs_per_worker_q = []
+        c2ds_per_worker_q = []
 
         for w in workers_q:
-            LQs = sum(
-                shift[(w, d-1, 'LQ')]
-                for d in sundays
-                if (w, d-1, 'LQ') in shift and year_range[0] < d <= year_range[1]
-            )
-            LQs_per_worker_q.append(LQs)
-        if not LQs_per_worker_q:
+            l_sat_vars = []
+            
+            for d in sundays:
+                if year_range[0] < d <= year_range[1]:
+                    l_sat = model.NewBoolVar(f"l_sat_{w}_{d}")
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) >= 2).OnlyEnforceIf(l_sat)
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) <= 1).OnlyEnforceIf(l_sat.Not())
+                    l_sat_vars.append(l_sat)
+            c2ds_per_worker_q.append(sum(l_sat_vars))
+        if not c2ds_per_worker_q:
             continue    
 
         
-        max_LQs_q = model.NewIntVar(0, len(sundays), f"max_LQs_q{qi}")
-        min_LQs_q = model.NewIntVar(0, len(sundays), f"min_LQs_q{qi}")
+        max_c2ds_q = model.NewIntVar(0, len(sundays), f"max_c2ds_q{qi}")
+        min_c2ds_q = model.NewIntVar(0, len(sundays), f"min_c2ds_q{qi}")
 
-        model.AddMaxEquality(max_LQs_q, LQs_per_worker_q)
-        model.AddMinEquality(min_LQs_q, LQs_per_worker_q)
+        model.AddMaxEquality(max_c2ds_q, c2ds_per_worker_q)
+        model.AddMinEquality(min_c2ds_q, c2ds_per_worker_q)
 
        
-        LQs_diff_q = model.NewIntVar(0, len(sundays), f"LQs_diff_q{qi}")
-        model.Add(LQs_diff_q == max_LQs_q - min_LQs_q)
+        c2ds_diff_q = model.NewIntVar(0, len(sundays), f"c2ds_diff_q{qi}")
+        model.Add(c2ds_diff_q == max_c2ds_q - min_c2ds_q)
 
         
-        objective_terms.append(LQs_diff_q * LQs_diff_weight)
+        objective_terms.append(c2ds_diff_q * c2ds_diff_weight)
 
 
     # 7. Not consecutive free days error 
@@ -1090,59 +1093,72 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
     if workers_not_complete_exist:
         for w in all_workers_not_complete:
-            list_of_free_LQs_per_semester=[]
-            for part in parts:   
-                LQs_semester = sum(shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift)
-                list_of_free_LQs_per_semester.append(LQs_semester)    
+            list_of_free_c2ds_per_semester=[]
+            for part in parts:
+                l_sat_vars = []
+                
+                for d in set(part).intersection(sundays):
+                    l_sat = model.NewBoolVar(f"l_sat_{w}_{d}")
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) >= 2).OnlyEnforceIf(l_sat)
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) <= 1).OnlyEnforceIf(l_sat.Not())
+                    l_sat_vars.append(l_sat)
+                c2ds_semester = sum(l_sat_vars)
+                list_of_free_c2ds_per_semester.append(c2ds_semester)    
 
-            max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
-            min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}") 
+            max_free_c2ds = model.NewIntVar(0, len(sundays), f"max_free_semester_c2ds_{w}")
+            min_free_c2ds = model.NewIntVar(0, len(sundays), f"min_free_semester_c2ds_{w}") 
 
-            model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
-            model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
+            model.AddMaxEquality(max_free_c2ds, list_of_free_c2ds_per_semester)
+            model.AddMinEquality(min_free_c2ds, list_of_free_c2ds_per_semester)
 
             semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-            model.Add(semester_diff == max_free_LQs - min_free_LQs)
+            model.Add(semester_diff == max_free_c2ds - min_free_c2ds)
 
-            objective_terms.append(semester_diff*LQ_imbalance_weight_average)  
+            objective_terms.append(semester_diff*c2d_imbalance_weight_average)  
 
 
-   # 12 Control the worst-case outcome LQs 
+   # 12 Control the worst-case outcome c2ds 
 
-    diff_per_worker_LQ = []
+    diff_per_worker_c2d = []
 
     if workers_not_complete_exist:
         for w in all_workers_not_complete:
-            list_of_free_LQs_per_semester = []
+            list_of_free_c2ds_per_semester = []
 
             for part_index, part in enumerate(parts):
-                LQs_vars = [shift[(w, d-1, 'LQ')] for d in part if (w, d-1, 'LQ') in shift]
+                l_sat_vars = []
 
-                if LQs_vars:
-                    LQs_semester = sum(LQs_vars)
+                for d in set(part).intersection(sundays):
+                    l_sat = model.NewBoolVar(f"l_sat_{w}_{d}")
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) >= 2).OnlyEnforceIf(l_sat)
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) <= 1).OnlyEnforceIf(l_sat.Not())
+                    l_sat_vars.append(l_sat)
+
+                if l_sat_vars:
+                    c2ds_semester = sum(l_sat_vars)
                 else:
-                    LQs_semester = model.NewIntVar(0, 0, f"LQs_empty_{w}_{part_index}")
+                    c2ds_semester = model.NewIntVar(0, 0, f"c2ds_empty_{w}_{part_index}")
 
-                list_of_free_LQs_per_semester.append(LQs_semester)
+                list_of_free_c2ds_per_semester.append(c2ds_semester)
 
-            max_free_LQs = model.NewIntVar(0, len(sundays), f"max_free_semester_LQs_{w}")
-            min_free_LQs = model.NewIntVar(0, len(sundays), f"min_free_semester_LQs_{w}")
+            max_free_c2ds = model.NewIntVar(0, len(sundays), f"max_free_semester_c2ds_{w}")
+            min_free_c2ds = model.NewIntVar(0, len(sundays), f"min_free_semester_c2ds_{w}")
 
-            if list_of_free_LQs_per_semester:
-                model.AddMaxEquality(max_free_LQs, list_of_free_LQs_per_semester)
-                model.AddMinEquality(min_free_LQs, list_of_free_LQs_per_semester)
+            if list_of_free_c2ds_per_semester:
+                model.AddMaxEquality(max_free_c2ds, list_of_free_c2ds_per_semester)
+                model.AddMinEquality(min_free_c2ds, list_of_free_c2ds_per_semester)
             else:
-                model.Add(max_free_LQs == 0)
-                model.Add(min_free_LQs == 0)
+                model.Add(max_free_c2ds == 0)
+                model.Add(min_free_c2ds == 0)
 
             semester_diff = model.NewIntVar(0, len(sundays), f"semester_diff_{w}")
-            model.Add(semester_diff == max_free_LQs - min_free_LQs)
+            model.Add(semester_diff == max_free_c2ds - min_free_c2ds)
 
-            diff_per_worker_LQ.append(semester_diff)
+            diff_per_worker_c2d.append(semester_diff)
 
-        max_diff_LQ = model.NewIntVar(0, len(sundays), "max_diff_LQ")
-        model.AddMaxEquality(max_diff_LQ, diff_per_worker_LQ)
-        objective_terms.append(max_diff_LQ * LQ_imbalance_weight)
+        max_diff_c2d = model.NewIntVar(0, len(sundays), "max_diff_c2d")
+        model.AddMaxEquality(max_diff_c2d, diff_per_worker_c2d)
+        objective_terms.append(max_diff_c2d * c2d_imbalance_weight)
     
     # 13. Weeks of inconsistent shifts error
 
