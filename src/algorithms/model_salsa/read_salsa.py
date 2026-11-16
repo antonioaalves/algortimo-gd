@@ -540,7 +540,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         vacation_days = {}
         working_days = {}
         fixed_days_off = {}
-        fixed_LQs = {}
         work_day_hours = {}
         fixed_compensation_days = {}
         locked_days = {}
@@ -564,8 +563,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 logger.info(f"PAST WORKERS: Calendar data found for worker {w}")
             for value in shifts:
                 shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'MoT'])]['index'].tolist())
-            fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
-            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'].isin(['L', 'C'])]['index'].tolist())
+            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'LQ'])]['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             empty_days[w] = set(worker_calendar[worker_calendar['horario'] == '-']['index'].tolist())
             vacation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'V']['index'].tolist())
@@ -576,7 +574,7 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
 
             first_registered_day[w] = worker_calendar['index'].min()
             last_registered_day[w] = worker_calendar['index'].max()
-            working_days[w] = fixed_days_off[w] | fixed_LQs[w] | fixed_compensation_days[w]
+            working_days[w] = fixed_days_off[w] | fixed_compensation_days[w]
             for value in shifts:
                 working_days[w] |= shift_data[f"shift_{value}"][w]
 
@@ -589,7 +587,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 worker_absences[w] = []
                 vacation_days[w] = []
                 fixed_days_off[w] = []
-                fixed_LQs[w] = []
                 work_day_hours[w] = []
                 for value in shifts:
                     shift_data[f"shift_{value}"][w] = []
@@ -607,11 +604,10 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             empty_days[w] = worker_calendar[worker_calendar['horario'].isin(['-', 'A-', 'V-' , '0'])]['index'].tolist()
             vacation_days[w] = worker_calendar[worker_calendar['horario'].isin(['V', 'V-'])]['index'].tolist()
             worker_absences[w] = worker_calendar[worker_calendar['horario'].isin(['AP', 'A-', 'A'])]['index'].tolist()
-            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'L_DOM'])]['index'].tolist())
+            fixed_days_off[w] = set(worker_calendar[worker_calendar['horario'].isin(['L', 'C', 'L_DOM', 'LQ'])]['index'].tolist())
             work_day_hours[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['carga_diaria'].fillna(8).astype(int).to_dict())
             week_template_temp[w] = (worker_calendar.drop_duplicates(subset='index').set_index('index')['workload_template'].fillna('A').astype(str).to_dict())
             #logger.info(f"worker hours {w},\n{work_day_hours[w]}\nlen {len(work_day_hours[w])}")
-            fixed_LQs[w] = set(worker_calendar[worker_calendar['horario'] == 'LQ']['index'].tolist())
             fixed_compensation_days[w] = set(worker_calendar[worker_calendar['horario'] == 'LD']['index'].tolist())
             for value in shifts:
                 shift_data[f"shift_{value}"][w] = set(worker_calendar[worker_calendar['horario'].isin([value, 'MoT', 'NL' , f'NL{value}'])]['index'].tolist())
@@ -632,7 +628,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             for value in shifts:
                 shift_data[f"shift_{value}"][dummy] = {d for d in shift_data[f"shift_{value}"][original] if start <= d <= end}
             dynamic_empty[dummy] = set()
-            fixed_LQs[dummy] = {d for d in fixed_LQs[original] if start <= d <= end}
             empty_days[dummy] = [d for d in empty_days[original] if start <= d <= end]
             vacation_days[dummy] = {d for d in vacation_days[original] if start <= d <= end}
             fixed_days_off[dummy] = {d for d in fixed_days_off[original] if start <= d <= end}
@@ -648,7 +643,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
         for original in workers_with_dummy:
             for value in shifts:
                 shift_data[f"shift_{value}"][original] = {d for d in shift_data[f"shift_{value}"][original] if d <= data_demissao[original]}
-            fixed_LQs[original] = {d for d in fixed_LQs[original] if d <= data_demissao[original]}
             empty_days[original] = [d for d in empty_days[original] if d <= data_demissao[original]]
             vacation_days[original] = {d for d in vacation_days[original] if d <= data_demissao[original]}
             fixed_days_off[original] = {d for d in fixed_days_off[original] if d <= data_demissao[original]}
@@ -701,13 +695,13 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 if week > -1:
                     work_days_per_week[w] = populate_week_template(int(week_template[w][week]), week - 1, nbr_weeks)
                 else:
-                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, period, nbr_weeks)
+                    work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[w], week_to_days_salsa, period, nbr_weeks)
                 if np.all(work_days_per_week[w] == 5) and w in dummy_workers:
                     previous_w = previous_dummy(dummy_workers, dummy_workers[w]["layer"] - 1, dummy_workers[w]["parent"])
                     if contract_type[previous_w] == 8:
                         logger.info(f"Worker {w} had previous contract type 8 (5/6) as worker {previous_w}, "
                                     f"if possible, week sequence will continue accordingly")
-                        work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[previous_w], fixed_LQs[previous_w], week_to_days_salsa, period, nbr_weeks)
+                        work_days_per_week[w] = populate_week_fixed_days_off(fixed_days_off[previous_w], week_to_days_salsa, period, nbr_weeks)
 
                 if not np.all(work_days_per_week[w] == 5):
                     logger.info(f"{w} is defined as first week {work_days_per_week[w][0]}")
@@ -715,12 +709,12 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
                 else:
                     workers_non_defined.append(w)
                     logger.info(f"Detected {w} with no first week defined")
-                #check_5_6_pattern_consistency(w, fixed_days_off[w], fixed_LQs[w], week_to_days_salsa, work_days_per_week[w])
+                #check_5_6_pattern_consistency(w, fixed_days_off[w], week_to_days_salsa, work_days_per_week[w])
             else:
                 work_days_per_week[w] = np.full(nbr_weeks, contract_type[w])
             work_days_per_week[w] = joining_template_with_contract_per_week(work_days_per_week[w], week_template[w], min_work_days[w], max_work_days[w], w, contract_type[w])
-            worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], fixed_LQs[w],
-                                                                                                         week_to_days_salsa, worker_closed_holidays[w], work_days_per_week[w], year_range, period, empty_days[w])
+            worker_absences[w], vacation_days[w], fixed_days_off[w] = days_off_atributtion(w, worker_absences[w], vacation_days[w], fixed_days_off[w], week_to_days_salsa, 
+                                                                                           worker_closed_holidays[w], work_days_per_week[w], year_range, period, empty_days[w])
             working_days[w] = set(days_of_year) - empty_days[w] - worker_absences[w] - vacation_days[w] - worker_closed_holidays[w]
 
             #logger.info(f"Worker {w} working days after processing: {working_days[w]}")
@@ -1102,7 +1096,6 @@ def read_data_salsa(medium_dataframes: Dict[str, pd.DataFrame], shifts: List[str
             "data_demissao": data_demissao,
             "last_registered_day": last_registered_day,
             "fixed_days_off": fixed_days_off,
-            "fixed_LQs": fixed_LQs,
             "work_day_hours": work_day_hours,
             "work_days_per_week": work_days_per_week,
             "num_dias_cons": num_dias_cons,

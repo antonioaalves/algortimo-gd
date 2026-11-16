@@ -245,7 +245,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             sum(
                 shift[(w, d, s)]
                 for w in managers
-                for s in ['L', 'LQ', 'LD']
+                for s in ['L', 'LD']
                 if (w, d, s) in shift
             )
         )
@@ -268,7 +268,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             sum(
                 shift[(w, d, s)]
                 for w in keyholders
-                for s in ['L', 'LQ', 'LD']
+                for s in ['L', 'LD']
                 if (w, d, s) in shift
             )
         )
@@ -639,12 +639,7 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
         saturdays_per_worker_q = []
 
         for w in workers_q:
-            saturday_free = sum(
-                shift[(w, d, s)]
-                for d in saturdays
-                for s in ['LQ', 'L']
-                if (w, d, s) in shift and year_range[0] <= d <= year_range[1]
-            )
+            saturday_free = sum(shift.get((w, d, 'L'), 0) for d in saturdays if year_range[0] <= d <= year_range[1])
             saturdays_per_worker_q.append(saturday_free)
 
         if not saturdays_per_worker_q:
@@ -681,8 +676,8 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             for d in sundays:
                 if year_range[0] < d <= year_range[1]:
                     l_sat = model.NewBoolVar(f"l_sat_{w}_{d}")
-                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) >= 2).OnlyEnforceIf(l_sat)
-                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d - 1, "LQ"), 0) + shift.get((w, d, "L"), 0) <= 1).OnlyEnforceIf(l_sat.Not())
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d, "L"), 0) >= 2).OnlyEnforceIf(l_sat)
+                    model.Add(shift.get((w, d - 1, "L"), 0) + shift.get((w, d, "L"), 0) <= 1).OnlyEnforceIf(l_sat.Not())
                     l_sat_vars.append(l_sat)
             c2ds_per_worker_q.append(sum(l_sat_vars))
         if not c2ds_per_worker_q:
@@ -721,20 +716,12 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
             if (w, d, 'L') in shift:
                 free_terms.append(shift[(w, d, 'L')])
 
-            if (w, d, 'LQ') in shift:
-                free_terms.append(shift[(w, d, 'LQ')])
-
             if free_terms:
                 model.AddMaxEquality(is_free, free_terms)
                 is_free_dict[(w, d)] = is_free
                 free_day_vars.append(is_free)
 
-            #if (w,d,'L') in shift or (w,d,'LQ') in shift:
-            #    model.Add(is_free == shift[(w, d, 'L')] + shift[(w, d, 'LQ')])
-            #    free_day_vars.append(is_free)
-            #    is_free_dict[(w, d)] = is_free 
-
-            if d+1 in working_days[w] and ((w,d + 1,'L') in shift  or (w,d + 1,'LQ') in shift):
+            if d+1 in working_days[w] and ((w,d + 1,'L') in shift):
                 next_d = d+1
                 next_is_free = model.NewBoolVar(f"next_is_free_{w}_{next_d}")
 
@@ -742,9 +729,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
                 if (w, next_d, 'L') in shift:
                     next_free_terms.append(shift[(w, next_d, 'L')])
-
-                if (w, next_d, 'LQ') in shift:
-                    next_free_terms.append(shift[(w, next_d, 'LQ')])
 
                 if next_free_terms:
                     model.AddMaxEquality(next_is_free, next_free_terms)
@@ -1055,8 +1039,6 @@ def salsa_optimization(model, days_of_year, workers, workers_complete_cycle, rea
 
                     if (w, d, 'L') in shift:
                         terms.append(shift[(w, d, 'L')])
-                    if (w, d, 'LQ') in shift:
-                        terms.append(shift[(w, d, 'LQ')])
                     if len(terms) == 0:
                         free = model.NewIntVar(0, 0, f"missing_L_{w}_{d}")
                     else:

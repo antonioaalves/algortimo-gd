@@ -1592,7 +1592,6 @@ def _build_consecutive_work_index_state_for_employee(
         | finalized.vacation_days
         | closed_holidays
         | finalized.fixed_days_off
-        | finalized.fixed_LQs
     )
     flexible = working_days - fixed_work - guaranteed_rest
 
@@ -1600,7 +1599,7 @@ def _build_consecutive_work_index_state_for_employee(
     salsa_week_to_indices, _ = _build_salsa_week_index_maps_from_calendario(df_calendario)
     weekly_rest_for_quota = frozenset(
         date_by_idx[i].normalize()
-        for i in (finalized.fixed_days_off | finalized.fixed_LQs)
+        for i in (finalized.fixed_days_off)
         if i in date_by_idx
     )
     preallocated_free = weekly_rest_for_quota
@@ -4517,7 +4516,7 @@ def _build_salsa_weekly_quota_context(
     salsa_week_to_indices, _ = _build_salsa_week_index_maps_from_calendario(df_calendario)
     weekly_rest_for_quota = frozenset(
         date_by_idx[i].normalize()
-        for i in (finalized.fixed_days_off | finalized.fixed_LQs)
+        for i in (finalized.fixed_days_off)
         if i in date_by_idx
     )
 
@@ -4785,7 +4784,6 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
 
     horario = emp_cal['horario'].astype(str).str.strip()
     fixed_days_off = set(emp_cal.loc[horario.isin(['L', 'C', 'L_DOM']), 'index'].astype(int))
-    fixed_LQs = set(emp_cal.loc[horario == 'LQ', 'index'].astype(int))
     vacation_days = set(emp_cal.loc[horario.isin(['V', 'V-']), 'index'].astype(int))
     worker_absences = set(emp_cal.loc[horario.isin(['A', 'AP', 'A-']), 'index'].astype(int))
     empty_days = set(emp_cal.loc[horario == '-', 'index'].astype(int))
@@ -4816,7 +4814,6 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     vacation_days -= closed_holidays
     worker_absences -= closed_holidays
     fixed_days_off -= closed_holidays
-    fixed_LQs -= closed_holidays
 
     contract_type = _resolve_employee_tipo_contrato(df_colaborador, employee_id)
     from src.algorithms.model_salsa.auxiliar_functions_salsa import days_off_atributtion
@@ -4845,12 +4842,11 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
         idx_by_date.get(pd.Timestamp(period[0]).normalize(), period_begin_idx),
         idx_by_date.get(pd.Timestamp(period[1]).normalize(), period_end_idx),
     ]
-    worker_absences, vacation_days, fixed_days_off, fixed_LQs = days_off_atributtion(
+    worker_absences, vacation_days, fixed_days_off = days_off_atributtion(
         str(employee_id),
         worker_absences,
         vacation_days,
         fixed_days_off,
-        fixed_LQs,
         week_to_days_idx,
         closed_holidays,
         work_days_per_week,
@@ -4860,7 +4856,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     )
 
     weekly_rest_quota = _indices_to_schedule_days(
-        fixed_days_off | fixed_LQs, date_by_idx
+        fixed_days_off, date_by_idx
     )
     unavailable = _indices_to_schedule_days(
         vacation_days | worker_absences, date_by_idx
@@ -4919,7 +4915,6 @@ def _build_work_days_per_week_for_cap(
     fixed_days_off = set(
         emp_cal.loc[emp_cal['horario'].isin(['L', 'C', 'L_DOM']), 'index'].astype(int)
     )
-    fixed_LQs = set(emp_cal.loc[emp_cal['horario'] == 'LQ', 'index'].astype(int))
 
     week_template_temp = (
         emp_cal.drop_duplicates(subset='index')
@@ -4965,7 +4960,7 @@ def _build_work_days_per_week_for_cap(
         )
     else:
         work_days_arr = populate_week_fixed_days_off(
-            fixed_days_off, fixed_LQs, week_to_days_idx, period, nbr_weeks
+            fixed_days_off, week_to_days_idx, period, nbr_weeks
         )
 
     work_days_arr = joining_template_with_contract_per_week(
@@ -5002,8 +4997,8 @@ def _count_fixed_free_in_salsa_week(
     Count fixed weekly-rest days (L, L_DOM, LQ, C) in the salsa week of day.
 
     Uses the full salsa week block (all indices in week_to_days_salsa), including
-    days outside the execution window — mirrors salsa_2_free_days_week fixed_days_week
-    and fixed_LQs_week intersection with week_work_days.
+    days outside the execution window — mirrors salsa_2_free_days_week and fixed_days_week
+    intersection with week_work_days.
     """
     week_num = day_to_week.get(day.normalize())
     if week_num is None:

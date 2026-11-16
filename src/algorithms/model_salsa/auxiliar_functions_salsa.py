@@ -29,7 +29,7 @@ def consecutive_days(vacations_in_week, nbr_vacations, cut_off, days):
             #return False
     return True
 
-def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences, vacations_in_week, fixed_days_off, fixed_LQs, year_range, days_off, total, flag):
+def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences, vacations_in_week, fixed_days_off, year_range, days_off, total, flag):
     if flag == 5:
         if total == 6 and len(days_off) == 0:
             last = absences_in_week[-1]
@@ -43,20 +43,9 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
             if not(year_range[0] <= last <= year_range[1]):
                 last = vacations_in_week[-1]
             if year_range[0] <= last <= year_range[1]:
-                if days_off[-1] % 7 == 6 and last % 7 == 7:
-                    absences -= {last}
-                    vacations -= {last}
-                    fixed_LQs |= {last}
-                elif days_off[-1] % 7 == 7 and last % 7 == 6:
-                    absences -= {last}
-                    vacations -= {last}
-                    fixed_days_off |= {last}
-                    fixed_days_off -= {days_off[-1]}
-                    fixed_LQs |= {days_off[-1]}
-                else:
-                    absences -= {last}
-                    vacations -= {last}
-                    fixed_days_off |= {last}
+                absences -= {last}
+                vacations -= {last}
+                fixed_days_off |= {last}
         else:
             if nbr_absences > 1:
                 was_vacation_used = False
@@ -103,15 +92,15 @@ def mixed_absences_days_off(absences, vacations, absences_in_week, nbr_absences,
             vacations -= {l1}
             fixed_days_off |= {l1}
             
-    return absences, vacations, fixed_days_off, fixed_LQs
+    return absences, vacations, fixed_days_off
 
-def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period, empty_days):
+def days_off_atributtion(w, absences, vacations, fixed_days_off, week_to_days_salsa, closed_holidays, work_days_per_week, year_range, period, empty_days):
     for week, days in week_to_days_salsa.items():
         if len(days) <= 6 or days[-1] < period[0] or days[0] > period[1]:
             continue
 
         days_set = set(days)
-        days_off = days_set.intersection(fixed_days_off.union(fixed_LQs))
+        days_off = days_set.intersection(fixed_days_off)
         absences_in_week = days_set.intersection(absences.union(closed_holidays))
         nbr_absences = len(absences_in_week)
         vacations_in_week = days_set.intersection(vacations.union(closed_holidays))
@@ -125,7 +114,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
                 #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing anything")
                 continue
             if total > 5:
-                absences, vacations, fixed_days_off, fixed_LQs = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), total, 5)
+                absences, vacations, fixed_days_off = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, year_range, sorted(days_off), total, 5)
                 continue
             elif nbr_vacations > 2:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 5, days) == False and nbr_vacations < 6:
@@ -136,45 +125,24 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
             if len(days_off) == 1:
                 logger.warning(f"For week with absences or holidays {week}, {w} already has {days_off} day off")
                 only_day_off = sorted(days_off)[0]
-                if only_day_off == atributing_days[-1] and only_day_off == days[6] and atributing_days[-2] == days[5]:
-                    l2 = atributing_days[-2]
-                    absences -= {l2}
-                    vacations -= {l2}
-                    fixed_LQs |= {l2}
-
-                elif only_day_off == atributing_days[-2] and only_day_off == days[5] and atributing_days[-1] == days[6]:
-                    l1 = atributing_days[-1]
-                    absences -= {l1}
-                    vacations -= {l1}
-                    fixed_days_off |= {l1}
-                    fixed_days_off -= {only_day_off}
-                    fixed_LQs |= {only_day_off}
-                else:
-                    #last day insured not to be an already fixed day off
-                    l1 = sorted(set(atributing_days) - {only_day_off})[-1]
-                    absences -= {l1}
-                    vacations -= {l1}
-                    fixed_days_off |= {l1}
+                #last day insured not to be an already fixed day off
+                l1 = sorted(set(atributing_days) - {only_day_off})[-1]
+                absences -= {l1}
+                vacations -= {l1}
+                fixed_days_off |= {l1}
             else:
                 l1 = atributing_days[-1]
                 l2 = atributing_days[-2]
-
-                if l1 == days[6] and l2 == days[5]:
-                    absences -= {l2, l1}
-                    vacations -= {l2, l1}
-                    fixed_days_off |= {l1}
-                    fixed_LQs |= {l2}
-                else:
-                    absences -= {l2,l1}
-                    vacations -= {l2,l1}
-                    fixed_days_off |= {l2,l1}
+                absences -= {l2, l1}
+                vacations -= {l2, l1}
+                fixed_days_off |= {l2, l1}
                 
         else:
             if len(days_off) > 0 or (nbr_absences + nbr_vacations < 2):
                 #logger.warning(f"For week with absences {week}, {w} already has {days_off} day off, not changing. (6 working days week)")
                 continue
             if total > 6:
-                absences, vacations, fixed_days_off, fixed_LQs =  mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, fixed_LQs, year_range, sorted(days_off), None,6)
+                absences, vacations, fixed_days_off = mixed_absences_days_off(absences, vacations, sorted(absences_in_week), nbr_absences, sorted(vacations_in_week), fixed_days_off, year_range, sorted(days_off), None,6)
             elif nbr_vacations > 2:
                 if consecutive_days(sorted(vacations_in_week), nbr_vacations, 6, days) == False:
                     continue
@@ -186,7 +154,7 @@ def days_off_atributtion(w, absences, vacations, fixed_days_off, fixed_LQs, week
             vacations -= {l1}
             fixed_days_off |= {l1}
     
-    return absences, vacations, fixed_days_off, fixed_LQs
+    return absences, vacations, fixed_days_off
 
 def populate_week_template(work_days, week_first, nbr_weeks):
     work_days_per_week = np.full(nbr_weeks, 5)
@@ -198,7 +166,7 @@ def populate_week_template(work_days, week_first, nbr_weeks):
 
     return work_days_per_week.astype(int)
 
-def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period, nbr_weeks):
+def populate_week_fixed_days_off(fixed_days_off, week_to_days, period, nbr_weeks):
     work_days_per_week = np.full(nbr_weeks, 5)
     week_5_days = 0
     found_week = False
@@ -206,7 +174,7 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period
         days_set = set(days)
         if sorted(days)[0] < period[0] or sorted(days)[0] > period[1]:
             continue
-        days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+        days_off_week = days_set.intersection(fixed_days_off)
         if len(days_off_week) > 1:
             week_5_days = week - 1
             found_week = True
@@ -216,7 +184,7 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period
             days_set = set(days)
             if sorted(days)[0] > period[0]:
                 continue
-            days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+            days_off_week = days_set.intersection(fixed_days_off)
             if len(days_off_week) > 1:
                 week_5_days = week - 1
                 found_week = True
@@ -226,7 +194,7 @@ def populate_week_fixed_days_off(fixed_days_off, fixed_LQs, week_to_days, period
             days_set = set(days)
             if sorted(days)[0] < period[1]:
                 continue
-            days_off_week = days_set.intersection(fixed_days_off.union(fixed_LQs))
+            days_off_week = days_set.intersection(fixed_days_off)
             if len(days_off_week) > 1:
                 week_5_days = week - 1
                 found_week = True
@@ -289,17 +257,17 @@ def first_week_for_non_defined(workers_non_defined, workers_first_week_defined, 
                 logger.info(f"{w} went to group of 6 first week, score: {first_week_5_load}/{first_week_6_load}")
     return work_days_per_week
 
-def check_5_6_pattern_consistency(w, fixed_days_off, fixed_LQs, week_to_days, work_days_per_week):
+def check_5_6_pattern_consistency(w, fixed_days_off, week_to_days, work_days_per_week):
     for week, days in week_to_days.items():
 
         days_set = set(days)
-        actual_days_off = len(days_set.intersection(fixed_days_off.union(fixed_LQs)))
+        actual_days_off = len(days_set.intersection(fixed_days_off))
         expected_days_off = 7 - work_days_per_week[week - 1]
 
         if actual_days_off > expected_days_off:
             logger.error(f"For worker {w}, in week {week} by contract they're supposed to work "
                          f"{work_days_per_week[week - 1]} days but have received {actual_days_off} "
-                         f"days off: {days_set.intersection(fixed_days_off.union(fixed_LQs))}. Process will be Infeasible!")
+                         f"days off: {days_set.intersection(fixed_days_off)}. Process will be Infeasible!")
 
 def absences_to_empty(worker_absences, vacation_days, contract_type, week_to_days_salsa, empty_days_cal):
     dynamic_empty = set()
@@ -368,12 +336,12 @@ def joining_template_with_contract_per_week(work_days_per_week, week_template, m
 
 #salsa_constraints funcs:
 
-def compensation_days_calc(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, closed_days, period, day):
+def compensation_days_calc(special_day_week, fixed_days_off, worker_absences, vacation_days, week_to_days, compensation_limit, working_days, shift, w, fixed_lds, closed_days, period, day):
     compensation_days = []
     days_analysed = 0
     current_week = special_day_week
     absences = worker_absences.union(vacation_days.union(closed_days))
-    all_days_off = fixed_days_off.union(fixed_LQs.union(absences.union(fixed_lds)))
+    all_days_off = fixed_days_off.union(absences.union(fixed_lds))
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
 
@@ -462,8 +430,8 @@ def get_annual_variables(annual_variables, w, d, variable):
                 return annual_variables[w][range]["apply_l_dom_or_sab"]
     return True
                 
-def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_off, fixed_LQs, worker_absences, vacation_days,
-                                                 week_to_days, compensation_limit, working_days, shift, w, fixed_lds,
+def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_off, worker_absences, vacation_days,
+                                                 week_to_days, compensation_limit, shift, w, fixed_lds,
                                                  closed_days, period, day, workers_with_dummy):
     
     dummies = sorted(workers_with_dummy.get(w, {}).values())
@@ -475,10 +443,10 @@ def compensation_days_calc_with_contract_changes(special_day_week, fixed_days_of
         if w != dum:
             absences |= worker_absences[dum].union(vacation_days[dum])
 
-    all_days_off = fixed_days_off[w].union(fixed_LQs[w].union(absences.union(fixed_lds[w])))
+    all_days_off = fixed_days_off[w].union(absences.union(fixed_lds[w]))
     for dum in dummies:
         if w != dum:
-            all_days_off |= fixed_days_off[dum].union(fixed_LQs[dum].union(absences.union(fixed_lds[dum])))
+            all_days_off |= fixed_days_off[dum].union(absences.union(fixed_lds[dum]))
 
     while days_analysed <= compensation_limit and current_week < len(week_to_days) + compensation_limit // 7:
         current_week += 1
