@@ -46,7 +46,6 @@ def configured_max_solver_time(algorithm_treatment_params: Optional[Dict[str, An
 
 #----------------------------------------SOLVER-----------------------------------------------------------
 def solve(
-    l_sat_vars: List[bool],
     model: cp_model.CpModel, 
     days_of_year: List[int], 
     workers: List[int], 
@@ -532,11 +531,7 @@ def solve(
                 logger.error(f"Error processing worker {w}: {e}")
                 continue                  
         logger.info(f"Successfully processed {processed_workers} workers")
-        for w in workers:
-            if w in l_sat_vars:
-                for var in l_sat_vars[w]:
-                    if solver.Value(var) == 1:
-                        print(var)
+
         # =================================================================
         # 6. CREATE DATAFRAME AND SAVE TO EXCEL
         # =================================================================

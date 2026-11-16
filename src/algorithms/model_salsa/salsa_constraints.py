@@ -433,7 +433,6 @@ def c2d_attribution(model, shift, workers_no_contract_changes, working_days, c2d
             l_sat_vars[w].append(l_sat)
 
         model.Add(sum(l_sat_vars[w]) >= c2d.get(w, 0))
-    return l_sat_vars
 
 def working_day_shifts(model, shift, workers, working_days, check_shift, working_shift, period, contract_type, complete_cycle_days):
     # Check for the workers so that they can only have M, T, TC, L, LD and in working days
