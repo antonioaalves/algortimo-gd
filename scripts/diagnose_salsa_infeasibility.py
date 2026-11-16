@@ -158,7 +158,6 @@ def load_adapted() -> dict:
         "nome_pais": "Espanha",
         "eci_flag": False,
         "eci_sibling_results_flag": False,
-        "NUM_DIAS_CONS": 8,
         "ld_sunday_param": 0.0,
         "ld_holiday_param": 1.0,
         "start_date": "2026-09-07",
