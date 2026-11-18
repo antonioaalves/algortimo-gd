@@ -753,8 +753,8 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_
                     required_free_days = max(0, int(ceil(proportion_days)))
                 else:
                     required_free_days = max(0, int(floor(proportion_days)))
-                if required_free_days < len(days_off):
-                    required_free_days = len(days_off)
+                if required_free_days < len(days_off.intersection(days)):
+                    required_free_days = len(days_off.intersection(days))
                 empty_days_smaller_week = size_week - contract_type.get(w, 0) - required_free_days
                 if empty_days_smaller_week <= 0:
                     continue
