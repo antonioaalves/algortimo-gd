@@ -892,6 +892,10 @@ def free_days_week_6(model, shift, workers, week_to_days, working_days, data_adm
                     else:
                         matching_saturday_bools = [saturday_bool for saturday, saturday_bool in saturday_quality_day_bool if saturday in week_work_days]
                         free_shift_sum = sum(shift.get((w, d, 'L'), 0) + shift.get((w, d, 'LQ'), 0) for d in week_work_days)
+
+                        model.Add(sum(shift.get((w, d, 'L'), 0) for d in week_work_days) <= 1) #regra 1
+                        model.Add(free_shift_sum_ld > 0) #regra 2
+                        
                         if matching_saturday_bools:
                             has_saturday_quality = model.NewBoolVar(f'has_saturday_quality_{w}_{week_work_days[0]}')
 
@@ -905,20 +909,19 @@ def free_days_week_6(model, shift, workers, week_to_days, working_days, data_adm
                                     #permitir c2d e c3d
                                     model.Add(free_shift_sum >= 2).OnlyEnforceIf(has_saturday_quality)
                                     model.Add(free_shift_sum <= 3).OnlyEnforceIf(has_saturday_quality)
-                                    model.Add(sum(shift.get((w, d, 'L'), 0) + shift.get((w, d, 'LQ'), 0) for d in week_work_days if d < saturday - 1) == 0).OnlyEnforceIf(has_saturday_quality)
+                                    model.Add(sum(shift.get((w, d, s), 0) for d in week_work_days for s in ["L", "LD", "LQ"] if d < saturday - 1) == 0).OnlyEnforceIf(has_saturday_quality)
 
-                                    model.Add(free_shift_sum <= 2).OnlyEnforceIf(has_saturday_quality.Not())
-                                    model.Add(sum(shift.get((w, d, 'L'), 0) for d in week_work_days) <= 1).OnlyEnforceIf(has_saturday_quality.Not())
-                                    model.Add(sum(shift.get((w, d, 'LQ'), 0) for d in week_work_days if d % 7 in [ 5, 6]) == 0).OnlyEnforceIf(has_saturday_quality.Not())
                                     model.Add(free_shift_sum_ld <= 2).OnlyEnforceIf(has_saturday_quality.Not())
-                                    model.Add(free_shift_sum_ld > 0).OnlyEnforceIf(has_saturday_quality.Not())
+                                    model.Add(sum(shift.get((w, d, 'L'), 0) for d in week_work_days) == 0).OnlyEnforceIf(
+                                              sum(shift.get((w, d, s), 0) for d in week_work_days for s in ["LD", "LQ"]) > 0,
+                                              has_saturday_quality.Not()) #regra 8
 
                         else:
                             # No Saturday in week_work_days: apply the normal restrictions
-                            model.Add(free_shift_sum <= 1)
-                            model.Add(sum(shift.get((w, d, 'LQ'), 0) for d in week_work_days if d % 7 in [1, 5, 6]) == 0)
                             model.Add(free_shift_sum_ld <= 2)
-                            model.Add(free_shift_sum_ld > 0)
+                            model.Add(sum(shift.get((w, d, 'L'), 0) for d in week_work_days) == 0).OnlyEnforceIf(
+                                      sum(shift.get((w, d, s), 0) for d in week_work_days for s in ["LD", "LQ"]) > 0,
+                                      has_saturday_quality.Not()) #regra 8
 
 #--------------------------------------------------------------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------------------------------------------------------
