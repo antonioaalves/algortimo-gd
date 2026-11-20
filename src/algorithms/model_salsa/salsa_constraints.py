@@ -856,7 +856,7 @@ def dynamic_empty_day(model, shift, workers, contract_type, week_to_days, empty_
             if empty_days_week <= 0:
                 continue
             empty_shifts = sum(shift[(w, d, '-')] for d in days if (w, d, '-') in shift)
-            if max(days) < period[0] or min(days) > period[1] or days[0] in complete_cycle_days[w]:
+            if max(days) < period[0] or min(days) > period[1] or any(d in complete_cycle_days[w] for d in days):
                 continue
             holidays_in_week = closed_days[w].intersection(days)
             is_admissao_week = (worker_admissao > 0 and worker_admissao in days)
