@@ -288,8 +288,18 @@ def validate_df_feriados(df_feriados: pd.DataFrame) -> bool:
     """
     Validate df_feriados.
     """
-    if df_feriados.empty:
+    if df_feriados is None:
         return False
+    if df_feriados.empty:
+        required = {
+            'schedule_day',
+            'tipo_feriado',
+            'fk_unidade',
+            'fk_cidade',
+            'fk_estado',
+            'fk_pais',
+        }
+        return required.issubset(df_feriados.columns)
     if 'schedule_day' not in df_feriados.columns:
         return False
     if 'tipo_feriado' not in df_feriados.columns:

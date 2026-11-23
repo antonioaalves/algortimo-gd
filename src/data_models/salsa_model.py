@@ -597,9 +597,14 @@ class SalsaDataModel(BaseDescansosDataModel):
                     start_date=first_day_passado, 
                     end_date=last_day_passado)
                 self.logger.info(f"df_feriados shape (rows {df_feriados.shape[0]}, columns {df_feriados.shape[1]}): {df_feriados.columns.tolist()}")
-                if df_feriados is None or df_feriados.empty:
-                    self.logger.error("df_feriados is empty: no holidays configured")
-                    return False, "ERR_LOAD_FERIADOS_EMPTY", format_unit_label(df_estrutura_wfm, unit_id)
+                if df_feriados is None:
+                    self.logger.error("df_feriados load returned None")
+                    return False, "errSubproc", "df_feriados load returned None"
+                if df_feriados.empty:
+                    self.logger.warning(
+                        f"df_feriados has no rows for unit {format_unit_label(df_estrutura_wfm, unit_id)}; "
+                        "continuing without unit holiday calendar"
+                    )
             except Exception as e:
                 self.logger.error(f"Error loading df_feriados: {e}", exc_info=True)
                 return False, "errSubproc", str(e)
@@ -618,14 +623,15 @@ class SalsaDataModel(BaseDescansosDataModel):
                     use_case=1,
                     main_year=main_year,
                     first_date=first_day_passado,
-                    last_date=last_day_passado
+                    last_date=last_day_passado,
+                    allow_empty=True,
                 )
                 if not success:
                     self.logger.error(f"Failed to add date-related columns: {error_msg}")
                     return False
             except Exception as e:
                 self.logger.error(f"Error adding date-related columns: {e}", exc_info=True)
-                return False            
+                return False
 
             if not validate_df_feriados(df_feriados):
                 self.logger.error(f"df_feriados is invalid: {df_feriados}")
@@ -907,6 +913,13 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             algorithm_treatment_params['start_date'] = start_date
             algorithm_treatment_params['end_date'] = end_date
+            # STRSOL-1820: loaded from CORE_LABOR_LAW in load_process_data; pass through to solver
+            treat_label_holiday = int(
+                self.algorithm_treatment_params.get('treat_label_holiday', 1)
+            )
+            algorithm_treatment_params['treat_label_holiday'] = treat_label_holiday
+            self.logger.info(f"Parameter treat_label_holiday = {treat_label_holiday}")
+
             max_solver_time, _source = resolve_max_solver_time(
                 retrieved_params.get('max_solver_time_in_seconds'),
                 self.config_manager,
@@ -2114,12 +2127,17 @@ class SalsaDataModel(BaseDescansosDataModel):
                 self.logger.error(f"Failed to calculate and merge allocated employees: {error_msg}")
                 return False, "errSubproc", error_msg
 
-            # Apply feasibility cap to annual day-off entitlements (l_dom, c2d, l_sab, l_dom_or_sab).
+            # Apply feasibility cap to annual day-off entitlements (STRSOL-1919 joint engine).
+            # Runs here because all required data is available: df_annual_variables and df_feriados
+            # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
             try:
                 df_annual_variables = self.auxiliary_data.get('df_annual_variables', pd.DataFrame())
                 df_feriados_cap = self.auxiliary_data.get('df_feriados', pd.DataFrame())
                 df_ausencias_cap = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
 
+                treat_label_holiday = int(
+                    self.algorithm_treatment_params.get('treat_label_holiday', 1)
+                )
                 success_cap, df_annual_variables, cap_events, error_cap = apply_annual_dayoff_feasibility_cap(
                     df_colaborador=df_colaborador,
                     df_annual_variables=df_annual_variables,
@@ -2129,6 +2147,7 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df_calendario=df_calendario,
                     execution_begin=start_date,
                     execution_end=end_date,
+                    treat_label_holiday=treat_label_holiday,
                 )
                 if not success_cap:
                     self.logger.error(f"apply_annual_dayoff_feasibility_cap failed: {error_cap}")
