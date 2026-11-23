@@ -5901,6 +5901,8 @@ def _joint_greedy_entitlements_in_execution(
     forced_rest: Set[int] = set()
     l_dom_sundays_claimed: Set[pd.Timestamp] = set()
     l_sab_saturdays_claimed: Set[pd.Timestamp] = set()
+    l_dom_or_sab_credited: Set[pd.Timestamp] = set()
+    c2d_weekends_placed: Set[pd.Timestamp] = set()
     decisions: List[dict] = []
     contracts = contracts if contracts is not None else pd.DataFrame()
 
@@ -5930,7 +5932,7 @@ def _joint_greedy_entitlements_in_execution(
 
     def try_c2d(saturday: pd.Timestamp, sunday: pd.Timestamp) -> bool:
         nonlocal forced_rest
-        if not apply_flags.get('c2d', False):
+        if saturday.normalize() in c2d_weekends_placed:
             return False
         ok, reason = _c2d_weekend_base_eligible(
             saturday,
@@ -5975,12 +5977,14 @@ def _joint_greedy_entitlements_in_execution(
         if week is not None:
             slot_claims[week] = slot_claims.get(week, 0) + 2
         forced_rest |= rest_idx
+        c2d_weekends_placed.add(saturday.normalize())
         counts['c2d'] += 1
         if apply_flags.get('l_dom', False):
             counts['l_dom'] += 1
             l_dom_sundays_claimed.add(sunday.normalize())
         if apply_flags.get('l_dom_or_sab', False):
             counts['l_dom_or_sab'] += 1
+            l_dom_or_sab_credited.add(sunday.normalize())
         if employee_id:
             decisions.append({
                 'field': 'c2d',
@@ -5993,8 +5997,6 @@ def _joint_greedy_entitlements_in_execution(
 
     def try_l_dom(sunday: pd.Timestamp) -> bool:
         nonlocal forced_rest
-        if not apply_flags.get('l_dom', False):
-            return False
         if sunday.normalize() in l_dom_sundays_claimed:
             return False
         tc = tipo_for_day(sunday)
@@ -6037,8 +6039,6 @@ def _joint_greedy_entitlements_in_execution(
 
     def try_l_sab(saturday: pd.Timestamp) -> bool:
         nonlocal forced_rest
-        if not apply_flags.get('l_sab', False):
-            return False
         if saturday.normalize() in l_sab_saturdays_claimed:
             return False
         tc = tipo_for_day(saturday)
@@ -6084,48 +6084,54 @@ def _joint_greedy_entitlements_in_execution(
     def try_l_dom_or_sab(day: pd.Timestamp, is_sunday: bool) -> bool:
         if not apply_flags.get('l_dom_or_sab', False):
             return False
+        day_n = day.normalize()
+        if day_n in l_dom_or_sab_credited:
+            return False
         if is_sunday:
             before_ld = counts['l_dom']
-            if day.normalize() in l_dom_sundays_claimed:
+            if day_n in l_dom_sundays_claimed or (
+                try_l_dom(day) and counts['l_dom'] > before_ld
+            ):
                 counts['l_dom_or_sab'] += 1
-                return True
-            if try_l_dom(day) and counts['l_dom'] > before_ld:
-                counts['l_dom_or_sab'] += 1
+                l_dom_or_sab_credited.add(day_n)
                 return True
             return False
         before_ls = counts['l_sab']
-        if day.normalize() in l_sab_saturdays_claimed:
+        if day_n in l_sab_saturdays_claimed or (
+            try_l_sab(day) and counts['l_sab'] > before_ls
+        ):
             counts['l_dom_or_sab'] += 1
-            return True
-        if try_l_sab(day) and counts['l_sab'] > before_ls:
-            counts['l_dom_or_sab'] += 1
+            l_dom_or_sab_credited.add(day_n)
             return True
         return False
 
     one_day = pd.Timedelta(days=1)
-    days_to_sat = (5 - in_exec_begin.weekday()) % 7
-    saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
 
     improved = True
     while improved:
         improved = False
-        while saturday <= in_exec_end:
-            sunday = saturday + one_day
-            if sunday <= in_exec_end and try_c2d(saturday, sunday):
-                improved = True
-            saturday += one_day * 7
-        days_to_sun = (6 - in_exec_begin.weekday()) % 7
-        sunday = in_exec_begin + pd.Timedelta(days=days_to_sun)
-        while sunday <= in_exec_end:
-            if try_l_dom(sunday):
-                improved = True
-            sunday += one_day * 7
-        days_to_sat = (5 - in_exec_begin.weekday()) % 7
-        saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
-        while saturday <= in_exec_end:
-            if try_l_sab(saturday):
-                improved = True
-            saturday += one_day * 7
+        if apply_flags.get('c2d', False):
+            days_to_sat = (5 - in_exec_begin.weekday()) % 7
+            saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
+            while saturday <= in_exec_end:
+                sunday = saturday + one_day
+                if sunday <= in_exec_end and try_c2d(saturday, sunday):
+                    improved = True
+                saturday += one_day * 7
+        if apply_flags.get('l_dom', False):
+            days_to_sun = (6 - in_exec_begin.weekday()) % 7
+            sunday = in_exec_begin + pd.Timedelta(days=days_to_sun)
+            while sunday <= in_exec_end:
+                if try_l_dom(sunday):
+                    improved = True
+                sunday += one_day * 7
+        if apply_flags.get('l_sab', False):
+            days_to_sat = (5 - in_exec_begin.weekday()) % 7
+            saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
+            while saturday <= in_exec_end:
+                if try_l_sab(saturday):
+                    improved = True
+                saturday += one_day * 7
         days_to_sat = (5 - in_exec_begin.weekday()) % 7
         saturday = in_exec_begin + pd.Timedelta(days=days_to_sat)
         while saturday <= in_exec_end:

@@ -150,3 +150,97 @@ class TestC2dHolidayRule:
         # Raw feriado on 25 blocks c2d for adjacent weekends via rule 3 when still F on calendar;
         # minimal calendar has no F on 25 — eligible may be 1. Test joint runs without error.
         assert eligible['c2d'] >= 0
+
+
+def _joint_for_flags(
+    emp: str,
+    start: pd.Timestamp,
+    n_days: int,
+    horario_by_offset: dict[int, str],
+    apply_flags: dict[str, bool],
+    weekly_rest: frozenset,
+    non_working: frozenset = frozenset(),
+):
+    end = start + pd.Timedelta(days=n_days - 1)
+    df_cal = _calendario_rows(emp, start, n_days, horario_by_offset)
+    idx_by_date = {
+        (start + pd.Timedelta(days=i)).normalize(): i + 1
+        for i in range(n_days)
+    }
+    return joint_annual_entitlement_feasibility(
+        annual_begin=start,
+        annual_end=end,
+        effective_annual_end=end,
+        exec_begin=start,
+        exec_end=end,
+        weekly_rest=weekly_rest,
+        adjacent_free=frozenset(),
+        non_working=non_working,
+        holiday_set=frozenset(),
+        tipo_ciclo_weeks=frozenset(),
+        tipo_contrato_resolver=lambda _d: 5,
+        default_tipo=5,
+        weekly_rest_for_quota=weekly_rest,
+        day_to_week={},
+        week_to_days={},
+        work_days_per_week={},
+        weekly_quota_ctx=None,
+        employee_id=emp,
+        df_calendario=df_cal,
+        df_colaborador=pd.DataFrame({'employee_id': [emp], 'tipo_contrato': [5]}),
+        df_ausencias_ferias=None,
+        idx_by_date=idx_by_date,
+        section_num_dias_cons=6,
+        treat_label_holiday=1,
+        apply_flags=apply_flags,
+    )
+
+
+class TestApplyFlagOwnedByScan:
+    """Entry flags live on each field's scan, not inside the shared placers."""
+
+    def test_l_dom_or_sab_counts_sundays_already_at_weekly_rest(self):
+        start = pd.Timestamp('2027-01-03')  # Sunday
+        sunday_1 = start
+        saturday = pd.Timestamp('2027-01-09')
+        sunday_2 = pd.Timestamp('2027-01-10')
+        _achievable, eligible = _joint_for_flags(
+            '6866',
+            start,
+            8,
+            {0: 'L_DOM', 6: '-', 7: 'L_DOM'},
+            {'l_dom': False, 'c2d': False, 'l_sab': False, 'l_dom_or_sab': True},
+            weekly_rest=frozenset({sunday_1, sunday_2}),
+            non_working=frozenset({saturday}),
+        )
+        assert eligible['l_dom_or_sab'] == 2
+        assert eligible['l_sab'] == 0
+        assert eligible['c2d'] == 0
+
+    def test_l_dom_scan_does_not_fill_l_dom_or_sab(self):
+        start = pd.Timestamp('2027-01-03')
+        sunday_1 = start
+        sunday_2 = pd.Timestamp('2027-01-10')
+        _achievable, eligible = _joint_for_flags(
+            '6866',
+            start,
+            8,
+            {0: 'L_DOM', 7: 'L_DOM'},
+            {'l_dom': True, 'c2d': False, 'l_sab': False, 'l_dom_or_sab': False},
+            weekly_rest=frozenset({sunday_1, sunday_2}),
+        )
+        assert eligible['l_dom'] == 2
+        assert eligible['l_dom_or_sab'] == 0
+
+    def test_l_sab_scan_counts_one_open_saturday(self):
+        start = pd.Timestamp('2027-01-04')  # Monday; Saturday is offset 5
+        _achievable, eligible = _joint_for_flags(
+            '6866',
+            start,
+            7,
+            {},
+            {'l_dom': False, 'c2d': False, 'l_sab': True, 'l_dom_or_sab': False},
+            weekly_rest=frozenset(),
+        )
+        assert eligible['l_sab'] == 1
+        assert eligible['l_dom_or_sab'] == 0
