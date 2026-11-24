@@ -2129,7 +2129,7 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # Apply feasibility cap to annual day-off entitlements (STRSOL-1919 joint engine).
             # Runs here because all required data is available: df_annual_variables and df_feriados
-            # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
+            # are loaded in earlier phases; max_continuous_work_days comes from contract data.
             try:
                 df_annual_variables = self.auxiliary_data.get('df_annual_variables', pd.DataFrame())
                 df_feriados_cap = self.auxiliary_data.get('df_feriados', pd.DataFrame())
