@@ -70,6 +70,7 @@ class TestJointC2dConsecutiveWork:
                 'begin_date': [exec_begin],
                 'end_date': [exec_end],
                 'tipo_contrato': [5],
+                'max_continuous_work_days': [6],
             }
         )
 
@@ -104,7 +105,6 @@ class TestJointC2dConsecutiveWork:
                 (start + pd.Timedelta(days=i)).normalize(): index_offset + i + 1
                 for i in range(31)
             },
-            section_num_dias_cons=6,
             treat_label_holiday=1,
             apply_flags={'l_dom': False, 'c2d': True, 'l_sab': False, 'l_dom_or_sab': False},
         )
@@ -140,10 +140,17 @@ class TestC2dHolidayRule:
             weekly_quota_ctx=None,
             employee_id=emp,
             df_calendario=df_cal,
-            df_colaborador=pd.DataFrame({'employee_id': [emp], 'tipo_contrato': [5]}),
+            df_colaborador=pd.DataFrame(
+                {
+                    'employee_id': [emp],
+                    'begin_date': [exec_begin],
+                    'end_date': [exec_end],
+                    'tipo_contrato': [5],
+                    'max_continuous_work_days': [6],
+                }
+            ),
             df_ausencias_ferias=None,
             idx_by_date={start + pd.Timedelta(days=i): i + 1 for i in range(7)},
-            section_num_dias_cons=6,
             treat_label_holiday=1,
             apply_flags={'l_dom': False, 'c2d': True, 'l_sab': False, 'l_dom_or_sab': False},
         )
@@ -187,10 +194,17 @@ def _joint_for_flags(
         weekly_quota_ctx=None,
         employee_id=emp,
         df_calendario=df_cal,
-        df_colaborador=pd.DataFrame({'employee_id': [emp], 'tipo_contrato': [5]}),
+        df_colaborador=pd.DataFrame(
+            {
+                'employee_id': [emp],
+                'begin_date': [start],
+                'end_date': [end],
+                'tipo_contrato': [5],
+                'max_continuous_work_days': [6],
+            }
+        ),
         df_ausencias_ferias=None,
         idx_by_date=idx_by_date,
-        section_num_dias_cons=6,
         treat_label_holiday=1,
         apply_flags=apply_flags,
     )
