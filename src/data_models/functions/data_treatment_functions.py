@@ -6004,6 +6004,9 @@ def _joint_greedy_entitlements_in_execution(
         if _is_tipo_ciclo_week(sunday, tipo_ciclo_weeks):
             if sunday not in weekly_rest:
                 return False
+            counts['l_dom'] += 1
+            l_dom_sundays_claimed.add(sunday.normalize())
+            return True
         elif sunday in weekly_rest:
             counts['l_dom'] += 1
             l_dom_sundays_claimed.add(sunday.normalize())
