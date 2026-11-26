@@ -337,75 +337,52 @@ def week_working_days_constraint(model, shift, week_to_days, workers, working_sh
             max_days = work_days_per_week[w][week - 1]
             model.Add(total_shifts <= max_days)
 
-def maximum_continuous_working_days(model, shift, days_of_year, workers, working_shift, max_consect_days, period, dummy_workers, workers_with_dummy, complete_cycle_days):
+def maximum_continuous_working_days(model, shift, days_of_year, workers_no_contract_changes, working_shift, max_consect_days, period, dummy_workers, workers_with_dummy, complete_cycle_days, data_demissao, data_admissao):
     #limits maximum continuous working days
-    for w in workers:
+    for w in workers_no_contract_changes:
         max_w = max_consect_days.get(w, 7)
-        for d in range(1, max(days_of_year) - max_w + 1):  # Start from the first day and check each possible 7-day window
+        for d in range(data_admissao.get(w, 1), data_demissao.get(w, max(days_of_year)) - max_w + 1):  # Start from the first day and check each possible 7-day window
             # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
             if d + max_w < period[0] or d > period[1]:
                 continue
             if len([days_comp for days_comp in range(max_w + 1) if days_comp + d not in complete_cycle_days[w]]) == 0:
                 #logger.info(f"skipping max consec work days for {w} around day {d}")
                 continue
-            consecutive_days = sum(
-                shift[(w, d + i, s)] 
-                for i in range(max_w + 1)  # Check contract_maximum + 1 consecutive days
-                for s in working_shift
-                if (w, d + i, s) in shift  # Make sure the day exists in our model
-            )
-            # If all 11 days have a working shift, that would exceed our limit of 10 consecutive days
+            consecutive_days = sum(shift.get((w, d + i, s), 0) for i in range(max_w + 1) for s in working_shift)
             model.Add(consecutive_days <= max_w)
     if dummy_workers:
         for w in workers_with_dummy:
-            dummies = sorted(workers_with_dummy.get(w, {}).values())
-            max_w = max_consect_days.get(w, 7)
-            max_dummy = max_consect_days.get(dummies[0], 7)
-            change_date = dummy_workers[dummies[0]]["start_date"] - 1
-            if len([days_comp for days_comp in range(max_w // 2 + 1) if change_date - days_comp not in complete_cycle_days[w]]) == 0 and \
-               len([days_comp for days_comp in range(1, max_dummy // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummies[0]]]) == 0:
-                logger.info(f"worker {w} and dummie {dummies[0]} skipped restriction on day {change_date}")
-                continue
-            lowest_max = max_w if max_w <= max_dummy else max_dummy
-            consecutive_days = sum(
-                shift[(w, change_date - i, s)]
-                for i in range(max_w // 2 + 1)
-                for s in working_shift
-                if (w, change_date - i, s) in shift
-            ) + sum(
-                shift[(dummies[0], change_date + j, s)]
-                for j in range(max_dummy // 2 + 1)
-                for s in working_shift
-                if (dummies[0], change_date + j, s) in shift)
-            model.Add(consecutive_days <= lowest_max)
-            length_dummies = len(dummies)
-            if length_dummies < 1:
-                continue
-            for a in range(length_dummies - 1):
-                dummy = dummies[a]
-                dummy_second = dummies[a + 1]
-                if dummy_workers[dummy]["end_date"] + 1 == dummy_workers[dummy_second]["start_date"]:
-                    change_date = dummy_workers[dummy]["end_date"]
-                    # We check windows that cross the change boundary:
-                    # some days before change_date (original)
-                    # and some days after (dummy)
-                    max_w = max_consect_days.get(dummy, 7)
-                    max_dummy = max_consect_days.get(dummy_second, 7)
-                    if len([days_comp for days_comp in range(max_w // 2 + 1) if change_date - days_comp not in complete_cycle_days[dummy]]) == 0 and \
-                       len([days_comp for days_comp in range(1, max_dummy // 2 + 1) if change_date + days_comp not in complete_cycle_days[dummy_second]]) == 0:
+            all_w = [w, *sorted(workers_with_dummy.get(w, {}).values())]
+            for index in range(len(all_w)):
+                max_w = max_consect_days.get(all_w[index], 7)
+                # Start from the first day and check each possible 7-day window
+                max_next = max_consect_days.get(all_w[index + 1], 7) if index + 1 < len(all_w) else max_consect_days.get(all_w[index], 7)
+                lowest_max_after = min(max_next, max_w)
+                for d in range(data_admissao.get(all_w[index], 1), data_demissao.get(all_w[index], max(days_of_year)) + 1):
+                    # Sum all working shifts over a sliding window of contract maximum + 1 consecutive days
+                    if d + max_w < period[0] or d > period[1]:
                         continue
-                    lowest_max = max_w if max_w <= max_dummy else max_dummy
+                    if all(d + i in complete_cycle_days[all_w[index]] for i in range(max_w + 1)):
+                        #logger.info(f"skipping max consec work days for {w} around day {d}")
+                        continue
+                    consecutive_days = sum(shift.get((all_w[index], d + i, s), 0) for i in range(max_w + 1) for s in working_shift)
+                    model.Add(consecutive_days <= max_w)
+                if index + 1 >= len(all_w):
+                    break
+
+                change_date = dummy_workers[all_w[index + 1]]["start_date"] - 1
+                if all(i in complete_cycle_days[all_w[index]] for i in range(change_date - max_w, change_date + 1)) and \
+                   all(i in complete_cycle_days[all_w[index]] for i in range(change_date, change_date + max_w + 1)):
+                    logger.info(f"worker {all_w[index]} and dummie {all_w[index + 1]} skipped restriction on day {change_date}")
+                    continue
+                for i in range(change_date - lowest_max_after, change_date + 1):
                     consecutive_days = sum(
-                        shift[(dummy, change_date - i, s)]
-                        for i in range(max_w // 2 + 1)
+                        shift.get((worker, j, s), 0)
+                        for j in range(i, i + lowest_max_after + 1)
                         for s in working_shift
-                        if (dummy, change_date - i, s) in shift
-                    ) + sum(
-                        shift[(dummy_second, change_date + j, s)]
-                        for j in range(max_dummy // 2 + 1)
-                        for s in working_shift
-                        if (dummy_second, change_date + j, s) in shift)
-                    model.Add(consecutive_days <= lowest_max)
+                        for worker in [all_w[index], all_w[index + 1]]
+                    )
+                    model.Add(consecutive_days <= lowest_max_after)
 
 def c2d_attribution(model, shift, workers_no_contract_changes, working_days, c2d, year_range, annual_variables, workers_with_dummy, sundays):
     # #constraint for maximum of LD days in a year
