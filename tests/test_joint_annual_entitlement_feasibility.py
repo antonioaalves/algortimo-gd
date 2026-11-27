@@ -258,3 +258,88 @@ class TestApplyFlagOwnedByScan:
         )
         assert eligible['l_sab'] == 1
         assert eligible['l_dom_or_sab'] == 0
+
+
+def _greedy_l_dom_or_sab(begin, end, weekly_rest, tipo_ciclo_weeks=frozenset()):
+    """Call the joint placer directly. consecutive_state stays off so the quota path is visible."""
+    from src.data_models.functions.data_treatment_functions import (
+        _joint_greedy_entitlements_in_execution,
+    )
+
+    counts, _decisions = _joint_greedy_entitlements_in_execution(
+        in_exec_begin=pd.Timestamp(begin),
+        in_exec_end=pd.Timestamp(end),
+        weekly_rest=weekly_rest,
+        adjacent_free=frozenset(),
+        non_working=frozenset(),
+        holiday_set=frozenset(),
+        tipo_ciclo_weeks=tipo_ciclo_weeks,
+        tipo_contrato_resolver=lambda _d: 5,
+        default_tipo=5,
+        weekly_rest_for_quota=weekly_rest,
+        day_to_week={},
+        week_to_days={},
+        work_days_per_week={},
+        weekly_quota_ctx=None,
+        idx_by_date={},
+        consecutive_state=None,
+        contracts=pd.DataFrame(),
+        section_num_dias_cons=6,
+        employee_id='7504',
+        apply_flags={'l_dom': False, 'c2d': False, 'l_sab': False, 'l_dom_or_sab': True},
+    )
+    return counts
+
+
+class TestCicloSundayRest:
+    def test_ciclo_sunday_already_rest_counts_when_the_week_quota_is_full(self):
+        sunday = pd.Timestamp('2027-01-10')
+        wednesday = pd.Timestamp('2027-01-06')
+        week = (int(sunday.isocalendar().year), int(sunday.isocalendar().week))
+        counts = _greedy_l_dom_or_sab(
+            '2027-01-04',
+            '2027-01-10',
+            frozenset({wednesday, sunday}),
+            frozenset({week}),
+        )
+        assert counts['l_dom_or_sab'] == 1
+        assert counts['l_sab'] == 0
+
+    def test_ciclo_sunday_not_at_rest_does_not_count(self):
+        sunday = pd.Timestamp('2027-01-10')
+        week = (int(sunday.isocalendar().year), int(sunday.isocalendar().week))
+        counts = _greedy_l_dom_or_sab(
+            '2027-01-04',
+            '2027-01-10',
+            frozenset(),
+            frozenset({week}),
+        )
+        assert counts['l_dom_or_sab'] == 0
+
+    def test_ciclo_saturday_and_sunday_rest_both_count(self):
+        saturday = pd.Timestamp('2027-01-09')
+        sunday = pd.Timestamp('2027-01-10')
+        week = (int(sunday.isocalendar().year), int(sunday.isocalendar().week))
+        counts = _greedy_l_dom_or_sab(
+            '2027-01-04',
+            '2027-01-10',
+            frozenset({saturday, sunday}),
+            frozenset({week}),
+        )
+        assert counts['l_dom_or_sab'] == 2
+
+    def test_sunday_before_the_execution_window_is_not_counted(self):
+        outside = pd.Timestamp('2026-12-27')
+        inside = pd.Timestamp('2027-01-03')
+        weeks = frozenset({
+            (int(outside.isocalendar().year), int(outside.isocalendar().week)),
+            (int(inside.isocalendar().year), int(inside.isocalendar().week)),
+        })
+        counts = _greedy_l_dom_or_sab(
+            inside,
+            inside,
+            frozenset({outside}),
+            weeks,
+        )
+        assert counts['l_dom_or_sab'] == 0
+        assert counts['l_dom'] == 0
