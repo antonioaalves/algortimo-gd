@@ -2,13 +2,13 @@
 Integration validation script for df_calendario generation.
 
 This script validates that the different calendario "layers" are being applied correctly:
-- section_employees_id_list → All employees in section
-- ausencias_ferias → Vacation/absence markers
-- ciclos_completos → Complete 90-day cycles
-- folgas_ciclos → Cycle days off
-- calendario_passado → Past calendar data
-- days_off → Scheduled days off
-- df_feriados → Holidays
+- section_employees_id_list -> All employees in section
+- ausencias_ferias -> Vacation/absence markers
+- ciclos_completos -> Complete 90-day cycles
+- folgas_ciclos -> Cycle days off
+- calendario_passado -> Past calendar data
+- days_off -> Scheduled days off
+- df_feriados -> Holidays
 
 Usage:
     python tests/integration/validate_calendario_integration.py --process-id 11504 --posto-id 613

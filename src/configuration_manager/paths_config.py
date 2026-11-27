@@ -60,10 +60,13 @@ class PathsConfig:
         self._path_hierarchy = self._load_path_hierarchy()
         self._validate_path_hierarchy()
         
-        # Initialize path dictionaries
+        # CSV files referenced from sql_processing_paths (not under data/Queries/sql)
+        self._csv_processing_entities = frozenset({'df_messages'})
         self.sql_processing_paths: Dict[str, str] = {}
         self.sql_auxiliary_paths: Dict[str, str] = {}
         self.sql_raw_paths: Dict[str, str] = {}
+        self.alcampo_sql_raw_paths: Dict[str, str] = {}
+        self.alcampo_sql_auxiliary_paths: Dict[str, str] = {}
         self.csv_filepaths: Dict[str, str] = {}
         
         # Load appropriate path configurations based on use_db
@@ -131,6 +134,8 @@ class PathsConfig:
             self.sql_processing_paths = sql_config.get("sql_processing_paths", {})
             self.sql_auxiliary_paths = sql_config.get("sql_auxiliary_paths", {})
             self.sql_raw_paths = sql_config.get("available_entities_raw", {})
+            self.alcampo_sql_raw_paths = sql_config.get("alcampo_sql_raw_paths", {})
+            self.alcampo_sql_auxiliary_paths = sql_config.get("alcampo_sql_auxiliary_paths", {})
             
             # Build full paths for SQL files
             self._build_sql_file_paths()
@@ -150,9 +155,17 @@ class PathsConfig:
         """
         # Build full paths for processing SQL files
         for entity, filename in self.sql_processing_paths.items():
-            if filename:
+            if not filename:
+                continue
+            if entity in self._csv_processing_entities:
+                # Static, code-bundled resource (e.g. df_messages message templates).
+                # Kept directly under data/ -- NOT data/csvs/, which is excluded by
+                # .dockerignore and shadowed by the ./data/csvs runtime volume mount,
+                # which would make the file disappear inside the container.
+                full_path = os.path.join(self.project_root_dir, 'data', filename)
+            else:
                 full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
-                self.sql_processing_paths[entity] = full_path
+            self.sql_processing_paths[entity] = full_path
         
         # Build full paths for auxiliary SQL files
         for entity, filename in self.sql_auxiliary_paths.items():
@@ -165,6 +178,16 @@ class PathsConfig:
             if filename:
                 full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
                 self.sql_raw_paths[entity] = full_path
+
+        for entity, filename in self.alcampo_sql_raw_paths.items():
+            if filename:
+                full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
+                self.alcampo_sql_raw_paths[entity] = full_path
+
+        for entity, filename in self.alcampo_sql_auxiliary_paths.items():
+            if filename:
+                full_path = os.path.join(self.project_root_dir, *self.sql_hierarchy, filename)
+                self.alcampo_sql_auxiliary_paths[entity] = full_path
     
     def _validate_sql_paths(self) -> None:
         """
