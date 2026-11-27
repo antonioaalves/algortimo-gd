@@ -300,8 +300,9 @@ def validate_df_colaborador_structure(df_colaborador: pd.DataFrame, use_case: in
 
         # RECOMMENDED COLUMNS CHECK (warn if missing)
         recommended_columns = [
-            'nome',           # Employee display name
-            'labor_union',    # Labor agreement / union code
+            'nome',                      # Employee display name
+            'labor_union',               # Labor agreement / union code
+            'max_continuous_work_days',  # Maximum consecutive working days (contract-level)
         ]
         if use_case == 0:
             recommended_columns.extend([

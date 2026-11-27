@@ -31,7 +31,6 @@ class FinalizedWorkerCalendarSets:
     vacation_days: Set[int]
     worker_absences: Set[int]
     fixed_days_off: Set[int]
-    fixed_LQs: Set[int]
     fixed_compensation_days: Set[int]
     shift_M: Set[int]
     shift_T: Set[int]
@@ -148,7 +147,6 @@ def extract_worker_horario_sets(worker_calendar: pd.DataFrame) -> Dict[str, Any]
         'free_day_complete_cycle': worker_calendar.loc[
             horario.isin(['L', 'L_DOM']), 'index'
         ].astype(int).tolist(),
-        'fixed_LQs': set(worker_calendar.loc[horario == 'LQ', 'index'].astype(int)),
         'fixed_compensation_days': set(
             worker_calendar.loc[horario == 'LD', 'index'].astype(int)
         ),
@@ -202,7 +200,6 @@ def finalize_worker_calendar_sets(
     vacation_days: Set[int] = set(raw['vacation_days'])
     worker_absences: Set[int] = set(raw['worker_absences'])
     fixed_days_off: Set[int] = set(raw['fixed_days_off'])
-    fixed_LQs: Set[int] = set(raw['fixed_LQs'])
     fixed_compensation_days: Set[int] = set(raw['fixed_compensation_days'])
     shift_M: Set[int] = set(raw['shift_M'])
     shift_T: Set[int] = set(raw['shift_T'])
@@ -223,7 +220,6 @@ def finalize_worker_calendar_sets(
     vacation_days = vacation_days - closed_holidays
     worker_absences = worker_absences - closed_holidays
     fixed_days_off = fixed_days_off - closed_holidays
-    fixed_LQs = fixed_LQs - closed_holidays
     free_day_complete_cycle = sorted(set(free_day_complete_cycle) - closed_holidays)
 
     if contract_type == 8:
@@ -234,10 +230,10 @@ def finalize_worker_calendar_sets(
             )
         else:
             work_days_per_week = populate_week_fixed_days_off(
-                fixed_days_off, fixed_LQs, week_to_days_salsa, period, nbr_weeks
+                fixed_days_off, week_to_days_salsa, period, nbr_weeks
             )
         check_5_6_pattern_consistency(
-            worker_id, fixed_days_off, fixed_LQs, week_to_days_salsa, work_days_per_week
+            worker_id, fixed_days_off, week_to_days_salsa, work_days_per_week
         )
     else:
         work_days_per_week = np.full(nbr_weeks, contract_type)
@@ -251,12 +247,11 @@ def finalize_worker_calendar_sets(
         contract_type,
     )
 
-    worker_absences, vacation_days, fixed_days_off, fixed_LQs = days_off_atributtion(
+    worker_absences, vacation_days, fixed_days_off = days_off_atributtion(
         worker_id,
         worker_absences,
         vacation_days,
         fixed_days_off,
-        fixed_LQs,
         week_to_days_salsa,
         closed_holidays,
         work_days_per_week,
@@ -284,7 +279,6 @@ def finalize_worker_calendar_sets(
         vacation_days=vacation_days,
         worker_absences=worker_absences,
         fixed_days_off=fixed_days_off,
-        fixed_LQs=fixed_LQs,
         fixed_compensation_days=fixed_compensation_days,
         shift_M=shift_M,
         shift_T=shift_T,

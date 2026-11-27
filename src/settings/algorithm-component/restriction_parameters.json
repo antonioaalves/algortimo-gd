@@ -1,8 +1,8 @@
 {
     "restriction_parameters": {
         "max_continuous_working_days": 5,
-        "shifts": ["M", "T", "L", "LQ", "F", "A", "V"],
-        "check_shifts": ["M", "T", "L", "LQ"],
+        "shifts": ["M", "T", "L", "F", "A", "V"],
+        "check_shifts": ["M", "T", "L"],
         "working_shifts": ["M", "T"],
         "F_special_day": 0,
         "free_sundays_plus_c2d": 0,
@@ -22,7 +22,7 @@
             "enabled": true,
             "use_case": 0                
         },
-        "LQ_attribution": {
+        "c2d_attribution": {
             "enabled": true,
             "use_case": 0                
         },
@@ -45,14 +45,6 @@
         "salsa_2_consecutive_free_days": {
             "enabled": true,
             "use_case": 0    
-        },
-        "salsa_2_day_quality_weekend": {
-            "enabled": true,
-            "use_case": 0    
-        },
-        "salsa_saturday_L_constraint": {
-            "enabled": true,
-            "use_case": 0
         },
         "maximum_continuous_working_days": {
             "enabled": true,

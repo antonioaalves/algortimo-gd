@@ -1218,7 +1218,7 @@ def validate_workload_template_vs_contract(
 
 
 def _prepare_num_dias_cons_contracts(df_colaborador: pd.DataFrame) -> pd.DataFrame:
-    """Contract rows for resolving num_dias_cons by day (optional column on df_colaborador)."""
+    """Contract rows for resolving max_continuous_work_days by day from df_colaborador."""
     if df_colaborador is None or df_colaborador.empty:
         return pd.DataFrame()
     required = ['employee_id', 'begin_date', 'end_date']
@@ -1226,8 +1226,8 @@ def _prepare_num_dias_cons_contracts(df_colaborador: pd.DataFrame) -> pd.DataFra
     if missing:
         return pd.DataFrame()
     cols = list(required)
-    if 'num_dias_cons' in df_colaborador.columns:
-        cols.append('num_dias_cons')
+    if 'max_continuous_work_days' in df_colaborador.columns:
+        cols.append('max_continuous_work_days')
     contracts = sort_df_colaborador_by_contract_period(df_colaborador[cols].copy())
     contracts['employee_id'] = contracts['employee_id'].astype(str)
     contracts['begin_date'] = pd.to_datetime(contracts['begin_date'], errors='coerce').dt.normalize()
@@ -1239,19 +1239,15 @@ def _resolve_num_dias_cons_for_day(
     day: pd.Timestamp,
     contracts: pd.DataFrame,
     employee_id: str,
-    section_default: int,
-) -> int:
+) -> Optional[int]:
     """
     Max consecutive working days for the active contract on day.
 
-    AS-IS: section-level NUM_DIAS_CONS when df_colaborador.num_dias_cons is absent.
-    TO-BE: contract-level num_dias_cons on df_colaborador (range join), section fallback.
+    Uses contract-level max_continuous_work_days from df_colaborador only.
+    Returns None when the column is missing, no contract covers the day, or the value is null/non-positive.
     """
-    default = int(section_default) if section_default is not None else 6
-    if default <= 0:
-        default = 6
-    if contracts is None or contracts.empty or 'num_dias_cons' not in contracts.columns:
-        return default
+    if contracts is None or contracts.empty or 'max_continuous_work_days' not in contracts.columns:
+        return None
     day = pd.Timestamp(day).normalize()
     active = contracts[
         (contracts['employee_id'].astype(str) == str(employee_id))
@@ -1259,16 +1255,16 @@ def _resolve_num_dias_cons_for_day(
         & (contracts['end_date'] >= day)
     ]
     if active.empty:
-        return default
+        return None
     row = active.sort_values('begin_date').iloc[-1]
-    val = row.get('num_dias_cons')
+    val = row.get('max_continuous_work_days')
     if val is None or (isinstance(val, float) and pd.isna(val)):
-        return default
+        return None
     try:
         parsed = int(val)
-        return parsed if parsed > 0 else default
+        return parsed if parsed > 0 else None
     except (TypeError, ValueError):
-        return default
+        return None
 
 
 # salsa_2_consecutive_free_days uses period[0] - 3 < d < period[1]
@@ -1281,18 +1277,111 @@ def _max_num_dias_cons_in_index_range(
     date_by_idx: Dict[int, pd.Timestamp],
     contracts: pd.DataFrame,
     employee_id: str,
-    section_default: int,
-) -> int:
-    """Upper bound on num_dias_cons for window lookback sizing."""
-    limit = int(section_default) if section_default and section_default > 0 else 6
+) -> Optional[int]:
+    """Upper bound on num_dias_cons for window lookback sizing (max over execution indices)."""
+    limit: Optional[int] = None
     for idx in range(begin_idx, end_idx + 1):
         day = date_by_idx.get(idx)
-        if day is not None:
-            limit = max(
-                limit,
-                _resolve_num_dias_cons_for_day(day, contracts, employee_id, section_default),
-            )
+        if day is None:
+            continue
+        resolved = _resolve_num_dias_cons_for_day(day, contracts, employee_id)
+        if resolved is None:
+            return None
+        limit = resolved if limit is None else max(limit, resolved)
     return limit
+
+
+def _calendar_index_on_or_near(
+    target: pd.Timestamp,
+    idx_by_date: Dict[pd.Timestamp, int],
+    date_by_idx: Dict[int, pd.Timestamp],
+    *,
+    on_or_after: bool,
+) -> Optional[int]:
+    """Map a calendar day to index; if missing, nearest index in date_by_idx."""
+    target = pd.Timestamp(target).normalize()
+    direct = idx_by_date.get(target)
+    if direct is not None:
+        return int(direct)
+    if not date_by_idx:
+        return None
+    if on_or_after:
+        candidates = [(idx, day) for idx, day in date_by_idx.items() if day >= target]
+        if not candidates:
+            return None
+        return int(min(candidates, key=lambda x: x[1])[0])
+    candidates = [(idx, day) for idx, day in date_by_idx.items() if day <= target]
+    if not candidates:
+        return None
+    return int(max(candidates, key=lambda x: x[1])[0])
+
+
+def _consecutive_validation_index_bounds(
+    execution_begin: pd.Timestamp,
+    execution_end: pd.Timestamp,
+    exec_begin_idx: int,
+    exec_end_idx: int,
+    idx_by_date: Dict[pd.Timestamp, int],
+    date_by_idx: Dict[int, pd.Timestamp],
+    contracts: pd.DataFrame,
+    employee_id: str,
+) -> Optional[Tuple[int, int, int]]:
+    """
+    Validation span for consecutive-work checks:
+
+    start_date minus max_continuous_work_days (contract active at start_date)
+    through end_date plus max_continuous_work_days (contract active at end_date).
+    """
+    start_limit = _resolve_num_dias_cons_for_day(execution_begin, contracts, employee_id)
+    end_limit = _resolve_num_dias_cons_for_day(execution_end, contracts, employee_id)
+    if start_limit is None or end_limit is None:
+        return None
+    max_num_dias_cons = _max_num_dias_cons_in_index_range(
+        exec_begin_idx,
+        exec_end_idx,
+        date_by_idx,
+        contracts,
+        employee_id,
+    )
+    if max_num_dias_cons is None:
+        return None
+    val_begin_date = execution_begin.normalize() - pd.Timedelta(days=start_limit)
+    val_end_date = execution_end.normalize() + pd.Timedelta(days=end_limit)
+    val_begin_idx = _calendar_index_on_or_near(
+        val_begin_date, idx_by_date, date_by_idx, on_or_after=True
+    )
+    val_end_idx = _calendar_index_on_or_near(
+        val_end_date, idx_by_date, date_by_idx, on_or_after=False
+    )
+    if val_begin_idx is None or val_end_idx is None or val_begin_idx > val_end_idx:
+        return None
+    return val_begin_idx, val_end_idx, max_num_dias_cons
+
+
+def _resolve_max_days_for_consecutive_check(
+    idx: int,
+    exec_begin_idx: int,
+    exec_end_idx: int,
+    date_by_idx: Dict[int, pd.Timestamp],
+    contracts: pd.DataFrame,
+    employee_id: str,
+) -> Optional[int]:
+    """Contract limit for a window start; margin days use the limit at start/end of execution."""
+    day = date_by_idx.get(idx)
+    if day is None:
+        return None
+    resolved = _resolve_num_dias_cons_for_day(day, contracts, employee_id)
+    if resolved is not None:
+        return resolved
+    if idx < exec_begin_idx:
+        exec_day = date_by_idx.get(exec_begin_idx)
+        if exec_day is not None:
+            return _resolve_num_dias_cons_for_day(exec_day, contracts, employee_id)
+    elif idx > exec_end_idx:
+        exec_day = date_by_idx.get(exec_end_idx)
+        if exec_day is not None:
+            return _resolve_num_dias_cons_for_day(exec_day, contracts, employee_id)
+    return None
 
 
 def _classify_index_for_consecutive_work(
@@ -1505,7 +1594,6 @@ def _build_consecutive_work_index_state_for_employee(
     df_ausencias_ferias: Optional[pd.DataFrame],
     execution_begin: pd.Timestamp,
     execution_end: pd.Timestamp,
-    section_num_dias_cons: int,
     contracts: pd.DataFrame,
     employee_labels=None,
 ) -> Optional[dict]:
@@ -1560,7 +1648,25 @@ def _build_consecutive_work_index_state_for_employee(
                 else:
                     extra_absence.add(int(idx))
 
-    year_range = [exec_begin_idx, exec_end_idx]
+    bounds = _consecutive_validation_index_bounds(
+        execution_begin,
+        execution_end,
+        exec_begin_idx,
+        exec_end_idx,
+        idx_by_date,
+        date_by_idx,
+        contracts,
+        employee_id,
+    )
+    if bounds is None:
+        logger.warning(
+            'build_consecutive_work_index_state: cannot derive validation bounds for '
+            f'employee {employee_id}'
+        )
+        return None
+    val_begin_idx, val_end_idx, max_num_dias_cons = bounds
+
+    year_range = [val_begin_idx, val_end_idx]
     period = (exec_begin_idx, exec_end_idx)
 
     finalized = build_read_salsa_worker_calendar(
@@ -1592,7 +1698,6 @@ def _build_consecutive_work_index_state_for_employee(
         | finalized.vacation_days
         | closed_holidays
         | finalized.fixed_days_off
-        | finalized.fixed_LQs
     )
     flexible = working_days - fixed_work - guaranteed_rest
 
@@ -1600,7 +1705,7 @@ def _build_consecutive_work_index_state_for_employee(
     salsa_week_to_indices, _ = _build_salsa_week_index_maps_from_calendario(df_calendario)
     weekly_rest_for_quota = frozenset(
         date_by_idx[i].normalize()
-        for i in (finalized.fixed_days_off | finalized.fixed_LQs)
+        for i in (finalized.fixed_days_off)
         if i in date_by_idx
     )
     preallocated_free = weekly_rest_for_quota
@@ -1633,24 +1738,8 @@ def _build_consecutive_work_index_state_for_employee(
         'date_by_idx': date_by_idx,
     }
 
-    section_default = int(section_num_dias_cons) if section_num_dias_cons else 6
-    if section_default <= 0:
-        section_default = 6
-    all_indices = set(emp_cal['index'].astype(int))
-    min_calendar_idx = int(min(all_indices)) if all_indices else exec_begin_idx
-    max_num_dias_cons = _max_num_dias_cons_in_index_range(
-        exec_begin_idx,
-        exec_end_idx,
-        date_by_idx,
-        contracts,
-        employee_id,
-        section_default,
-    )
-    lookback = max_num_dias_cons + _CONSECUTIVE_FREE_LOOKBACK_INDICES
-    check_begin_idx = max(min_calendar_idx, exec_begin_idx - lookback)
-
     index_status: Dict[int, str] = {}
-    for idx in range(check_begin_idx, exec_end_idx + 1):
+    for idx in range(val_begin_idx, val_end_idx + 1):
         index_status[idx] = _classify_index_for_consecutive_work(
             idx, working_days, fixed_work, flexible, guaranteed_rest
         )
@@ -1676,9 +1765,9 @@ def _build_consecutive_work_index_state_for_employee(
         'date_by_idx': date_by_idx,
         'exec_begin_idx': exec_begin_idx,
         'exec_end_idx': exec_end_idx,
-        'check_begin_idx': check_begin_idx,
+        'val_begin_idx': val_begin_idx,
+        'val_end_idx': val_end_idx,
         'max_num_dias_cons': max_num_dias_cons,
-        'section_num_dias_cons': section_default,
         'tipo_contrato': contract_type,
         'work_days_per_week': work_days_per_week,
         'salsa_day_to_week': salsa_day_to_week,
@@ -1706,7 +1795,6 @@ def _window_skipped_for_complete_cycle(
 def _validate_employee_max_consecutive_working_days(
     state: dict,
     contracts: pd.DataFrame,
-    section_num_dias_cons: int,
 ) -> List[dict]:
     """Return violation events for one employee (empty if feasible)."""
     events: List[dict] = []
@@ -1714,10 +1802,12 @@ def _validate_employee_max_consecutive_working_days(
     date_by_idx = state['date_by_idx']
     exec_begin = state['exec_begin_idx']
     exec_end = state['exec_end_idx']
-    check_begin = state.get('check_begin_idx', exec_begin)
+    val_begin = state.get('val_begin_idx', exec_begin)
+    val_end = state.get('val_end_idx', exec_end)
     complete_cycle = state['complete_cycle_days']
-    section_default = state.get('section_num_dias_cons', section_num_dias_cons)
-    max_num_dias_cons = state.get('max_num_dias_cons', section_default)
+    max_num_dias_cons = state.get('max_num_dias_cons')
+    if max_num_dias_cons is None:
+        return events
 
     emp_id = state['employee_id']
     matricula = state.get('matricula', '')
@@ -1755,11 +1845,10 @@ def _validate_employee_max_consecutive_working_days(
             'detail_pt': detail_pt,
         })
 
-    def _resolve_max_days_for_index(idx: int) -> int:
-        day = date_by_idx.get(idx)
-        if day is None:
-            return int(section_default)
-        return _resolve_num_dias_cons_for_day(day, contracts, emp_id, section_default)
+    def _resolve_max_days_for_index(idx: int) -> Optional[int]:
+        return _resolve_max_days_for_consecutive_check(
+            idx, exec_begin, exec_end, date_by_idx, contracts, emp_id
+        )
 
     def _check_window(window_indices: List[int], label_suffix: str = '') -> bool:
         if not window_indices:
@@ -1767,6 +1856,18 @@ def _validate_employee_max_consecutive_working_days(
         if _window_skipped_for_complete_cycle(window_indices, complete_cycle):
             return True
         win_max_days = _resolve_max_days_for_index(window_indices[0])
+        if win_max_days is None:
+            begin, end, suffix = _period_labels(window_indices[0], window_indices[-1])
+            detail = (
+                f"no periodo{suffix}, o colaborador {emp_id}"
+                f"{f', matrícula {matricula}' if matricula else ''} nao tem "
+                f"max_continuous_work_days definido no contrato ativo"
+            )
+            _append_event(
+                'missing_max_continuous_work_days', 0, 0,
+                window_indices[0], window_indices[-1], detail,
+            )
+            return False
         fixed_in_window = sum(
             1 for i in window_indices if index_status.get(i) == 'fixed_work'
         )
@@ -1804,12 +1905,21 @@ def _validate_employee_max_consecutive_working_days(
             return False
         return True
 
-    # Sliding windows — same overlap rule as maximum_continuous_working_days.
-    first_win_start = max(check_begin, exec_begin - max_num_dias_cons)
-    for win_start in range(first_win_start, exec_end + 1):
+    def _window_within_validation_span(win_start: int, win_end: int) -> bool:
+        return win_start >= val_begin and win_end <= val_end
+
+    # Sliding windows within [start - num_dias_cons, end + num_dias_cons] only.
+    for win_start in range(val_begin, val_end + 1):
         win_max_days = _resolve_max_days_for_index(win_start)
+        if win_max_days is None:
+            if exec_begin <= win_start <= exec_end:
+                probe_end = win_start + max_num_dias_cons
+                if _window_within_validation_span(win_start, probe_end):
+                    if not _check_window(list(range(win_start, min(probe_end, val_end) + 1))):
+                        return events
+            continue
         win_end = win_start + win_max_days
-        if not _solver_window_overlaps_execution(win_start, win_end, exec_begin, exec_end):
+        if not _window_within_validation_span(win_start, win_end):
             continue
         window = list(range(win_start, win_end + 1))
         if not _check_window(window):
@@ -1821,7 +1931,7 @@ def _validate_employee_max_consecutive_working_days(
         before = list(range(change_idx - half, change_idx + 1))
         after = list(range(change_idx, change_idx + half + 1))
         combined = before + after
-        if max(combined) < exec_begin or min(combined) > exec_end:
+        if max(combined) < val_begin or min(combined) > val_end:
             continue
         if not _check_window(combined, label_suffix=' (mudanca de contrato)'):
             return events
@@ -1834,24 +1944,24 @@ def validate_max_consecutive_working_days(
     df_colaborador: pd.DataFrame,
     df_feriados: pd.DataFrame,
     df_ausencias_ferias: pd.DataFrame,
-    section_num_dias_cons: int,
     execution_begin: str,
     execution_end: str,
 ) -> Tuple[bool, List[dict], str]:
     """
     Pre-check maximum consecutive working days before the solver runs.
 
-    Mirrors read_salsa calendar processing, days_off_atributtion, sliding windows from
-    maximum_continuous_working_days (including passado prefix overlap at execution start),
-    and weekly L/LQ budget (salsa_2_free_days_week), including admission/demission
-    proportional free-day rules.
+    Mirrors read_salsa calendar processing, days_off_atributtion, and weekly L/LQ budget
+    (salsa_2_free_days_week), including admission/demission proportional free-day rules.
+
+    Calendar span checked per employee: from start_date minus
+    max_continuous_work_days at start_date through end_date plus max_continuous_work_days at
+    end_date (passado before that margin is not validated).
 
     LD is treated as fixed work (does not break the consecutive-work streak). Unlocked
     MoT/M/T placeholders can become L/LQ when weekly quota allows. Ciclo completo
     windows are skipped. Contract-change boundary windows mirror dummy-worker logic.
 
-    num_dias_cons: section default with optional per-contract override via
-    df_colaborador.max_continuous_work_days (contract-level), section fallback.
+    Limit per contract period from df_colaborador.max_continuous_work_days only.
 
     Returns:
         (success, error_events, error_message)
@@ -1881,10 +1991,6 @@ def validate_max_consecutive_working_days(
     if exec_begin > exec_end:
         return True, [], ''
 
-    section_default = int(section_num_dias_cons) if section_num_dias_cons is not None else 6
-    if section_default <= 0:
-        section_default = 6
-
     holiday_set: frozenset = frozenset()
     if df_feriados is not None and not df_feriados.empty and 'schedule_day' in df_feriados.columns:
         feriado_days = pd.to_datetime(
@@ -1912,22 +2018,18 @@ def validate_max_consecutive_working_days(
             df_ausencias_ferias=df_ausencias_ferias,
             execution_begin=exec_begin,
             execution_end=exec_end,
-            section_num_dias_cons=section_default,
             contracts=contracts,
             employee_labels=employee_labels,
         )
         if state is None:
             continue
         error_events.extend(
-            _validate_employee_max_consecutive_working_days(
-                state, contracts, section_default
-            )
+            _validate_employee_max_consecutive_working_days(state, contracts)
         )
 
     if not error_events:
         logger.info(
-            'validate_max_consecutive_working_days: all employees pass pre-check '
-            f'(limit={section_default})'
+            'validate_max_consecutive_working_days: all employees pass pre-check'
         )
         return True, [], ''
 
@@ -2017,11 +2119,12 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
     Key Operations:
         1. Identifier normalisation (employee_id, contract_id, matricula -> str)
         2. labor_union -> uppercase
-        3. maximumworkday timedelta -> hours  (absorbed from retired treat_df_contratos)
-        4. carga_diaria derivation (min of avg-daily-workload vs maximumworkday)
-        5. begin_date / end_date -> datetime
-        6. Validate min_dia_trab / max_dia_trab business rules
-        7. Initialise runtime-computed columns (total_dom_fes, total_fes, total_holidays)
+        3. max_continuous_work_days: numeric coercion; non-positive values set to NA
+        4. maximumworkday timedelta -> hours  (absorbed from retired treat_df_contratos)
+        5. carga_diaria derivation (min of avg-daily-workload vs maximumworkday)
+        6. begin_date / end_date -> datetime
+        7. Validate min_dia_trab / max_dia_trab business rules
+        8. Initialise runtime-computed columns (total_dom_fes, total_fes, total_holidays)
 
     Args:
         df_colaborador: Raw DataFrame from queryGetCoreProEmpContract.sql
@@ -2091,6 +2194,21 @@ def treat_df_colaborador(df_colaborador: pd.DataFrame, employees_id_list: List[s
 
         # Derive maximumdaysperweek after nulls are resolved
         df_colaborador['maximumdaysperweek'] = df_colaborador['max_dia_trab'].astype(float)
+
+        # max_continuous_work_days: integer day count from wfm.core_pro_emp_contract
+        if 'max_continuous_work_days' in df_colaborador.columns:
+            try:
+                if pd.api.types.is_timedelta64_dtype(df_colaborador['max_continuous_work_days']):
+                    df_colaborador['max_continuous_work_days'] = df_colaborador['max_continuous_work_days'].dt.days
+                else:
+                    df_colaborador['max_continuous_work_days'] = pd.to_numeric(
+                        df_colaborador['max_continuous_work_days'], errors='coerce'
+                    )
+                df_colaborador['max_continuous_work_days'] = df_colaborador['max_continuous_work_days'].where(
+                    df_colaborador['max_continuous_work_days'] > 0, other=pd.NA
+                )
+            except Exception as e:
+                logger.warning(f"treat_df_colaborador: max_continuous_work_days conversion failed, leaving as-is: {e}")
 
         # MAXIMUMWORKDAY: timedelta -> hours  (mirrors retired treat_df_contratos logic)
         try:
@@ -4517,7 +4635,7 @@ def _build_salsa_weekly_quota_context(
     salsa_week_to_indices, _ = _build_salsa_week_index_maps_from_calendario(df_calendario)
     weekly_rest_for_quota = frozenset(
         date_by_idx[i].normalize()
-        for i in (finalized.fixed_days_off | finalized.fixed_LQs)
+        for i in (finalized.fixed_days_off)
         if i in date_by_idx
     )
 
@@ -4785,7 +4903,6 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
 
     horario = emp_cal['horario'].astype(str).str.strip()
     fixed_days_off = set(emp_cal.loc[horario.isin(['L', 'C', 'L_DOM']), 'index'].astype(int))
-    fixed_LQs = set(emp_cal.loc[horario == 'LQ', 'index'].astype(int))
     vacation_days = set(emp_cal.loc[horario.isin(['V', 'V-']), 'index'].astype(int))
     worker_absences = set(emp_cal.loc[horario.isin(['A', 'AP', 'A-']), 'index'].astype(int))
     empty_days = set(emp_cal.loc[horario == '-', 'index'].astype(int))
@@ -4816,7 +4933,6 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     vacation_days -= closed_holidays
     worker_absences -= closed_holidays
     fixed_days_off -= closed_holidays
-    fixed_LQs -= closed_holidays
 
     contract_type = _resolve_employee_tipo_contrato(df_colaborador, employee_id)
     from src.algorithms.model_salsa.auxiliar_functions_salsa import days_off_atributtion
@@ -4845,12 +4961,11 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
         idx_by_date.get(pd.Timestamp(period[0]).normalize(), period_begin_idx),
         idx_by_date.get(pd.Timestamp(period[1]).normalize(), period_end_idx),
     ]
-    worker_absences, vacation_days, fixed_days_off, fixed_LQs = days_off_atributtion(
+    worker_absences, vacation_days, fixed_days_off = days_off_atributtion(
         str(employee_id),
         worker_absences,
         vacation_days,
         fixed_days_off,
-        fixed_LQs,
         week_to_days_idx,
         closed_holidays,
         work_days_per_week,
@@ -4860,7 +4975,7 @@ def _build_attributed_rest_and_unavailable_days_for_cap(
     )
 
     weekly_rest_quota = _indices_to_schedule_days(
-        fixed_days_off | fixed_LQs, date_by_idx
+        fixed_days_off, date_by_idx
     )
     unavailable = _indices_to_schedule_days(
         vacation_days | worker_absences, date_by_idx
@@ -4919,7 +5034,6 @@ def _build_work_days_per_week_for_cap(
     fixed_days_off = set(
         emp_cal.loc[emp_cal['horario'].isin(['L', 'C', 'L_DOM']), 'index'].astype(int)
     )
-    fixed_LQs = set(emp_cal.loc[emp_cal['horario'] == 'LQ', 'index'].astype(int))
 
     week_template_temp = (
         emp_cal.drop_duplicates(subset='index')
@@ -4965,7 +5079,7 @@ def _build_work_days_per_week_for_cap(
         )
     else:
         work_days_arr = populate_week_fixed_days_off(
-            fixed_days_off, fixed_LQs, week_to_days_idx, period, nbr_weeks
+            fixed_days_off, week_to_days_idx, period, nbr_weeks
         )
 
     work_days_arr = joining_template_with_contract_per_week(
@@ -5002,8 +5116,8 @@ def _count_fixed_free_in_salsa_week(
     Count fixed weekly-rest days (L, L_DOM, LQ, C) in the salsa week of day.
 
     Uses the full salsa week block (all indices in week_to_days_salsa), including
-    days outside the execution window — mirrors salsa_2_free_days_week fixed_days_week
-    and fixed_LQs_week intersection with week_work_days.
+    days outside the execution window — mirrors salsa_2_free_days_week and fixed_days_week
+    intersection with week_work_days.
     """
     week_num = day_to_week.get(day.normalize())
     if week_num is None:
@@ -5661,7 +5775,6 @@ def _consecutive_windows_feasible_for_claims(
     forced_rest_indices: Set[int],
     slot_claims: Dict[int, int],
     contracts: pd.DataFrame,
-    section_num_dias_cons: int,
     extra_slot_claims: Optional[Dict[int, int]] = None,
 ) -> bool:
     """
@@ -5682,22 +5795,27 @@ def _consecutive_windows_feasible_for_claims(
     date_by_idx = state['date_by_idx']
     exec_begin = state['exec_begin_idx']
     exec_end = state['exec_end_idx']
-    check_begin = state.get('check_begin_idx', exec_begin)
+    val_begin = state.get('val_begin_idx', exec_begin)
+    val_end = state.get('val_end_idx', exec_end)
     complete_cycle = state['complete_cycle_days']
-    max_num_dias_cons = state.get('max_num_dias_cons', section_num_dias_cons)
+    max_num_dias_cons = state.get('max_num_dias_cons')
+    if max_num_dias_cons is None:
+        return False
     emp_id = state['employee_id']
     week_remaining = _week_remaining_with_slot_claims(state, merged_claims)
 
-    first_win_start = max(check_begin, exec_begin - max_num_dias_cons)
-    for win_start in range(first_win_start, exec_end + 1):
-        day = date_by_idx.get(win_start)
-        win_max_days = (
-            _resolve_num_dias_cons_for_day(day, contracts, emp_id, section_num_dias_cons)
-            if day is not None
-            else section_num_dias_cons
+    for win_start in range(val_begin, val_end + 1):
+        win_max_days = _resolve_max_days_for_consecutive_check(
+            win_start, exec_begin, exec_end, date_by_idx, contracts, emp_id
         )
+        if win_max_days is None:
+            if exec_begin <= win_start <= exec_end:
+                probe_end = win_start + max_num_dias_cons
+                if probe_end <= val_end:
+                    return False
+            continue
         win_end = win_start + win_max_days
-        if not _solver_window_overlaps_execution(win_start, win_end, exec_begin, exec_end):
+        if win_end > val_end:
             continue
         window = list(range(win_start, win_end + 1))
         if _window_skipped_for_complete_cycle(window, complete_cycle):
@@ -5886,7 +6004,6 @@ def _joint_greedy_entitlements_in_execution(
     idx_by_date: Optional[Dict[pd.Timestamp, int]],
     consecutive_state: Optional[dict],
     contracts: Optional[pd.DataFrame],
-    section_num_dias_cons: int,
     employee_id: Optional[str] = None,
     apply_flags: Optional[Dict[str, bool]] = None,
 ) -> Tuple[Dict[str, int], List[dict]]:
@@ -5926,7 +6043,6 @@ def _joint_greedy_entitlements_in_execution(
             trial_forced,
             slot_claims,
             contracts,
-            section_num_dias_cons,
             extra_slot_claims=extra_claims,
         )
 
@@ -6004,6 +6120,9 @@ def _joint_greedy_entitlements_in_execution(
         if _is_tipo_ciclo_week(sunday, tipo_ciclo_weeks):
             if sunday not in weekly_rest:
                 return False
+            counts['l_dom'] += 1
+            l_dom_sundays_claimed.add(sunday.normalize())
+            return True
         elif sunday in weekly_rest:
             counts['l_dom'] += 1
             l_dom_sundays_claimed.add(sunday.normalize())
@@ -6184,7 +6303,6 @@ def joint_annual_entitlement_feasibility(
     df_colaborador: Optional[pd.DataFrame],
     df_ausencias_ferias: Optional[pd.DataFrame],
     idx_by_date: Optional[Dict[pd.Timestamp, int]],
-    section_num_dias_cons: int,
     treat_label_holiday: int,
     apply_flags: Optional[Dict[str, bool]] = None,
 ) -> Tuple[Dict[str, int], Dict[str, int]]:
@@ -6238,7 +6356,6 @@ def joint_annual_entitlement_feasibility(
             df_ausencias_ferias=df_ausencias_ferias,
             execution_begin=exec_b,
             execution_end=exec_e,
-            section_num_dias_cons=section_num_dias_cons,
             contracts=contracts,
             employee_labels=None,
         )
@@ -6263,7 +6380,6 @@ def joint_annual_entitlement_feasibility(
                 idx_by_date=idx_by_date,
                 consecutive_state=consecutive_state,
                 contracts=contracts,
-                section_num_dias_cons=section_num_dias_cons,
                 employee_id=employee_id,
                 apply_flags=apply_flags,
             )
@@ -6512,7 +6628,6 @@ def apply_annual_dayoff_feasibility_cap(
     df_annual_variables: pd.DataFrame,
     df_feriados: pd.DataFrame,
     df_ausencias_ferias: pd.DataFrame,
-    num_dias_cons: int,
     main_year: int,
     df_calendario: Optional[pd.DataFrame] = None,
     execution_begin: Optional[str] = None,
@@ -6740,7 +6855,6 @@ def apply_annual_dayoff_feasibility_cap(
                 df_colaborador=df_colaborador,
                 df_ausencias_ferias=df_ausencias_ferias,
                 idx_by_date=idx_by_date,
-                section_num_dias_cons=int(num_dias_cons) if num_dias_cons else 6,
                 treat_label_holiday=int(treat_label_holiday),
                 apply_flags=apply_flags,
             )

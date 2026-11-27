@@ -904,9 +904,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                 if param_name == 'GD_algorithmName':
                     algorithm_name = param_value
 
-                if param_name == 'NUM_DIAS_CONS':
-                    algorithm_treatment_params['NUM_DIAS_CONS'] = int(param_value)
-
                 if param_name == 'ld_sunday_param':
                     algorithm_treatment_params['ld_sunday_param'] = float(param_value)
 
@@ -2132,12 +2129,11 @@ class SalsaDataModel(BaseDescansosDataModel):
 
             # Apply feasibility cap to annual day-off entitlements (STRSOL-1919 joint engine).
             # Runs here because all required data is available: df_annual_variables and df_feriados
-            # are loaded in earlier phases; NUM_DIAS_CONS is resolved in load_process_data.
+            # are loaded in earlier phases; max_continuous_work_days comes from contract data.
             try:
                 df_annual_variables = self.auxiliary_data.get('df_annual_variables', pd.DataFrame())
                 df_feriados_cap = self.auxiliary_data.get('df_feriados', pd.DataFrame())
                 df_ausencias_cap = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
-                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
 
                 treat_label_holiday = int(
                     self.algorithm_treatment_params.get('treat_label_holiday', 1)
@@ -2147,7 +2143,6 @@ class SalsaDataModel(BaseDescansosDataModel):
                     df_annual_variables=df_annual_variables,
                     df_feriados=df_feriados_cap,
                     df_ausencias_ferias=df_ausencias_cap,
-                    num_dias_cons=num_dias_cons,
                     main_year=main_year,
                     df_calendario=df_calendario,
                     execution_begin=start_date,
@@ -2341,13 +2336,11 @@ class SalsaDataModel(BaseDescansosDataModel):
             try:
                 df_feriados = self.auxiliary_data.get('df_feriados', pd.DataFrame())
                 df_ausencias = self.auxiliary_data.get('df_ausencias_ferias', pd.DataFrame())
-                num_dias_cons = self.algorithm_treatment_params.get('NUM_DIAS_CONS', 6)
                 success_cons, cons_events, error_cons = validate_max_consecutive_working_days(
                     df_calendario=df_calendario,
                     df_colaborador=df_colaborador,
                     df_feriados=df_feriados,
                     df_ausencias_ferias=df_ausencias,
-                    section_num_dias_cons=num_dias_cons,
                     execution_begin=start_date,
                     execution_end=end_date,
                 )
